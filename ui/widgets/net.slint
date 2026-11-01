@@ -1,0 +1,245 @@
+import { LineEdit } from "std-widgets.slint";
+import { Theme, Icons } from "../theme.slint";
+import { Wifi, Bluetooth } from "../data.slint";
+import { Icon, IconButton, TextButton, Switch, Header, Row, Muted, Empty, SignalBars , ScrollList } from "../common.slint";
+
+component RoundToggle inherits Rectangle {
+    in property <image> icon;
+    in property <bool> on;
+    in property <string> line1;
+    in property <string> line2;
+    callback toggled();
+    border-radius: self.width / 2;
+    background: on ? Theme.accent-soft : transparent;
+    VerticalLayout {
+        alignment: center;
+        spacing: 2px;
+        HorizontalLayout {
+            alignment: center;
+            Icon {
+                source: root.icon;
+                size: root.width * 0.3;
+                tint: root.on ? Theme.accent : Theme.faint;
+            }
+        }
+        Text {
+            text: root.line1;
+            horizontal-alignment: center;
+            font-size: max(11px, root.width * 0.085);
+            color: Theme.text;
+            overflow: elide;
+        }
+        Text {
+            text: root.line2;
+            horizontal-alignment: center;
+            font-size: max(9px, root.width * 0.06);
+            color: Theme.dim;
+            overflow: elide;
+        }
+    }
+    TouchArea {
+        clicked => { root.toggled(); }
+    }
+}
+
+export component WifiWidget inherits Rectangle {
+    in property <bool> round;
+    // SSID waiting for a password, if any.
+    property <string> asking;
+    property <bool> asking-open: self.asking != "";
+    if root.round: RoundToggle {
+        icon: Wifi.enabled ? Icons.wifi : Icons.wifi-off;
+        on: Wifi.enabled && Wifi.ssid != "";
+        line1: !Wifi.available ? "No Wi-Fi" : !Wifi.enabled ? "Off" : Wifi.ssid != "" ? Wifi.ssid : "Not connected";
+        line2: Wifi.enabled && Wifi.ssid != "" ? Wifi.signal + "%" : "";
+        toggled => { Wifi.toggle(); }
+    }
+    if !root.round: VerticalLayout {
+        padding: Theme.pad;
+        spacing: 6px;
+        Header {
+            icon: Wifi.enabled ? Icons.wifi : Icons.wifi-off;
+            icon-color: Wifi.enabled ? Theme.accent : Theme.faint;
+            title: "Wi-Fi";
+            IconButton {
+                icon: Icons.refresh;
+                size: 28px;
+                enabled: Wifi.enabled && !Wifi.busy;
+                clicked => { Wifi.rescan(); }
+            }
+            Switch {
+                y: (parent.height - self.height) / 2;
+                checked: Wifi.enabled;
+                enabled: Wifi.available;
+                toggled => { Wifi.toggle(); }
+            }
+        }
+        Muted {
+            text: Wifi.status;
+            visible: Wifi.status != "";
+        }
+        if root.asking-open: Rectangle {
+            height: 76px;
+            border-radius: 12px;
+            background: Theme.card-raised;
+            VerticalLayout {
+                padding: 8px;
+                spacing: 6px;
+                Muted {
+                    text: "Password for " + root.asking;
+                }
+                HorizontalLayout {
+                    spacing: 6px;
+                    pw := LineEdit {
+                        input-type: password;
+                        placeholder-text: "Password";
+                        accepted(text) => {
+                            Wifi.connect(root.asking, text);
+                            root.asking = "";
+                        }
+                        init => { self.focus(); }
+                    }
+                    TextButton {
+                        text: "Join";
+                        primary: true;
+                        clicked => {
+                            Wifi.connect(root.asking, pw.text);
+                            root.asking = "";
+                        }
+                    }
+                    IconButton {
+                        icon: Icons.close;
+                        size: 30px;
+                        clicked => { root.asking = ""; }
+                    }
+                }
+            }
+        }
+        if !Wifi.available: Empty {
+            vertical-stretch: 1;
+            text: "No Wi-Fi device (NetworkManager)";
+        }
+        if Wifi.available && !Wifi.enabled: Empty {
+            vertical-stretch: 1;
+            text: "Wi-Fi is off";
+        }
+        if Wifi.available && Wifi.enabled: ScrollList {
+            vertical-stretch: 1;
+            for n in Wifi.networks: Row {
+                selected: n.active;
+                clicked => {
+                    if (n.active) {
+                        // Clicking the active network does nothing; the button disconnects.
+                    } else if (n.secure && !n.known) {
+                        root.asking = n.ssid;
+                    } else {
+                        Wifi.connect(n.ssid, "");
+                    }
+                }
+                HorizontalLayout {
+                    padding-left: 10px;
+                    padding-right: 6px;
+                    spacing: 8px;
+                    SignalBars {
+                        y: (parent.height - self.height) / 2;
+                        signal: n.signal;
+                        tint: n.active ? Theme.accent : Theme.text;
+                    }
+                    Text {
+                        text: n.ssid;
+                        color: n.active ? Theme.accent : Theme.text;
+                        font-size: Theme.font-body;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                    }
+                    if n.secure: Icon {
+                        y: (parent.height - self.height) / 2;
+                        source: Icons.lock-small;
+                        size: 14px;
+                        tint: Theme.faint;
+                    }
+                    if n.active: IconButton {
+                        y: (parent.height - self.height) / 2;
+                        icon: Icons.close;
+                        size: 26px;
+                        clicked => { Wifi.disconnect(); }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component BluetoothWidget inherits Rectangle {
+    in property <bool> round;
+    if root.round: RoundToggle {
+        icon: Icons.bluetooth;
+        on: Bluetooth.powered;
+        line1: !Bluetooth.available ? "No adapter" : !Bluetooth.powered ? "Off" : Bluetooth.connected-count > 0 ? Bluetooth.connected-count + " connected" : "On";
+        toggled => { Bluetooth.toggle(); }
+    }
+    if !root.round: VerticalLayout {
+        padding: Theme.pad;
+        spacing: 6px;
+        Header {
+            icon: Icons.bluetooth;
+            icon-color: Bluetooth.powered ? Theme.accent : Theme.faint;
+            title: "Bluetooth";
+            Switch {
+                y: (parent.height - self.height) / 2;
+                checked: Bluetooth.powered;
+                enabled: Bluetooth.available;
+                toggled => { Bluetooth.toggle(); }
+            }
+        }
+        Muted {
+            text: Bluetooth.status;
+            visible: Bluetooth.status != "";
+        }
+        if !Bluetooth.available: Empty {
+            vertical-stretch: 1;
+            text: "No Bluetooth adapter";
+        }
+        if Bluetooth.available && !Bluetooth.powered: Empty {
+            vertical-stretch: 1;
+            text: "Bluetooth is off";
+        }
+        if Bluetooth.available && Bluetooth.powered && Bluetooth.devices.length == 0: Empty {
+            vertical-stretch: 1;
+            text: "No paired devices";
+        }
+        if Bluetooth.available && Bluetooth.powered: ScrollList {
+            vertical-stretch: Bluetooth.devices.length > 0 ? 1 : 0;
+            for d in Bluetooth.devices: Row {
+                selected: d.connected;
+                enabled: !d.busy;
+                clicked => {
+                    if (d.connected) {
+                        Bluetooth.disconnect(d.address);
+                    } else {
+                        Bluetooth.connect(d.address);
+                    }
+                }
+                HorizontalLayout {
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    spacing: 8px;
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        Text {
+                            text: d.name;
+                            color: d.connected ? Theme.accent : Theme.text;
+                            font-size: Theme.font-body;
+                            overflow: elide;
+                        }
+                    }
+                    Muted {
+                        text: d.busy ? "…" : d.battery >= 0 ? d.battery + "%" : d.connected ? "connected" : "";
+                    }
+                }
+            }
+        }
+    }
+}

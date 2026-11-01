@@ -1,0 +1,12 @@
+// niri-dash style: "compact". Tighter: small corners and spacing, smaller text.
+
+style {
+    radius 12
+    radius-small 8
+    gap 4
+    padding 10
+    font-small 11
+    font-body 13
+    font-title 14
+    motion 0.8
+}

@@ -1,0 +1,3 @@
+[toolchain]
+# Stable: nothing here needs nightly, and nightly 2026-10-31 miscompiles zbus.
+channel = "stable"

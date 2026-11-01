@@ -1,0 +1,24 @@
+// niri-dash color scheme: "light" (light, neutral). See default.kdl for what each color is for.
+
+colors {
+    backdrop    "#e9ecf2d0"
+    card        "#fffffff0"
+    card-raised "#eef1f6"
+    panel       "#ffffff"
+    hover       "#1d23300f"
+    pressed     "#1d23301f"
+    border      "#1d23301f"
+    subtle      "#1d23300a"
+    shadow      "#00000040"
+    text        "#1d2330"
+    dim         "#556070"
+    faint       "#98a1b0"
+    accent      "#3b6fe0"
+    accent-soft "#3b6fe029"
+    on-accent   "#ffffff"
+    good        "#2f9e44"
+    warn        "#d9822b"
+    bad         "#d6336c"
+    track       "#1d23301f"
+    knob        "#ffffff"
+}

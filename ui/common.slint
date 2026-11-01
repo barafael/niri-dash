@@ -1,0 +1,401 @@
+import { Theme, Icons } from "theme.slint";
+
+export component Icon inherits Image {
+    in property <color> tint: Theme.text;
+    in property <length> size: 18px;
+    width: size;
+    height: size;
+    colorize: tint;
+    image-fit: contain;
+}
+
+export component IconButton inherits Rectangle {
+    in property <image> icon;
+    in property <length> size: 32px;
+    in property <length> icon-size: size * 0.55;
+    in property <color> tint: Theme.text;
+    in property <color> fill: transparent;
+    in property <bool> enabled: true;
+    in property <bool> active;
+    callback clicked();
+    width: size;
+    height: size;
+    // Buttons follow the style's corners (round at the default, square with "sharp").
+    border-radius: min(self.height / 2, Theme.radius-small);
+    background: active ? Theme.accent-soft : touch.pressed ? Theme.pressed : touch.has-hover ? Theme.hover : fill;
+    opacity: enabled ? 1 : 0.4;
+    animate background { duration: 100ms; }
+    Icon {
+        source: root.icon;
+        size: root.icon-size;
+        tint: root.active ? Theme.accent : root.tint;
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component TextButton inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <bool> has-icon;
+    in property <bool> primary;
+    in property <bool> danger;
+    in property <bool> enabled: true;
+    callback clicked();
+    height: 30px;
+    min-width: label.preferred-width + (has-icon ? 44px : 24px);
+    border-radius: min(self.height / 2, Theme.radius-small);
+    background: danger ? (touch.has-hover ? Theme.bad.with-alpha(0.33) : Theme.bad.with-alpha(0.2))
+        : primary ? (touch.pressed ? Theme.accent.darker(0.2) : touch.has-hover ? Theme.accent.brighter(0.1) : Theme.accent)
+        : (touch.pressed ? Theme.pressed : touch.has-hover ? Theme.hover : Theme.card-raised);
+    opacity: enabled ? 1 : 0.45;
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 6px;
+        alignment: center;
+        if root.has-icon: Icon {
+            y: (parent.height - self.height) / 2;
+            source: root.icon;
+            size: 16px;
+            tint: root.primary ? Theme.on-accent : root.danger ? Theme.bad : Theme.text;
+        }
+        label := Text {
+            text: root.text;
+            vertical-alignment: center;
+            font-size: Theme.font-body;
+            color: root.primary ? Theme.on-accent : root.danger ? Theme.bad : Theme.text;
+        }
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component Switch inherits Rectangle {
+    in property <bool> checked;
+    in property <bool> enabled: true;
+    callback toggled();
+    width: 40px;
+    height: 22px;
+    border-radius: min(self.height / 2, Theme.radius-small);
+    background: checked ? Theme.accent : Theme.track;
+    opacity: enabled ? 1 : 0.4;
+    animate background { duration: 120ms; }
+    Rectangle {
+        width: 16px;
+        height: 16px;
+        border-radius: min(self.height / 2, Theme.radius-small - 3px);
+        y: 3px;
+        x: root.checked ? root.width - self.width - 3px : 3px;
+        background: root.checked ? Theme.on-accent : Theme.dim;
+        animate x { duration: 120ms; easing: ease-out; }
+    }
+    TouchArea {
+        enabled: root.enabled;
+        clicked => { root.toggled(); }
+    }
+}
+
+// Arc from 12 o'clock clockwise, `value` in 0..1.
+export component Ring inherits Rectangle {
+    in property <float> value;
+    in property <length> thickness: 8px;
+    in property <color> tint: Theme.accent;
+    in property <color> track: Theme.track;
+    property <float> v: clamp(value, 0, 0.9999);
+    property <float> r: 50 - (thickness / self.width) * 50 - 0.5;
+    Path {
+        width: 100%;
+        height: 100%;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 100;
+        viewbox-height: 100;
+        stroke: root.track;
+        stroke-width: root.thickness;
+        commands: "M 50 " + (50 - root.r) + " A " + root.r + " " + root.r + " 0 1 1 " + (50 - 0.01) + " " + (50 - root.r) + " Z";
+    }
+    if root.v > 0.002: Path {
+        width: 100%;
+        height: 100%;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 100;
+        viewbox-height: 100;
+        stroke: root.tint;
+        stroke-width: root.thickness;
+        stroke-line-cap: LineCap.round;
+        commands: "M 50 " + (50 - root.r) + " A " + root.r + " " + root.r + " 0 " + (root.v > 0.5 ? "1" : "0") + " 1 "
+            + (50 + root.r * sin(root.v * 360deg)) + " " + (50 - root.r * cos(root.v * 360deg));
+    }
+}
+
+// A history line chart, newest sample on the right, `capacity` samples wide. A Path keeps its
+// viewbox's aspect ratio, so the chart is drawn one segment per pair of neighbouring samples,
+// each with a viewbox equal to its own size: drawn 1:1, any width and height.
+export component Graph inherits Rectangle {
+    in property <[float]> values;
+    in property <int> capacity: 90;
+    in property <color> tint: Theme.accent;
+    // Off for a second line drawn on top of another graph.
+    in property <bool> fill-area: true;
+    property <length> step: self.width / max(1, self.capacity - 1);
+    property <int> first: self.capacity - self.values.length;
+    border-radius: min(8px, Theme.radius-small);
+    background: Theme.subtle;
+    clip: true;
+    // Samples older than the capacity would be off the left edge: don't create them at all.
+    for v[i] in root.values: Rectangle {
+        if i + 1 >= -root.first: Rectangle {
+            property <float> next: i + 1 < root.values.length ? root.values[i + 1] : v;
+            property <float> w: self.width / 1px;
+            property <float> h: self.height / 1px;
+            property <float> y0: 2 + (1 - clamp(v, 0, 1)) * (self.h - 4);
+            property <float> y1: 2 + (1 - clamp(self.next, 0, 1)) * (self.h - 4);
+            visible: i + 1 < root.values.length;
+            x: (root.first + i) * root.step;
+            y: 0;
+            // A hair wider than a step so neighbouring areas overlap instead of leaving seams.
+            width: root.step + 0.5px;
+            height: root.height;
+            if root.fill-area: Path {
+                width: 100%;
+                height: 100%;
+                viewbox-x: 0;
+                viewbox-y: 0;
+                viewbox-width: parent.w;
+                viewbox-height: parent.h;
+                // Opaque (pre-mixed with the card color) so the overlap between segments is invisible.
+                fill: root.tint.mix(Theme.card.with-alpha(1), 0.18);
+                commands: "M 0 " + parent.y0 + " L " + parent.w + " " + parent.y1 + " L " + parent.w + " " + parent.h + " L 0 " + parent.h + " Z";
+            }
+            // The line as a thin filled band: Slint insets stroked paths by half the stroke width,
+            // which would leave a gap at every join. Thickness 1.6 px, measured across the line.
+            property <float> half: 0.8 * sqrt(1 + ((self.y1 - self.y0) / max(0.001, self.w)) * ((self.y1 - self.y0) / max(0.001, self.w)));
+            Path {
+                width: 100%;
+                height: 100%;
+                viewbox-x: 0;
+                viewbox-y: 0;
+                viewbox-width: parent.w;
+                viewbox-height: parent.h;
+                fill: root.tint;
+                commands: "M 0 " + (parent.y0 - parent.half) + " L " + parent.w + " " + (parent.y1 - parent.half)
+                    + " L " + parent.w + " " + (parent.y1 + parent.half) + " L 0 " + (parent.y0 + parent.half) + " Z";
+            }
+        }
+    }
+}
+
+export component Slider inherits Rectangle {
+    in-out property <float> value;
+    in property <color> tint: Theme.accent;
+    in property <bool> enabled: true;
+    callback changed(float);
+    height: 24px;
+    property <length> knob: 16px;
+    opacity: enabled ? 1 : 0.4;
+    Rectangle {
+        y: (root.height - self.height) / 2;
+        height: 6px;
+        border-radius: 3px;
+        background: Theme.track;
+    }
+    Rectangle {
+        x: 0;
+        y: (root.height - self.height) / 2;
+        width: clamp(root.value, 0, 1) * (root.width - root.knob) + root.knob / 2;
+        height: 6px;
+        border-radius: 3px;
+        background: root.tint;
+    }
+    Rectangle {
+        x: clamp(root.value, 0, 1) * (root.width - root.knob);
+        y: (root.height - self.height) / 2;
+        width: root.knob;
+        height: root.knob;
+        border-radius: root.knob / 2;
+        background: touch.pressed || touch.has-hover ? Theme.knob.brighter(0.2) : Theme.knob;
+    }
+    function set-from(x: length) {
+        root.value = clamp((x - root.knob / 2) / (root.width - root.knob), 0, 1);
+        root.changed(root.value);
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                root.set-from(self.mouse-x);
+            }
+        }
+        moved => {
+            if (self.pressed) {
+                root.set-from(self.mouse-x);
+            }
+        }
+        scroll-event(e) => {
+            root.value = clamp(root.value - (e.delta-y + e.delta-x) / 960px, 0, 1);
+            root.changed(root.value);
+            accept
+        }
+    }
+}
+
+// Round knob: a ring showing `value`; scroll adjusts, click calls `clicked`.
+export component RingKnob inherits Rectangle {
+    in-out property <float> value;
+    in property <color> tint: Theme.accent;
+    in property <image> icon;
+    in property <string> label;
+    in property <bool> dimmed;
+    callback changed(float);
+    callback clicked();
+    Ring {
+        width: 100%;
+        height: 100%;
+        value: root.value;
+        thickness: max(6px, root.width * 0.07);
+        tint: root.dimmed ? Theme.faint : root.tint;
+    }
+    VerticalLayout {
+        alignment: center;
+        spacing: 2px;
+        HorizontalLayout {
+            alignment: center;
+            Icon {
+                source: root.icon;
+                size: min(root.width * 0.28, 40px);
+                tint: root.dimmed ? Theme.faint : Theme.text;
+            }
+        }
+        Text {
+            text: root.label;
+            horizontal-alignment: center;
+            font-size: max(11px, min(root.width * 0.11, 18px));
+            color: Theme.dim;
+        }
+    }
+    TouchArea {
+        clicked => { root.clicked(); }
+        scroll-event(e) => {
+            root.value = clamp(root.value - (e.delta-y + e.delta-x) / 960px, 0, 1);
+            root.changed(root.value);
+            accept
+        }
+    }
+}
+
+export component Header inherits HorizontalLayout {
+    in property <image> icon;
+    in property <string> title;
+    in property <color> icon-color: Theme.dim;
+    spacing: 8px;
+    height: 28px;
+    Icon {
+        y: (parent.height - self.height) / 2;
+        source: root.icon;
+        size: 18px;
+        tint: root.icon-color;
+    }
+    Text {
+        text: root.title;
+        font-size: Theme.font-title;
+        font-weight: 600;
+        color: Theme.text;
+        vertical-alignment: center;
+        overflow: elide;
+        horizontal-stretch: 1;
+    }
+    @children
+}
+
+export component Row inherits Rectangle {
+    in property <bool> selected;
+    in property <bool> enabled: true;
+    out property <bool> hovered: touch.has-hover;
+    callback clicked();
+    callback middle-clicked();
+    callback right-clicked(length, length);
+    height: 36px;
+    border-radius: min(self.height / 2, Theme.radius-small);
+    background: selected ? Theme.accent-soft : touch.pressed ? Theme.pressed : touch.has-hover ? Theme.hover : transparent;
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.up && e.button == PointerEventButton.middle) {
+                root.middle-clicked();
+            }
+            if (e.kind == PointerEventKind.up && e.button == PointerEventButton.right) {
+                root.right-clicked(self.mouse-x, self.mouse-y);
+            }
+        }
+    }
+    @children
+}
+
+export component Muted inherits Text {
+    color: Theme.dim;
+    font-size: Theme.font-small;
+    vertical-alignment: center;
+    overflow: elide;
+}
+
+export component Empty inherits Text {
+    color: Theme.faint;
+    font-size: Theme.font-body;
+    horizontal-alignment: center;
+    vertical-alignment: center;
+    wrap: word-wrap;
+}
+
+// Signal strength as four bars.
+export component SignalBars inherits Rectangle {
+    in property <int> signal;
+    in property <color> tint: Theme.text;
+    width: 18px;
+    height: 14px;
+    for i in 4: Rectangle {
+        x: i * 5px;
+        width: 3px;
+        height: (i + 1) * 3.5px;
+        y: root.height - self.height;
+        border-radius: 1px;
+        background: root.signal > i * 25 ? root.tint : Theme.track;
+    }
+}
+
+// A scrollable column whose scrollbar has its own gutter, so rows never sit under it. The gutter
+// is always reserved (wrapped text would otherwise make width and height depend on each other)
+// and the bar only shows when there is something to scroll.
+export component ScrollList inherits Rectangle {
+    property <bool> scrolls: flick.content-height > root.height + 1px;
+    property <length> gutter: 10px;
+    flick := Flickable {
+        x: 0;
+        width: root.width - root.gutter;
+        height: root.height;
+        content-height: column.preferred-height;
+        column := VerticalLayout {
+            width: flick.width;
+            @children
+        }
+    }
+    if root.scrolls: Rectangle {
+        x: root.width - 5px;
+        width: 4px;
+        border-radius: 2px;
+        background: Theme.subtle;
+        Rectangle {
+            property <length> thumb: max(24px, parent.height * root.height / flick.content-height);
+            y: (parent.height - self.thumb) * clamp(-flick.content-y / max(1px, flick.content-height - root.height), 0, 1);
+            height: self.thumb;
+            border-radius: 2px;
+            background: Theme.faint;
+        }
+    }
+}

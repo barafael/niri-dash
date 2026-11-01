@@ -1,0 +1,402 @@
+// Small tools: keyboard layout, color picker, timer and stopwatch, sticky notes.
+import { Theme, Icons } from "../theme.slint";
+import { KeyboardLayouts, LayoutItem, ColorPicker, PickedColor, Countdown, Notes, Shell, WidgetOpts } from "../data.slint";
+import { TextEdit } from "std-widgets.slint";
+import { Icon, IconButton, TextButton, Header, Row, Muted, Empty, ScrollList, Ring } from "../common.slint";
+
+// Scrolls through a list of choices a notch at a time, also with touchpads' small steps.
+component NotchScroll inherits TouchArea {
+    property <length> acc;
+    callback forward();
+    callback back();
+    scroll-event(e) => {
+        self.acc += e.delta-y + e.delta-x;
+        if (self.acc <= -60px) {
+            self.acc = 0;
+            self.forward();
+        } else if (self.acc >= 60px) {
+            self.acc = 0;
+            self.back();
+        }
+        accept
+    }
+}
+
+export component KeyboardLayoutWidget inherits Rectangle {
+    in property <bool> round;
+    property <LayoutItem> cur: KeyboardLayouts.layouts[KeyboardLayouts.current];
+    // Room for the list of layouts.
+    property <bool> list: !root.round && root.height > 150px && KeyboardLayouts.layouts.length > 1;
+    if !root.list: Rectangle {
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: KeyboardLayouts.available ? root.cur.short : "–";
+                horizontal-alignment: center;
+                font-size: clamp(min(root.height * 0.38, root.width * 0.3), 18px, 72px);
+                font-weight: Theme.font-weight-display;
+                color: Theme.text;
+            }
+            if root.height > 70px && (!root.round || root.width > 150px): Text {
+                text: KeyboardLayouts.available ? root.cur.name : "niri isn't reachable";
+                horizontal-alignment: center;
+                font-size: Theme.font-small;
+                color: Theme.dim;
+                overflow: elide;
+            }
+        }
+        NotchScroll {
+            clicked => { KeyboardLayouts.next(); }
+            forward => { KeyboardLayouts.next(); }
+            back => { KeyboardLayouts.prev(); }
+        }
+    }
+    if root.list: VerticalLayout {
+        padding: Theme.pad;
+        spacing: 6px;
+        Header {
+            icon: Icons.keyboard;
+            title: "Keyboard layout";
+        }
+        ScrollList {
+            for l[i] in KeyboardLayouts.layouts: Row {
+                selected: i == KeyboardLayouts.current;
+                clicked => { KeyboardLayouts.pick(i); }
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-right: 8px;
+                    spacing: 10px;
+                    Rectangle {
+                        y: (parent.height - self.height) / 2;
+                        width: 34px;
+                        height: 22px;
+                        border-radius: 6px;
+                        background: i == KeyboardLayouts.current ? Theme.accent : Theme.card-raised;
+                        Text {
+                            text: l.short;
+                            font-size: Theme.font-small;
+                            font-weight: 600;
+                            color: i == KeyboardLayouts.current ? Theme.on-accent : Theme.dim;
+                        }
+                    }
+                    Text {
+                        text: l.name;
+                        vertical-alignment: center;
+                        font-size: Theme.font-body;
+                        color: Theme.text;
+                        overflow: elide;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// A color value that copies itself when clicked.
+component CopyText inherits Rectangle {
+    in property <string> text;
+    in property <length> font: Theme.font-body;
+    in property <color> tint: Theme.text;
+    height: 24px;
+    border-radius: 6px;
+    background: touch.pressed ? Theme.pressed : touch.has-hover ? Theme.hover : transparent;
+    Text {
+        x: 6px;
+        width: parent.width - 12px;
+        text: root.text;
+        font-size: root.font;
+        color: root.tint;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    touch := TouchArea {
+        clicked => { ColorPicker.copy(root.text); }
+    }
+}
+
+export component ColorPickerWidget inherits Rectangle {
+    in property <bool> round;
+    property <bool> has: ColorPicker.colors.length > 0;
+    property <PickedColor> last: ColorPicker.colors[0];
+    // Wide enough for rgb() and hsl() beside the swatch; tall enough for the history row.
+    property <bool> details: !root.round && root.width >= 380px;
+    property <bool> history: !root.round && root.height > 150px && ColorPicker.colors.length > 1;
+    if root.round: Rectangle {
+        Rectangle {
+            y: root.height * 0.42 - self.height / 2;
+            width: root.width * 0.52;
+            height: self.width;
+            border-radius: self.width / 2;
+            background: root.has ? root.last.color : Theme.card-raised;
+            border-width: 2px;
+            border-color: Theme.border;
+            Icon {
+                source: Icons.pipette;
+                size: parent.width * 0.36;
+                tint: root.has && root.last.color.to-hsv().value > 0.6 ? #000000b0 : #ffffffd0;
+            }
+        }
+        Text {
+            y: root.height * 0.8 - self.height / 2;
+            text: root.has ? root.last.hex : "Pick";
+            font-size: Theme.font-small;
+            color: Theme.dim;
+        }
+        TouchArea {
+            clicked => { ColorPicker.pick(); }
+        }
+    }
+    if !root.round: VerticalLayout {
+        padding: Theme.pad;
+        spacing: 10px;
+        alignment: center;
+        HorizontalLayout {
+            spacing: 12px;
+            Rectangle {
+                width: min(56px, root.height - 2 * Theme.pad);
+                height: self.width;
+                y: (parent.height - self.height) / 2;
+                border-radius: Theme.radius-small;
+                background: root.has ? root.last.color : Theme.card-raised;
+                border-width: 1px;
+                border-color: Theme.border;
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 0px;
+                horizontal-stretch: 1;
+                if root.has: CopyText {
+                    text: root.last.hex;
+                    font: Theme.font-title;
+                }
+                if !root.has: Muted {
+                    text: "Click the pipette, then a pixel";
+                }
+                if root.details && root.has: CopyText {
+                    text: root.last.rgb;
+                    font: Theme.font-small;
+                    tint: Theme.dim;
+                }
+                if root.details && root.has: CopyText {
+                    text: root.last.hsl;
+                    font: Theme.font-small;
+                    tint: Theme.dim;
+                }
+            }
+            IconButton {
+                y: (parent.height - self.height) / 2;
+                icon: Icons.pipette;
+                size: 36px;
+                fill: Theme.card-raised;
+                clicked => { ColorPicker.pick(); }
+            }
+        }
+        if root.history: HorizontalLayout {
+            spacing: 6px;
+            alignment: start;
+            for c[i] in ColorPicker.colors: Rectangle {
+                visible: i > 0 && (i - 1) * 34px + 28px <= root.width - 2 * Theme.pad;
+                width: i > 0 ? 28px : 0px;
+                height: 28px;
+                border-radius: min(14px, Theme.radius-small);
+                background: c.color;
+                border-width: swatch.has-hover ? 2px : 1px;
+                border-color: swatch.has-hover ? Theme.text : Theme.border;
+                swatch := TouchArea {
+                    clicked => { ColorPicker.copy(c.hex); }
+                }
+            }
+        }
+    }
+}
+
+component TimerButtons inherits HorizontalLayout {
+    in property <bool> stopwatch;
+    in property <length> size: 36px;
+    spacing: 6px;
+    alignment: center;
+    IconButton {
+        y: (parent.height - self.height) / 2;
+        size: root.size;
+        fill: Theme.accent-soft;
+        tint: Theme.accent;
+        icon: (root.stopwatch ? Countdown.sw-running : Countdown.running) ? Icons.pause : Icons.play;
+        clicked => {
+            if (root.stopwatch) { Countdown.sw-toggle(); } else { Countdown.toggle(); }
+        }
+    }
+    if root.stopwatch && Countdown.sw-running: IconButton {
+        y: (parent.height - self.height) / 2;
+        size: root.size;
+        fill: Theme.card-raised;
+        icon: Icons.flag;
+        clicked => { Countdown.sw-lap(); }
+    }
+    if (root.stopwatch && Countdown.sw-started && !Countdown.sw-running) || (!root.stopwatch && (Countdown.running || Countdown.paused || Countdown.done)): IconButton {
+        y: (parent.height - self.height) / 2;
+        size: root.size;
+        fill: Theme.card-raised;
+        icon: Icons.reset;
+        clicked => {
+            if (root.stopwatch) { Countdown.sw-reset(); } else { Countdown.reset(); }
+        }
+    }
+}
+
+export component TimerWidget inherits Rectangle {
+    in property <bool> round;
+    in property <WidgetOpts> opts;
+    property <bool> sw: root.opts.stopwatch;
+    property <string> shown: root.sw ? Countdown.sw-text : Countdown.done ? "Done" : Countdown.text;
+    property <color> tint: !root.sw && Countdown.done ? Theme.warn : Theme.text;
+    // Room for presets / lap buttons, and for the list of laps.
+    property <bool> extras: root.height > 150px;
+    property <bool> lap-list: root.sw && root.height > 260px && Countdown.laps.length > 0;
+    if root.round: Rectangle {
+        if !root.sw: Ring {
+            width: 100%;
+            height: 100%;
+            value: Countdown.running || Countdown.paused ? Countdown.fraction : 0;
+            thickness: max(6px, root.width * 0.07);
+            tint: Countdown.paused ? Theme.faint : Theme.accent;
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.shown;
+                horizontal-alignment: center;
+                font-size: clamp(root.width * 0.2, 14px, 48px);
+                font-weight: Theme.font-weight-display;
+                color: root.tint;
+            }
+            Text {
+                text: root.sw ? (Countdown.sw-running ? "running" : "stopwatch")
+                    : Countdown.running ? "running" : Countdown.paused ? "paused" : "timer";
+                horizontal-alignment: center;
+                font-size: Theme.font-small;
+                color: Theme.faint;
+            }
+        }
+        TouchArea {
+            clicked => {
+                if (root.sw) { Countdown.sw-toggle(); } else { Countdown.toggle(); }
+            }
+            scroll-event(e) => {
+                if (!root.sw) {
+                    Countdown.adjust(e.delta-y > 0 ? -1 : 1);
+                }
+                accept
+            }
+        }
+    }
+    if !root.round: VerticalLayout {
+        padding: Theme.pad;
+        spacing: 10px;
+        alignment: root.lap-list ? start : center;
+        HorizontalLayout {
+            spacing: 12px;
+            Text {
+                text: root.shown;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+                font-size: clamp(min(root.height * (root.extras ? 0.24 : 0.5), root.width * 0.16), 18px, 72px);
+                font-weight: Theme.font-weight-display;
+                color: root.tint;
+                overflow: elide;
+            }
+            TimerButtons {
+                stopwatch: root.sw;
+            }
+        }
+        if !root.sw && (Countdown.running || Countdown.paused): Rectangle {
+            height: 4px;
+            border-radius: 2px;
+            background: Theme.track;
+            Rectangle {
+                x: 0;
+                width: parent.width * Countdown.fraction;
+                border-radius: 2px;
+                background: Countdown.paused ? Theme.faint : Theme.accent;
+            }
+        }
+        if !root.sw && root.extras: HorizontalLayout {
+            spacing: 6px;
+            alignment: start;
+            IconButton {
+                icon: Icons.minus;
+                size: 30px;
+                fill: Theme.card-raised;
+                clicked => { Countdown.adjust(-1); }
+            }
+            // As many presets as fit between the − and + buttons.
+            for m[i] in [1, 5, 10, 25]: TextButton {
+                visible: 72px + (i + 1) * 74px <= root.width - 2 * Theme.pad;
+                width: self.visible ? self.min-width : 0px;
+                text: m + " min";
+                clicked => { Countdown.preset(m); }
+            }
+            IconButton {
+                icon: Icons.plus;
+                size: 30px;
+                fill: Theme.card-raised;
+                clicked => { Countdown.adjust(1); }
+            }
+        }
+        if root.lap-list: ScrollList {
+            vertical-stretch: 1;
+            for l[i] in Countdown.laps: HorizontalLayout {
+                height: 24px;
+                Text {
+                    text: "Lap " + (Countdown.laps.length - i);
+                    color: Theme.dim;
+                    font-size: Theme.font-body;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: l;
+                    color: Theme.text;
+                    font-size: Theme.font-body;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}
+
+export component NotesWidget inherits Rectangle {
+    in property <int> id;
+    property <string> text: root.id < Notes.texts.length ? Notes.texts[root.id] : "";
+    property <string> name: root.id < Notes.names.length ? Notes.names[root.id] : "Notes";
+    VerticalLayout {
+        padding: Theme.pad;
+        padding-top: root.height > 150px ? Theme.pad : 8px;
+        spacing: 6px;
+        if root.height > 150px: Header {
+            icon: Icons.note;
+            title: root.name;
+        }
+        FocusScope {
+            vertical-stretch: 1;
+            key-pressed(e) => {
+                // Escape still closes the dashboard while typing; the note is saved already.
+                if (e.text == Key.Escape) {
+                    Shell.hide();
+                    return accept;
+                }
+                reject
+            }
+            edit := TextEdit {
+                width: 100%;
+                height: 100%;
+                text: root.text;
+                wrap: word-wrap;
+                font-size: Theme.font-body;
+                placeholder-text: "Write something…";
+                edited(t) => { Notes.edited(root.id, t); }
+            }
+        }
+    }
+}

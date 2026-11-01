@@ -1,0 +1,24 @@
+// niri-dash color scheme: "solarized-dark" (Solarized dark). See default.kdl for what each color is for.
+
+colors {
+    backdrop    "#00212bd9"
+    card        "#002b36f2"
+    card-raised "#073642"
+    panel       "#002b36"
+    hover       "#93a1a112"
+    pressed     "#93a1a120"
+    border      "#93a1a117"
+    subtle      "#93a1a10a"
+    shadow      "#00000090"
+    text        "#93a1a1"
+    dim         "#839496"
+    faint       "#586e75"
+    accent      "#268bd2"
+    accent-soft "#268bd233"
+    on-accent   "#00212b"
+    good        "#859900"
+    warn        "#b58900"
+    bad         "#dc322f"
+    track       "#93a1a117"
+    knob        "#93a1a1"
+}

@@ -1,0 +1,24 @@
+// niri-dash color scheme: "gruvbox-dark" (Gruvbox dark). See default.kdl for what each color is for.
+
+colors {
+    backdrop    "#1d2021d9"
+    card        "#282828f2"
+    card-raised "#3c3836"
+    panel       "#282828"
+    hover       "#ebdbb212"
+    pressed     "#ebdbb220"
+    border      "#ebdbb217"
+    subtle      "#ebdbb20a"
+    shadow      "#00000090"
+    text        "#ebdbb2"
+    dim         "#a89984"
+    faint       "#7c6f64"
+    accent      "#fabd2f"
+    accent-soft "#fabd2f33"
+    on-accent   "#1d2021"
+    good        "#b8bb26"
+    warn        "#fe8019"
+    bad         "#fb4934"
+    track       "#ebdbb217"
+    knob        "#ebdbb2"
+}

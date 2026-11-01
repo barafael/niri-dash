@@ -1,0 +1,24 @@
+// niri-dash color scheme: "everforest" (Everforest dark). See default.kdl for what each color is for.
+
+colors {
+    backdrop    "#232a2ed9"
+    card        "#2d353bf2"
+    card-raised "#3d484d"
+    panel       "#2d353b"
+    hover       "#d3c6aa12"
+    pressed     "#d3c6aa20"
+    border      "#d3c6aa17"
+    subtle      "#d3c6aa0a"
+    shadow      "#00000090"
+    text        "#d3c6aa"
+    dim         "#9da9a0"
+    faint       "#7a8478"
+    accent      "#a7c080"
+    accent-soft "#a7c08033"
+    on-accent   "#232a2e"
+    good        "#83c092"
+    warn        "#dbbc7f"
+    bad         "#e67e80"
+    track       "#d3c6aa17"
+    knob        "#d3c6aa"
+}

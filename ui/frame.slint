@@ -1,0 +1,300 @@
+import { Theme, Icons } from "theme.slint";
+import { WidgetInst, WidgetKind, Shape, PointerShape } from "data.slint";
+import { Icon, IconButton } from "common.slint";
+import { ClockWidget, CalendarWidget } from "widgets/time.slint";
+import { PerfWidget, BatteryWidget, AudioWidget, BrightnessWidget, SessionWidget } from "widgets/system.slint";
+import { ClaudeWidget, ClipboardWidget, WeatherWidget } from "widgets/extra.slint";
+import { MemoryWidget, DisksWidget, NetworkWidget, GpuWidget, ClaudeUsageWidget } from "widgets/monitor.slint";
+import { WifiWidget, BluetoothWidget } from "widgets/net.slint";
+import { WindowsWidget, NotificationsWidget, TrayWidget, MediaWidget } from "widgets/desk.slint";
+import { MascotWidget } from "widgets/mascot.slint";
+import { KeyboardLayoutWidget } from "widgets/tools.slint";
+import { ColorPickerWidget } from "widgets/tools.slint";
+import { TimerWidget } from "widgets/tools.slint";
+import { NotesWidget } from "widgets/tools.slint";
+import { PrivacyWidget } from "widgets/devices.slint";
+
+// A widget's content, picked by kind; fills its parent.
+export component WidgetBody inherits Rectangle {
+    in property <WidgetInst> inst;
+    in property <bool> round;
+    if root.inst.kind == WidgetKind.clock: ClockWidget { round: root.round; opts: root.inst.opts; id: root.inst.id; }
+    if root.inst.kind == WidgetKind.calendar: CalendarWidget { round: root.round; opts: root.inst.opts; }
+    if root.inst.kind == WidgetKind.perf: PerfWidget { round: root.round; opts: root.inst.opts; }
+    if root.inst.kind == WidgetKind.windows: WindowsWidget { round: root.round; }
+    if root.inst.kind == WidgetKind.wifi: WifiWidget { round: root.round; }
+    if root.inst.kind == WidgetKind.bluetooth: BluetoothWidget { round: root.round; }
+    if root.inst.kind == WidgetKind.battery: BatteryWidget { round: root.round; }
+    if root.inst.kind == WidgetKind.audio: AudioWidget { round: root.round; }
+    if root.inst.kind == WidgetKind.brightness: BrightnessWidget { round: root.round; }
+    if root.inst.kind == WidgetKind.notifications: NotificationsWidget { round: root.round; }
+    if root.inst.kind == WidgetKind.tray: TrayWidget { round: root.round; }
+    if root.inst.kind == WidgetKind.claude: ClaudeWidget { round: root.round; }
+    if root.inst.kind == WidgetKind.clipboard: ClipboardWidget { round: root.round; }
+    if root.inst.kind == WidgetKind.weather: WeatherWidget { round: root.round; }
+    if root.inst.kind == WidgetKind.memory: MemoryWidget { round: root.round; opts: root.inst.opts; }
+    if root.inst.kind == WidgetKind.disks: DisksWidget { round: root.round; opts: root.inst.opts; }
+    if root.inst.kind == WidgetKind.network: NetworkWidget { round: root.round; opts: root.inst.opts; }
+    if root.inst.kind == WidgetKind.gpu: GpuWidget { round: root.round; opts: root.inst.opts; }
+    if root.inst.kind == WidgetKind.claude-usage: ClaudeUsageWidget { round: root.round; }
+    if root.inst.kind == WidgetKind.media: MediaWidget { round: root.round; }
+    if root.inst.kind == WidgetKind.session: SessionWidget { round: root.round; opts: root.inst.opts; }
+    if root.inst.kind == WidgetKind.mascot: MascotWidget { round: root.round; opts: root.inst.opts; id: root.inst.id; }
+    if root.inst.kind == WidgetKind.keyboard-layout: KeyboardLayoutWidget { round: root.round; }
+    if root.inst.kind == WidgetKind.color-picker: ColorPickerWidget { round: root.round; }
+    if root.inst.kind == WidgetKind.timer: TimerWidget { round: root.round; opts: root.inst.opts; }
+    if root.inst.kind == WidgetKind.notes: NotesWidget { id: root.inst.id; }
+    if root.inst.kind == WidgetKind.privacy: PrivacyWidget { round: root.round; }
+}
+
+// One placed widget. Positions are grid cells; while dragging, (dx, dy) / (dw, dh) hold the
+// pointer offset and a ghost shows where the widget will land, green if it fits.
+export component WidgetFrame inherits Rectangle {
+    in property <WidgetInst> inst;
+    in property <length> cell;
+    in property <int> cols;
+    in property <int> rows;
+    in property <bool> editing;
+    // Opened on its own for adjusting: drawn above the others.
+    in property <bool> lifted;
+    // Its settings are open in the sidebar.
+    in property <bool> selected;
+    // False while the dashboard is hidden; flipping it plays the entrance.
+    in property <bool> shown: true;
+    // Picked up with a double click: the dashboard moves it via carry-x/y.
+    in property <bool> carried;
+    in property <length> carry-x;
+    in property <length> carry-y;
+    callback preview-move(int, int, int) -> bool;
+    callback preview-resize(int, int, int) -> bool;
+    callback end-preview();
+    // Double click on an empty part: (id, pointer x/y in the window, offset inside the widget).
+    callback grab(int, length, length, length, length);
+    callback move-to(int, int, int);
+    callback resize-to(int, int, int);
+    callback toggle-shape(int);
+    callback remove(int);
+    // Open this widget's settings.
+    callback configure(int);
+    // The pointer shape over this widget's edit handles.
+    callback cursor(PointerShape);
+
+    property <bool> is-round: inst.shape == Shape.round;
+    property <length> dx;
+    property <length> dy;
+    property <length> dw;
+    property <length> dh;
+    property <bool> moving: mover.pressed;
+    property <bool> sizing: sizer.pressed;
+    property <int> t-col: clamp(Math.round((inst.col * cell + dx) / cell), 0, max(0, cols - inst.w));
+    property <int> t-row: clamp(Math.round((inst.row * cell + dy) / cell), 0, max(0, rows - inst.h));
+    property <int> t-w: clamp(Math.round((inst.w * cell + dw) / cell), 1, max(1, cols - inst.col));
+    property <int> t-h: is-round ? t-w : clamp(Math.round((inst.h * cell + dh) / cell), 1, max(1, rows - inst.row));
+    // Whether the current drag target has room (after pushing others aside); asked from Rust.
+    property <bool> t-ok: true;
+    changed t-col => { if (root.moving) { root.t-ok = root.preview-move(root.inst.id, root.t-col, root.t-row); } }
+    changed t-row => { if (root.moving) { root.t-ok = root.preview-move(root.inst.id, root.t-col, root.t-row); } }
+    changed t-w => { if (root.sizing) { root.t-ok = root.preview-resize(root.inst.id, root.t-w, root.t-h); } }
+    changed t-h => { if (root.sizing) { root.t-ok = root.preview-resize(root.inst.id, root.t-w, root.t-h); } }
+    // Visual card: inset by the gap; round widgets are the inscribed circle.
+    property <length> cw: self.width - 2 * Theme.gap;
+    property <length> ch: self.height - 2 * Theme.gap;
+    property <length> diameter: min(cw, ch);
+
+    // 0 -> 1 when the dashboard opens, staggered from the top left.
+    property <float> appear: shown ? 1 : 0;
+    animate appear {
+        duration: (root.shown ? 180ms : 70ms) * Theme.motion;
+        delay: root.shown ? (root.inst.col + root.inst.row) * 5ms * Theme.motion : 0ms;
+        easing: cubic-bezier(0.2, 0.9, 0.3, 1.0);
+    }
+    // Fades the edit controls in and out.
+    property <float> edit-fade: editing && !moving ? 1 : 0;
+    animate edit-fade { duration: 160ms * Theme.motion; easing: ease-out; }
+
+    x: carried ? carry-x : inst.col * cell + dx;
+    y: carried ? carry-y : inst.row * cell + dy;
+    width: max(cell, inst.w * cell + dw);
+    height: max(cell, (is-round ? inst.w * cell + dw : inst.h * cell + dh));
+    z: moving || sizing || carried || lifted ? 100 : 0;
+    // Dragging follows the pointer directly; after a drop (or a layout change) widgets glide.
+    animate x, y, width, height {
+        duration: root.moving || root.sizing || root.carried ? 0ms : 240ms * Theme.motion;
+        easing: cubic-bezier(0.2, 0.9, 0.3, 1.0);
+    }
+
+    // Landing ghost.
+    if root.moving || root.sizing: Rectangle {
+        x: (root.moving ? root.t-col * root.cell - root.x : 0) + Theme.gap;
+        y: (root.moving ? root.t-row * root.cell - root.y : 0) + Theme.gap;
+        width: (root.sizing ? root.t-w : root.inst.w) * root.cell - 2 * Theme.gap;
+        height: (root.sizing ? root.t-h : root.inst.h) * root.cell - 2 * Theme.gap;
+        border-radius: root.is-round ? self.width / 2 : Theme.radius;
+        border-width: 2px;
+        border-color: root.t-ok ? Theme.good : Theme.bad;
+        background: (root.t-ok ? Theme.good : Theme.bad).with-alpha(0.12);
+    }
+
+    card := Rectangle {
+        x: root.is-round ? (root.width - root.diameter) / 2 : Theme.gap;
+        y: (root.is-round ? (root.height - root.diameter) / 2 : Theme.gap) + (1 - root.appear) * 28px;
+        width: root.is-round ? root.diameter : root.cw;
+        height: root.is-round ? root.diameter : root.ch;
+        border-radius: root.is-round ? self.width / 2 : Theme.radius;
+        background: Theme.card.transparentize(1 - Theme.card-opacity);
+        border-width: root.selected ? max(2px, Theme.border-width * 1px) : Theme.border-width * 1px;
+        border-color: root.selected ? Theme.accent : root.editing ? Theme.accent.with-alpha(root.moving || root.sizing ? 0.9 : 0.35) : Theme.border;
+        animate border-color { duration: 160ms * Theme.motion; }
+        clip: true;
+        // The GPU renderer redraws the whole dashboard every frame; with each card drawn into
+        // its own cached texture, a change (a volume scroll, a ticking graph) re-renders only
+        // that card and the rest is one textured quad each. The software renderer ignores this.
+        cache-rendering-hint: true;
+        opacity: root.appear * (root.moving || root.sizing || root.carried ? 0.85 : 1);
+        drop-shadow-blur: root.moving || root.sizing || root.carried ? 24px : 0;
+        drop-shadow-color: Theme.shadow;
+
+        // Empty parts of the widget: a double click picks it up. Controls inside sit above this.
+        TouchArea {
+            enabled: !root.editing && !root.carried;
+            double-clicked => {
+                root.grab(root.inst.id, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y,
+                    card.x + self.mouse-x, card.y + self.mouse-y);
+            }
+        }
+
+        WidgetBody { inst: root.inst; round: root.is-round; }
+
+        // In edit mode the whole card is a drag handle and the content gets no input.
+        mover := TouchArea {
+            enabled: root.editing;
+            visible: root.editing;
+            mouse-cursor: move;
+            // Moved far enough to count as a drag rather than a click.
+            property <bool> dragged;
+            changed has-hover => { root.cursor(self.has-hover ? PointerShape.move : PointerShape.normal); }
+            moved => {
+                if (self.pressed) {
+                    root.dx += self.mouse-x - self.pressed-x;
+                    root.dy += self.mouse-y - self.pressed-y;
+                    if (abs(root.dx) > 4px || abs(root.dy) > 4px) {
+                        self.dragged = true;
+                    }
+                }
+            }
+            clicked => {
+                if (!self.dragged && root.inst.has-settings) {
+                    root.configure(root.inst.id);
+                }
+            }
+            double-clicked => {
+                root.grab(root.inst.id, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y,
+                    card.x + self.mouse-x, card.y + self.mouse-y);
+            }
+            pointer-event(e) => {
+                if (e.kind == PointerEventKind.down) {
+                    root.t-ok = true;
+                    self.dragged = false;
+                }
+                if (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) {
+                    let c = root.t-col;
+                    let r = root.t-row;
+                    let ok = root.t-ok;
+                    root.dx = 0;
+                    root.dy = 0;
+                    if (ok && e.kind == PointerEventKind.up && (c != root.inst.col || r != root.inst.row)) {
+                        root.move-to(root.inst.id, c, r);
+                    } else {
+                        root.end-preview();
+                    }
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        // Toolbar: shape toggle and remove, top right of the card.
+        opacity: root.edit-fade;
+        visible: self.opacity > 0.01;
+        x: root.is-round ? root.width / 2 + root.diameter * 0.35 - self.width + 14px : root.width - Theme.gap - self.width - 8px;
+        y: root.is-round ? (root.height - root.diameter) / 2 : Theme.gap + 8px;
+        width: 4px + 34px * ((root.inst.can-round ? 1 : 0) + (root.inst.has-settings ? 1 : 0) + 1);
+        height: 34px;
+        border-radius: min(self.height / 2, Theme.radius-small + 2px);
+        background: Theme.panel;
+        border-width: 1px;
+        border-color: Theme.border;
+        HorizontalLayout {
+            padding: 2px;
+            spacing: 2px;
+            if root.inst.has-settings: IconButton {
+                icon: Icons.settings;
+                size: 30px;
+                tint: root.selected ? Theme.accent : Theme.text;
+                clicked => { root.configure(root.inst.id); }
+            }
+            if root.inst.can-round: IconButton {
+                icon: root.is-round ? Icons.square : Icons.circle;
+                size: 30px;
+                enabled: root.editing;
+                clicked => { root.toggle-shape(root.inst.id); }
+            }
+            IconButton {
+                icon: Icons.close;
+                size: 30px;
+                tint: Theme.bad;
+                enabled: root.editing;
+                clicked => { root.remove(root.inst.id); }
+            }
+        }
+    }
+
+    Rectangle {
+        // Resize grip, bottom right (on the circle's edge for round widgets).
+        opacity: root.edit-fade;
+        visible: self.opacity > 0.01;
+        x: root.is-round ? root.width / 2 + root.diameter * 0.354 - self.width / 2 : root.width - Theme.gap - self.width - 2px;
+        y: root.is-round ? root.height / 2 + root.diameter * 0.354 - self.height / 2 : root.height - Theme.gap - self.height - 2px;
+        width: 30px;
+        height: 30px;
+        border-radius: min(self.height / 2, Theme.radius-small);
+        background: sizer.pressed ? Theme.accent : sizer.has-hover ? Theme.accent.with-alpha(0.6) : Theme.panel;
+        Icon {
+            source: Icons.resize;
+            size: 16px;
+            tint: sizer.pressed ? Theme.on-accent : Theme.text;
+        }
+        sizer := TouchArea {
+            enabled: root.editing;
+            mouse-cursor: nwse-resize;
+            changed has-hover => { root.cursor(self.has-hover ? PointerShape.resize : (mover.has-hover ? PointerShape.move : PointerShape.normal)); }
+            moved => {
+                if (self.pressed) {
+                    if (root.is-round) {
+                        root.dw += ((self.mouse-x - self.pressed-x) + (self.mouse-y - self.pressed-y)) / 2;
+                    } else {
+                        root.dw += self.mouse-x - self.pressed-x;
+                        root.dh += self.mouse-y - self.pressed-y;
+                    }
+                }
+            }
+            pointer-event(e) => {
+                if (e.kind == PointerEventKind.down) {
+                    root.t-ok = true;
+                }
+                if (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) {
+                    let w = root.t-w;
+                    let h = root.t-h;
+                    let ok = root.t-ok;
+                    root.dw = 0;
+                    root.dh = 0;
+                    if (ok && e.kind == PointerEventKind.up && (w != root.inst.w || h != root.inst.h)) {
+                        root.resize-to(root.inst.id, w, h);
+                    } else {
+                        root.end-preview();
+                    }
+                }
+            }
+        }
+    }
+}

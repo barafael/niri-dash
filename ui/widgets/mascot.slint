@@ -1,0 +1,273 @@
+// The mascots from osb-verlegeplan: Schraubi the screw, Zolli the folding rule and Verschnitti
+// the offcut. Each peeks up from the bottom edge and talks in a speech bubble; what it says comes
+// from Rust (src/mascots.rs) through `Mascots.lines[id]`.
+//
+// The art is the original SVG split into aligned layers (ui/mascots/<name>-<layer>.svg, all with
+// the same viewBox), so outfits can be put on and off, the eyes can blink and the pupils can move.
+// Their own colours in every theme: they are characters, not the dashboard.
+
+import { Theme } from "../theme.slint";
+import { WidgetOpts, Mascots, MascotLine, Character, Outfit } from "../data.slint";
+
+struct Art {
+    body: image,
+    helmet: image,
+    vest: image,
+    beard: image,
+    brow: image,
+    eyes: image,
+    closed: image,
+    pupils: image,
+    shades: image,
+    tophat: image,
+    party: image,
+    mouth: image,
+    name: string,
+    // Width / height of the viewBox.
+    aspect: float,
+    // One viewBox unit as a fraction of the height.
+    unit: float,
+    // Between the eyes, as fractions of the width and height.
+    head-x: float,
+    head-y: float,
+    // Seconds between blinks: each its own rhythm.
+    blink: float,
+}
+
+global MascotArt {
+    public pure function of(c: Character) -> Art {
+        if (c == Character.zolli) {
+            return {
+                body: @image-url("../mascots/zolli-body.svg"),
+                helmet: @image-url("../mascots/zolli-helmet.svg"),
+                vest: @image-url("../mascots/zolli-vest.svg"),
+                beard: @image-url("../mascots/zolli-beard.svg"),
+                brow: @image-url("../mascots/zolli-brow.svg"),
+                eyes: @image-url("../mascots/zolli-eyes.svg"),
+                closed: @image-url("../mascots/zolli-closed.svg"),
+                pupils: @image-url("../mascots/zolli-pupils.svg"),
+                shades: @image-url("../mascots/zolli-shades.svg"),
+                tophat: @image-url("../mascots/zolli-tophat.svg"),
+                party: @image-url("../mascots/zolli-party.svg"),
+                mouth: @image-url("../mascots/zolli-mouth.svg"),
+                name: "ZOLLI",
+                aspect: 80 / 140,
+                unit: 1 / 140,
+                head-x: 39 / 80,
+                head-y: 64 / 140,
+                blink: 6.1,
+            };
+        }
+        if (c == Character.verschnitti) {
+            return {
+                body: @image-url("../mascots/verschnitti-body.svg"),
+                helmet: @image-url("../mascots/verschnitti-helmet.svg"),
+                vest: @image-url("../mascots/verschnitti-vest.svg"),
+                beard: @image-url("../mascots/verschnitti-beard.svg"),
+                brow: @image-url("../mascots/verschnitti-brow.svg"),
+                eyes: @image-url("../mascots/verschnitti-eyes.svg"),
+                closed: @image-url("../mascots/verschnitti-closed.svg"),
+                pupils: @image-url("../mascots/verschnitti-pupils.svg"),
+                shades: @image-url("../mascots/verschnitti-shades.svg"),
+                tophat: @image-url("../mascots/verschnitti-tophat.svg"),
+                party: @image-url("../mascots/verschnitti-party.svg"),
+                mouth: @image-url("../mascots/verschnitti-mouth.svg"),
+                name: "VERSCHNITTI",
+                aspect: 96 / 84,
+                unit: 1 / 84,
+                head-x: 0.5,
+                head-y: 38 / 84,
+                blink: 5.3,
+            };
+        }
+        return {
+            body: @image-url("../mascots/schraubi-body.svg"),
+            helmet: @image-url("../mascots/schraubi-helmet.svg"),
+            vest: @image-url("../mascots/schraubi-vest.svg"),
+            beard: @image-url("../mascots/schraubi-beard.svg"),
+            brow: @image-url("../mascots/schraubi-brow.svg"),
+            eyes: @image-url("../mascots/schraubi-eyes.svg"),
+            closed: @image-url("../mascots/schraubi-closed.svg"),
+            pupils: @image-url("../mascots/schraubi-pupils.svg"),
+            shades: @image-url("../mascots/schraubi-shades.svg"),
+            tophat: @image-url("../mascots/schraubi-tophat.svg"),
+            party: @image-url("../mascots/schraubi-party.svg"),
+            mouth: @image-url("../mascots/schraubi-mouth.svg"),
+            name: "SCHRAUBI",
+            aspect: 64 / 128,
+            unit: 1 / 128,
+            head-x: 0.5,
+            head-y: 33 / 128,
+            blink: 4.7,
+        };
+    }
+}
+
+// One layer; the figure sizes each to fill it.
+component Layer inherits Image {
+    image-fit: fill;
+}
+
+// The mascot, its layers stacked in the original's order. (look-x, look-y) in -1..1 moves the
+// pupils towards something.
+component Figure inherits Rectangle {
+    in property <Art> art;
+    in property <Outfit> outfit;
+    in property <bool> blink;
+    in property <float> look-x;
+    in property <float> look-y;
+    // How far the pupils go, in pixels.
+    property <length> reach: 2.5 * root.art.unit * root.height;
+    Layer { width: root.width; height: root.height; source: root.art.body; }
+    Layer { width: root.width; height: root.height; source: root.art.helmet; visible: root.outfit == Outfit.helmet; }
+    Layer { width: root.width; height: root.height; source: root.art.vest; visible: root.outfit == Outfit.vest; }
+    Layer { width: root.width; height: root.height; source: root.art.beard; visible: root.outfit == Outfit.beard; }
+    Layer { width: root.width; height: root.height; source: root.art.brow; }
+    Layer { width: root.width; height: root.height; source: root.blink ? root.art.closed : root.art.eyes; }
+    Layer {
+        width: root.width;
+        height: root.height;
+        source: root.art.pupils;
+        visible: !root.blink;
+        x: root.look-x * root.reach;
+        y: root.look-y * root.reach;
+        animate x, y { duration: 150ms * Theme.motion; }
+    }
+    Layer { width: root.width; height: root.height; source: root.art.shades; visible: root.outfit == Outfit.shades; }
+    Layer { width: root.width; height: root.height; source: root.art.tophat; visible: root.outfit == Outfit.tophat; }
+    Layer { width: root.width; height: root.height; source: root.art.party; visible: root.outfit == Outfit.party; }
+    Layer { width: root.width; height: root.height; source: root.art.mouth; }
+}
+
+export component MascotWidget inherits Rectangle {
+    in property <bool> round;
+    in property <WidgetOpts> opts;
+    in property <int> id;
+    property <MascotLine> line: Mascots.lines[root.id];
+    property <Art> art: MascotArt.of(root.opts.character);
+    // The bubble's own colours, the tooltip yellow of the assistant they parody.
+    property <color> paper: #ffffe1;
+    property <color> ink: #1d2733;
+    property <length> edge: max(6px, Theme.pad * 0.6);
+
+    // Out from behind the bottom edge. Ducks for a moment on every new line.
+    property <bool> up: true;
+    property <int> seq: root.line.seq;
+    changed seq => {
+        if (Theme.motion > 0) {
+            root.up = false;
+            pop.running = true;
+        }
+    }
+    pop := Timer {
+        interval: 220ms * Theme.motion;
+        running: false;
+        triggered => {
+            root.up = true;
+            self.running = false;
+        }
+    }
+
+    // Blinks, and between blinks glances at its bubble now and then.
+    property <bool> blink;
+    property <int> beat;
+    Timer {
+        interval: root.art.blink * 1s;
+        running: Mascots.awake && Theme.motion > 0;
+        triggered => {
+            root.beat += 1;
+            root.blink = true;
+            unblink.running = true;
+        }
+    }
+    unblink := Timer {
+        interval: 130ms;
+        running: false;
+        triggered => {
+            root.blink = false;
+            self.running = false;
+        }
+    }
+
+    property <length> fig-h: min(root.height * 0.88, root.width * 0.42 / root.art.aspect);
+    property <length> fig-w: root.fig-h * root.art.aspect;
+    // The eyes, in the widget.
+    property <length> eye-x: fig.x + root.art.head-x * root.fig-w;
+    property <length> eye-y: fig.y + root.art.head-y * root.fig-h;
+    property <bool> glancing: Math.mod(root.beat, 3) == 1;
+
+    fig := Figure {
+        x: root.edge;
+        width: root.fig-w;
+        height: root.fig-h;
+        // A little of it stays behind the edge.
+        y: root.up ? root.height - root.fig-h * 0.94 : root.height + 2px;
+        animate y { duration: (root.up ? 420ms : 140ms) * Theme.motion; easing: ease-out-back; }
+        art: root.art;
+        outfit: root.line.outfit;
+        blink: root.blink;
+        look-x: touch.has-hover ? clamp((touch.mouse-x - root.eye-x) / 90px, -1, 1) : root.glancing ? 0.85 : 0;
+        look-y: touch.has-hover ? clamp((touch.mouse-y - root.eye-y) / 90px, -1, 1) : root.glancing ? -0.35 : 0;
+    }
+
+    bubble := Rectangle {
+        x: fig.x + root.fig-w + 14px;
+        width: max(0px, root.width - self.x - root.edge);
+        height: min(content.preferred-height, root.height - 2 * root.edge);
+        y: clamp(root.eye-y - self.height * 0.4, root.edge, root.height - root.edge - self.height);
+        background: root.paper;
+        border-width: 2px;
+        border-color: root.ink;
+        border-radius: 12px;
+        drop-shadow-blur: 10px;
+        drop-shadow-offset-y: 3px;
+        drop-shadow-color: #00000040;
+        opacity: root.up ? 1 : 0;
+        animate opacity { duration: (root.up ? 200ms : 90ms) * Theme.motion; }
+        content := VerticalLayout {
+            padding-top: 8px;
+            padding-bottom: 9px;
+            padding-left: 11px;
+            padding-right: 11px;
+            spacing: 2px;
+            Text {
+                text: root.line.queued > 0 ? root.art.name + "  ·  " + root.line.queued + " more" : root.art.name;
+                font-size: max(9px, Theme.font-small * 0.85);
+                font-weight: 700;
+                letter-spacing: 0.6px;
+                color: root.ink;
+                opacity: 0.75;
+                overflow: elide;
+            }
+            Text {
+                text: root.line.text == "" ? "…" : root.line.text;
+                font-size: Theme.font-body;
+                color: root.ink;
+                wrap: word-wrap;
+                overflow: elide;
+                vertical-stretch: 1;
+            }
+        }
+    }
+
+    // The tail, pointing at the mascot's head; its fill covers the bubble's border where they meet.
+    Path {
+        x: bubble.x - 12px;
+        y: clamp(root.eye-y - 9px, bubble.y + 10px, bubble.y + bubble.height - 28px);
+        width: 14px;
+        height: 18px;
+        viewbox-width: 14;
+        viewbox-height: 18;
+        commands: "M 14 0 L 0 11 L 14 18";
+        fill: root.paper;
+        stroke: root.ink;
+        stroke-width: 2px;
+        opacity: bubble.opacity;
+    }
+
+    // A click anywhere: the next line. The pointer is what the pupils follow.
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Mascots.next(root.id); }
+    }
+}

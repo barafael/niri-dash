@@ -1,0 +1,71 @@
+[package]
+name = "niri-dash"
+version = "0.1.0"
+edition = "2024"
+description = "A fullscreen widget dashboard for niri: clock, calendar, windows, wifi, bluetooth, power, tray and more, with a Plasma-style edit mode"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+log = "0.4"
+env_logger = "0.11"
+serde = { version = "1", features = ["derive"] }
+dirs = "6"
+png = "0.17"
+chrono = { version = "0.4", features = ["unstable-locales", "serde"] }
+
+# ui
+slint = { version = "1.18", default-features = false, features = [
+    "std",
+    "compat-1-2",
+    "renderer-software",
+    "renderer-femtovg",
+    "software-renderer-path",
+    "software-renderer-systemfonts",
+    "image-default-formats",
+    # Not used as a backend; it pulls in Slint's image decoders and SVG support.
+    "backend-winit-wayland",
+] }
+
+# Only for scroll gesture phases (not in Slint's public API); must match slint's exact version.
+i-slint-core = "=1.18.1"
+
+# wayland
+smithay-client-toolkit = { version = "0.21", features = ["calloop", "xkbcommon"] }
+wayland-client = "0.31"
+wayland-backend = { version = "0.3", features = ["client_system"] }
+wayland-egl = "0.32"
+khronos-egl = { version = "6", features = ["dynamic"] }
+wayland-protocols = { version = "0.32", features = ["client", "staging"] }
+
+# data sources
+niri-ipc = "26.4"
+sysinfo = "0.37"
+tokio = { version = "1", features = ["rt-multi-thread", "process", "time", "sync", "macros", "io-util"] }
+zbus = { version = "5", default-features = false, features = ["tokio"] }
+system-tray = "0.8"
+freedesktop-icons = "0.4"
+ureq = { version = "2", features = ["json"] }
+serde_json = "1.0.154"
+kdl = "6"
+wayland-protocols-wlr = { version = "0.3.12", features = ["client"] }
+futures-util = "0.3.34"
+notify = "8"
+strum = { version = "0.28.0", features = ["derive"] }
+chrono-tz = "0.10"
+thiserror = "2"
+
+[build-dependencies]
+slint-build = "1.18"
+
+[profile.dev]
+opt-level = 1
+[profile.dev.package."*"]
+opt-level = 3
+[profile.release]
+debug = 1
+
+# Slint 1.18's software renderer doesn't clip paths to the repainted region, so partial repaints
+# draw arcs over overlays (widget list, menus). Patched copy; see the "niri-dash patch" comments.
+[patch.crates-io]
+i-slint-renderer-software = { path = "patches/i-slint-renderer-software" }

@@ -1,0 +1,119 @@
+// Privacy indicator, night light, removable drives, phone.
+import { Theme, Icons } from "../theme.slint";
+import { Privacy, PrivacyKind, PrivacyItem } from "../data.slint";
+import { Icon, IconButton, TextButton, Header, Row, Muted, Empty, ScrollList, Ring, Slider, Switch, RingKnob } from "../common.slint";
+
+component PrivacyDot inherits Rectangle {
+    in property <image> icon;
+    in property <bool> on;
+    in property <length> size: 36px;
+    width: self.size;
+    height: self.size;
+    border-radius: self.size / 2;
+    background: self.on ? Theme.bad.with-alpha(0.2) : Theme.card-raised;
+    Icon {
+        source: root.icon;
+        size: root.size * 0.5;
+        tint: root.on ? Theme.bad : Theme.faint;
+    }
+}
+
+export component PrivacyWidget inherits Rectangle {
+    in property <bool> round;
+    property <bool> any: Privacy.mic || Privacy.camera || Privacy.screen;
+    // Room for the list of who uses what.
+    property <bool> list: !root.round && root.height > 150px;
+    property <length> dot: root.round ? root.width * 0.24 : clamp(root.height * 0.42, 24px, 40px);
+    if !root.list: VerticalLayout {
+        alignment: center;
+        spacing: 6px;
+        HorizontalLayout {
+            alignment: center;
+            spacing: root.dot * 0.25;
+            PrivacyDot {
+                icon: Icons.mic;
+                on: Privacy.mic;
+                size: root.dot;
+            }
+            PrivacyDot {
+                icon: Icons.camera;
+                on: Privacy.camera;
+                size: root.dot;
+            }
+            PrivacyDot {
+                icon: Icons.screen-share;
+                on: Privacy.screen;
+                size: root.dot;
+            }
+        }
+        if root.height > 90px || root.round: Text {
+            text: root.any ? (Privacy.items.length == 1 ? Privacy.items[0].app : Privacy.items.length + " in use") : "Nothing in use";
+            horizontal-alignment: center;
+            font-size: Theme.font-small;
+            color: root.any ? Theme.text : Theme.faint;
+            overflow: elide;
+        }
+    }
+    if root.list: VerticalLayout {
+        padding: Theme.pad;
+        spacing: 6px;
+        Header {
+            icon: Icons.lock-small;
+            title: "Privacy";
+            PrivacyDot {
+                y: (parent.height - self.height) / 2;
+                icon: Icons.mic;
+                on: Privacy.mic;
+                size: 24px;
+            }
+            PrivacyDot {
+                y: (parent.height - self.height) / 2;
+                icon: Icons.camera;
+                on: Privacy.camera;
+                size: 24px;
+            }
+            PrivacyDot {
+                y: (parent.height - self.height) / 2;
+                icon: Icons.screen-share;
+                on: Privacy.screen;
+                size: 24px;
+            }
+        }
+        if !root.any: Empty {
+            vertical-stretch: 1;
+            text: "Nothing uses the microphone, camera or screen";
+        }
+        if root.any: ScrollList {
+            vertical-stretch: 1;
+            for it in Privacy.items: HorizontalLayout {
+                height: 36px;
+                spacing: 10px;
+                Icon {
+                    y: (parent.height - self.height) / 2;
+                    size: 18px;
+                    tint: Theme.bad;
+                    source: it.kind == PrivacyKind.mic ? Icons.mic : it.kind == PrivacyKind.camera ? Icons.camera : Icons.screen-share;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: it.app;
+                        font-size: Theme.font-body;
+                        color: Theme.text;
+                        overflow: elide;
+                    }
+                    if it.detail != "": Muted {
+                        text: it.detail;
+                    }
+                }
+                if it.kind == PrivacyKind.screen: TextButton {
+                    y: (parent.height - self.height) / 2;
+                    text: "Stop";
+                    danger: true;
+                    clicked => { Privacy.stop(it.session); }
+                }
+            }
+        }
+    }
+}

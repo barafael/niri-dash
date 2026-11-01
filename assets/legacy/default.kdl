@@ -1,0 +1,42 @@
+// niri-dash theme: "default" (dark).
+//
+// Copy this file to make your own (e.g. themes/mine.kdl) and select it in config.kdl with
+// `theme "mine"`. Anything you leave out keeps its default value. Changes apply on save.
+// Colors are "#rrggbb" or "#rrggbbaa" (alpha last).
+
+colors {
+    backdrop    "#07090dd9" // dims the screen behind the dashboard
+    card        "#161a22f2" // widget background
+    card-raised "#1f2430"   // buttons, list cards inside widgets
+    panel       "#12151c"   // widget list, menus, toasts, edit toolbars
+    hover       "#ffffff12"
+    pressed     "#ffffff20"
+    border      "#ffffff14"
+    subtle      "#ffffff08" // graph and grid backgrounds
+    shadow      "#00000090"
+    text        "#e6e9f0"
+    dim         "#9aa3b5"   // secondary text
+    faint       "#5b6375"   // tertiary text, inactive icons
+    accent      "#7aa2f7"
+    accent-soft "#7aa2f733" // selected rows, active buttons
+    on-accent   "#10131a"   // text on accent-colored fills
+    good        "#9ece6a"
+    warn        "#e0af68"
+    bad         "#f7768e"
+    track       "#ffffff14" // slider and ring tracks
+    knob        "#dfe3ec"   // slider knobs
+}
+
+design {
+    radius 20              // widget corner radius (px)
+    radius-small 12        // inner cards and list items
+    gap 7                  // half the space between widgets
+    padding 16             // inside widgets
+    border-width 1
+    font-family ""         // empty: the system default
+    font-small 12
+    font-body 14
+    font-title 15
+    font-weight-display 300 // big numbers (clock, battery)
+    motion 1.0             // animation speed: 1 normal, 0.5 twice as fast, 0 off
+}

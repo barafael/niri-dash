@@ -1,0 +1,288 @@
+import { Theme, Icons } from "../theme.slint";
+import { Clock, Calendar, CalDay, WidgetOpts, ZoneTime } from "../data.slint";
+import { IconButton } from "../common.slint";
+
+component Hand inherits Path {
+    in property <angle> angle;
+    in property <float> len;
+    in property <float> tail: 8;
+    width: 100%;
+    height: 100%;
+    viewbox-x: 0;
+    viewbox-y: 0;
+    viewbox-width: 100;
+    viewbox-height: 100;
+    stroke-line-cap: LineCap.round;
+    commands: "M " + (50 - self.tail * sin(self.angle)) + " " + (50 + self.tail * cos(self.angle))
+        + " L " + (50 + self.len * sin(self.angle)) + " " + (50 - self.len * cos(self.angle));
+}
+
+component ZoneRow inherits HorizontalLayout {
+    in property <ZoneTime> zone;
+    in property <length> font: Theme.font-body;
+    spacing: 8px;
+    height: 22px;
+    Text {
+        text: root.zone.label;
+        font-size: root.font;
+        color: Theme.text;
+        vertical-alignment: center;
+        overflow: elide;
+        horizontal-stretch: 1;
+    }
+    Text {
+        text: root.zone.delta;
+        font-size: Theme.font-small;
+        color: Theme.faint;
+        vertical-alignment: center;
+    }
+    Text {
+        min-width: 44px;
+        text: root.zone.time;
+        font-size: root.font;
+        color: Theme.dim;
+        vertical-alignment: center;
+        horizontal-alignment: right;
+    }
+}
+
+export component ClockWidget inherits Rectangle {
+    in property <bool> round;
+    in property <WidgetOpts> opts;
+    // The widget's id: its other time zones are `Clock.zones[id]`.
+    in property <int> id;
+    property <[ZoneTime]> zones: root.id < Clock.zones.length ? Clock.zones[root.id].items : [];
+    // Other time zones fit under the clock when it's tall, beside it when it's wide and short.
+    property <bool> below: root.zones.length > 0 && root.height >= 150px + root.zones.length * 24px;
+    property <bool> side: root.zones.length > 0 && !root.below && root.width >= 560px;
+    property <length> main-h: root.below ? root.height - root.zones.length * 24px - 8px : root.height;
+    property <length> main-w: root.side ? root.width * 0.58 : root.width;
+    if !root.round: VerticalLayout {
+        padding: Theme.pad;
+        alignment: center;
+        spacing: 8px;
+        HorizontalLayout {
+            spacing: 16px;
+            VerticalLayout {
+                alignment: center;
+                spacing: 2px;
+                horizontal-stretch: 1;
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 4px;
+                    Text {
+                        text: root.opts.hours12 ? Clock.time12 : Clock.time;
+                        font-size: clamp(min(root.main-h * 0.42, root.main-w * 0.24), 22px, 160px);
+                        font-weight: Theme.font-weight-display;
+                        color: Theme.text;
+                    }
+                    if root.opts.seconds || root.opts.hours12: VerticalLayout {
+                        alignment: start;
+                        property <length> size: clamp(min(root.main-h * 0.16, root.main-w * 0.08), 11px, 48px);
+                        if root.opts.seconds: Text {
+                            text: Clock.seconds;
+                            font-size: parent.size;
+                            color: Theme.faint;
+                        }
+                        if root.opts.hours12: Text {
+                            text: Clock.ampm;
+                            font-size: parent.size * (root.opts.seconds ? 0.7 : 1);
+                            color: Theme.faint;
+                        }
+                    }
+                }
+                if root.opts.date: Text {
+                    visible: root.main-h > 120px;
+                    text: Clock.date;
+                    horizontal-alignment: center;
+                    font-size: clamp(root.main-h * 0.09, 12px, 22px);
+                    color: Theme.dim;
+                }
+            }
+            if root.side: VerticalLayout {
+                alignment: center;
+                spacing: 2px;
+                width: root.width * 0.42 - 16px - Theme.pad;
+                for z in root.zones: ZoneRow {
+                    zone: z;
+                    font: Theme.font-small;
+                }
+            }
+        }
+        if root.below: VerticalLayout {
+            spacing: 2px;
+            for z in root.zones: ZoneRow {
+                zone: z;
+            }
+        }
+    }
+    if root.round: Rectangle {
+        Path {
+            width: 100%;
+            height: 100%;
+            viewbox-x: 0;
+            viewbox-y: 0;
+            viewbox-width: 100;
+            viewbox-height: 100;
+            stroke: Theme.faint;
+            stroke-width: max(1.5px, root.width * 0.012);
+            stroke-line-cap: LineCap.round;
+            commands: "M 50.00 12.00 L 50.00 4.00 M 70.50 14.49 L 73.00 10.16 M 85.51 29.50 L 89.84 27.00 M 88.00 50.00 L 96.00 50.00 M 85.51 70.50 L 89.84 73.00 M 70.50 85.51 L 73.00 89.84 M 50.00 88.00 L 50.00 96.00 M 29.50 85.51 L 27.00 89.84 M 14.49 70.50 L 10.16 73.00 M 12.00 50.00 L 4.00 50.00 M 14.49 29.50 L 10.16 27.00 M 29.50 14.49 L 27.00 10.16";
+        }
+        Text {
+            y: parent.height * 0.62;
+            width: 100%;
+            horizontal-alignment: center;
+            text: Clock.weekday + " " + Clock.day;
+            font-size: max(10px, root.width * 0.07);
+            color: Theme.faint;
+        }
+        Hand {
+            angle: Clock.hour * 30deg;
+            len: 24;
+            stroke: Theme.text;
+            stroke-width: max(3px, root.width * 0.035);
+        }
+        Hand {
+            angle: Clock.minute * 6deg;
+            len: 36;
+            stroke: Theme.text;
+            stroke-width: max(2px, root.width * 0.022);
+        }
+        if root.opts.seconds: Hand {
+            angle: Clock.second * 6deg;
+            len: 40;
+            tail: 12;
+            stroke: Theme.accent;
+            stroke-width: max(1px, root.width * 0.01);
+        }
+        Rectangle {
+            width: max(6px, root.width * 0.045);
+            height: self.width;
+            border-radius: self.width / 2;
+            background: Theme.accent;
+        }
+    }
+}
+
+export component CalendarWidget inherits Rectangle {
+    in property <bool> round;
+    in property <WidgetOpts> opts;
+    property <[string]> weekdays: root.opts.sunday-first ? Calendar.weekdays-sun : Calendar.weekdays;
+    property <[CalDay]> days: root.opts.sunday-first ? Calendar.days-sun : Calendar.days;
+    property <[int]> weeks: root.opts.sunday-first ? Calendar.weeks-sun : Calendar.weeks;
+    // Column of Saturday and Sunday.
+    property <int> sat: root.opts.sunday-first ? 6 : 5;
+    property <int> sun: root.opts.sunday-first ? 0 : 6;
+    if root.round: VerticalLayout {
+        alignment: center;
+        spacing: 0px;
+        Text {
+            text: Clock.weekday;
+            horizontal-alignment: center;
+            font-size: max(11px, root.width * 0.09);
+            color: Theme.accent;
+            font-weight: 600;
+        }
+        Text {
+            text: Clock.day;
+            horizontal-alignment: center;
+            font-size: root.width * 0.34;
+            font-weight: Theme.font-weight-display;
+            color: Theme.text;
+        }
+        Text {
+            text: Clock.month;
+            horizontal-alignment: center;
+            font-size: max(11px, root.width * 0.08);
+            color: Theme.dim;
+        }
+    }
+    if !root.round: VerticalLayout {
+        padding: Theme.pad;
+        spacing: 6px;
+        HorizontalLayout {
+            height: 30px;
+            Text {
+                text: Calendar.title;
+                font-size: Theme.font-title;
+                font-weight: 600;
+                color: Theme.text;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+            IconButton {
+                icon: Icons.chevron-left;
+                size: 28px;
+                clicked => { Calendar.shift(-1); }
+            }
+            IconButton {
+                icon: Icons.circle;
+                size: 28px;
+                icon-size: 10px;
+                enabled: !Calendar.showing-current;
+                clicked => { Calendar.shift(0); }
+            }
+            IconButton {
+                icon: Icons.chevron-right;
+                size: 28px;
+                clicked => { Calendar.shift(1); }
+            }
+        }
+        grid := Rectangle {
+            vertical-stretch: 1;
+            // An extra narrow column on the left for week numbers.
+            property <length> wn: root.opts.week-numbers ? min(self.width / 8, 28px) : 0px;
+            property <length> cw: (self.width - self.wn) / 7;
+            property <length> ch: self.height / 7;
+            for name[i] in root.weekdays: Text {
+                x: grid.wn + i * grid.cw;
+                y: 0;
+                width: grid.cw;
+                height: grid.ch;
+                text: name;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                font-size: Theme.font-small;
+                color: i == root.sat || i == root.sun ? Theme.faint : Theme.dim;
+            }
+            if root.opts.week-numbers: Rectangle {
+                x: 0;
+                y: grid.ch;
+                width: grid.wn - 2px;
+                height: grid.ch * 6;
+                border-radius: min(self.width / 2, Theme.radius-small);
+                background: Theme.subtle;
+            }
+            for w[r] in root.opts.week-numbers ? root.weeks : []: Text {
+                x: 0;
+                y: (r + 1) * grid.ch;
+                width: grid.wn - 2px;
+                height: grid.ch;
+                text: w;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                font-size: clamp(grid.ch * 0.3, 9px, 13px);
+                color: Theme.faint;
+            }
+            for d[i] in root.days: Rectangle {
+                x: grid.wn + mod(i, 7) * grid.cw;
+                y: (floor(i / 7) + 1) * grid.ch;
+                width: grid.cw;
+                height: grid.ch;
+                Rectangle {
+                    width: min(parent.width, parent.height) - 4px;
+                    height: self.width;
+                    border-radius: self.width / 2;
+                    background: d.today ? Theme.accent : transparent;
+                }
+                Text {
+                    text: d.day;
+                    font-size: clamp(grid.ch * 0.42, 11px, 18px);
+                    color: d.today ? Theme.on-accent : d.in-month ? (mod(i, 7) == root.sat || mod(i, 7) == root.sun ? Theme.dim : Theme.text) : Theme.faint.with-alpha(0.5);
+                    font-weight: d.today ? 700 : 400;
+                }
+            }
+        }
+    }
+}

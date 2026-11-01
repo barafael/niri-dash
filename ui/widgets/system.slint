@@ -1,0 +1,629 @@
+import { Theme, Icons } from "../theme.slint";
+import { Perf, Power, PowerProfile, DeviceKind, Audio, Brightness, Session, WidgetOpts } from "../data.slint";
+import { Icon, IconButton, TextButton, Ring, Graph, Slider, RingKnob, Header, Row, Muted, Empty, Switch, ScrollList } from "../common.slint";
+
+export component PerfWidget inherits Rectangle {
+    in property <bool> round;
+    in property <WidgetOpts> opts;
+    if root.round: Rectangle {
+        Ring {
+            width: 100%;
+            height: 100%;
+            value: Perf.cpu;
+            thickness: max(6px, root.width * 0.06);
+            tint: Perf.cpu > 0.85 ? Theme.bad : Theme.accent;
+        }
+        Ring {
+            width: 76%;
+            height: 76%;
+            value: Perf.mem;
+            thickness: max(5px, root.width * 0.05);
+            tint: Theme.good;
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: Math.round(Perf.cpu * 100) + "%";
+                horizontal-alignment: center;
+                font-size: max(13px, root.width * 0.15);
+                color: Theme.text;
+            }
+            Text {
+                text: "CPU · RAM " + Math.round(Perf.mem * 100) + "%";
+                horizontal-alignment: center;
+                font-size: max(9px, root.width * 0.055);
+                color: Theme.dim;
+            }
+        }
+    }
+    if !root.round: VerticalLayout {
+        padding: Theme.pad;
+        spacing: 6px;
+        HorizontalLayout {
+            spacing: 8px;
+            height: 20px;
+            Text {
+                text: "CPU";
+                color: Theme.text;
+                font-weight: 600;
+                font-size: Theme.font-body;
+            }
+            Muted {
+                text: Perf.cpu-text;
+                horizontal-stretch: 1;
+            }
+            Muted {
+                text: Perf.temp-text;
+            }
+        }
+        Graph {
+            vertical-stretch: 1;
+            values: Perf.cpu-history;
+            capacity: root.opts.history;
+            tint: Theme.accent;
+        }
+        if root.opts.cores && root.height > 200px: HorizontalLayout {
+            height: 14px;
+            spacing: 2px;
+            for c in Perf.cores: Rectangle {
+                border-radius: 2px;
+                background: Theme.track;
+                Rectangle {
+                    y: parent.height - self.height;
+                    height: parent.height * c;
+                    border-radius: 2px;
+                    background: c > 0.85 ? Theme.bad : Theme.accent.with-alpha(0.7);
+                }
+            }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            height: 20px;
+            Text {
+                text: "Memory";
+                color: Theme.text;
+                font-weight: 600;
+                font-size: Theme.font-body;
+            }
+            Muted {
+                text: Perf.mem-text;
+                horizontal-stretch: 1;
+            }
+        }
+        Graph {
+            vertical-stretch: 1;
+            values: Perf.mem-history;
+            capacity: root.opts.history;
+            tint: Theme.good;
+        }
+        Muted {
+            text: Perf.net-text + "     " + Perf.load-text;
+        }
+    }
+}
+
+export component BatteryWidget inherits Rectangle {
+    in property <bool> round;
+    property <color> level-color: Power.charging ? Theme.good : Power.percent <= 15 ? Theme.bad : Power.percent <= 30 ? Theme.warn : Theme.accent;
+    // In the rect shape, the sleep switch gets a row only when there's room for it next to a
+    // usable ring.
+    property <length> below-ring: Power.profiles.length > 0 ? 38px : 0px;
+    property <bool> show-inhibit: root.height - 2 * Theme.pad - self.below-ring >= 30px + 56px;
+    // Bigger: device batteries (3 rows), then what blocks sleep (4 rows).
+    property <bool> show-devices: root.height >= 260px && Power.peripherals.length > 0;
+    property <bool> show-blockers: root.height >= 360px;
+    property <length> extra-rows: (root.show-devices ? 34px : 0px) + (root.show-blockers ? 96px : 0px);
+    if root.round: Rectangle {
+        Ring {
+            width: 100%;
+            height: 100%;
+            value: Power.percent / 100;
+            thickness: max(6px, root.width * 0.07);
+            tint: root.level-color;
+        }
+        VerticalLayout {
+            alignment: center;
+            HorizontalLayout {
+                alignment: center;
+                Icon {
+                    source: Power.charging ? Icons.bolt : Icons.battery;
+                    size: min(root.width * 0.22, 32px);
+                    tint: root.level-color;
+                }
+            }
+            Text {
+                text: Power.has-battery ? Power.percent + "%" : "AC";
+                horizontal-alignment: center;
+                font-size: max(13px, root.width * 0.16);
+                color: Theme.text;
+            }
+            if Power.inhibited: HorizontalLayout {
+                alignment: center;
+                Icon {
+                    source: Icons.coffee;
+                    size: min(root.width * 0.12, 16px);
+                    tint: Theme.accent;
+                }
+            }
+        }
+        TouchArea {
+            // Cycle through the power profiles.
+            clicked => {
+                if (Power.profiles.length > 0) {
+                    Power.set-profile(Power.profile == PowerProfile.power-saver ? PowerProfile.balanced
+                        : Power.profile == PowerProfile.balanced && Power.profiles.length > 2 ? PowerProfile.performance
+                        : PowerProfile.power-saver);
+                }
+            }
+        }
+    }
+    if !root.round: VerticalLayout {
+        padding: Theme.pad;
+        spacing: 8px;
+        HorizontalLayout {
+            spacing: 12px;
+            vertical-stretch: root.show-blockers ? 0 : 1;
+            Ring {
+                property <length> d: min(110px, root.height - 2 * Theme.pad - root.below-ring - (root.show-inhibit ? 30px : 0px) - root.extra-rows);
+                width: self.d;
+                height: self.d;
+                value: Power.percent / 100;
+                thickness: 6px;
+                tint: root.level-color;
+                Icon {
+                    source: Power.charging ? Icons.bolt : Icons.battery;
+                    size: parent.height * 0.4;
+                    tint: root.level-color;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                Text {
+                    text: Power.has-battery ? Power.percent + "%" : "On AC power";
+                    font-size: 26px;
+                    font-weight: Theme.font-weight-display;
+                    color: Theme.text;
+                }
+                Muted {
+                    text: Power.status-text;
+                }
+                Muted {
+                    text: Power.power-text;
+                    visible: Power.power-text != "";
+                }
+            }
+        }
+        if Power.profiles.length > 0: HorizontalLayout {
+            spacing: 4px;
+            height: 30px;
+            for p in Power.profiles: Rectangle {
+                border-radius: min(self.height / 2, Theme.radius-small);
+                property <bool> current: Power.has-profile && Power.profile == p;
+                background: self.current ? Theme.accent : pt.has-hover ? Theme.hover : Theme.card-raised;
+                Text {
+                    text: p == PowerProfile.power-saver ? "Saver" : p == PowerProfile.balanced ? "Balanced" : "Performance";
+                    font-size: Theme.font-small;
+                    color: parent.current ? Theme.on-accent : Theme.text;
+                }
+                pt := TouchArea {
+                    clicked => { Power.set-profile(p); }
+                }
+            }
+        }
+        if root.show-inhibit: Rectangle {
+            height: 22px;
+            HorizontalLayout {
+                spacing: 8px;
+                Icon {
+                    y: (parent.height - self.height) / 2;
+                    source: Icons.coffee;
+                    size: 16px;
+                    tint: Power.inhibited ? Theme.accent : Theme.dim;
+                }
+                Text {
+                    text: "Block sleep and screen locking";
+                    vertical-alignment: center;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                    font-size: Theme.font-small;
+                    color: Power.inhibited ? Theme.text : Theme.dim;
+                }
+                Switch {
+                    checked: Power.inhibited;
+                    toggled => { Power.toggle-inhibit(); }
+                }
+            }
+            // The whole row flips the switch, as in Plasma.
+            TouchArea {
+                clicked => { Power.toggle-inhibit(); }
+            }
+        }
+        if root.show-devices: HorizontalLayout {
+            spacing: 6px;
+            alignment: start;
+            height: 26px;
+            for d[i] in Power.peripherals: chip-box := Rectangle {
+                property <color> tint: d.percent <= 20 ? Theme.warn : Theme.text;
+                // Names when there's room for them, otherwise just icon and charge.
+                property <bool> named: root.width >= 380px;
+                visible: (i + 1) * (self.named ? 150px : 70px) <= root.width - 2 * Theme.pad;
+                border-radius: min(13px, Theme.radius-small);
+                background: Theme.card-raised;
+                width: self.visible ? chip.preferred-width + 16px : 0px;
+                chip := HorizontalLayout {
+                    x: 8px;
+                    spacing: 5px;
+                    Icon {
+                        y: (parent.height - self.height) / 2;
+                        size: 15px;
+                        tint: chip-box.tint;
+                        source: d.kind == DeviceKind.mouse ? Icons.mouse
+                            : d.kind == DeviceKind.keyboard ? Icons.keyboard
+                            : d.kind == DeviceKind.headphones ? Icons.headphones
+                            : d.kind == DeviceKind.gamepad ? Icons.gamepad
+                            : d.kind == DeviceKind.phone ? Icons.phone : Icons.battery;
+                    }
+                    if chip-box.named: Text {
+                        text: d.name;
+                        max-width: 80px;
+                        overflow: elide;
+                        font-size: Theme.font-small;
+                        color: Theme.dim;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: d.percent + "%";
+                        font-size: Theme.font-small;
+                        color: chip-box.tint;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+        if root.show-blockers: VerticalLayout {
+            vertical-stretch: 1;
+            spacing: 2px;
+            Muted {
+                text: Power.blockers.length == 0 ? "Nothing else blocks sleep" : "Blocking sleep";
+            }
+            ScrollList {
+                vertical-stretch: 1;
+                for b in Power.blockers: HorizontalLayout {
+                    height: 22px;
+                    spacing: 6px;
+                    Text {
+                        text: b.who;
+                        font-size: Theme.font-small;
+                        color: Theme.text;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: b.why;
+                        font-size: Theme.font-small;
+                        color: Theme.faint;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component AudioWidget inherits Rectangle {
+    in property <bool> round;
+    if root.round: RingKnob {
+        value <=> Audio.volume;
+        icon: Audio.muted ? Icons.volume-mute : Icons.volume;
+        label: Audio.muted ? "muted" : Math.round(Audio.volume * 100) + "%";
+        dimmed: Audio.muted;
+        changed(v) => { Audio.set-volume(v); }
+        clicked => { Audio.toggle-mute(); }
+    }
+    // Bigger: pick the output (2 rows), then a slider per app (3 rows).
+    property <bool> can-pick: root.height >= 200px && Audio.sinks.length > 1;
+    property <bool> show-apps: root.height >= 280px;
+    property <bool> picking;
+    if !root.round: VerticalLayout {
+        padding: Theme.pad;
+        spacing: 6px;
+        alignment: root.show-apps || root.picking ? start : center;
+        if !root.can-pick: Muted {
+            text: Audio.sink-name;
+        }
+        if root.can-pick: Rectangle {
+            height: 24px;
+            border-radius: 6px;
+            background: pick-touch.has-hover ? Theme.hover : transparent;
+            HorizontalLayout {
+                padding-left: 4px;
+                spacing: 4px;
+                Muted {
+                    text: Audio.sink-name;
+                    horizontal-stretch: 1;
+                }
+                Icon {
+                    y: (parent.height - self.height) / 2;
+                    source: root.picking ? Icons.chevron-left : Icons.chevron-right;
+                    size: 14px;
+                    tint: Theme.dim;
+                }
+            }
+            pick-touch := TouchArea {
+                clicked => { root.picking = !root.picking; }
+            }
+        }
+        if root.picking && root.can-pick: VerticalLayout {
+            spacing: 0px;
+            for k in Audio.sinks: Row {
+                height: 30px;
+                selected: k.default;
+                clicked => {
+                    Audio.set-default-sink(k.id);
+                    root.picking = false;
+                }
+                Text {
+                    x: 10px;
+                    width: parent.width - 20px;
+                    text: k.name;
+                    font-size: Theme.font-small;
+                    color: k.default ? Theme.accent : Theme.text;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+            }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            IconButton {
+                icon: Audio.muted ? Icons.volume-mute : Icons.volume;
+                tint: Audio.muted ? Theme.faint : Theme.text;
+                clicked => { Audio.toggle-mute(); }
+            }
+            Slider {
+                y: (parent.height - self.height) / 2;
+                value <=> Audio.volume;
+                tint: Audio.muted ? Theme.faint : Theme.accent;
+                changed(v) => { Audio.set-volume(v); }
+            }
+            Text {
+                width: 38px;
+                text: Math.round(Audio.volume * 100) + "%";
+                color: Theme.dim;
+                font-size: Theme.font-small;
+                vertical-alignment: center;
+                horizontal-alignment: right;
+            }
+        }
+        if root.height > 130px: HorizontalLayout {
+            spacing: 8px;
+            IconButton {
+                icon: Audio.mic-muted ? Icons.mic-off : Icons.mic;
+                tint: Audio.mic-muted ? Theme.faint : Theme.text;
+                clicked => { Audio.toggle-mic-mute(); }
+            }
+            Slider {
+                y: (parent.height - self.height) / 2;
+                value <=> Audio.mic-volume;
+                tint: Audio.mic-muted ? Theme.faint : Theme.good;
+                changed(v) => { Audio.set-mic-volume(v); }
+            }
+            Text {
+                width: 38px;
+                text: Math.round(Audio.mic-volume * 100) + "%";
+                color: Theme.dim;
+                font-size: Theme.font-small;
+                vertical-alignment: center;
+                horizontal-alignment: right;
+            }
+        }
+        if root.show-apps && !root.picking: Rectangle {
+            height: 1px;
+            background: Theme.border;
+        }
+        if root.show-apps && !root.picking && Audio.streams.length == 0: Muted {
+            text: "No app is playing sound";
+            horizontal-alignment: center;
+        }
+        if root.show-apps && !root.picking: ScrollList {
+            vertical-stretch: 1;
+            for st in Audio.streams: VerticalLayout {
+                spacing: 0px;
+                padding-bottom: 4px;
+                HorizontalLayout {
+                    spacing: 6px;
+                    height: 18px;
+                    if st.has-icon: Image {
+                        y: (parent.height - self.height) / 2;
+                        width: 16px;
+                        height: 16px;
+                        source: st.icon;
+                    }
+                    Text {
+                        text: st.app;
+                        font-size: Theme.font-small;
+                        color: Theme.dim;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    IconButton {
+                        size: 28px;
+                        icon: st.muted ? Icons.volume-mute : Icons.volume;
+                        tint: st.muted ? Theme.faint : Theme.text;
+                        clicked => { Audio.toggle-stream-mute(st.id); }
+                    }
+                    Slider {
+                        y: (parent.height - self.height) / 2;
+                        value <=> st.volume;
+                        tint: st.muted ? Theme.faint : Theme.accent;
+                        changed(v) => { Audio.set-stream-volume(st.id, v); }
+                    }
+                    Text {
+                        width: 38px;
+                        text: Math.round(st.volume * 100) + "%";
+                        color: Theme.dim;
+                        font-size: Theme.font-small;
+                        vertical-alignment: center;
+                        horizontal-alignment: right;
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component BrightnessWidget inherits Rectangle {
+    in property <bool> round;
+    if root.round: RingKnob {
+        value <=> Brightness.level;
+        tint: Theme.warn;
+        icon: Icons.sun;
+        label: Math.round(Brightness.level * 100) + "%";
+        changed(v) => { Brightness.set(v); }
+        clicked => { Brightness.set(Brightness.level > 0.6 ? 0.3 : 1.0); }
+    }
+    if !root.round: HorizontalLayout {
+        padding-left: Theme.pad;
+        padding-right: Theme.pad;
+        spacing: 8px;
+        Icon {
+            y: (parent.height - self.height) / 2;
+            source: Icons.sun;
+            size: 20px;
+            tint: Theme.warn;
+        }
+        Slider {
+            y: (parent.height - self.height) / 2;
+            value <=> Brightness.level;
+            tint: Theme.warn;
+            enabled: Brightness.available;
+            changed(v) => { Brightness.set(v); }
+        }
+        Text {
+            width: 38px;
+            text: Math.round(Brightness.level * 100) + "%";
+            color: Theme.dim;
+            font-size: Theme.font-small;
+            vertical-alignment: center;
+            horizontal-alignment: right;
+        }
+    }
+}
+
+component SessionButton inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    in property <bool> danger;
+    in property <bool> compact;
+    property <bool> armed;
+    callback activated();
+    border-radius: Theme.radius-small;
+    background: armed ? Theme.bad.with-alpha(0.25) : touch.pressed ? Theme.pressed : touch.has-hover ? Theme.hover : Theme.card-raised;
+    VerticalLayout {
+        alignment: center;
+        spacing: 2px;
+        HorizontalLayout {
+            alignment: center;
+            Icon {
+                source: root.icon;
+                size: min(22px, root.height * 0.45);
+                tint: root.armed ? Theme.bad : Theme.text;
+            }
+        }
+        if !root.compact && root.height > 54px: Text {
+            text: root.armed ? "Confirm" : root.label;
+            horizontal-alignment: center;
+            font-size: Theme.font-small;
+            color: root.armed ? Theme.bad : Theme.dim;
+        }
+    }
+    disarm := Timer {
+        interval: 3s;
+        running: root.armed;
+        triggered => { root.armed = false; }
+    }
+    touch := TouchArea {
+        clicked => {
+            if (root.danger && !root.armed) {
+                root.armed = true;
+            } else {
+                root.armed = false;
+                root.activated();
+            }
+        }
+    }
+}
+
+export component SessionWidget inherits Rectangle {
+    in property <bool> round;
+    in property <WidgetOpts> opts;
+    if root.round: Rectangle {
+        property <length> b: root.width * 0.3;
+        if root.opts.lock: SessionButton {
+            x: (parent.width - self.width) / 2;
+            y: parent.height * 0.12;
+            width: parent.b;
+            height: parent.b;
+            border-radius: self.width / 2;
+            compact: true;
+            icon: Icons.lock;
+            activated => { Session.lock(); }
+        }
+        if root.opts.suspend: SessionButton {
+            x: parent.width * 0.16;
+            y: parent.height * 0.5;
+            width: parent.b;
+            height: parent.b;
+            border-radius: self.width / 2;
+            compact: true;
+            icon: Icons.moon;
+            activated => { Session.suspend(); }
+        }
+        if root.opts.poweroff: SessionButton {
+            x: parent.width * 0.84 - self.width;
+            y: parent.height * 0.5;
+            width: parent.b;
+            height: parent.b;
+            border-radius: self.width / 2;
+            compact: true;
+            danger: root.opts.confirm;
+            icon: Icons.power;
+            activated => { Session.poweroff(); }
+        }
+    }
+    if !root.round: HorizontalLayout {
+        padding: 10px;
+        spacing: 8px;
+        if root.opts.lock: SessionButton {
+            icon: Icons.lock;
+            label: "Lock";
+            activated => { Session.lock(); }
+        }
+        if root.opts.suspend: SessionButton {
+            icon: Icons.moon;
+            label: "Suspend";
+            activated => { Session.suspend(); }
+        }
+        if root.opts.logout: SessionButton {
+            icon: Icons.logout;
+            label: "Log out";
+            activated => { Session.logout(); }
+        }
+        if root.opts.restart: SessionButton {
+            icon: Icons.restart;
+            label: "Restart";
+            danger: root.opts.confirm;
+            activated => { Session.reboot(); }
+        }
+        if root.opts.poweroff: SessionButton {
+            icon: Icons.power;
+            label: "Power off";
+            danger: root.opts.confirm;
+            activated => { Session.poweroff(); }
+        }
+    }
+}

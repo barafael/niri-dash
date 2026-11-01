@@ -1,0 +1,2253 @@
+//! Widget placement on the dashboard grid, declared in `~/.config/niri-dash/config.kdl`.
+//!
+//! The file is the source of truth. Edit mode writes changes back into it in place, so comments
+//! and formatting the user wrote survive; widgets the user edits by hand are picked up live.
+
+use kdl::{KdlDocument, KdlEntry, KdlEntryFormat, KdlNode, KdlNodeFormat, KdlValue};
+use std::path::PathBuf;
+use std::str::FromStr;
+use strum::{AsRefStr, EnumIter, EnumString, IntoStaticStr};
+
+/// A widget type. The name (first `to_string`) is what config.kdl uses; other spellings are
+/// accepted when reading.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, EnumString, AsRefStr, IntoStaticStr)]
+#[strum(serialize_all = "kebab-case")]
+pub enum Kind {
+    Clock,
+    Calendar,
+    #[strum(
+        to_string = "system-monitor",
+        serialize = "perf",
+        serialize = "system",
+        serialize = "monitor"
+    )]
+    Perf,
+    Windows,
+    #[strum(to_string = "claude-sessions", serialize = "claude")]
+    Claude,
+    Wifi,
+    Bluetooth,
+    #[strum(to_string = "battery", serialize = "power")]
+    Battery,
+    #[strum(to_string = "volume", serialize = "audio")]
+    Audio,
+    Brightness,
+    Notifications,
+    Tray,
+    Media,
+    Session,
+    #[strum(to_string = "clipboard", serialize = "clipboard-history")]
+    Clipboard,
+    Weather,
+    Memory,
+    Disks,
+    Network,
+    Gpu,
+    ClaudeUsage,
+    Mascot,
+    #[strum(to_string = "keyboard-layout", serialize = "keyboard")]
+    KeyboardLayout,
+    ColorPicker,
+    Timer,
+    #[strum(to_string = "notes", serialize = "sticky-notes")]
+    Notes,
+    Privacy,
+}
+
+impl Kind {
+    /// The name used in config.kdl.
+    pub fn name(self) -> &'static str {
+        self.into()
+    }
+
+    pub fn from_str_opt(name: &str) -> Option<Kind> {
+        Kind::from_str(name).ok()
+    }
+
+    /// Whether a round version makes sense (lists don't fit in a circle).
+    pub fn can_be_round(self) -> bool {
+        !matches!(
+            self,
+            Kind::Windows
+                | Kind::Notifications
+                | Kind::Clipboard
+                | Kind::Tray
+                | Kind::Media
+                | Kind::Session
+                | Kind::Mascot
+                | Kind::Notes
+        )
+    }
+
+    pub fn title(self) -> &'static str {
+        match self {
+            Kind::Clock => "Clock",
+            Kind::Calendar => "Calendar",
+            Kind::Perf => "System monitor",
+            Kind::Windows => "Windows",
+            Kind::Claude => "Claude sessions",
+            Kind::Wifi => "Wi-Fi",
+            Kind::Bluetooth => "Bluetooth",
+            Kind::Battery => "Battery & power",
+            Kind::Audio => "Volume",
+            Kind::Brightness => "Brightness",
+            Kind::Notifications => "Notifications",
+            Kind::Tray => "Tray",
+            Kind::Media => "Media player",
+            Kind::Session => "Session",
+            Kind::Clipboard => "Clipboard history",
+            Kind::Weather => "Weather",
+            Kind::Memory => "Memory",
+            Kind::Disks => "Disks",
+            Kind::Network => "Network",
+            Kind::Gpu => "GPU",
+            Kind::ClaudeUsage => "Claude usage",
+            Kind::Mascot => "Mascot",
+            Kind::KeyboardLayout => "Keyboard layout",
+            Kind::ColorPicker => "Color picker",
+            Kind::Timer => "Timer",
+            Kind::Notes => "Sticky note",
+            Kind::Privacy => "Privacy",
+        }
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            Kind::Clock => "Digital, or analog when round",
+            Kind::Calendar => "Month view",
+            Kind::Perf => "CPU, memory, network, temperature",
+            Kind::Windows => "Open windows by workspace; click to focus",
+            Kind::Claude => "Running Claude Code sessions; click to focus",
+            Kind::Wifi => "Networks, connect, radio on/off",
+            Kind::Bluetooth => "Devices, connect, adapter on/off",
+            Kind::Battery => {
+                "Charge, power profile; device batteries and sleep blockers when bigger"
+            }
+            Kind::Audio => "Speaker and microphone; outputs and apps when bigger",
+            Kind::Brightness => "Screen backlight",
+            Kind::Notifications => "Notification history",
+            Kind::Tray => "Status icons and their menus",
+            Kind::Media => "Now playing (MPRIS)",
+            Kind::Session => "Lock, suspend, log out, power off",
+            Kind::Clipboard => "Recent copies; click to copy again",
+            Kind::Weather => "Now and the next days (Open-Meteo)",
+            Kind::Memory => "RAM and swap, history, biggest apps",
+            Kind::Disks => "Space per filesystem, read and write",
+            Kind::Network => "Download and upload, history",
+            Kind::Gpu => "GPU load, video memory, temperature",
+            Kind::ClaudeUsage => "Plan, 5-hour window, tokens today",
+            Kind::Mascot => "Schraubi, Zolli or Verschnitti; says what you tell it",
+            Kind::KeyboardLayout => "Current layout; click to switch, bigger shows all",
+            Kind::ColorPicker => "Pick a pixel anywhere; hex copied, recent colors",
+            Kind::Timer => "Countdown or stopwatch (setting); presets and laps when bigger",
+            Kind::Notes => "A note that keeps what you type; name it to have several",
+            Kind::Privacy => "Who uses the microphone, camera or screen; stop screen sharing",
+        }
+    }
+
+    /// Default (w, h) for a rectangular instance.
+    pub fn default_size(self) -> (i32, i32) {
+        match self {
+            Kind::Clock => (4, 2),
+            Kind::Calendar => (4, 4),
+            Kind::Perf => (4, 3),
+            Kind::Windows => (5, 5),
+            Kind::Claude => (4, 3),
+            Kind::Wifi => (3, 4),
+            Kind::Bluetooth => (3, 3),
+            Kind::Battery => (3, 2),
+            Kind::Audio => (3, 3),
+            Kind::Brightness => (3, 1),
+            Kind::Notifications => (4, 5),
+            Kind::Tray => (4, 1),
+            Kind::Media => (5, 2),
+            Kind::Session => (4, 1),
+            Kind::Clipboard => (4, 4),
+            Kind::Weather => (4, 2),
+            Kind::Memory => (4, 3),
+            Kind::Disks => (4, 2),
+            Kind::Network => (4, 2),
+            Kind::Gpu => (4, 2),
+            Kind::ClaudeUsage => (4, 3),
+            Kind::Mascot => (4, 2),
+            Kind::KeyboardLayout => (2, 1),
+            Kind::ColorPicker => (3, 2),
+            Kind::Timer => (3, 2),
+            Kind::Notes => (3, 3),
+            Kind::Privacy => (3, 2),
+        }
+    }
+
+    pub fn min_size(self) -> (i32, i32) {
+        match self {
+            Kind::Clock => (2, 1),
+            Kind::Calendar => (3, 3),
+            Kind::Perf => (2, 2),
+            Kind::Windows => (3, 2),
+            Kind::Claude => (3, 2),
+            Kind::Wifi => (2, 2),
+            Kind::Bluetooth => (2, 2),
+            Kind::Battery => (2, 1),
+            Kind::Audio => (2, 1),
+            Kind::Brightness => (2, 1),
+            Kind::Notifications => (3, 2),
+            Kind::Tray => (1, 1),
+            Kind::Media => (3, 1),
+            Kind::Session => (3, 1),
+            Kind::Clipboard => (3, 2),
+            Kind::Weather => (2, 1),
+            Kind::Memory => (2, 2),
+            Kind::Disks => (3, 1),
+            Kind::Network => (2, 1),
+            Kind::Gpu => (2, 1),
+            Kind::ClaudeUsage => (3, 2),
+            Kind::Mascot => (3, 2),
+            Kind::KeyboardLayout => (1, 1),
+            Kind::ColorPicker => (2, 1),
+            Kind::Timer => (2, 1),
+            Kind::Notes => (2, 1),
+            Kind::Privacy => (2, 1),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, EnumString, AsRefStr)]
+#[strum(serialize_all = "kebab-case")]
+pub enum Shape {
+    #[default]
+    Rect,
+    Round,
+}
+
+#[derive(Debug, Clone)]
+pub struct Placed {
+    pub id: u32,
+    pub kind: Kind,
+    pub shape: Shape,
+    pub col: i32,
+    pub row: i32,
+    pub w: i32,
+    pub h: i32,
+    /// Settings from the node's children (see `widget_settings`).
+    pub settings: crate::widget_settings::Values,
+    /// Index of the node this widget came from in the file's `layout` block.
+    node: Option<usize>,
+}
+
+impl Placed {
+    fn overlaps(&self, col: i32, row: i32, w: i32, h: i32) -> bool {
+        self.col < col + w
+            && col < self.col + self.w
+            && self.row < row + h
+            && row < self.row + self.h
+    }
+}
+
+/// Where the weather widget looks. Without a location, the city of the system time zone is used.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct WeatherConfig {
+    pub location: Option<String>,
+    pub coords: Option<(f64, f64)>,
+    pub fahrenheit: bool,
+}
+
+/// How the dashboard is drawn. `Auto` uses the GPU when EGL works and falls back to software.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, EnumString, AsRefStr)]
+#[strum(serialize_all = "kebab-case", ascii_case_insensitive)]
+pub enum RendererChoice {
+    #[default]
+    Auto,
+    #[strum(serialize = "gpu", serialize = "opengl", serialize = "hardware")]
+    Gpu,
+    #[strum(serialize = "software", serialize = "cpu")]
+    Software,
+}
+
+#[derive(Debug, Clone)]
+pub struct Layout {
+    pub widgets: Vec<Placed>,
+    /// The theme: a color scheme and a style, each a name (a file in colorschemes/ or styles/)
+    /// or a path.
+    pub colorscheme: String,
+    pub style: String,
+    /// Per-variable adjustments on top of the style, from the theme node's children:
+    /// `theme colorscheme="…" style="…" { radius 12 }`.
+    pub style_overrides: Vec<(String, KdlValue)>,
+    pub weather: WeatherConfig,
+    /// Takes effect on restart.
+    pub renderer: RendererChoice,
+    /// Target cell size in logical pixels; the grid gets as many cells as fit the screen.
+    pub cell_size: f32,
+    pub cols: i32,
+    pub rows: i32,
+    /// The parsed file, kept so saving only touches what changed.
+    doc: KdlDocument,
+    next_id: u32,
+}
+
+const HEADER: &str = r#"// niri-dash layout.
+//
+// The dashboard is a grid of square cells. `cell-size` is the size of a cell in logical pixels;
+// the grid gets as many columns and rows as fit the screen. Every widget sits at a column and row
+// (counting from 0) and spans `width` x `height` cells. Round widgets are square: give them
+// `size=N` and `shape="round"`. Widgets that don't fit a smaller screen, or overlap one listed
+// earlier, are hidden rather than moved.
+//
+// Edit mode (the pencil, or right-click the background) writes changes back into this file and
+// keeps your comments. Changes you save here show up right away.
+//
+// Widgets: clock calendar system-monitor windows claude-sessions wifi bluetooth battery volume
+//          brightness notifications tray media session clipboard weather
+"#;
+
+const DEFAULT: &str = r#"
+// The theme: a color scheme (colors) from ~/.config/niri-dash/colorschemes/ and a style
+// (corners, spacing, fonts, animation speed) from styles/. Any scheme goes with any style.
+theme colorscheme="default" style="default"
+
+cell-size 100
+
+// "auto" draws with the GPU (OpenGL ES) when it can, "software" always on the CPU. Read at start.
+// renderer "auto"
+
+// Weather location, as a place name or coordinates. Without it, the city of your time zone.
+// weather location="Hamburg"
+// weather latitude=53.55 longitude=9.99 units="fahrenheit"
+
+layout {
+    clock           col=0  row=0 width=4 height=2
+    weather         col=0  row=2 width=4 height=2
+    calendar        col=0  row=4 width=4 height=4
+    session         col=0  row=8 width=4 height=1
+    windows         col=4  row=0 width=5 height=3
+    claude-sessions col=4  row=3 width=5 height=3
+    media           col=4  row=6 width=5 height=2
+    tray            col=4  row=8 width=5 height=1
+    notifications   col=9  row=0 width=4 height=4
+    clipboard       col=9  row=4 width=4 height=3
+    volume          col=9  row=7 size=2 shape="round"
+    brightness      col=11 row=7 size=2 shape="round"
+    wifi            col=13 row=0 width=3 height=3
+    bluetooth       col=13 row=3 width=3 height=2
+    battery         col=13 row=5 width=3 height=2
+    system-monitor  col=13 row=7 width=3 height=2
+}
+"#;
+
+fn int(node: &KdlNode, key: &str) -> Option<i32> {
+    let v = node
+        .entries()
+        .iter()
+        .find(|e| e.name().is_some_and(|n| n.value() == key))?
+        .value();
+    match v {
+        KdlValue::Integer(i) => i32::try_from(*i).ok(),
+        KdlValue::Float(f) => Some(f.round() as i32),
+        _ => None,
+    }
+}
+
+fn remove_prop(node: &mut KdlNode, key: &str) {
+    node.entries_mut()
+        .retain(|e| e.name().is_none_or(|n| n.value() != key));
+}
+
+/// Set a property, keeping the entry's position and spacing if it exists. `repr` is how the
+/// value is written (kdl keeps the original text of a value, so it must be updated too).
+fn set_prop(node: &mut KdlNode, key: &str, value: KdlValue, repr: String) {
+    let existing = node
+        .entries_mut()
+        .iter_mut()
+        .find(|e| e.name().is_some_and(|n| n.value() == key));
+    match existing {
+        Some(e) if *e.value() == value => {}
+        Some(e) => {
+            e.set_value(value);
+            match e.format_mut() {
+                Some(f) => f.value_repr = repr,
+                None => e.autoformat(),
+            }
+        }
+        None => {
+            let mut e = KdlEntry::new_prop(key, value);
+            e.set_format(KdlEntryFormat {
+                value_repr: repr,
+                leading: " ".into(),
+                ..Default::default()
+            });
+            node.push(e);
+        }
+    }
+}
+
+fn value_repr(v: &KdlValue) -> String {
+    match v {
+        KdlValue::String(s) => format!("{s:?}"),
+        KdlValue::Integer(i) => i.to_string(),
+        KdlValue::Float(f) => {
+            let s = format!("{f}");
+            if s.contains('.') { s } else { format!("{s}.0") }
+        }
+        KdlValue::Bool(b) => {
+            if *b {
+                "#true".into()
+            } else {
+                "#false".into()
+            }
+        }
+        KdlValue::Null => "#null".into(),
+    }
+}
+
+fn set_int(node: &mut KdlNode, key: &str, value: i32) {
+    set_prop(
+        node,
+        key,
+        KdlValue::Integer(value as i128),
+        value.to_string(),
+    );
+}
+
+fn parse_doc(text: &str) -> Result<KdlDocument, String> {
+    KdlDocument::parse(text).map_err(|e| {
+        let detail = e.diagnostics.first().map(|d| {
+            let line = text[..d.span.offset().min(text.len())]
+                .lines()
+                .count()
+                .max(1);
+            format!(
+                "line {line}: {}",
+                d.message
+                    .clone()
+                    .or(d.label.clone())
+                    .unwrap_or_else(|| "syntax error".into())
+            )
+        });
+        detail.unwrap_or_else(|| e.to_string())
+    })
+}
+
+impl Layout {
+    pub fn path() -> PathBuf {
+        // For development: point at a scratch config instead of the real one.
+        if let Some(p) = std::env::var_os("NIRI_DASH_CONFIG") {
+            return PathBuf::from(p);
+        }
+        dirs::config_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("niri-dash")
+            .join("config.kdl")
+    }
+
+    pub fn default_text() -> String {
+        format!("{HEADER}{DEFAULT}")
+    }
+
+    /// Parse a config. Unknown widgets and bad values are skipped with a warning.
+    pub fn parse(text: &str) -> Result<(Self, Vec<String>), String> {
+        let doc = parse_doc(text)?;
+        let mut warnings = Vec::new();
+        let cell_size = match doc.get_arg("cell-size") {
+            Some(KdlValue::Integer(i)) => *i as f32,
+            Some(KdlValue::Float(f)) => *f as f32,
+            Some(_) => {
+                warnings.push("cell-size must be a number".into());
+                100.0
+            }
+            None => 100.0,
+        }
+        .clamp(40.0, 400.0);
+        // `theme colorscheme="…" style="…"`, or the older `theme "name"` (a color scheme).
+        let (mut colorscheme, mut style) = ("default".to_string(), "default".to_string());
+        let mut style_overrides: Vec<(String, KdlValue)> = Vec::new();
+        if let Some(node) = doc.get("theme") {
+            let prop = |k: &str| {
+                node.entries()
+                    .iter()
+                    .find(|e| e.name().is_some_and(|n| n.value() == k))
+                    .and_then(|e| e.value().as_string())
+            };
+            let positional = node
+                .entries()
+                .iter()
+                .find(|e| e.name().is_none())
+                .and_then(|e| e.value().as_string());
+            if let Some(c) = prop("colorscheme").or(positional).filter(|s| !s.is_empty()) {
+                colorscheme = c.to_string();
+            }
+            if let Some(st) = prop("style").filter(|s| !s.is_empty()) {
+                style = st.to_string();
+            }
+            let (values, bad) = child_values(node);
+            style_overrides = values;
+            warnings.extend(
+                bad.into_iter()
+                    .map(|k| format!("theme {{ {k} }}: expected a value")),
+            );
+        }
+        let mut weather = WeatherConfig::default();
+        if let Some(node) = doc.get("weather") {
+            weather.location = node
+                .get("location")
+                .and_then(|v| v.as_string())
+                .map(str::to_string);
+            let num = |k: &str| match node.get(k) {
+                Some(KdlValue::Float(f)) => Some(*f),
+                Some(KdlValue::Integer(i)) => Some(*i as f64),
+                _ => None,
+            };
+            weather.coords = num("latitude").zip(num("longitude"));
+            weather.fahrenheit =
+                node.get("units").and_then(|v| v.as_string()) == Some("fahrenheit");
+        }
+        let renderer = match doc.get_arg("renderer").map(|v| v.as_string()) {
+            None => RendererChoice::Auto,
+            Some(Some(r)) if let Ok(r) = r.parse() => r,
+            Some(_) => {
+                warnings.push(r#"renderer must be "auto", "gpu" or "software""#.into());
+                RendererChoice::Auto
+            }
+        };
+        let mut widgets = Vec::new();
+        let mut next_id = 1;
+        if let Some(children) = doc.get("layout").and_then(|n| n.children()) {
+            for (i, node) in children.nodes().iter().enumerate() {
+                let name = node.name().value();
+                let Some(kind) = Kind::from_str_opt(name) else {
+                    warnings.push(format!("unknown widget `{name}`"));
+                    continue;
+                };
+                let shape = match node
+                    .get("shape")
+                    .and_then(|v| v.as_string())
+                    .map(Shape::from_str)
+                {
+                    None => Shape::Rect,
+                    Some(Ok(Shape::Round)) if !kind.can_be_round() => {
+                        warnings.push(format!("{name} can't be round"));
+                        Shape::Rect
+                    }
+                    Some(Ok(shape)) => shape,
+                    Some(Err(_)) => {
+                        warnings.push(format!("{name}: unknown shape (use \"rect\" or \"round\")"));
+                        Shape::Rect
+                    }
+                };
+                let (dw, dh) = kind.default_size();
+                let size = int(node, "size");
+                let mut w = int(node, "width")
+                    .or(size)
+                    .unwrap_or(if shape == Shape::Round { 2 } else { dw })
+                    .max(1);
+                let mut h = int(node, "height")
+                    .or(size)
+                    .unwrap_or(if shape == Shape::Round { 2 } else { dh })
+                    .max(1);
+                if shape == Shape::Round {
+                    let d = w.max(h);
+                    (w, h) = (d, d);
+                }
+                let (Some(col), Some(row)) = (int(node, "col"), int(node, "row")) else {
+                    warnings.push(format!("{name}: needs col= and row="));
+                    continue;
+                };
+                let (settings, bad) = child_values(node);
+                warnings.extend(
+                    bad.into_iter()
+                        .map(|k| format!("{name} {{ {k} }}: expected a value")),
+                );
+                warnings.extend(crate::widget_settings::check(kind, &settings));
+                widgets.push(Placed {
+                    id: next_id,
+                    kind,
+                    shape,
+                    col,
+                    row,
+                    w,
+                    h,
+                    settings,
+                    node: Some(i),
+                });
+                next_id += 1;
+            }
+        } else {
+            warnings.push("no `layout { … }` block".into());
+        }
+        let layout = Layout {
+            widgets,
+            colorscheme,
+            style,
+            style_overrides,
+            weather,
+            renderer,
+            cell_size,
+            cols: 16,
+            rows: 9,
+            doc,
+            next_id,
+        };
+        let hidden: Vec<String> = layout
+            .widgets
+            .iter()
+            .filter(|w| w.col < 0 || w.row < 0)
+            .map(|w| format!("{}: negative position", w.kind.name()))
+            .collect();
+        warnings.extend(hidden);
+        Ok((layout, warnings))
+    }
+
+    /// Load the config, writing the default one first if there is none. On a broken file the
+    /// error is returned alongside the default layout; the file is left alone.
+    pub fn load() -> (Self, Vec<String>) {
+        let path = Self::path();
+        let text = match std::fs::read_to_string(&path) {
+            Ok(t) => t,
+            Err(_) => {
+                let t = Self::default_text();
+                if let Some(dir) = path.parent() {
+                    let _ = std::fs::create_dir_all(dir);
+                }
+                if let Err(e) = std::fs::write(&path, &t) {
+                    log::warn!("writing {}: {e}", path.display());
+                }
+                t
+            }
+        };
+        // Upgrade the theme comment and line written by earlier versions.
+        const OLD: &str = "// A theme from ~/.config/niri-dash/themes/ (\"default\", \"light\", or your own), or a path.\n";
+        const NEW: &str = "// The theme: a color scheme (colors) from ~/.config/niri-dash/colorschemes/ and a style\n// (corners, spacing, fonts, animation speed) from styles/. Any scheme goes with any style.\n";
+        let text = if text.contains(OLD) {
+            let upgraded = text.replacen(OLD, NEW, 1);
+            match Self::parse(&upgraded) {
+                Ok((mut l, _)) => {
+                    let t = l.to_text();
+                    let _ = std::fs::write(&path, &t);
+                    t
+                }
+                Err(_) => text,
+            }
+        } else {
+            text
+        };
+        match Self::parse(&text) {
+            Ok(r) => r,
+            Err(e) => {
+                let (l, _) = Self::parse(&Self::default_text()).expect("default config parses");
+                (l, vec![format!("config.kdl: {e}")])
+            }
+        }
+    }
+
+    /// The config text for the current layout: the original document with positions updated,
+    /// removed widgets dropped and new ones appended. Everything else is kept as written.
+    pub fn to_text(&mut self) -> String {
+        let mut doc = self.doc.clone();
+        // The theme line: rewrite it only if it changed, upgrading the old `theme "name"` form.
+        let want = (self.colorscheme.clone(), self.style.clone());
+        let have = Layout::parse(&doc.to_string())
+            .ok()
+            .map(|(l, _)| (l.colorscheme, l.style));
+        let legacy = doc
+            .get("theme")
+            .is_some_and(|n| n.entries().iter().any(|e| e.name().is_none()));
+        if have.as_ref() != Some(&want) || legacy {
+            if doc.get("theme").is_none() {
+                let mut n = KdlNode::new("theme");
+                n.autoformat();
+                doc.nodes_mut().insert(0, n);
+            }
+            let node = doc.get_mut("theme").expect("ensured above");
+            node.entries_mut().retain(|e| e.name().is_some());
+            set_prop(
+                node,
+                "colorscheme",
+                KdlValue::String(want.0.clone()),
+                format!("{:?}", want.0),
+            );
+            set_prop(
+                node,
+                "style",
+                KdlValue::String(want.1.clone()),
+                format!("{:?}", want.1),
+            );
+        }
+        // Style overrides as the theme node's children, keeping any the user formatted by hand.
+        let have_over = Layout::parse(&doc.to_string())
+            .ok()
+            .map(|(l, _)| l.style_overrides)
+            .unwrap_or_default();
+        if have_over != self.style_overrides {
+            let node = doc
+                .get_mut("theme")
+                .expect("theme node written above or present");
+            write_children(node, &self.style_overrides);
+        }
+        if doc.get("layout").is_none() {
+            doc.nodes_mut().push(KdlNode::new("layout"));
+        }
+        let layout = doc.get_mut("layout").expect("just ensured");
+        let old: Vec<KdlNode> = layout
+            .children()
+            .map(|c| c.nodes().to_vec())
+            .unwrap_or_default();
+        let mut nodes = Vec::with_capacity(old.len() + 2);
+        let mut new_index = vec![None; self.widgets.len()];
+        for (i, node) in old.into_iter().enumerate() {
+            match self.widgets.iter().position(|w| w.node == Some(i)) {
+                Some(wi) => {
+                    let mut node = node;
+                    write_widget(&mut node, &self.widgets[wi]);
+                    new_index[wi] = Some(nodes.len());
+                    nodes.push(node);
+                }
+                // A widget that was removed in edit mode: drop its node.
+                None if Kind::from_str_opt(node.name().value()).is_some()
+                    && node_was_widget(&node) => {}
+                // Anything else (unknown names, broken entries) stays as the user wrote it.
+                None => nodes.push(node),
+            }
+        }
+        for (wi, w) in self.widgets.iter().enumerate() {
+            if w.node.is_none() {
+                let mut node = KdlNode::new(w.kind.name());
+                node.set_format(KdlNodeFormat {
+                    leading: "    ".into(),
+                    terminator: "\n".into(),
+                    ..Default::default()
+                });
+                write_widget(&mut node, w);
+                new_index[wi] = Some(nodes.len());
+                nodes.push(node);
+            }
+        }
+        let fresh_block = layout.children().is_none();
+        let children = layout.ensure_children();
+        let newline_before =
+            fresh_block || children.format().is_some_and(|f| f.leading.ends_with('\n'));
+        one_per_line(&mut nodes, newline_before, "    ");
+        *children.nodes_mut() = nodes;
+        if fresh_block {
+            layout.autoformat();
+        }
+        for (w, idx) in self.widgets.iter_mut().zip(new_index) {
+            w.node = idx;
+        }
+        let text = doc.to_string();
+        // Re-parse so later saves work against exactly what is on disk.
+        if let Ok(d) = KdlDocument::parse(&text) {
+            self.doc = d;
+        }
+        text
+    }
+
+    pub fn save(&mut self) -> Option<String> {
+        let path = Self::path();
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let text = self.to_text();
+        let tmp = path.with_extension("kdl.tmp");
+        match std::fs::write(&tmp, &text).and_then(|_| std::fs::rename(&tmp, &path)) {
+            Ok(()) => Some(text),
+            Err(e) => {
+                log::warn!("saving {}: {e}", path.display());
+                None
+            }
+        }
+    }
+
+    /// Replace the widgets with the ones from a freshly parsed file, keeping ids stable for
+    /// widgets that didn't change so the UI doesn't rebuild them.
+    pub fn replace(&mut self, mut other: Layout) {
+        let mut used = vec![false; self.widgets.len()];
+        let mut next = self.next_id;
+        for w in &mut other.widgets {
+            let same = self
+                .widgets
+                .iter()
+                .enumerate()
+                .find(|(i, o)| !used[*i] && o.kind == w.kind && o.col == w.col && o.row == w.row)
+                .or_else(|| {
+                    self.widgets
+                        .iter()
+                        .enumerate()
+                        .find(|(i, o)| !used[*i] && o.kind == w.kind)
+                });
+            match same {
+                Some((i, o)) => {
+                    used[i] = true;
+                    w.id = o.id;
+                }
+                None => {
+                    w.id = next;
+                    next += 1;
+                }
+            }
+        }
+        other.next_id = next.max(other.widgets.iter().map(|w| w.id + 1).max().unwrap_or(1));
+        other.cols = self.cols;
+        other.rows = self.rows;
+        *self = other;
+    }
+
+    pub fn reset(&mut self) {
+        let (fresh, _) = Self::parse(&Self::default_text()).expect("default config parses");
+        // Keep the user's file around it (comments, cell-size); only the widgets are reset.
+        let old_nodes: Vec<Placed> = std::mem::take(&mut self.widgets);
+        let mut next = self.next_id;
+        for mut w in fresh.widgets {
+            w.node = None;
+            w.id = next;
+            next += 1;
+            self.widgets.push(w);
+        }
+        self.next_id = next;
+        drop(old_nodes);
+    }
+
+    /// Set the grid size of the current screen. This never moves widgets: ones that don't fit
+    /// are hidden here and come back on a larger screen, so a transient size can't damage the
+    /// saved layout.
+    pub fn set_grid(&mut self, cols: i32, rows: i32) {
+        self.cols = cols.max(1);
+        self.rows = rows.max(1);
+    }
+
+    /// Widgets shown on the current grid: inside it and not overlapping an earlier one.
+    pub fn visible(&self) -> Vec<&Placed> {
+        let mut shown: Vec<&Placed> = Vec::new();
+        for w in &self.widgets {
+            let inside =
+                w.col >= 0 && w.row >= 0 && w.col + w.w <= self.cols && w.row + w.h <= self.rows;
+            if inside && shown.iter().all(|o| !o.overlaps(w.col, w.row, w.w, w.h)) {
+                shown.push(w);
+            }
+        }
+        shown
+    }
+
+    pub fn hidden_count(&self) -> usize {
+        self.widgets.len() - self.visible().len()
+    }
+
+    /// The widget a standalone app shows: the first of that kind in the file (for its shape and
+    /// settings), or a default one.
+    pub fn solo_widget(&self, kind: Kind) -> Placed {
+        self.widgets
+            .iter()
+            .find(|p| p.kind == kind)
+            .cloned()
+            .unwrap_or_else(|| {
+                let (w, h) = kind.default_size();
+                Placed {
+                    id: 0,
+                    kind,
+                    shape: Shape::Rect,
+                    col: 0,
+                    row: 0,
+                    w,
+                    h,
+                    settings: Default::default(),
+                    node: None,
+                }
+            })
+    }
+
+    pub fn get(&self, id: u32) -> Option<&Placed> {
+        self.widgets.iter().find(|w| w.id == id)
+    }
+
+    fn get_mut(&mut self, id: u32) -> Option<&mut Placed> {
+        self.widgets.iter_mut().find(|w| w.id == id)
+    }
+
+    pub fn can_place(&self, id: u32, col: i32, row: i32, w: i32, h: i32) -> bool {
+        if col < 0 || row < 0 || w < 1 || h < 1 || col + w > self.cols || row + h > self.rows {
+            return false;
+        }
+        self.visible()
+            .into_iter()
+            .filter(|o| o.id != id)
+            .all(|o| !o.overlaps(col, row, w, h))
+    }
+
+    fn free_spot(&self, id: u32, w: i32, h: i32) -> Option<(i32, i32)> {
+        (0..=self.rows - h)
+            .flat_map(|r| (0..=self.cols - w).map(move |c| (c, r)))
+            .find(|&(c, r)| self.can_place(id, c, r, w, h))
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn move_to(&mut self, id: u32, col: i32, row: i32) -> bool {
+        let Some(p) = self.get(id) else { return false };
+        let (w, h) = (p.w, p.h);
+        if !self.can_place(id, col, row, w, h) {
+            return false;
+        }
+        let p = self.get_mut(id).expect("checked");
+        (p.col, p.row) = (col, row);
+        true
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn resize(&mut self, id: u32, w: i32, h: i32) -> bool {
+        let Some(p) = self.get(id) else { return false };
+        let (min_w, min_h) = if p.shape == Shape::Round {
+            (1, 1)
+        } else {
+            p.kind.min_size()
+        };
+        let (mut w, mut h) = (w.max(min_w), h.max(min_h));
+        if p.shape == Shape::Round {
+            let d = w.max(h);
+            (w, h) = (d, d);
+        }
+        let (col, row) = (p.col, p.row);
+        if !self.can_place(id, col, row, w, h) {
+            return false;
+        }
+        let p = self.get_mut(id).expect("checked");
+        (p.w, p.h) = (w, h);
+        true
+    }
+
+    /// Round widgets are square; switching tries to keep the footprint and falls back to the
+    /// largest square that fits.
+    pub fn toggle_shape(&mut self, id: u32) -> bool {
+        let Some(p) = self.get(id).cloned() else {
+            return false;
+        };
+        match p.shape {
+            Shape::Rect if !p.kind.can_be_round() => false,
+            Shape::Rect => {
+                for d in (1..=p.w.max(p.h)).rev() {
+                    if self.can_place(id, p.col, p.row, d, d) {
+                        let q = self.get_mut(id).expect("checked");
+                        (q.shape, q.w, q.h) = (Shape::Round, d, d);
+                        return true;
+                    }
+                }
+                false
+            }
+            Shape::Round => {
+                let (dw, dh) = p.kind.default_size();
+                let (w, h) = (dw.max(p.w).min(self.cols), dh.min(self.rows));
+                let fits = self.can_place(id, p.col, p.row, w, h);
+                let q = self.get_mut(id).expect("checked");
+                q.shape = Shape::Rect;
+                if fits {
+                    (q.w, q.h) = (w, h);
+                }
+                true
+            }
+        }
+    }
+
+    /// Where the weather comes from: the first weather widget's settings, over the older global
+    /// `weather` node.
+    pub fn weather_config(&self, us: bool) -> WeatherConfig {
+        use crate::widget_settings::{Opt, get_str};
+        let mut cfg = self.weather.clone();
+        let no_global = cfg == WeatherConfig::default();
+        if let Some(w) = self.widgets.iter().find(|w| w.kind == Kind::Weather) {
+            let set = |o: Opt| w.settings.iter().any(|(k, _)| k == o.as_ref());
+            if set(Opt::Location) {
+                cfg.location = Some(get_str(&w.settings, Opt::Location, us));
+                cfg.coords = None;
+            }
+            if set(Opt::Units) || no_global {
+                cfg.fahrenheit = get_str(&w.settings, Opt::Units, us) == "fahrenheit";
+            }
+        }
+        cfg
+    }
+
+    pub fn settings_mut(&mut self, id: u32) -> Option<&mut crate::widget_settings::Values> {
+        self.get_mut(id).map(|w| &mut w.settings)
+    }
+
+    pub fn remove(&mut self, id: u32) {
+        self.widgets.retain(|w| w.id != id);
+    }
+
+    /// Add a widget at the first free spot, shrinking towards its minimum size if needed.
+    pub fn add(&mut self, kind: Kind) -> Option<u32> {
+        let id = self.next_id;
+        let (dw, dh) = kind.default_size();
+        let (mw, mh) = kind.min_size();
+        let mut sizes = vec![(dw, dh)];
+        let (mut w, mut h) = (dw, dh);
+        while w > mw || h > mh {
+            if w > mw && w >= h {
+                w -= 1;
+            } else if h > mh {
+                h -= 1;
+            } else {
+                w -= 1;
+            }
+            sizes.push((w, h));
+        }
+        for (w, h) in sizes {
+            if let Some((col, row)) = self.free_spot(id, w, h) {
+                self.widgets.push(Placed {
+                    id,
+                    kind,
+                    shape: Shape::Rect,
+                    col,
+                    row,
+                    w,
+                    h,
+                    settings: Vec::new(),
+                    node: None,
+                });
+                self.next_id += 1;
+                return Some(id);
+            }
+        }
+        None
+    }
+}
+
+/// `name value` children of a node, plus the names of children without a single value.
+fn child_values(node: &KdlNode) -> (Vec<(String, KdlValue)>, Vec<String>) {
+    let mut values = Vec::new();
+    let mut bad = Vec::new();
+    for child in node.children().map(|c| c.nodes()).unwrap_or_default() {
+        let name = child.name().value().to_string();
+        match child.entries() {
+            [e] if e.name().is_none() => values.push((name, e.value().clone())),
+            _ => bad.push(name),
+        }
+    }
+    (values, bad)
+}
+
+/// A node's line break may have been stored with a neighbour that is now gone (removed, or all
+/// replaced as by a layout reset): make sure every node still starts on its own line.
+/// `newline_before`: the text before the first node already ends a line.
+fn one_per_line(nodes: &mut [KdlNode], mut newline_before: bool, indent: &str) {
+    for n in nodes {
+        let mut f = n.format().cloned().unwrap_or_default();
+        if !newline_before && !f.leading.contains('\n') {
+            f.leading = format!("\n{}", f.leading.trim_start_matches([' ', '\t']));
+            f.leading.push_str(indent);
+            n.set_format(f.clone());
+        }
+        newline_before = f.terminator.contains('\n');
+    }
+}
+
+/// Make the node's children exactly `items` (`name value` each), keeping the formatting and
+/// comments of children that stay. No items: no children block at all.
+fn write_children(node: &mut KdlNode, items: &[(String, KdlValue)]) {
+    if items.is_empty() {
+        node.clear_children();
+        if let Some(f) = node.format_mut() {
+            f.before_children = String::new();
+        }
+        return;
+    }
+    // Children are indented one level deeper than the node.
+    let indent = node
+        .format()
+        .map(|f| f.leading.rsplit('\n').next().unwrap_or("").to_string())
+        .unwrap_or_default()
+        + "    ";
+    let fresh_block = node.children().is_none();
+    let children = node.ensure_children();
+    let old: Vec<KdlNode> = children.nodes().to_vec();
+    let mut nodes = Vec::new();
+    for (key, value) in items {
+        let repr = value_repr(value);
+        match old.iter().find(|n| n.name().value() == key) {
+            Some(n) => {
+                let mut n = n.clone();
+                if let Some(e) = n.entries_mut().iter_mut().find(|e| e.name().is_none())
+                    && e.value() != value
+                {
+                    e.set_value(value.clone());
+                    if let Some(f) = e.format_mut() {
+                        f.value_repr = repr;
+                    }
+                }
+                nodes.push(n);
+            }
+            None => {
+                let mut n = KdlNode::new(key.as_str());
+                let mut e = KdlEntry::new(value.clone());
+                e.set_format(KdlEntryFormat {
+                    value_repr: repr,
+                    leading: " ".into(),
+                    ..Default::default()
+                });
+                n.push(e);
+                n.set_format(KdlNodeFormat {
+                    leading: indent.clone(),
+                    terminator: "\n".into(),
+                    ..Default::default()
+                });
+                nodes.push(n);
+            }
+        }
+    }
+    // (A fresh block gets its leading newline below.)
+    let newline_before =
+        fresh_block || children.format().is_some_and(|f| f.leading.ends_with('\n'));
+    one_per_line(&mut nodes, newline_before, &indent);
+    *children.nodes_mut() = nodes;
+    if fresh_block {
+        if let Some(f) = node.format_mut() {
+            f.before_children = " ".into();
+        }
+        let closing = indent[..indent.len() - 4].to_string();
+        if let Some(c) = node.children_mut().as_mut() {
+            let mut f = c.format().cloned().unwrap_or_default();
+            f.leading = "\n".into();
+            f.trailing = closing;
+            c.set_format(f);
+        }
+    }
+}
+
+/// Whether a node looks like a widget we'd have parsed (so dropping it means it was removed).
+fn node_was_widget(node: &KdlNode) -> bool {
+    int(node, "col").is_some() && int(node, "row").is_some()
+}
+
+fn write_widget(node: &mut KdlNode, w: &Placed) {
+    if child_values(node).0 != w.settings {
+        write_children(node, &w.settings);
+    }
+    set_int(node, "col", w.col);
+    set_int(node, "row", w.row);
+    match w.shape {
+        Shape::Round => {
+            remove_prop(node, "width");
+            remove_prop(node, "height");
+            set_int(node, "size", w.w);
+            let round = Shape::Round.as_ref();
+            set_prop(
+                node,
+                "shape",
+                KdlValue::String(round.into()),
+                format!("{round:?}"),
+            );
+        }
+        Shape::Rect => {
+            remove_prop(node, "size");
+            remove_prop(node, "shape");
+            set_int(node, "width", w.w);
+            set_int(node, "height", w.h);
+        }
+    }
+}
+
+/// A widget rectangle in grid cells.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Rect {
+    pub col: i32,
+    pub row: i32,
+    pub w: i32,
+    pub h: i32,
+}
+
+impl Rect {
+    fn overlaps(&self, o: &Rect) -> bool {
+        self.col < o.col + o.w
+            && o.col < self.col + self.w
+            && self.row < o.row + o.h
+            && o.row < self.row + self.h
+    }
+}
+
+/// A widget the packer may move, and how small it may get.
+#[derive(Debug, Clone, Copy)]
+struct Item {
+    id: u32,
+    orig: Rect,
+    min_w: i32,
+    min_h: i32,
+    round: bool,
+}
+
+impl Item {
+    /// Sizes to try, the original first, then smaller ones by decreasing area.
+    fn sizes(&self) -> Vec<(i32, i32)> {
+        let mut v: Vec<(i32, i32)> = if self.round {
+            (self.min_w..=self.orig.w).rev().map(|d| (d, d)).collect()
+        } else {
+            (self.min_w..=self.orig.w)
+                .flat_map(|w| (self.min_h..=self.orig.h).map(move |h| (w, h)))
+                .collect()
+        };
+        v.sort_by_key(|(w, h)| (-(w * h), (w - self.orig.w).abs() + (h - self.orig.h).abs()));
+        v
+    }
+}
+
+fn merge(others: &[(u32, Rect)], placed: Vec<(u32, Rect)>) -> Vec<(u32, Rect)> {
+    let mut pos = others.to_vec();
+    for (id, r) in placed {
+        if let Some(p) = pos.iter_mut().find(|(i, _)| *i == id) {
+            p.1 = r;
+        }
+    }
+    pos
+}
+
+/// Which grid cells are taken; used by the packing searches.
+struct Occupancy {
+    cols: i32,
+    rows: i32,
+    cells: Vec<bool>,
+}
+
+impl Occupancy {
+    fn new(cols: i32, rows: i32) -> Self {
+        Self {
+            cols,
+            rows,
+            cells: vec![false; (cols * rows).max(0) as usize],
+        }
+    }
+
+    fn set(&mut self, r: &Rect, v: bool) {
+        for row in r.row.max(0)..(r.row + r.h).min(self.rows) {
+            for col in r.col.max(0)..(r.col + r.w).min(self.cols) {
+                self.cells[(row * self.cols + col) as usize] = v;
+            }
+        }
+    }
+
+    fn fits(&self, r: &Rect) -> bool {
+        r.col >= 0
+            && r.row >= 0
+            && r.col + r.w <= self.cols
+            && r.row + r.h <= self.rows
+            && (r.row..r.row + r.h).all(|row| {
+                (r.col..r.col + r.w).all(|col| !self.cells[(row * self.cols + col) as usize])
+            })
+    }
+
+    fn free(&self) -> i32 {
+        self.cells.iter().filter(|c| !**c).count() as i32
+    }
+
+    /// Place every item somewhere free, biggest first, each as close to its old spot as possible;
+    /// backtracks within `budget` steps.
+    fn pack(&mut self, items: &[(u32, Rect)], budget: &mut u32) -> Option<Vec<(u32, Rect)>> {
+        let mut items = items.to_vec();
+        items.sort_by_key(|(_, r)| -(r.w * r.h));
+        let mut out = Vec::with_capacity(items.len());
+        self.pack_from(&items, 0, &mut out, budget).then_some(out)
+    }
+
+    fn pack_from(
+        &mut self,
+        items: &[(u32, Rect)],
+        i: usize,
+        out: &mut Vec<(u32, Rect)>,
+        budget: &mut u32,
+    ) -> bool {
+        let Some(&(id, orig)) = items.get(i) else {
+            return true;
+        };
+        let rest: i32 = items[i..].iter().map(|(_, r)| r.w * r.h).sum();
+        if rest > self.free() {
+            return false;
+        }
+        let mut spots: Vec<Rect> = (0..=self.rows - orig.h)
+            .flat_map(|row| (0..=self.cols - orig.w).map(move |col| Rect { col, row, ..orig }))
+            .filter(|r| self.fits(r))
+            .collect();
+        spots.sort_by_key(|r| (r.col - orig.col).abs() + (r.row - orig.row).abs());
+        for r in spots.into_iter().take(24) {
+            if *budget == 0 {
+                return false;
+            }
+            *budget -= 1;
+            self.set(&r, true);
+            out.push((id, r));
+            if self.pack_from(items, i + 1, out, budget) {
+                return true;
+            }
+            out.pop();
+            self.set(&r, false);
+        }
+        false
+    }
+
+    /// Like `pack`, but items may shrink (down to their minimum) when they don't fit otherwise.
+    fn pack_shrinking(
+        &mut self,
+        items: &[Item],
+        budget: &mut u32,
+        deadline: std::time::Instant,
+    ) -> Option<Vec<(u32, Rect)>> {
+        let mut items = items.to_vec();
+        items.sort_by_key(|m| -(m.orig.w * m.orig.h));
+        let mut out = Vec::with_capacity(items.len());
+        self.shrink_from(&items, 0, &mut out, budget, deadline)
+            .then_some(out)
+    }
+
+    fn shrink_from(
+        &mut self,
+        items: &[Item],
+        i: usize,
+        out: &mut Vec<(u32, Rect)>,
+        budget: &mut u32,
+        deadline: std::time::Instant,
+    ) -> bool {
+        let Some(m) = items.get(i) else { return true };
+        let rest_min: i32 = items[i..].iter().map(|m| m.min_w * m.min_h).sum();
+        if rest_min > self.free() {
+            return false;
+        }
+        for (w, h) in m.sizes() {
+            let orig = m.orig;
+            let mut spots: Vec<Rect> = (0..=self.rows - h)
+                .flat_map(|row| (0..=self.cols - w).map(move |col| Rect { col, row, w, h }))
+                .filter(|r| self.fits(r))
+                .collect();
+            spots.sort_by_key(|r| (r.col - orig.col).abs() + (r.row - orig.row).abs());
+            for r in spots.into_iter().take(8) {
+                if *budget == 0 || std::time::Instant::now() > deadline {
+                    return false;
+                }
+                *budget -= 1;
+                self.set(&r, true);
+                out.push((m.id, r));
+                if self.shrink_from(items, i + 1, out, budget, deadline) {
+                    return true;
+                }
+                out.pop();
+                self.set(&r, false);
+            }
+        }
+        false
+    }
+
+    /// Fill every free cell exactly with the items (their total area equals the free area).
+    /// The first free cell in reading order must be some item's top-left corner, which keeps
+    /// the search small; items closest to that cell are tried first.
+    fn tile(&mut self, items: &[(u32, Rect)], budget: &mut u32) -> Option<Vec<(u32, Rect)>> {
+        let mut used = vec![false; items.len()];
+        let mut out = Vec::with_capacity(items.len());
+        self.tile_from(items, &mut used, &mut out, budget)
+            .then_some(out)
+    }
+
+    fn tile_from(
+        &mut self,
+        items: &[(u32, Rect)],
+        used: &mut [bool],
+        out: &mut Vec<(u32, Rect)>,
+        budget: &mut u32,
+    ) -> bool {
+        let Some(first) = self.cells.iter().position(|c| !*c) else {
+            return used.iter().all(|u| *u);
+        };
+        let (col, row) = (first as i32 % self.cols, first as i32 / self.cols);
+        let mut cand: Vec<usize> = (0..items.len()).filter(|&i| !used[i]).collect();
+        cand.sort_by_key(|&i| (items[i].1.col - col).abs() + (items[i].1.row - row).abs());
+        let mut tried: Vec<(i32, i32)> = Vec::new();
+        for i in cand {
+            let (id, orig) = items[i];
+            if tried.contains(&(orig.w, orig.h)) {
+                continue; // same size as one that already failed here
+            }
+            tried.push((orig.w, orig.h));
+            let r = Rect { col, row, ..orig };
+            if !self.fits(&r) {
+                continue;
+            }
+            if *budget == 0 {
+                return false;
+            }
+            *budget -= 1;
+            self.set(&r, true);
+            used[i] = true;
+            out.push((id, r));
+            if self.tile_from(items, used, out, budget) {
+                return true;
+            }
+            out.pop();
+            used[i] = false;
+            self.set(&r, false);
+        }
+        false
+    }
+}
+
+/// New positions for the widgets a placement moves out of the way.
+/// New rectangles (position, and size if it had to shrink) for the widgets a placement moves.
+pub type Reflow = Vec<(u32, Rect)>;
+
+impl Layout {
+    fn others(&self, id: u32) -> Vec<(u32, Rect)> {
+        self.visible()
+            .into_iter()
+            .filter(|w| w.id != id)
+            .map(|w| {
+                (
+                    w.id,
+                    Rect {
+                        col: w.col,
+                        row: w.row,
+                        w: w.w,
+                        h: w.h,
+                    },
+                )
+            })
+            .collect()
+    }
+
+    fn in_bounds(&self, r: &Rect) -> bool {
+        r.col >= 0 && r.row >= 0 && r.col + r.w <= self.cols && r.row + r.h <= self.rows
+    }
+
+    /// Make room for widget `id` (0 for one being added) at `target`, moving others as little
+    /// as possible. Modeled on Android's Launcher3 reorder: first try pushing every widget in
+    /// the way in one direction (cascading into whatever it hits), for each of the four
+    /// directions; then try moving each one to its nearest free spot. The solution that moves
+    /// the fewest cells wins; `prefer` (a direction, e.g. the drag direction) breaks ties.
+    pub fn reflow(&self, id: u32, target: Rect, prefer: (i32, i32)) -> Option<Reflow> {
+        if !self.in_bounds(&target) {
+            return None;
+        }
+        let others = self.others(id);
+        if others.iter().all(|(_, r)| !r.overlaps(&target)) {
+            return Some(Vec::new());
+        }
+        let mut dirs = [(0, 1), (1, 0), (-1, 0), (0, -1)];
+        dirs.sort_by_key(|d| if *d == prefer { 0 } else { 1 });
+        let mut candidates: Vec<Vec<(u32, Rect)>> = dirs
+            .iter()
+            .filter_map(|d| self.push(&others, target, *d))
+            .collect();
+        candidates.extend(self.nearest_free(&others, target));
+        if candidates.is_empty() {
+            // Crowded grid: nothing slides into place; search for a proper re-pack.
+            candidates.extend(self.repack(&others, target));
+        }
+        let orig = |id: u32| others.iter().find(|(o, _)| *o == id).map(|(_, r)| *r);
+        // Cells moved, plus a stiff price for every cell a widget had to give up.
+        let cost = |sol: &Vec<(u32, Rect)>| -> i32 {
+            sol.iter()
+                .map(|(i, r)| {
+                    orig(*i)
+                        .map(|o| {
+                            (o.col - r.col).abs()
+                                + (o.row - r.row).abs()
+                                + 4 * (o.w * o.h - r.w * r.h)
+                        })
+                        .unwrap_or(0)
+                })
+                .sum()
+        };
+        // min_by_key keeps the first of equal costs, i.e. the preferred direction.
+        let best = candidates.into_iter().min_by_key(cost)?;
+        Some(
+            best.into_iter()
+                .filter(|(i, r)| orig(*i) != Some(*r))
+                .collect(),
+        )
+    }
+
+    /// The general case, for widgets of any size and full grids: free the widgets in the way,
+    /// and if they can't be re-placed, also the next-nearest ones. Each set is re-packed by a
+    /// bounded search that keeps widgets close to where they were; on a full grid it first tries
+    /// an exact re-tiling, then lets displaced widgets shrink towards their minimum size.
+    fn repack(&self, others: &[(u32, Rect)], target: Rect) -> Option<Vec<(u32, Rect)>> {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(25);
+        let center = |r: &Rect| (2 * r.col + r.w, 2 * r.row + r.h);
+        let tc = center(&target);
+        let mut order: Vec<usize> = (0..others.len()).collect();
+        order.sort_by_key(|&i| {
+            let r = &others[i].1;
+            let c = center(r);
+            (
+                !r.overlaps(&target),
+                (c.0 - tc.0).abs() + (c.1 - tc.1).abs(),
+            )
+        });
+        let first = others
+            .iter()
+            .filter(|(_, r)| r.overlaps(&target))
+            .count()
+            .max(1);
+        let mut ks: Vec<usize> = [0, 1, 2, 4, 7, 11]
+            .iter()
+            .map(|d| first + d)
+            .filter(|k| *k < others.len())
+            .collect();
+        ks.push(others.len());
+        let total = self.cols * self.rows;
+        for k in ks {
+            if std::time::Instant::now() > deadline {
+                break;
+            }
+            let movable: Vec<Item> = order[..k]
+                .iter()
+                .map(|&i| {
+                    let (id, r) = others[i];
+                    let (mw, mh) = match self.get(id) {
+                        Some(p) if p.shape == Shape::Round => (1, 1),
+                        Some(p) => p.kind.min_size(),
+                        None => (r.w, r.h),
+                    };
+                    Item {
+                        id,
+                        orig: r,
+                        min_w: mw.min(r.w),
+                        min_h: mh.min(r.h),
+                        round: self.get(id).is_some_and(|p| p.shape == Shape::Round),
+                    }
+                })
+                .collect();
+            let blocked: Vec<Rect> = std::iter::once(target)
+                .chain(order[k..].iter().map(|&i| others[i].1))
+                .collect();
+            let free = total - blocked.iter().map(|r| r.w * r.h).sum::<i32>();
+            let need: i32 = movable.iter().map(|m| m.orig.w * m.orig.h).sum();
+            let need_min: i32 = movable.iter().map(|m| m.min_w * m.min_h).sum();
+            if free < need_min {
+                continue;
+            }
+            let mut occ = Occupancy::new(self.cols, self.rows);
+            for b in &blocked {
+                occ.set(b, true);
+            }
+            let rects: Vec<(u32, Rect)> = movable.iter().map(|m| (m.id, m.orig)).collect();
+            let mut budget = 1500;
+            if free == need
+                && let Some(placed) = occ.tile(&rects, &mut budget)
+            {
+                return Some(merge(others, placed));
+            }
+            if free >= need {
+                let mut budget = 2000;
+                if let Some(placed) = occ.pack(&rects, &mut budget) {
+                    return Some(merge(others, placed));
+                }
+            }
+            let mut budget = 3000;
+            if let Some(placed) = occ.pack_shrinking(&movable, &mut budget, deadline) {
+                return Some(self.regrow(target, merge(others, placed)));
+            }
+        }
+        None
+    }
+
+    /// After shrinking, let widgets grow back towards their original size into free space
+    /// around them (never into anything else).
+    fn regrow(&self, target: Rect, mut pos: Vec<(u32, Rect)>) -> Vec<(u32, Rect)> {
+        loop {
+            let mut grew = false;
+            for i in 0..pos.len() {
+                let (id, cur) = pos[i];
+                let Some(p) = self.get(id) else { continue };
+                if cur.w * cur.h >= p.w * p.h {
+                    continue;
+                }
+                let mut occ = Occupancy::new(self.cols, self.rows);
+                occ.set(&target, true);
+                for (j, (_, r)) in pos.iter().enumerate() {
+                    if j != i {
+                        occ.set(r, true);
+                    }
+                }
+                let item = Item {
+                    id,
+                    orig: Rect {
+                        w: p.w,
+                        h: p.h,
+                        ..cur
+                    },
+                    min_w: cur.w,
+                    min_h: cur.h,
+                    round: p.shape == Shape::Round,
+                };
+                // Bigger sizes first; any placement that still covers where it is now.
+                let better = item
+                    .sizes()
+                    .into_iter()
+                    .filter(|(w, h)| w * h > cur.w * cur.h)
+                    .find_map(|(w, h)| {
+                        ((cur.row + cur.h - h).max(0)..=cur.row)
+                            .flat_map(|row| {
+                                ((cur.col + cur.w - w).max(0)..=cur.col).map(move |col| Rect {
+                                    col,
+                                    row,
+                                    w,
+                                    h,
+                                })
+                            })
+                            .find(|r| occ.fits(r))
+                    });
+                if let Some(r) = better {
+                    pos[i].1 = r;
+                    grew = true;
+                }
+            }
+            if !grew {
+                return pos;
+            }
+        }
+    }
+
+    /// Push everything overlapping `target` in direction `d`; pushed widgets push what they hit.
+    fn push(
+        &self,
+        others: &[(u32, Rect)],
+        target: Rect,
+        d: (i32, i32),
+    ) -> Option<Vec<(u32, Rect)>> {
+        let mut pos: Vec<(u32, Rect)> = others.to_vec();
+        let mut fixed: Vec<Rect> = vec![target];
+        let mut settled = vec![false; pos.len()];
+        let mut queue = vec![target];
+        while let Some(obstacle) = queue.pop() {
+            for i in 0..pos.len() {
+                if settled[i] || !pos[i].1.overlaps(&obstacle) {
+                    continue;
+                }
+                let mut r = pos[i].1;
+                // Step past every fixed rect it overlaps, along the push direction.
+                while let Some(f) = fixed.iter().find(|f| f.overlaps(&r)) {
+                    match d {
+                        (0, 1) => r.row = f.row + f.h,
+                        (0, -1) => r.row = f.row - r.h,
+                        (1, 0) => r.col = f.col + f.w,
+                        _ => r.col = f.col - r.w,
+                    }
+                    if !self.in_bounds(&r) {
+                        return None;
+                    }
+                }
+                pos[i].1 = r;
+                settled[i] = true;
+                fixed.push(r);
+                queue.push(r);
+            }
+        }
+        Some(pos)
+    }
+
+    /// Move each widget overlapping `target` to the free spot closest to where it was.
+    fn nearest_free(&self, others: &[(u32, Rect)], target: Rect) -> Option<Vec<(u32, Rect)>> {
+        let mut pos: Vec<(u32, Rect)> = others.to_vec();
+        let mut displaced: Vec<usize> = (0..pos.len())
+            .filter(|&i| pos[i].1.overlaps(&target))
+            .collect();
+        // Big ones first: they are the hardest to fit.
+        displaced.sort_by_key(|&i| -(pos[i].1.w * pos[i].1.h));
+        // Everything that stays put, plus the newcomer, plus displaced widgets once re-placed.
+        let mut blocked: Vec<Rect> = std::iter::once(target)
+            .chain(
+                pos.iter()
+                    .enumerate()
+                    .filter(|(j, _)| !displaced.contains(j))
+                    .map(|(_, (_, r))| *r),
+            )
+            .collect();
+        for &i in &displaced {
+            let orig = pos[i].1;
+            let mut best: Option<(i32, Rect)> = None;
+            for row in 0..=self.rows - orig.h {
+                for col in 0..=self.cols - orig.w {
+                    let r = Rect { col, row, ..orig };
+                    if blocked.iter().any(|b| b.overlaps(&r)) {
+                        continue;
+                    }
+                    let dist = (col - orig.col).abs() + (row - orig.row).abs();
+                    if best.is_none_or(|(d, _)| dist < d) {
+                        best = Some((dist, r));
+                    }
+                }
+            }
+            let r = best?.1;
+            pos[i].1 = r;
+            blocked.push(r);
+        }
+        Some(pos)
+    }
+
+    /// Apply a reflow computed by [`Layout::reflow`].
+    pub fn apply_reflow(&mut self, moves: &Reflow) {
+        for &(id, r) in moves {
+            if let Some(p) = self.get_mut(id) {
+                (p.col, p.row, p.w, p.h) = (r.col, r.row, r.w, r.h);
+            }
+        }
+    }
+
+    /// Move a widget, pushing others aside.
+    pub fn move_reflow(&mut self, id: u32, col: i32, row: i32, prefer: (i32, i32)) -> bool {
+        let Some(p) = self.get(id) else { return false };
+        let target = Rect {
+            col,
+            row,
+            w: p.w,
+            h: p.h,
+        };
+        let Some(moves) = self.reflow(id, target, prefer) else {
+            return false;
+        };
+        self.apply_reflow(&moves);
+        let p = self.get_mut(id).expect("checked");
+        (p.col, p.row) = (col, row);
+        true
+    }
+
+    /// Resize a widget, pushing others aside.
+    pub fn resize_reflow(&mut self, id: u32, w: i32, h: i32) -> bool {
+        let Some(p) = self.get(id) else { return false };
+        let (w, h) = self.clamp_size(p, w, h);
+        let target = Rect {
+            col: p.col,
+            row: p.row,
+            w,
+            h,
+        };
+        let grow = (i32::from(w > p.w), i32::from(h > p.h));
+        let prefer = if grow.1 > 0 { (0, 1) } else { (1, 0) };
+        let Some(moves) = self.reflow(id, target, prefer) else {
+            return false;
+        };
+        self.apply_reflow(&moves);
+        let p = self.get_mut(id).expect("checked");
+        (p.w, p.h) = (w, h);
+        true
+    }
+
+    pub fn clamp_size(&self, p: &Placed, w: i32, h: i32) -> (i32, i32) {
+        let (min_w, min_h) = if p.shape == Shape::Round {
+            (1, 1)
+        } else {
+            p.kind.min_size()
+        };
+        let (mut w, mut h) = (w.max(min_w), h.max(min_h));
+        if p.shape == Shape::Round {
+            let d = w.max(h);
+            (w, h) = (d, d);
+        }
+        (w, h)
+    }
+
+    /// Add a widget of its default size at a spot, pushing others aside.
+    pub fn add_at(&mut self, kind: Kind, col: i32, row: i32) -> Option<u32> {
+        let (w, h) = kind.default_size();
+        let target = Rect { col, row, w, h };
+        let moves = self.reflow(0, target, (0, 1))?;
+        self.apply_reflow(&moves);
+        let id = self.next_id;
+        self.next_id += 1;
+        self.widgets.push(Placed {
+            id,
+            kind,
+            shape: Shape::Rect,
+            col,
+            row,
+            w,
+            h,
+            settings: Vec::new(),
+            node: None,
+        });
+        Some(id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn grid() -> Layout {
+        let (mut l, warnings) = Layout::parse(&Layout::default_text()).unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        l.set_grid(16, 9);
+        l
+    }
+
+    fn id_of(l: &Layout, kind: Kind) -> u32 {
+        l.widgets.iter().find(|w| w.kind == kind).unwrap().id
+    }
+
+    #[test]
+    fn default_layout_has_no_overlaps() {
+        let l = grid();
+        assert_eq!(l.visible().len(), l.widgets.len());
+        for a in l.visible() {
+            assert!(l.can_place(a.id, a.col, a.row, a.w, a.h), "{a:?} overlaps");
+        }
+    }
+
+    #[test]
+    fn move_rejects_overlap_and_accepts_free() {
+        let mut l = grid();
+        let clock = id_of(&l, Kind::Clock);
+        assert!(!l.move_to(clock, 4, 0), "onto windows widget");
+        l.remove(id_of(&l, Kind::Windows));
+        assert!(l.move_to(clock, 4, 0));
+    }
+
+    #[test]
+    fn round_is_square() {
+        let mut l = grid();
+        let clock = id_of(&l, Kind::Clock);
+        l.remove(id_of(&l, Kind::Windows));
+        assert!(l.toggle_shape(clock));
+        let p = l.get(clock).unwrap();
+        assert_eq!((p.shape, p.w, p.h), (Shape::Round, 2, 2));
+        assert!(
+            !l.resize(clock, 3, 2),
+            "3x3 would overlap the weather widget"
+        );
+        l.remove(id_of(&l, Kind::Weather));
+        assert!(l.resize(clock, 3, 2));
+        let p = l.get(clock).unwrap();
+        assert_eq!((p.w, p.h), (3, 3));
+    }
+
+    #[test]
+    fn smaller_grid_hides_without_moving() {
+        let mut l = grid();
+        let before: Vec<_> = l
+            .widgets
+            .iter()
+            .map(|w| (w.id, w.col, w.row, w.w, w.h))
+            .collect();
+        l.set_grid(4, 3);
+        assert!(l.hidden_count() > 0);
+        l.set_grid(16, 9);
+        let after: Vec<_> = l
+            .widgets
+            .iter()
+            .map(|w| (w.id, w.col, w.row, w.w, w.h))
+            .collect();
+        assert_eq!(before, after);
+        assert_eq!(l.hidden_count(), 0);
+    }
+
+    #[test]
+    fn overlapping_widget_from_file_is_hidden() {
+        let (mut l, _) = Layout::parse("layout {\n clock col=0 row=0 width=4 height=2\n calendar col=1 row=1 width=4 height=4\n}").unwrap();
+        l.set_grid(16, 9);
+        assert_eq!(l.visible().len(), 1);
+        assert_eq!(l.hidden_count(), 1);
+    }
+
+    #[test]
+    fn edits_keep_comments_and_formatting() {
+        let text = "// my dash\ncell-size 90\n\nlayout {\n    // the clock\n    clock    col=0 row=0 width=4 height=2\n    weird-thing col=1\n    calendar col=0 row=2 width=4 height=4 // month\n    tray col=5 row=0 width=2 height=1\n}\n";
+        let (mut l, warnings) = Layout::parse(text).unwrap();
+        assert_eq!(warnings, vec!["unknown widget `weird-thing`"]);
+        assert_eq!(l.cell_size, 90.0);
+        l.set_grid(16, 9);
+        let clock = id_of(&l, Kind::Clock);
+        assert!(l.move_to(clock, 6, 3));
+        l.remove(id_of(&l, Kind::Tray));
+        let cal = id_of(&l, Kind::Calendar);
+        assert!(l.toggle_shape(cal));
+        l.add(Kind::Session).unwrap();
+        let out = l.to_text();
+        assert!(out.contains("// my dash"), "{out}");
+        assert!(out.contains("// the clock"), "{out}");
+        assert!(
+            out.contains("clock    col=6 row=3 width=4 height=2"),
+            "{out}"
+        );
+        assert!(out.contains("weird-thing col=1"), "{out}");
+        assert!(out.contains("// month"), "{out}");
+        assert!(!out.contains("tray"), "{out}");
+        assert!(
+            out.contains("calendar col=0 row=2 size=4 shape=round")
+                || out.contains("calendar col=0 row=2 size=4 shape=\"round\""),
+            "{out}"
+        );
+        assert!(out.contains("session col="), "{out}");
+        // And it parses back to the same widgets.
+        let (back, _) = Layout::parse(&out).unwrap();
+        assert_eq!(back.widgets.len(), 3);
+        // A second save with no changes is byte-identical.
+        let mut again = back.clone();
+        assert_eq!(again.to_text(), out);
+    }
+
+    #[test]
+    fn v1_style_and_aliases_parse() {
+        let (l, warnings) = Layout::parse("layout {\n  perf col=0 row=0 width=4 height=3\n  audio col=4 row=0 size=2 shape=\"round\"\n}").unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(l.widgets[0].kind, Kind::Perf);
+        assert_eq!(
+            (
+                l.widgets[1].kind,
+                l.widgets[1].shape,
+                l.widgets[1].w,
+                l.widgets[1].h
+            ),
+            (Kind::Audio, Shape::Round, 2, 2)
+        );
+    }
+
+    #[test]
+    fn syntax_error_reports_line() {
+        let err = Layout::parse("layout {\n  clock col=0 row=0\n  calendar col=\"\n}").unwrap_err();
+        assert!(err.starts_with("line "), "{err}");
+    }
+
+    #[test]
+    fn reflow_pushes_aside() {
+        let mut l = grid();
+        // The default layout fills 16x9 exactly; leave room to push into.
+        l.set_grid(16, 12);
+        let clock = id_of(&l, Kind::Clock);
+        // Onto the windows widget: allowed now, the others make room.
+        assert!(l.move_reflow(clock, 4, 0, (1, 0)));
+        assert_eq!(
+            l.visible().len(),
+            l.widgets.len(),
+            "nothing pushed off screen"
+        );
+        for a in l.visible() {
+            assert!(l.can_place(a.id, a.col, a.row, a.w, a.h), "{a:?} overlaps");
+        }
+    }
+
+    #[test]
+    fn reflow_into_a_free_gap_moves_nothing() {
+        let mut l = grid();
+        l.remove(id_of(&l, Kind::Windows));
+        let moves = l
+            .reflow(
+                0,
+                Rect {
+                    col: 4,
+                    row: 0,
+                    w: 5,
+                    h: 3,
+                },
+                (0, 1),
+            )
+            .unwrap();
+        assert!(moves.is_empty());
+    }
+
+    #[test]
+    fn reflow_fails_when_full() {
+        let l = grid();
+        // The grid is completely full; a 16x9 newcomer can't fit anywhere.
+        assert!(
+            l.reflow(
+                0,
+                Rect {
+                    col: 0,
+                    row: 0,
+                    w: 16,
+                    h: 9
+                },
+                (0, 1)
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn add_at_makes_room() {
+        let mut l = grid();
+        l.remove(id_of(&l, Kind::Media));
+        l.remove(id_of(&l, Kind::Tray));
+        // 5x3 free now at (4,6); adding a 4x2 weather at (4,5) has to push claude-sessions up/down.
+        let id = l.add_at(Kind::Weather, 4, 6).unwrap();
+        assert!(l.get(id).is_some());
+        for a in l.visible() {
+            assert!(l.can_place(a.id, a.col, a.row, a.w, a.h), "{a:?} overlaps");
+        }
+    }
+
+    #[test]
+    fn theme_is_written_back() {
+        // The old form is read as a color scheme and upgraded on save.
+        let (mut l, _) = Layout::parse("// hi\ntheme \"light\"\nlayout {\n}\n").unwrap();
+        assert_eq!(
+            (l.colorscheme.as_str(), l.style.as_str()),
+            ("light", "default")
+        );
+        l.style = "compact".into();
+        let out = l.to_text();
+        assert!(
+            out.contains("theme colorscheme=\"light\" style=\"compact\""),
+            "{out}"
+        );
+        assert!(out.contains("// hi"), "{out}");
+        let (back, _) = Layout::parse(&out).unwrap();
+        assert_eq!(
+            (back.colorscheme.as_str(), back.style.as_str()),
+            ("light", "compact")
+        );
+    }
+
+    #[test]
+    fn full_grid_moves_any_size() {
+        // The default layout fills the 16x9 grid exactly: only a re-pack can make room.
+        let mut l = grid();
+        assert_eq!(l.widgets.iter().map(|w| w.w * w.h).sum::<i32>(), 16 * 9);
+        let cases = [
+            (Kind::Clock, 4, 0),
+            (Kind::Windows, 0, 0),
+            (Kind::Wifi, 0, 6),
+            (Kind::Calendar, 9, 3),
+            (Kind::Audio, 0, 0),
+        ];
+        for (kind, col, row) in cases {
+            let id = id_of(&l, kind);
+            let t = std::time::Instant::now();
+            assert!(
+                l.move_reflow(id, col, row, (0, 1)),
+                "{kind:?} to {col},{row}"
+            );
+            assert!(
+                t.elapsed() < std::time::Duration::from_millis(500),
+                "{kind:?} took {:?}",
+                t.elapsed()
+            );
+            assert_eq!(
+                l.visible().len(),
+                l.widgets.len(),
+                "all still on screen after {kind:?}"
+            );
+            for a in l.visible() {
+                assert!(
+                    l.can_place(a.id, a.col, a.row, a.w, a.h),
+                    "{a:?} overlaps after {kind:?}"
+                );
+            }
+            let p = l.get(id).unwrap();
+            assert_eq!((p.col, p.row), (col, row));
+        }
+    }
+
+    #[test]
+    fn tiling_search_fills_exactly() {
+        let mut occ = Occupancy::new(4, 2);
+        let items = [
+            (
+                1,
+                Rect {
+                    col: 0,
+                    row: 0,
+                    w: 2,
+                    h: 2,
+                },
+            ),
+            (
+                2,
+                Rect {
+                    col: 3,
+                    row: 0,
+                    w: 1,
+                    h: 2,
+                },
+            ),
+            (
+                3,
+                Rect {
+                    col: 0,
+                    row: 0,
+                    w: 1,
+                    h: 2,
+                },
+            ),
+        ];
+        let mut budget = 100;
+        let placed = occ.tile(&items, &mut budget).unwrap();
+        assert_eq!(placed.len(), 3);
+        assert_eq!(occ.free(), 0);
+    }
+
+    /// Experiment (run with --ignored --nocapture): every widget to every position in the full
+    /// default grid; prints how often a re-flow is found and how long it takes.
+    #[test]
+    #[ignore]
+    fn reflow_coverage() {
+        let base = grid();
+        let (mut ok, mut total, mut worst) = (0, 0, std::time::Duration::ZERO);
+        let (mut shrunk, mut lost) = (0, 0);
+        let mut fails = Vec::new();
+        for w in base.widgets.clone() {
+            for row in 0..=base.rows - w.h {
+                for col in 0..=base.cols - w.w {
+                    let t = std::time::Instant::now();
+                    let sol = base.reflow(
+                        w.id,
+                        Rect {
+                            col,
+                            row,
+                            w: w.w,
+                            h: w.h,
+                        },
+                        (0, 1),
+                    );
+                    let found = sol.is_some();
+                    let loss: i32 = sol
+                        .iter()
+                        .flatten()
+                        .map(|(i, r)| base.get(*i).map(|p| p.w * p.h - r.w * r.h).unwrap_or(0))
+                        .sum();
+                    if loss > 0 {
+                        shrunk += 1;
+                        lost += loss;
+                    }
+                    worst = worst.max(t.elapsed());
+                    total += 1;
+                    if found {
+                        ok += 1;
+                    } else {
+                        fails.push((w.kind, col, row));
+                    }
+                }
+            }
+        }
+        println!("reflow found for {ok}/{total} moves; slowest {worst:?}");
+        println!(
+            "{shrunk} needed shrinking, {:.1} cells lost on average when they did",
+            lost as f32 / shrunk.max(1) as f32
+        );
+        println!("some failures: {:?}", &fails[..fails.len().min(12)]);
+    }
+
+    #[test]
+    fn style_overrides_round_trip() {
+        let (mut l, w) =
+            Layout::parse("theme colorscheme=\"nord\" style=\"soft\"\nlayout {\n}\n").unwrap();
+        assert!(w.is_empty(), "{w:?}");
+        assert!(l.style_overrides.is_empty());
+        l.style_overrides = vec![
+            ("radius".into(), KdlValue::Integer(12)),
+            ("motion".into(), KdlValue::Float(0.6)),
+        ];
+        let out = l.to_text();
+        let (mut back, w) = Layout::parse(&out).unwrap();
+        assert!(w.is_empty(), "{w:?}\n{out}");
+        assert_eq!(back.style_overrides, l.style_overrides, "{out}");
+        assert!(out.contains("radius 12"), "{out}");
+        // Changing one keeps the other line untouched; clearing removes the block.
+        back.style_overrides[0].1 = KdlValue::Integer(16);
+        let out2 = back.to_text();
+        assert!(
+            out2.contains("radius 16") && out2.contains("motion 0.6"),
+            "{out2}"
+        );
+        let (mut back2, _) = Layout::parse(&out2).unwrap();
+        back2.style_overrides.clear();
+        let out3 = back2.to_text();
+        assert!(!out3.contains('{') || !out3.contains("radius"), "{out3}");
+        assert!(
+            out3.contains("theme colorscheme=\"nord\" style=\"soft\""),
+            "{out3}"
+        );
+        let (b3, w3) = Layout::parse(&out3).unwrap();
+        assert!(w3.is_empty() && b3.style_overrides.is_empty(), "{out3}");
+    }
+
+    #[test]
+    fn widget_settings_round_trip() {
+        use crate::widget_settings::{Opt, get_bool, get_int, set};
+        let text = "layout {\n    // my clock\n    clock col=0 row=0 width=4 height=2\n    calendar col=4 row=0 width=4 height=4 {\n        // Mondays!\n        week-numbers #true\n    }\n}\n";
+        let (mut l, w) = Layout::parse(text).unwrap();
+        assert!(w.is_empty(), "{w:?}");
+        let cal = l.widgets[1].id;
+        assert!(get_bool(&l.widgets[1].settings, Opt::WeekNumbers, false));
+        let clock = l.widgets[0].id;
+        let v = l.settings_mut(clock).unwrap();
+        set(v, Opt::Hours, KdlValue::Integer(12), false);
+        set(v, Opt::Seconds, KdlValue::Bool(false), false);
+        let out = l.to_text();
+        assert!(
+            out.contains("    clock col=0 row=0 width=4 height=2 {\n        hours 12\n        seconds #false\n    }\n"),
+            "{out}"
+        );
+        // Untouched widget keeps its block and comment exactly.
+        assert!(
+            out.contains("        // Mondays!\n        week-numbers #true\n    }"),
+            "{out}"
+        );
+        let (mut back, w) = Layout::parse(&out).unwrap();
+        assert!(w.is_empty(), "{w:?}");
+        assert_eq!(get_int(&back.widgets[0].settings, Opt::Hours, false), 12);
+        // Back to defaults: the block goes away.
+        let v = back.settings_mut(back.widgets[0].id).unwrap();
+        set(v, Opt::Hours, KdlValue::Integer(24), false);
+        set(v, Opt::Seconds, KdlValue::Bool(true), false);
+        let out2 = back.to_text();
+        assert!(
+            out2.contains("    clock col=0 row=0 width=4 height=2\n"),
+            "{out2}"
+        );
+        assert!(back.get(cal).is_some());
+        // Dropping the first of two lines keeps the second on its own line.
+        let (mut l, _) = Layout::parse("layout {\n    clock col=0 row=0 {\n        seconds #false\n        date #false\n    }\n}\n").unwrap();
+        let id = l.widgets[0].id;
+        set(
+            l.settings_mut(id).unwrap(),
+            Opt::Seconds,
+            KdlValue::Bool(true),
+            false,
+        );
+        let out3 = l.to_text();
+        assert!(out3.contains(" {\n        date #false\n    }\n"), "{out3}");
+        // Unknown settings warn but survive.
+        let (_, w) =
+            Layout::parse("layout {\n    clock col=0 row=0 { colour \"red\" }\n}\n").unwrap();
+        assert_eq!(w.len(), 1, "{w:?}");
+    }
+
+    #[test]
+    fn reset_keeps_one_widget_per_line() {
+        let text = "theme colorscheme=\"nord\" style=\"soft\"\nlayout {\n    clock col=0 row=0 width=4 height=2\n}\n";
+        let (mut l, _) = Layout::parse(text).unwrap();
+        l.reset();
+        let out = l.to_text();
+        assert!(out.contains("layout {\n"), "{out}");
+        for w in &l.widgets {
+            assert!(
+                out.lines()
+                    .any(|line| line.trim_start().starts_with(w.kind.name())),
+                "{} not on its own line:\n{out}",
+                w.kind.name()
+            );
+        }
+        let (back, warnings) = Layout::parse(&out).unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(back.widgets.len(), l.widgets.len());
+    }
+
+    #[test]
+    fn removing_the_first_widget_keeps_line_breaks() {
+        let text = "layout {\n    clock col=0 row=0 width=4 height=2\n    calendar col=4 row=0 width=4 height=4\n}\n";
+        let (mut l, _) = Layout::parse(text).unwrap();
+        let clock = l.widgets.iter().find(|w| w.kind == Kind::Clock).unwrap().id;
+        l.remove(clock);
+        let out = l.to_text();
+        assert!(out.contains("layout {\n    calendar"), "{out}");
+    }
+
+    #[test]
+    fn font_override_round_trips() {
+        let (mut l, _) =
+            Layout::parse("theme colorscheme=\"nord\" style=\"sharp\"\nlayout {\n}\n").unwrap();
+        l.style_overrides = vec![
+            (
+                "font-family".into(),
+                KdlValue::String("JetBrains Mono".into()),
+            ),
+            ("glass".into(), KdlValue::Bool(true)),
+            ("card-opacity".into(), KdlValue::Float(0.85)),
+        ];
+        let out = l.to_text();
+        let (back, w) = Layout::parse(&out).unwrap();
+        assert!(w.is_empty(), "{w:?}\n{out}");
+        assert_eq!(back.style_overrides, l.style_overrides, "{out}");
+    }
+}

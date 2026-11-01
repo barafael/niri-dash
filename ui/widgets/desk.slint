@@ -1,0 +1,449 @@
+import { Theme, Icons } from "../theme.slint";
+import { Windows, Notifications, Tray, Media, Shell } from "../data.slint";
+import { Icon, IconButton, TextButton, Ring, Header, Row, Muted, Empty , ScrollList } from "../common.slint";
+
+export component WindowsWidget inherits Rectangle {
+    in property <bool> round;
+    if root.round: VerticalLayout {
+        alignment: center;
+        spacing: 4px;
+        HorizontalLayout {
+            alignment: center;
+            if Windows.has-focused-icon: Image {
+                source: Windows.focused-icon;
+                width: root.width * 0.34;
+                height: self.width;
+            }
+            if !Windows.has-focused-icon: Icon {
+                source: Icons.window;
+                size: root.width * 0.3;
+                tint: Theme.dim;
+            }
+        }
+        Text {
+            text: Windows.count + " windows";
+            horizontal-alignment: center;
+            font-size: max(10px, root.width * 0.075);
+            color: Theme.dim;
+        }
+    }
+    if !root.round: VerticalLayout {
+        padding: Theme.pad;
+        spacing: 6px;
+        Header {
+            icon: Icons.window;
+            title: "Windows";
+            Muted {
+                text: Windows.count;
+            }
+        }
+        if !Windows.available: Empty {
+            vertical-stretch: 1;
+            text: "Not connected to niri";
+        }
+        ScrollList {
+            vertical-stretch: 1;
+            for w in Windows.items: Rectangle {
+                height: w.header ? 26px : 38px;
+                if w.header: Text {
+                    x: 6px;
+                    width: parent.width - 12px;
+                    text: w.title;
+                    font-size: Theme.font-small;
+                    font-weight: 600;
+                    color: Theme.faint;
+                    vertical-alignment: bottom;
+                    overflow: elide;
+                }
+                if !w.header: Row {
+                    height: parent.height - 2px;
+                    width: parent.width;
+                    selected: w.focused;
+                    clicked => {
+                        Windows.focus(w.id);
+                        Shell.hide();
+                    }
+                    middle-clicked => { Windows.close(w.id); }
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 4px;
+                        spacing: 8px;
+                        if w.has-icon: Image {
+                            y: (parent.height - self.height) / 2;
+                            source: w.icon;
+                            width: 22px;
+                            height: 22px;
+                        }
+                        if !w.has-icon: Icon {
+                            y: (parent.height - self.height) / 2;
+                            source: Icons.window;
+                            size: 20px;
+                            tint: Theme.faint;
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            horizontal-stretch: 1;
+                            Text {
+                                text: w.title;
+                                font-size: Theme.font-body;
+                                color: w.urgent ? Theme.warn : Theme.text;
+                                overflow: elide;
+                            }
+                        }
+                        Muted {
+                            max-width: 120px;
+                            text: w.app;
+                        }
+                        IconButton {
+                            y: (parent.height - self.height) / 2;
+                            icon: Icons.close;
+                            size: 26px;
+                            tint: Theme.faint;
+                            clicked => { Windows.close(w.id); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component NotificationsWidget inherits Rectangle {
+    in property <bool> round;
+    if root.round: Rectangle {
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            HorizontalLayout {
+                alignment: center;
+                Icon {
+                    source: Notifications.dnd ? Icons.bell-off : Icons.bell;
+                    size: root.width * 0.3;
+                    tint: Notifications.dnd ? Theme.warn : Notifications.items.length > 0 ? Theme.accent : Theme.faint;
+                }
+            }
+            Text {
+                text: Notifications.dnd ? (Notifications.missed > 0 ? Notifications.missed + " missed" : "Paused")
+                    : Notifications.items.length == 0 ? "None" : Notifications.items.length + " new";
+                horizontal-alignment: center;
+                font-size: max(10px, root.width * 0.08);
+                color: Theme.dim;
+            }
+        }
+    }
+    // The do-not-disturb choices are showing.
+    property <bool> choosing;
+    if !root.round: VerticalLayout {
+        padding: Theme.pad;
+        spacing: 6px;
+        Header {
+            icon: Notifications.dnd ? Icons.bell-off : Icons.bell;
+            icon-color: Notifications.dnd ? Theme.warn : Theme.dim;
+            title: "Notifications";
+            if Notifications.items.length > 0 && !root.choosing: TextButton {
+                text: "Clear";
+                clicked => { Notifications.clear(); }
+            }
+            if Notifications.server: IconButton {
+                y: (parent.height - self.height) / 2;
+                size: 28px;
+                icon: Notifications.dnd ? Icons.bell-off : Icons.bell;
+                active: root.choosing || Notifications.dnd;
+                clicked => { root.choosing = !root.choosing; }
+            }
+        }
+        if root.choosing: HorizontalLayout {
+            spacing: 6px;
+            alignment: start;
+            TextButton {
+                text: "1 hour";
+                clicked => { Notifications.set-dnd(1); root.choosing = false; }
+            }
+            TextButton {
+                text: "Until " + Notifications.morning;
+                clicked => { Notifications.set-dnd(2); root.choosing = false; }
+            }
+            if root.width > 330px || !Notifications.dnd: TextButton {
+                text: root.width > 330px ? "Until turned off" : "Always";
+                clicked => { Notifications.set-dnd(3); root.choosing = false; }
+            }
+            if Notifications.dnd: TextButton {
+                text: "Off";
+                primary: true;
+                clicked => { Notifications.set-dnd(0); root.choosing = false; }
+            }
+        }
+        if Notifications.dnd && !root.choosing: Muted {
+            text: Notifications.dnd-text + (Notifications.missed > 0 ? " · " + Notifications.missed + " without pop-up" : "");
+            color: Theme.warn;
+        }
+        if !Notifications.server: Muted {
+            text: "Another notification daemon is running; showing nothing.";
+            wrap: word-wrap;
+        }
+        if Notifications.items.length == 0: Empty {
+            vertical-stretch: 1;
+            text: "No notifications";
+        }
+        if Notifications.items.length > 0: ScrollList {
+            vertical-stretch: 1;
+            for n in Notifications.items: Rectangle {
+                height: card.preferred-height + 6px;
+                card := Rectangle {
+                    y: 0;
+                    height: self.preferred-height;
+                    border-radius: 12px;
+                    background: ta.has-hover ? Theme.card-raised.brighter(0.15) : Theme.card-raised;
+                    border-width: n.urgent ? 1px : 0;
+                    border-color: Theme.bad;
+                    ta := TouchArea {
+                        clicked => {
+                            if (n.has-default) {
+                                Notifications.invoke(n.id);
+                                Shell.hide();
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        padding: 10px;
+                        spacing: 10px;
+                        if n.has-icon: Image {
+                            source: n.icon;
+                            width: 32px;
+                            height: 32px;
+                        }
+                        VerticalLayout {
+                            spacing: 2px;
+                            horizontal-stretch: 1;
+                            HorizontalLayout {
+                                spacing: 6px;
+                                Muted {
+                                    text: n.app;
+                                    horizontal-stretch: 1;
+                                }
+                                Muted {
+                                    text: n.time;
+                                }
+                            }
+                            Text {
+                                text: n.summary;
+                                font-size: Theme.font-body;
+                                font-weight: 600;
+                                color: Theme.text;
+                                wrap: word-wrap;
+                            }
+                            if n.body != "": Text {
+                                text: n.body;
+                                font-size: Theme.font-small;
+                                color: Theme.dim;
+                                wrap: word-wrap;
+                                max-height: 52px;
+                                overflow: elide;
+                            }
+                        }
+                        IconButton {
+                            icon: Icons.close;
+                            size: 24px;
+                            tint: Theme.faint;
+                            clicked => { Notifications.dismiss(n.id); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component TrayWidget inherits Rectangle {
+    in property <bool> round;
+    property <length> inset: root.round ? root.width * 0.17 : 10px;
+    property <length> slot: root.round ? max(28px, (root.width - 2 * self.inset) / 3) : min(44px, root.height - 2 * self.inset);
+    property <int> per-row: max(1, floor((root.width - 2 * self.inset) / self.slot));
+    if Tray.items.length == 0: Empty {
+        text: root.round ? "" : "No tray icons";
+    }
+    for t[i] in Tray.items: Rectangle {
+        x: root.inset + mod(i, root.per-row) * root.slot;
+        y: root.inset + floor(i / root.per-row) * root.slot;
+        width: root.slot;
+        height: root.slot;
+        border-radius: Theme.radius-small;
+        background: ta.pressed ? Theme.pressed : ta.has-hover ? Theme.hover : transparent;
+        visible: self.y + self.height <= root.height + 1px;
+        if t.has-icon: Image {
+            source: t.icon;
+            width: parent.width * 0.62;
+            height: self.width;
+        }
+        if !t.has-icon: Text {
+            text: t.title == "" ? "?" : t.title;
+            font-size: 10px;
+            color: Theme.dim;
+            overflow: elide;
+            width: parent.width - 4px;
+            horizontal-alignment: center;
+        }
+        ta := TouchArea {
+            pointer-event(e) => {
+                if (e.kind == PointerEventKind.up && e.button == PointerEventButton.left) {
+                    Tray.activate(t.id, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+                }
+                if (e.kind == PointerEventKind.up && e.button == PointerEventButton.right && t.has-menu) {
+                    Tray.open-menu(t.id, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+                }
+            }
+        }
+    }
+}
+
+export component MediaWidget inherits Rectangle {
+    in property <bool> round;
+    if root.round: Rectangle {
+        Ring {
+            width: 100%;
+            height: 100%;
+            value: Media.progress;
+            thickness: max(4px, root.width * 0.045);
+            tint: Theme.accent;
+        }
+        IconButton {
+            size: root.width * 0.42;
+            icon-size: self.size * 0.4;
+            fill: Theme.card-raised;
+            icon: Media.playing ? Icons.pause : Icons.play;
+            enabled: Media.available;
+            clicked => { Media.play-pause(); }
+        }
+        Text {
+            y: parent.height * 0.76;
+            width: parent.width * 0.7;
+            x: parent.width * 0.15;
+            text: Media.available ? Media.title : "Nothing playing";
+            horizontal-alignment: center;
+            font-size: max(9px, root.width * 0.06);
+            color: Theme.dim;
+            overflow: elide;
+        }
+    }
+    // One lane (a single cell tall): art, title, controls side by side.
+    property <bool> lane: root.height < 120px;
+    if !root.round && root.lane: HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 10px;
+        if Media.has-art: Image {
+            y: (parent.height - self.height) / 2;
+            width: min(48px, root.height - 20px);
+            height: self.width;
+            source: Media.art;
+            image-fit: cover;
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: Media.available ? (Media.title == "" ? "Unknown title" : Media.title) : "Nothing playing";
+                font-size: Theme.font-body;
+                font-weight: 600;
+                color: Media.available ? Theme.text : Theme.faint;
+                overflow: elide;
+            }
+            if Media.available: Muted {
+                text: Media.artist == "" ? Media.player : Media.artist;
+            }
+        }
+        HorizontalLayout {
+            spacing: 2px;
+            alignment: center;
+            IconButton {
+                y: (parent.height - self.height) / 2;
+                icon: Icons.prev;
+                size: 30px;
+                enabled: Media.available;
+                clicked => { Media.previous(); }
+            }
+            IconButton {
+                y: (parent.height - self.height) / 2;
+                icon: Media.playing ? Icons.pause : Icons.play;
+                size: 36px;
+                fill: Theme.card-raised;
+                enabled: Media.available;
+                clicked => { Media.play-pause(); }
+            }
+            IconButton {
+                y: (parent.height - self.height) / 2;
+                icon: Icons.next;
+                size: 30px;
+                enabled: Media.available;
+                clicked => { Media.next(); }
+            }
+        }
+    }
+    if !root.round && !root.lane: VerticalLayout {
+        padding: 12px;
+        spacing: 6px;
+        alignment: center;
+        // Art and text on top, the controls centered underneath.
+        HorizontalLayout {
+            spacing: 12px;
+            vertical-stretch: 1;
+            if Media.has-art: Image {
+                width: max(0px, root.height - 24px - 46px);
+                source: Media.art;
+                image-fit: cover;
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: 4px;
+                Text {
+                    text: Media.available ? (Media.title == "" ? "Unknown title" : Media.title) : "Nothing playing";
+                    font-size: Theme.font-title;
+                    font-weight: 600;
+                    color: Media.available ? Theme.text : Theme.faint;
+                    overflow: elide;
+                    horizontal-alignment: Media.has-art ? left : center;
+                }
+                Muted {
+                    text: Media.artist == "" ? Media.player : Media.artist + "  ·  " + Media.player;
+                    visible: Media.available;
+                    horizontal-alignment: Media.has-art ? left : center;
+                }
+                if Media.available: Rectangle {
+                    height: 4px;
+                    border-radius: 2px;
+                    background: Theme.track;
+                    Rectangle {
+                        x: 0;
+                        width: parent.width * clamp(Media.progress, 0, 1);
+                        border-radius: 2px;
+                        background: Theme.accent;
+                    }
+                }
+            }
+        }
+        HorizontalLayout {
+            spacing: 6px;
+            alignment: center;
+            IconButton {
+                icon: Icons.prev;
+                size: 34px;
+                enabled: Media.available;
+                clicked => { Media.previous(); }
+            }
+            IconButton {
+                icon: Media.playing ? Icons.pause : Icons.play;
+                size: 40px;
+                fill: Theme.card-raised;
+                enabled: Media.available;
+                clicked => { Media.play-pause(); }
+            }
+            IconButton {
+                icon: Icons.next;
+                size: 34px;
+                enabled: Media.available;
+                clicked => { Media.next(); }
+            }
+        }
+    }
+}

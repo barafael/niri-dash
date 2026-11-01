@@ -1,0 +1,24 @@
+// niri-dash color scheme: "catppuccin-latte" (Catppuccin Latte). See default.kdl for what each color is for.
+
+colors {
+    backdrop    "#dce0e8d0"
+    card        "#eff1f5f0"
+    card-raised "#ccd0da"
+    panel       "#eff1f5"
+    hover       "#4c4f690f"
+    pressed     "#4c4f691f"
+    border      "#4c4f691f"
+    subtle      "#4c4f690a"
+    shadow      "#00000040"
+    text        "#4c4f69"
+    dim         "#6c6f85"
+    faint       "#9ca0b0"
+    accent      "#8839ef"
+    accent-soft "#8839ef29"
+    on-accent   "#eff1f5"
+    good        "#40a02b"
+    warn        "#fe640b"
+    bad         "#d20f39"
+    track       "#4c4f691f"
+    knob        "#eff1f5"
+}

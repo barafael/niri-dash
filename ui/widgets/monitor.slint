@@ -1,0 +1,423 @@
+import { Theme, Icons } from "../theme.slint";
+import { Perf, ClaudeUsage, Claude, WidgetOpts } from "../data.slint";
+import { Icon, Ring, Graph, Header, Muted, Empty } from "../common.slint";
+
+// A label and a value on one line.
+component Stat inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> value;
+    in property <color> value-color: Theme.text;
+    height: 20px;
+    spacing: 8px;
+    Muted {
+        text: root.label;
+        horizontal-stretch: 1;
+    }
+    Text {
+        text: root.value;
+        font-size: Theme.font-small;
+        color: root.value-color;
+        vertical-alignment: center;
+        horizontal-alignment: right;
+    }
+}
+
+// A thin usage bar.
+component Bar inherits Rectangle {
+    in property <float> value;
+    in property <color> tint: Theme.accent;
+    height: 6px;
+    border-radius: 3px;
+    background: Theme.track;
+    Rectangle {
+        x: 0;
+        width: parent.width * clamp(root.value, 0, 1);
+        border-radius: 3px;
+        background: root.value > 0.9 ? Theme.bad : root.tint;
+    }
+}
+
+// A round widget: a ring with a big number and a caption.
+component RoundGauge inherits Rectangle {
+    in property <float> value;
+    in property <float> inner: -1;
+    in property <color> tint: Theme.accent;
+    in property <color> inner-tint: Theme.good;
+    in property <string> big;
+    in property <string> caption;
+    Ring {
+        width: 100%;
+        height: 100%;
+        value: root.value;
+        thickness: max(6px, root.width * 0.06);
+        tint: root.value > 0.9 ? Theme.bad : root.tint;
+    }
+    if root.inner >= 0: Ring {
+        width: 76%;
+        height: 76%;
+        value: root.inner;
+        thickness: max(5px, root.width * 0.05);
+        tint: root.inner-tint;
+    }
+    VerticalLayout {
+        alignment: center;
+        Text {
+            text: root.big;
+            horizontal-alignment: center;
+            font-size: max(13px, root.width * 0.15);
+            font-weight: Theme.font-weight-display;
+            color: Theme.text;
+        }
+        Text {
+            text: root.caption;
+            horizontal-alignment: center;
+            font-size: max(9px, root.width * 0.06);
+            color: Theme.dim;
+            overflow: elide;
+        }
+    }
+}
+
+export component MemoryWidget inherits Rectangle {
+    in property <bool> round;
+    in property <WidgetOpts> opts;
+    if root.round: RoundGauge {
+        value: Perf.mem;
+        inner: Perf.swap;
+        tint: Theme.good;
+        inner-tint: Theme.warn;
+        big: Math.round(Perf.mem * 100) + "%";
+        caption: "RAM · swap";
+    }
+    if !root.round: VerticalLayout {
+        padding: Theme.pad;
+        spacing: 6px;
+        HorizontalLayout {
+            height: 28px;
+            spacing: 8px;
+            Text {
+                text: "Memory";
+                font-size: Theme.font-title;
+                font-weight: 600;
+                color: Theme.text;
+                vertical-alignment: center;
+            }
+            Muted {
+                text: Perf.mem-used-text;
+                horizontal-stretch: 1;
+            }
+            Text {
+                text: Math.round(Perf.mem * 100) + "%";
+                font-size: Theme.font-title;
+                color: Perf.mem > 0.9 ? Theme.bad : Theme.good;
+                vertical-alignment: center;
+            }
+        }
+        Graph {
+            vertical-stretch: 1;
+            min-height: 30px;
+            values: Perf.mem-history;
+            capacity: root.opts.history;
+            tint: Theme.good;
+        }
+        Stat {
+            label: Perf.mem-avail-text;
+            value: Perf.swap-text;
+            value-color: Perf.swap > 0.5 ? Theme.warn : Theme.dim;
+        }
+        if root.opts.top-apps > 0 && root.height > 220px: VerticalLayout {
+            spacing: 0px;
+            for p[i] in Perf.top-mem: VerticalLayout {
+                if i < root.opts.top-apps: Stat {
+                    label: p.name;
+                    value: p.value;
+                }
+            }
+        }
+    }
+}
+
+export component DisksWidget inherits Rectangle {
+    in property <bool> round;
+    in property <WidgetOpts> opts;
+    if root.round: RoundGauge {
+        value: Perf.root-used;
+        tint: Theme.accent;
+        big: Math.round(Perf.root-used * 100) + "%";
+        caption: "/ used";
+    }
+    if !root.round: VerticalLayout {
+        padding: Theme.pad;
+        spacing: 6px;
+        HorizontalLayout {
+            height: 24px;
+            spacing: 8px;
+            Text {
+                text: "Disks";
+                font-size: Theme.font-title;
+                font-weight: 600;
+                color: Theme.text;
+                vertical-alignment: center;
+            }
+            Muted {
+                text: Perf.disk-read-text + "  ·  " + Perf.disk-write-text;
+                horizontal-stretch: 1;
+                horizontal-alignment: right;
+            }
+        }
+        for d in root.opts.hide-system ? Perf.user-disks : Perf.disks: VerticalLayout {
+            spacing: 3px;
+            Stat {
+                label: d.mount;
+                value: d.text;
+            }
+            Bar {
+                value: d.used;
+            }
+        }
+        if root.height > 180px: Graph {
+            vertical-stretch: 1;
+            min-height: 24px;
+            values: Perf.disk-history;
+            tint: Theme.warn;
+        }
+        Rectangle {
+            vertical-stretch: root.height > 180px ? 0 : 1;
+        }
+    }
+}
+
+export component NetworkWidget inherits Rectangle {
+    in property <bool> round;
+    in property <WidgetOpts> opts;
+    if root.round: Rectangle {
+        Ring {
+            width: 100%;
+            height: 100%;
+            value: Perf.net-rx-frac;
+            thickness: max(6px, root.width * 0.06);
+            tint: Theme.accent;
+        }
+        Ring {
+            width: 76%;
+            height: 76%;
+            value: Perf.net-tx-frac;
+            thickness: max(5px, root.width * 0.05);
+            tint: Theme.warn;
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: "↓ " + Perf.net-rx-text;
+                horizontal-alignment: center;
+                font-size: max(10px, root.width * 0.075);
+                color: Theme.accent;
+            }
+            Text {
+                text: "↑ " + Perf.net-tx-text;
+                horizontal-alignment: center;
+                font-size: max(10px, root.width * 0.075);
+                color: Theme.warn;
+            }
+        }
+    }
+    if !root.round: VerticalLayout {
+        padding: Theme.pad;
+        spacing: 6px;
+        HorizontalLayout {
+            height: 24px;
+            spacing: 10px;
+            Text {
+                text: "↓ " + Perf.net-rx-text;
+                font-size: Theme.font-title;
+                color: Theme.accent;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "↑ " + Perf.net-tx-text;
+                font-size: Theme.font-title;
+                color: Theme.warn;
+                vertical-alignment: center;
+            }
+            Muted {
+                text: Perf.net-iface + (Perf.net-addr != "" ? "  " + Perf.net-addr : "");
+                horizontal-stretch: 1;
+                horizontal-alignment: right;
+            }
+        }
+        if root.height > 110px: Rectangle {
+            vertical-stretch: 1;
+            min-height: 24px;
+            Graph {
+                values: Perf.net-rx-history;
+                capacity: root.opts.history;
+                tint: Theme.accent;
+            }
+            Graph {
+                values: Perf.net-tx-history;
+                capacity: root.opts.history;
+                tint: Theme.warn;
+                fill-area: false;
+                background: transparent;
+            }
+        }
+        if root.height > 110px: Muted {
+            text: Perf.net-peak-text;
+        }
+    }
+}
+
+export component GpuWidget inherits Rectangle {
+    in property <bool> round;
+    in property <WidgetOpts> opts;
+    if !Perf.has-gpu: Empty {
+        text: "No GPU with readable load (amdgpu)";
+    }
+    if Perf.has-gpu && root.round: RoundGauge {
+        value: Perf.gpu-busy;
+        inner: Perf.gpu-vram;
+        tint: Theme.accent;
+        inner-tint: Theme.warn;
+        big: Math.round(Perf.gpu-busy * 100) + "%";
+        caption: "GPU · VRAM";
+    }
+    if Perf.has-gpu && !root.round: VerticalLayout {
+        padding: Theme.pad;
+        spacing: 6px;
+        HorizontalLayout {
+            height: 24px;
+            spacing: 8px;
+            Text {
+                text: "GPU";
+                font-size: Theme.font-title;
+                font-weight: 600;
+                color: Theme.text;
+                vertical-alignment: center;
+            }
+            Muted {
+                text: Perf.gpu-name;
+                horizontal-stretch: 1;
+            }
+            Muted {
+                text: Perf.gpu-temp-text + (Perf.gpu-power-text != "" ? "  ·  " + Perf.gpu-power-text : "");
+            }
+            Text {
+                text: Math.round(Perf.gpu-busy * 100) + "%";
+                font-size: Theme.font-title;
+                color: Theme.accent;
+                vertical-alignment: center;
+            }
+        }
+        if root.height > 110px: Graph {
+            vertical-stretch: 1;
+            min-height: 24px;
+            values: Perf.gpu-history;
+            capacity: root.opts.history;
+            tint: Theme.accent;
+        }
+        Stat {
+            label: "Video memory";
+            value: Perf.gpu-vram-text;
+        }
+        Bar {
+            value: Perf.gpu-vram;
+            tint: Theme.warn;
+        }
+    }
+}
+
+export component ClaudeUsageWidget inherits Rectangle {
+    in property <bool> round;
+    if root.round: RoundGauge {
+        value: ClaudeUsage.window-progress;
+        tint: Theme.accent;
+        big: ClaudeUsage.window-active ? ClaudeUsage.window-count : "idle";
+        caption: ClaudeUsage.window-active ? "tokens · " + ClaudeUsage.window-resets : ClaudeUsage.plan;
+    }
+    if !root.round: VerticalLayout {
+        padding: Theme.pad;
+        spacing: 6px;
+        HorizontalLayout {
+            height: 26px;
+            spacing: 8px;
+            Icon {
+                y: (parent.height - self.height) / 2;
+                source: Icons.sparkle;
+                size: 18px;
+                tint: Theme.accent;
+            }
+            Text {
+                text: "Claude";
+                font-size: Theme.font-title;
+                font-weight: 600;
+                color: Theme.text;
+                vertical-alignment: center;
+            }
+            Rectangle {
+                y: (parent.height - self.height) / 2;
+                height: 20px;
+                width: plan-text.preferred-width + 14px;
+                border-radius: min(self.height / 2, Theme.radius-small);
+                background: Theme.accent-soft;
+                plan-text := Text {
+                    text: ClaudeUsage.plan;
+                    font-size: Theme.font-small;
+                    color: Theme.accent;
+                }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            Muted {
+                text: Claude.sessions.length == 0 ? "no sessions"
+                    : Claude.busy + " working · " + (Claude.sessions.length - Claude.busy) + " waiting";
+            }
+        }
+        // The current 5-hour window: how far along, how much used.
+        HorizontalLayout {
+            height: 20px;
+            Text {
+                text: ClaudeUsage.window-active ? "5-hour window · " + ClaudeUsage.window-tokens : "5-hour window";
+                font-size: Theme.font-body;
+                color: Theme.text;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+            Muted {
+                text: ClaudeUsage.window-active ? ClaudeUsage.window-left + " · " + ClaudeUsage.window-resets : ClaudeUsage.window-left;
+            }
+        }
+        Bar {
+            value: ClaudeUsage.window-progress;
+        }
+        if ClaudeUsage.window-active: Stat {
+            label: ClaudeUsage.window-messages + " messages · " + ClaudeUsage.burn;
+            value: ClaudeUsage.window-cached;
+            value-color: Theme.dim;
+        }
+        if ClaudeUsage.window-active && root.height > 200px: HorizontalLayout {
+            spacing: 4px;
+            height: 18px;
+            for m in ClaudeUsage.models: Rectangle {
+                horizontal-stretch: max(0.15, m.share);
+                border-radius: 4px;
+                background: Theme.card-raised;
+                Text {
+                    text: m.name + " " + Math.round(m.share * 100) + "%";
+                    font-size: Theme.font-small;
+                    color: Theme.dim;
+                    overflow: elide;
+                }
+            }
+        }
+        if root.height > 160px: Graph {
+            vertical-stretch: 1;
+            min-height: 24px;
+            values: ClaudeUsage.hourly;
+            capacity: 24;
+            tint: Theme.accent;
+        }
+        Stat {
+            label: ClaudeUsage.today;
+            value: ClaudeUsage.week;
+        }
+    }
+}

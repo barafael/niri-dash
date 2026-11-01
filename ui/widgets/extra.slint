@@ -1,0 +1,293 @@
+import { Theme, Icons } from "../theme.slint";
+import { Claude, Clipboard, Weather, Shell } from "../data.slint";
+import { Icon, IconButton, TextButton, Ring, Header, Row, Muted, Empty , ScrollList } from "../common.slint";
+
+// A session's status: accent with a halo while working. Deliberately still: any animation here
+// means a redraw several times a second, and every frame makes the compositor recomposite the
+// whole screen behind the translucent dashboard.
+component StatusDot inherits Rectangle {
+    in property <bool> busy;
+    width: 10px;
+    height: 10px;
+    border-radius: 5px;
+    background: busy ? Theme.accent : Theme.good;
+    Rectangle {
+        visible: root.busy;
+        width: parent.width * 1.9;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: Theme.accent.with-alpha(0.22);
+    }
+}
+
+export component ClaudeWidget inherits Rectangle {
+    in property <bool> round;
+    if root.round: Rectangle {
+        Ring {
+            width: 100%;
+            height: 100%;
+            value: Claude.sessions.length == 0 ? 0 : Claude.busy / Claude.sessions.length;
+            thickness: max(6px, root.width * 0.06);
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: Claude.sessions.length;
+                horizontal-alignment: center;
+                font-size: root.width * 0.26;
+                font-weight: Theme.font-weight-display;
+                color: Theme.text;
+            }
+            Text {
+                text: Claude.busy > 0 ? Claude.busy + " working" : "sessions";
+                horizontal-alignment: center;
+                font-size: max(10px, root.width * 0.07);
+                color: Claude.busy > 0 ? Theme.accent : Theme.dim;
+            }
+        }
+    }
+    if !root.round: VerticalLayout {
+        padding: Theme.pad;
+        spacing: 6px;
+        Header {
+            icon: Icons.sparkle;
+            icon-color: Claude.busy > 0 ? Theme.accent : Theme.dim;
+            title: "Claude sessions";
+            Muted {
+                text: Claude.busy > 0 ? Claude.busy + " working · " + Claude.sessions.length : Claude.sessions.length;
+            }
+        }
+        if Claude.sessions.length == 0: Empty {
+            vertical-stretch: 1;
+            text: "No Claude Code sessions running";
+        }
+        if Claude.sessions.length > 0: ScrollList {
+            vertical-stretch: 1;
+            for s in Claude.sessions: Rectangle {
+                height: 48px;
+                Row {
+                    height: parent.height - 2px;
+                    enabled: s.has-window;
+                    clicked => {
+                        Claude.focus(s.pid);
+                        Shell.hide();
+                    }
+                    HorizontalLayout {
+                        padding-left: 10px;
+                        padding-right: 10px;
+                        spacing: 10px;
+                        StatusDot {
+                            y: (parent.height - self.height) / 2;
+                            busy: s.busy;
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            horizontal-stretch: 1;
+                            Text {
+                                text: s.title;
+                                font-size: Theme.font-body;
+                                color: Theme.text;
+                                overflow: elide;
+                            }
+                            Muted {
+                                text: s.place + "  ·  " + s.status;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component ClipboardWidget inherits Rectangle {
+    in property <bool> round;
+    if root.round: VerticalLayout {
+        alignment: center;
+        spacing: 2px;
+        HorizontalLayout {
+            alignment: center;
+            Icon {
+                source: Icons.clipboard;
+                size: root.width * 0.3;
+                tint: Clipboard.items.length > 0 ? Theme.accent : Theme.faint;
+            }
+        }
+        Text {
+            text: Clipboard.items.length + " items";
+            horizontal-alignment: center;
+            font-size: max(10px, root.width * 0.08);
+            color: Theme.dim;
+        }
+    }
+    if !root.round: VerticalLayout {
+        padding: Theme.pad;
+        spacing: 6px;
+        Header {
+            icon: Icons.clipboard;
+            title: "Clipboard";
+            if Clipboard.items.length > 0: TextButton {
+                text: "Clear";
+                clicked => { Clipboard.clear(); }
+            }
+        }
+        if !Clipboard.available: Empty {
+            vertical-stretch: 1;
+            text: "The compositor doesn't offer clipboard access (wlr-data-control)";
+        }
+        if Clipboard.available && Clipboard.items.length == 0: Empty {
+            vertical-stretch: 1;
+            text: "Nothing copied yet";
+        }
+        if Clipboard.items.length > 0: ScrollList {
+            vertical-stretch: 1;
+            for c in Clipboard.items: Rectangle {
+                height: c.is-image ? 72px : 44px;
+                Row {
+                    height: parent.height - 3px;
+                    selected: c.index == 0;
+                    clicked => { Clipboard.copy(c.index); }
+                    HorizontalLayout {
+                        padding-left: 10px;
+                        padding-right: 4px;
+                        spacing: 10px;
+                        if c.is-image: Image {
+                            y: 4px;
+                            height: parent.height - 8px;
+                            width: self.height * 1.5;
+                            source: c.image;
+                            image-fit: contain;
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            horizontal-stretch: 1;
+                            Text {
+                                text: c.text;
+                                font-size: Theme.font-body;
+                                color: Theme.text;
+                                overflow: elide;
+                            }
+                            Muted {
+                                text: c.info;
+                            }
+                        }
+                        IconButton {
+                            y: (parent.height - self.height) / 2;
+                            icon: Icons.close;
+                            size: 26px;
+                            tint: Theme.faint;
+                            clicked => { Clipboard.remove(c.index); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component WeatherWidget inherits Rectangle {
+    in property <bool> round;
+    if !Weather.loaded: VerticalLayout {
+        padding: Theme.pad;
+        alignment: center;
+        Empty {
+            text: Weather.error != "" ? Weather.error : "Loading weather…";
+        }
+    }
+    if Weather.loaded && root.round: VerticalLayout {
+        alignment: center;
+        spacing: 0px;
+        HorizontalLayout {
+            alignment: center;
+            Icon {
+                source: Icons.weather(Weather.icon);
+                size: root.width * 0.3;
+                tint: Theme.warn;
+            }
+        }
+        Text {
+            text: Weather.temp;
+            horizontal-alignment: center;
+            font-size: root.width * 0.2;
+            font-weight: Theme.font-weight-display;
+            color: Theme.text;
+        }
+        Text {
+            text: Weather.place;
+            horizontal-alignment: center;
+            font-size: max(9px, root.width * 0.065);
+            color: Theme.dim;
+            overflow: elide;
+        }
+    }
+    if Weather.loaded && !root.round: VerticalLayout {
+        padding: Theme.pad;
+        spacing: 8px;
+        HorizontalLayout {
+            spacing: 14px;
+            vertical-stretch: 1;
+            Icon {
+                y: (parent.height - self.height) / 2;
+                source: Icons.weather(Weather.icon);
+                size: min(56px, root.height - 2 * Theme.pad - (root.height > 150px ? 66px : 0px));
+                tint: Theme.warn;
+            }
+            Text {
+                text: Weather.temp;
+                vertical-alignment: center;
+                font-size: min(44px, root.height * 0.3);
+                font-weight: Theme.font-weight-display;
+                color: Theme.text;
+            }
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                Text {
+                    text: Weather.description + " · " + Weather.place;
+                    font-size: Theme.font-body;
+                    color: Theme.text;
+                    overflow: elide;
+                }
+                Muted {
+                    text: Weather.feels;
+                }
+                if root.height > 150px: Muted {
+                    text: Weather.details;
+                }
+            }
+        }
+        if root.height > 150px && Weather.days.length > 0: HorizontalLayout {
+            height: 58px;
+            spacing: 4px;
+            for d in Weather.days: Rectangle {
+                border-radius: Theme.radius-small;
+                background: Theme.subtle;
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 1px;
+                    Text {
+                        text: d.name;
+                        horizontal-alignment: center;
+                        font-size: Theme.font-small;
+                        color: Theme.dim;
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        Icon {
+                            source: Icons.weather(d.icon);
+                            size: 16px;
+                            tint: Theme.warn;
+                        }
+                    }
+                    Text {
+                        text: d.max + " " + d.min;
+                        horizontal-alignment: center;
+                        font-size: Theme.font-small;
+                        color: Theme.text;
+                    }
+                }
+            }
+        }
+    }
+}
