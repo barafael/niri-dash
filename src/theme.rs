@@ -67,13 +67,6 @@ pub const STYLES: &[(&str, &str)] = &[
 pub const DEFAULT_COLORSCHEME: &str = COLORSCHEMES[0].1;
 pub const DEFAULT_STYLE: &str = STYLES[0].1;
 
-/// The single-file themes of earlier versions (colors and design in one file). Only used to
-/// recognize and remove untouched copies; custom ones still load as color schemes.
-const LEGACY: &[&str] = &[
-    include_str!("../assets/legacy/default.kdl"),
-    include_str!("../assets/legacy/light.kdl"),
-];
-
 /// A role a color plays in the UI. The kebab-case name is the key in color scheme files.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, EnumString, AsRefStr, EnumCount)]
 #[strum(serialize_all = "kebab-case")]
@@ -413,12 +406,7 @@ fn apply_style<'a>(
 }
 
 fn style_of(doc: &KdlDocument, look: &mut Look, warnings: &mut Vec<String>) {
-    // "design" is what the block was called in single-file themes.
-    let Some(block) = doc
-        .get("style")
-        .or_else(|| doc.get("design"))
-        .and_then(|n| n.children())
-    else {
+    let Some(block) = doc.get("style").and_then(|n| n.children()) else {
         return;
     };
     let pairs = block
@@ -668,14 +656,7 @@ fn resolve_path(dir: &Path, name: &str) -> PathBuf {
     if name.contains('/') {
         return PathBuf::from(name);
     }
-    let p = dir.join(format!("{name}.kdl"));
-    // Single-file themes from earlier versions still work as color schemes.
-    let legacy = config_dir().join("themes").join(format!("{name}.kdl"));
-    if !p.exists() && legacy.exists() {
-        legacy
-    } else {
-        p
-    }
+    dir.join(format!("{name}.kdl"))
 }
 
 pub fn colorscheme_path(name: &str) -> PathBuf {
@@ -696,8 +677,7 @@ pub fn load_text(path: &Path, bundled: &[(&str, &str)], name: &str) -> Option<St
     })
 }
 
-/// Write the bundled color schemes and styles if missing (never overwrites user edits), and
-/// remove untouched single-file themes from earlier versions.
+/// Write the bundled color schemes and styles if missing (never overwrites user edits).
 pub fn install_bundled() {
     for (dir, set) in [(colorschemes_dir(), COLORSCHEMES), (styles_dir(), STYLES)] {
         let _ = std::fs::create_dir_all(&dir);
@@ -709,15 +689,6 @@ pub fn install_bundled() {
                 log::warn!("writing {}: {e}", p.display());
             }
         }
-    }
-    let legacy = config_dir().join("themes");
-    if let Ok(rd) = std::fs::read_dir(&legacy) {
-        for e in rd.flatten() {
-            if std::fs::read_to_string(e.path()).is_ok_and(|t| LEGACY.contains(&t.as_str())) {
-                let _ = std::fs::remove_file(e.path());
-            }
-        }
-        let _ = std::fs::remove_dir(&legacy); // only succeeds if nothing custom is left
     }
 }
 
@@ -808,10 +779,6 @@ mod tests {
                 *name == "default" || !description(text).is_empty(),
                 "{name} has a description"
             );
-        }
-        for text in LEGACY {
-            let (_, warnings) = resolve(text, text);
-            assert!(warnings.is_empty(), "{warnings:?}");
         }
     }
 

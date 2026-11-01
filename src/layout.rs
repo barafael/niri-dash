@@ -8,35 +8,27 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use strum::{AsRefStr, EnumIter, EnumString, IntoStaticStr};
 
-/// A widget type. The name (first `to_string`) is what config.kdl uses; other spellings are
-/// accepted when reading.
+/// A widget type. Its name ([`Kind::name`]) is what config.kdl uses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, EnumString, AsRefStr, IntoStaticStr)]
 #[strum(serialize_all = "kebab-case")]
 pub enum Kind {
     Clock,
     Calendar,
-    #[strum(
-        to_string = "system-monitor",
-        serialize = "perf",
-        serialize = "system",
-        serialize = "monitor"
-    )]
+    #[strum(to_string = "system-monitor")]
     Perf,
     Windows,
-    #[strum(to_string = "claude-sessions", serialize = "claude")]
+    #[strum(to_string = "claude-sessions")]
     Claude,
     Wifi,
     Bluetooth,
-    #[strum(to_string = "battery", serialize = "power")]
     Battery,
-    #[strum(to_string = "volume", serialize = "audio")]
+    #[strum(to_string = "volume")]
     Audio,
     Brightness,
     Notifications,
     Tray,
     Media,
     Session,
-    #[strum(to_string = "clipboard", serialize = "clipboard-history")]
     Clipboard,
     Weather,
     Memory,
@@ -45,11 +37,9 @@ pub enum Kind {
     Gpu,
     ClaudeUsage,
     Mascot,
-    #[strum(to_string = "keyboard-layout", serialize = "keyboard")]
     KeyboardLayout,
     ColorPicker,
     Timer,
-    #[strum(to_string = "notes", serialize = "sticky-notes")]
     Notes,
     Privacy,
 }
@@ -257,9 +247,7 @@ pub struct WeatherConfig {
 pub enum RendererChoice {
     #[default]
     Auto,
-    #[strum(serialize = "gpu", serialize = "opengl", serialize = "hardware")]
     Gpu,
-    #[strum(serialize = "software", serialize = "cpu")]
     Software,
 }
 
@@ -457,7 +445,7 @@ impl Layout {
             None => 100.0,
         }
         .clamp(40.0, 400.0);
-        // `theme colorscheme="…" style="…"`, or the older `theme "name"` (a color scheme).
+        // `theme colorscheme="…" style="…"`.
         let (mut colorscheme, mut style) = ("default".to_string(), "default".to_string());
         let mut style_overrides: Vec<(String, KdlValue)> = Vec::new();
         if let Some(node) = doc.get("theme") {
@@ -467,12 +455,7 @@ impl Layout {
                     .find(|e| e.name().is_some_and(|n| n.value() == k))
                     .and_then(|e| e.value().as_string())
             };
-            let positional = node
-                .entries()
-                .iter()
-                .find(|e| e.name().is_none())
-                .and_then(|e| e.value().as_string());
-            if let Some(c) = prop("colorscheme").or(positional).filter(|s| !s.is_empty()) {
+            if let Some(c) = prop("colorscheme").filter(|s| !s.is_empty()) {
                 colorscheme = c.to_string();
             }
             if let Some(st) = prop("style").filter(|s| !s.is_empty()) {
@@ -613,22 +596,6 @@ impl Layout {
                 t
             }
         };
-        // Upgrade the theme comment and line written by earlier versions.
-        const OLD: &str = "// A theme from ~/.config/niri-dash/themes/ (\"default\", \"light\", or your own), or a path.\n";
-        const NEW: &str = "// The theme: a color scheme (colors) from ~/.config/niri-dash/colorschemes/ and a style\n// (corners, spacing, fonts, animation speed) from styles/. Any scheme goes with any style.\n";
-        let text = if text.contains(OLD) {
-            let upgraded = text.replacen(OLD, NEW, 1);
-            match Self::parse(&upgraded) {
-                Ok((mut l, _)) => {
-                    let t = l.to_text();
-                    let _ = std::fs::write(&path, &t);
-                    t
-                }
-                Err(_) => text,
-            }
-        } else {
-            text
-        };
         match Self::parse(&text) {
             Ok(r) => r,
             Err(e) => {
@@ -642,22 +609,18 @@ impl Layout {
     /// removed widgets dropped and new ones appended. Everything else is kept as written.
     pub fn to_text(&mut self) -> String {
         let mut doc = self.doc.clone();
-        // The theme line: rewrite it only if it changed, upgrading the old `theme "name"` form.
+        // The theme line: rewrite it only if it changed.
         let want = (self.colorscheme.clone(), self.style.clone());
         let have = Layout::parse(&doc.to_string())
             .ok()
             .map(|(l, _)| (l.colorscheme, l.style));
-        let legacy = doc
-            .get("theme")
-            .is_some_and(|n| n.entries().iter().any(|e| e.name().is_none()));
-        if have.as_ref() != Some(&want) || legacy {
+        if have.as_ref() != Some(&want) {
             if doc.get("theme").is_none() {
                 let mut n = KdlNode::new("theme");
                 n.autoformat();
                 doc.nodes_mut().insert(0, n);
             }
             let node = doc.get_mut("theme").expect("ensured above");
-            node.entries_mut().retain(|e| e.name().is_some());
             set_prop(
                 node,
                 "colorscheme",
@@ -943,8 +906,8 @@ impl Layout {
         }
     }
 
-    /// Where the weather comes from: the first weather widget's settings, over the older global
-    /// `weather` node.
+    /// Where the weather comes from: the first weather widget's settings, over the top-level
+    /// `weather` node (the one place to give coordinates).
     pub fn weather_config(&self, us: bool) -> WeatherConfig {
         use crate::widget_settings::{Opt, get_str};
         let mut cfg = self.weather.clone();
@@ -1762,6 +1725,7 @@ impl Layout {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use strum::IntoEnumIterator;
 
     fn grid() -> Layout {
         let (mut l, warnings) = Layout::parse(&Layout::default_text()).unwrap();
@@ -1876,8 +1840,13 @@ mod tests {
     }
 
     #[test]
-    fn v1_style_and_aliases_parse() {
-        let (l, warnings) = Layout::parse("layout {\n  perf col=0 row=0 width=4 height=3\n  audio col=4 row=0 size=2 shape=\"round\"\n}").unwrap();
+    fn widget_names_and_round_size_parse() {
+        for kind in Kind::iter() {
+            assert_eq!(Kind::from_str_opt(kind.name()), Some(kind));
+        }
+        assert_eq!(Kind::Perf.name(), "system-monitor");
+        assert_eq!(Kind::from_str_opt("perf"), None);
+        let (l, warnings) = Layout::parse("layout {\n  system-monitor col=0 row=0 width=4 height=3\n  volume col=4 row=0 size=2 shape=\"round\"\n}").unwrap();
         assert!(warnings.is_empty(), "{warnings:?}");
         assert_eq!(l.widgets[0].kind, Kind::Perf);
         assert_eq!(
@@ -1968,8 +1937,8 @@ mod tests {
 
     #[test]
     fn theme_is_written_back() {
-        // The old form is read as a color scheme and upgraded on save.
-        let (mut l, _) = Layout::parse("// hi\ntheme \"light\"\nlayout {\n}\n").unwrap();
+        let (mut l, _) =
+            Layout::parse("// hi\ntheme colorscheme=\"light\"\nlayout {\n}\n").unwrap();
         assert_eq!(
             (l.colorscheme.as_str(), l.style.as_str()),
             ("light", "default")
