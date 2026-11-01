@@ -374,7 +374,10 @@ export component SignalBars inherits Rectangle {
 // and the bar only shows when there is something to scroll.
 export component ScrollList inherits Rectangle {
     property <bool> scrolls: flick.content-height > root.height + 1px;
-    property <length> gutter: 10px;
+    // Lists sit in a card's padding; the scrollbar goes there too, so rows are as wide as the
+    // header above them and line up with its buttons. Only a tight padding needs a gutter.
+    property <bool> in-padding: Theme.pad >= 8px;
+    property <length> gutter: self.in-padding ? 0px : 10px;
     flick := Flickable {
         x: 0;
         width: root.width - root.gutter;
@@ -386,7 +389,7 @@ export component ScrollList inherits Rectangle {
         }
     }
     if root.scrolls: Rectangle {
-        x: root.width - 5px;
+        x: root.in-padding ? root.width + (Theme.pad - self.width) / 2 : root.width - 5px;
         width: 4px;
         border-radius: 2px;
         background: Theme.subtle;

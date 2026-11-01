@@ -213,12 +213,22 @@ export component Dash inherits Window {
     // Only opening/closing the drawer animates the squeeze; screen size changes apply at once.
     property <float> drawer-shift: self.drawer-shown ? 1 : 0;
     animate drawer-shift { duration: 240ms * Theme.motion; easing: cubic-bezier(0.2, 0.9, 0.3, 1.0); }
-    property <length> avail-w: self.width - self.drawer-shift * (self.drawer-w + 16px);
+    // The drawer keeps this distance to the screen edges; while it is open the cards keep the
+    // same distance to the screen edge and to the drawer, and start level with its top.
+    property <length> edge: 16px;
+    property <length> drawer-y: self.bar + 8px;
+    property <length> avail-w: self.width - self.drawer-shift * (self.drawer-w + self.edge);
     out property <int> cols: max(4, floor((self.width - 2 * self.margin) / self.cell-size));
     out property <int> rows: max(3, floor((self.height - self.bar - self.margin) / self.cell-size));
-    property <length> cell: min((self.avail-w - 2 * self.margin) / self.cols, (self.height - self.bar - self.margin) / self.rows);
+    // The space the grid may take. Cells reach `Theme.gap` past their cards, so with the drawer
+    // open the grid's bounds are the cards' bounds widened by a gap.
+    property <length> grid-side: self.margin + self.drawer-shift * (self.edge - Theme.gap - self.margin);
+    property <length> grid-top: self.bar + self.drawer-shift * (self.drawer-y - Theme.gap - self.bar);
+    property <length> grid-bottom: self.height - self.margin + self.drawer-shift * (self.margin - self.edge + Theme.gap);
+    property <length> cell: min((self.avail-w - 2 * self.grid-side) / self.cols, (self.grid-bottom - self.grid-top) / self.rows);
     property <length> grid-x: (self.avail-w - self.cols * self.cell) / 2;
-    property <length> grid-y: self.bar + (self.height - self.bar - self.margin - self.rows * self.cell) / 2;
+    // Centered vertically; top-aligned with the drawer while it is open.
+    property <length> grid-y: self.grid-top + (1 - self.drawer-shift) * (self.grid-bottom - self.grid-top - self.rows * self.cell) / 2;
 
     // Dragging a new widget from the drawer (add) or a picked-up widget (carry).
     in-out property <DragMode> drag-mode: DragMode.none;
@@ -376,21 +386,6 @@ export component Dash inherits Window {
             horizontal-stretch: 1;
             overflow: elide;
         }
-        if root.editing: TextButton {
-            y: (parent.height - self.height) / 2 + 3px;
-            text: "Reset";
-            icon: Icons.reset;
-            has-icon: true;
-            clicked => { root.reset-layout(); }
-        }
-        if root.editing: TextButton {
-            y: (parent.height - self.height) / 2 + 3px;
-            text: "Done";
-            primary: true;
-            icon: Icons.check;
-            has-icon: true;
-            clicked => { root.set-editing(false); }
-        }
         if !root.editing: IconButton {
             y: (parent.height - self.height) / 2 + 3px;
             icon: Icons.edit;
@@ -515,13 +510,36 @@ export component Dash inherits Window {
         }
     }
 
+    // The edit mode's buttons sit over the drawer, flush with its edges, and slide in with it.
+    if root.editing: HorizontalLayout {
+        x: drawer.x;
+        width: drawer.width;
+        // Level with the bar's buttons outside edit mode.
+        y: 6px + (root.bar - 6px - self.height) / 2 + 3px;
+        height: 30px;
+        TextButton {
+            text: "Reset";
+            icon: Icons.reset;
+            has-icon: true;
+            clicked => { root.reset-layout(); }
+        }
+        Rectangle { horizontal-stretch: 1; }
+        TextButton {
+            text: "Done";
+            primary: true;
+            icon: Icons.check;
+            has-icon: true;
+            clicked => { root.set-editing(false); }
+        }
+    }
+
     // Widgets and themes, slides in from the right and shrinks the grid to make room.
     drawer := Rectangle {
-        x: root.width + 40px - root.drawer-shift * (self.width + 56px);
+        x: root.width + 40px - root.drawer-shift * (self.width + root.edge + 40px);
         visible: root.drawer-shift > 0.001;
-        y: root.bar + 8px;
+        y: root.drawer-y;
         width: root.drawer-w;
-        height: root.height - root.bar - 24px;
+        height: root.height - root.drawer-y - root.edge;
         border-radius: Theme.radius;
         background: Theme.panel;
         border-width: 1px;
