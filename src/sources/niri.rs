@@ -1,6 +1,6 @@
 //! Windows and workspaces from niri's event stream; window actions over the IPC socket.
 
-use super::{Ctx, IconSrc, Msg, icons, strip_spinner};
+use super::{Ctx, Dedup, IconSrc, Msg, icons, strip_spinner};
 use niri_ipc::state::{EventStreamState, EventStreamStatePart};
 use niri_ipc::{Action, Reply, Request, Response, socket::Socket};
 use std::time::Duration;
@@ -149,56 +149,68 @@ fn build(state: &EventStreamState) -> WindowsState {
     }
 }
 
+/// What the event stream last sent, kept across reconnects.
+#[derive(Default)]
+struct Sent {
+    windows: Dedup<WindowsState>,
+    layouts: Dedup<Option<niri_ipc::KeyboardLayouts>>,
+    casts: Dedup<Vec<ScreenCast>>,
+}
+
+impl Sent {
+    fn windows(&self, ctx: &Ctx, windows: WindowsState) {
+        if self.windows.changed(&windows) {
+            ctx.send(Msg::Windows(windows));
+        }
+    }
+}
+
 pub fn start(ctx: Ctx) {
+    if ctx.dormant {
+        return;
+    }
     std::thread::Builder::new()
         .name("niri-events".into())
         .spawn(move || {
+            let sent = Sent::default();
             let mut warned = false;
             loop {
                 // Warn once; niri may simply not be running (yet).
-                if let Err(e) = stream(&ctx) {
+                if let Err(e) = stream(&ctx, &sent) {
                     if warned {
-                        log::debug!("niri event stream: {e:#}");
+                        log::debug!("niri event stream: {e}");
                     } else {
-                        log::warn!("niri event stream: {e:#}");
+                        log::warn!("niri event stream: {e}");
                         warned = true;
                     }
                 } else {
                     warned = false;
                 }
-                ctx.send(Msg::Windows(WindowsState::default()));
+                sent.windows(&ctx, WindowsState::default());
                 std::thread::sleep(Duration::from_secs(2));
             }
         })
         .expect("spawning niri thread");
 }
 
-fn stream(ctx: &Ctx) -> Result<()> {
+fn stream(ctx: &Ctx, sent: &Sent) -> Result<()> {
     let mut socket = Socket::connect().map_err(Error::Connect)?;
     let reply = socket.send(Request::EventStream)?;
     reply.map_err(Error::Refused)?;
     let mut read = socket.read_events();
     let mut state = EventStreamState::default();
-    let mut sent_layouts = None;
-    let sent_windows = super::Dedup::default();
-    let mut sent_casts: Option<Vec<ScreenCast>> = None;
     loop {
         let ev = read()?;
         let config_changed = matches!(ev, niri_ipc::Event::ConfigLoaded { .. });
         state.apply(ev);
-        let windows = build(&state);
-        if sent_windows.changed(&windows) {
-            ctx.send(Msg::Windows(windows));
-        }
+        sent.windows(ctx, build(&state));
         let layouts = state.keyboard_layouts.keyboard_layouts.clone();
-        if sent_layouts.as_ref() != Some(&layouts) {
-            ctx.send(Msg::KeyboardLayouts(layouts.clone()));
-            sent_layouts = Some(layouts);
+        if sent.layouts.changed(&layouts) {
+            ctx.send(Msg::KeyboardLayouts(layouts));
         }
         let casts = casts(&state);
-        if sent_casts.as_ref() != Some(&casts) {
-            ctx.send(Msg::Casts(casts.clone()));
-            sent_casts = Some(casts);
+        if sent.casts.changed(&casts) {
+            ctx.send(Msg::Casts(casts));
         }
         if config_changed {
             ctx.refresh();

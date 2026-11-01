@@ -1,6 +1,6 @@
 //! Wi-Fi through NetworkManager's `nmcli`.
 
-use super::{CmdError, Ctx, Msg, Trigger, run, signals_from};
+use super::{CmdError, Ctx, Dedup, Msg, Trigger, run, signals_from};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -176,7 +176,7 @@ impl Wifi {
             Duration::from_secs(1),
             trigger.clone(),
         );
-        let sent = Arc::new(super::Dedup::default());
+        let sent = Arc::new(Dedup::default());
         ctx.poll_events(trigger, Duration::from_secs(60), move || {
             let (m, sent) = (m.clone(), sent.clone());
             async move {

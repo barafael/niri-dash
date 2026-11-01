@@ -1,6 +1,6 @@
 //! Now playing, from MPRIS players on the session bus.
 
-use super::{Ctx, Msg, Trigger, prop, prop_str};
+use super::{Ctx, Dedup, Msg, Trigger, prop, prop_str};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -111,7 +111,7 @@ async fn fetch(conn: &Connection) -> Result<Option<State>> {
 pub struct Media {
     ctx: Ctx,
     current: Arc<Mutex<String>>,
-    sent: Arc<super::Dedup<Option<State>>>,
+    sent: Arc<Dedup<Option<State>>>,
 }
 
 impl Media {

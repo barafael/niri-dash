@@ -1,8 +1,9 @@
 //! Who uses the microphone and the camera right now, for the privacy widget. Screen sharing comes
 //! from niri (`Msg::Casts`); its consumer is looked up here in the PipeWire graph.
 
-use super::{Ctx, Msg, Trigger, pipewire};
+use super::{Ctx, Dedup, Msg, Trigger, pipewire};
 use std::collections::BTreeSet;
+use std::sync::Arc;
 use std::time::Duration;
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -102,7 +103,7 @@ pub fn start(ctx: Ctx) {
         trigger.clone(),
     );
     let c = ctx.clone();
-    let sent = std::sync::Arc::new(super::Dedup::default());
+    let sent = Arc::new(Dedup::default());
     ctx.poll_events(trigger, Duration::from_secs(3), move || {
         let (c, sent) = (c.clone(), sent.clone());
         async move {

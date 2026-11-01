@@ -1,7 +1,8 @@
 //! Battery from sysfs, power profiles through `powerprofilesctl`.
 
-use super::{Ctx, Msg, Trigger, prop, prop_str, run, signals_from, sysfs};
+use super::{Ctx, Dedup, Msg, Trigger, prop, prop_str, run, signals_from, sysfs};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 /// A power-profiles-daemon profile; the kebab-case name is what powerprofilesctl uses.
@@ -242,7 +243,7 @@ pub fn start(ctx: Ctx) {
         Duration::from_millis(300),
         trigger.clone(),
     );
-    let sent = std::sync::Arc::new(super::Dedup::default());
+    let sent = Arc::new(Dedup::default());
     ctx.poll_events(trigger, Duration::from_secs(60), move || {
         let (c, sent) = (c.clone(), sent.clone());
         async move {

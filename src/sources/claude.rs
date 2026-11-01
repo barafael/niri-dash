@@ -2,11 +2,12 @@
 //! matched to their niri window by walking up the process tree.
 
 use super::niri::request;
-use super::{Ctx, Msg, Trigger, strip_spinner};
+use super::{Ctx, Dedup, Msg, Trigger, strip_spinner};
 use niri_ipc::{Request, Response};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Deserialize)]
@@ -202,7 +203,7 @@ pub fn start(ctx: Ctx) {
     let trigger = Trigger::default();
     ctx.on_dir_changes(sessions_dir(), trigger.clone());
     // The fallback also keeps the "5 min" texts current.
-    let sent = std::sync::Arc::new(super::Dedup::default());
+    let sent = Arc::new(Dedup::default());
     ctx.poll_events(trigger, Duration::from_secs(30), move || {
         let (c, sent) = (c.clone(), sent.clone());
         async move {

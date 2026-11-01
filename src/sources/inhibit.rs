@@ -6,7 +6,7 @@
 //! `IdleAction` and hypridle honor; suspending by hand or by closing the lid still works.
 //! powerdevil's `org.freedesktop.PowerManagement.Inhibit` is taken too where it runs.
 
-use super::{Ctx, Msg};
+use super::{Ctx, Dedup, Msg};
 use std::sync::Arc;
 use tokio::sync::watch;
 use zbus::Connection;
@@ -224,7 +224,7 @@ impl Inhibit {
     pub fn start(ctx: Ctx) -> Self {
         // logind has no signal for its inhibitor list: look again every few seconds while shown.
         let c = ctx.clone();
-        let sent = Arc::new(super::Dedup::default());
+        let sent = Arc::new(Dedup::default());
         ctx.poll(std::time::Duration::from_secs(5), move || {
             let (c, sent) = (c.clone(), sent.clone());
             async move {

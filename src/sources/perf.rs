@@ -177,6 +177,9 @@ const VIRTUAL_FS: [&str; 8] = [
 ];
 
 pub fn start(ctx: Ctx) {
+    if ctx.dormant {
+        return;
+    }
     std::thread::Builder::new()
         .name("perf".into())
         .spawn(move || {
@@ -199,6 +202,7 @@ pub fn start(ctx: Ctx) {
             let mut top_mem: Vec<(String, String)> = Vec::new();
             let mut last = Instant::now();
             let mut tick = 0u64;
+            let mut was_visible = false;
             std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
             loop {
                 sys.refresh_cpu_usage();
@@ -259,35 +263,38 @@ pub fn start(ctx: Ctx) {
                 if let Some(b) = gpu_busy {
                     push(&mut gpu_hist, b);
                 }
-                if ctx.visible() || tick.is_multiple_of(10) {
-                    if tick.is_multiple_of(5) {
+                // Snapshots are only sent while the dashboard is up; the first one right away when
+                // it comes up, with fresh slow-changing data (sensors, the biggest apps).
+                let visible = ctx.visible();
+                let shown = visible && !was_visible;
+                was_visible = visible;
+                if visible {
+                    if shown || tick.is_multiple_of(5) {
                         comps.refresh(false);
-                        if ctx.visible() {
-                            // The biggest apps, with their processes added up (browsers have dozens).
-                            sys.refresh_processes_specifics(
-                                ProcessesToUpdate::All,
-                                true,
-                                ProcessRefreshKind::nothing().with_memory(),
-                            );
-                            let mut by_name: HashMap<String, u64> = HashMap::new();
-                            // sysinfo lists threads too; their memory is the process's.
-                            for p in sys
-                                .processes()
-                                .values()
-                                .filter(|p| p.thread_kind().is_none())
-                            {
-                                *by_name
-                                    .entry(p.name().to_string_lossy().into_owned())
-                                    .or_default() += p.memory();
-                            }
-                            let mut v: Vec<(String, u64)> = by_name.into_iter().collect();
-                            v.sort_by_key(|(_, m)| std::cmp::Reverse(*m));
-                            top_mem = v
-                                .into_iter()
-                                .take(5)
-                                .map(|(n, m)| (n, human_bytes(m)))
-                                .collect();
+                        // The biggest apps, with their processes added up (browsers have dozens).
+                        sys.refresh_processes_specifics(
+                            ProcessesToUpdate::All,
+                            true,
+                            ProcessRefreshKind::nothing().with_memory(),
+                        );
+                        let mut by_name: HashMap<String, u64> = HashMap::new();
+                        // sysinfo lists threads too; their memory is the process's.
+                        for p in sys
+                            .processes()
+                            .values()
+                            .filter(|p| p.thread_kind().is_none())
+                        {
+                            *by_name
+                                .entry(p.name().to_string_lossy().into_owned())
+                                .or_default() += p.memory();
                         }
+                        let mut v: Vec<(String, u64)> = by_name.into_iter().collect();
+                        v.sort_by_key(|(_, m)| std::cmp::Reverse(*m));
+                        top_mem = v
+                            .into_iter()
+                            .take(5)
+                            .map(|(n, m)| (n, human_bytes(m)))
+                            .collect();
                     }
                     let load = System::load_average();
                     let (rx_scaled, rx_peak) = scaled(&rx_hist, 64.0 * 1024.0);

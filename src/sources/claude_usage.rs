@@ -4,7 +4,7 @@
 //! hour of its first message), and every message is counted once (by message and request id).
 //! The plan's actual limits aren't stored locally, so this shows usage, not a percentage of them.
 
-use super::{Ctx, Msg};
+use super::{Ctx, Dedup, Msg};
 use chrono::{DateTime, Duration as Span, DurationRound, Local, Utc};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -352,8 +352,9 @@ pub fn start(ctx: Ctx) {
     let home = dirs::home_dir().unwrap_or_default();
     let scanner = Arc::new(Mutex::new(Scanner::default()));
     let c = ctx.clone();
+    let sent = Arc::new(Dedup::default());
     ctx.poll(Duration::from_secs(30), move || {
-        let (c, home, scanner) = (c.clone(), home.clone(), scanner.clone());
+        let (c, home, scanner, sent) = (c.clone(), home.clone(), scanner.clone(), sent.clone());
         async move {
             let state = tokio::task::spawn_blocking(move || {
                 let mut s = scanner.lock().ok()?;
@@ -361,7 +362,9 @@ pub fn start(ctx: Ctx) {
                 Some(summarize(&s.entries, read_plan(&home), Utc::now()))
             })
             .await;
-            if let Ok(Some(state)) = state {
+            if let Ok(Some(state)) = state
+                && sent.changed(&state)
+            {
                 c.send(Msg::ClaudeUsage(state));
             }
         }

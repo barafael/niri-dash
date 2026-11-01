@@ -1,7 +1,8 @@
 //! Backlight: read from sysfs, written through logind's Session.SetBrightness (no root needed).
 
-use super::{Ctx, Msg, Trigger, sysfs};
+use super::{Ctx, Dedup, Msg, Trigger, sysfs};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::watch;
 
@@ -67,9 +68,15 @@ impl Brightness {
             |l| l.starts_with("KERNEL["),
             trigger.clone(),
         );
+        let sent = Arc::new(Dedup::default());
         ctx.poll_events(trigger, Duration::from_secs(60), move || {
-            let c = c.clone();
-            async move { c.send(Msg::Brightness(level())) }
+            let (c, sent) = (c.clone(), sent.clone());
+            async move {
+                let level = level();
+                if sent.changed(&level) {
+                    c.send(Msg::Brightness(level));
+                }
+            }
         });
         let c = ctx.clone();
         let tx = ctx.latest(move |v| {

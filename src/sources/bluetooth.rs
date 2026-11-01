@@ -1,6 +1,6 @@
 //! Bluetooth through BlueZ on the system bus.
 
-use super::{Ctx, Msg, Trigger, prop, prop_str, signals_from};
+use super::{Ctx, Dedup, Msg, Trigger, prop, prop_str, signals_from};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -109,7 +109,7 @@ async fn fetch(conn: &Connection) -> Result<State> {
 pub struct Bluetooth {
     ctx: Ctx,
     last: Arc<Mutex<State>>,
-    sent: Arc<super::Dedup<State>>,
+    sent: Arc<Dedup<State>>,
     busy: Arc<Mutex<Vec<String>>>,
     status: Arc<Mutex<String>>,
 }

@@ -1,6 +1,6 @@
 //! System tray: a StatusNotifierWatcher/host via the `system-tray` crate, with dbusmenu menus.
 
-use super::{Ctx, IconSrc, Msg, icons};
+use super::{Ctx, Dedup, IconSrc, Msg, icons};
 use std::sync::Arc;
 use system_tray::client::{ActivateRequest, Client};
 use system_tray::item::{IconPixmap, StatusNotifierItem};
@@ -177,17 +177,24 @@ impl Tray {
                 }
             };
             let mut events = client.subscribe();
-            c.send(Msg::Tray(snapshot(&client)));
             let cl = client.clone();
             let c2 = c.clone();
             tokio::spawn(async move {
+                let sent = Dedup::default();
+                let publish = || {
+                    let items = snapshot(&cl);
+                    if sent.changed(&items) {
+                        c2.send(Msg::Tray(items));
+                    }
+                };
+                publish();
                 loop {
                     match events.recv().await {
                         Ok(_) => {
                             // Coalesce bursts (menus and icons arrive as many small updates).
                             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
                             while events.try_recv().is_ok() {}
-                            c2.send(Msg::Tray(snapshot(&cl)));
+                            publish();
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                         Err(_) => break,

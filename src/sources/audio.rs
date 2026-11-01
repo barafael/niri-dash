@@ -1,14 +1,15 @@
 //! Default speaker and microphone through PipeWire's `wpctl`; per-app volume and the outputs
 //! from the PipeWire graph (`pw-dump`).
 
-use super::{Ctx, IconSrc, Msg, Trigger, icons, pipewire, run};
+use super::{Ctx, Dedup, IconSrc, Msg, Trigger, icons, pipewire, run};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::watch;
 
 const SINK: &str = "@DEFAULT_AUDIO_SINK@";
 const SOURCE: &str = "@DEFAULT_AUDIO_SOURCE@";
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct State {
     pub available: bool,
     pub volume: f32,
@@ -141,8 +142,9 @@ async fn set_node_volume(node: &str, v: f32) {
 impl Audio {
     pub fn start(ctx: Ctx) -> Self {
         let c = ctx.clone();
-        // PipeWire's pulse server reports device and default changes; streams (sink-input,
-        // source-output) change constantly during playback and are ignored.
+        // PipeWire's pulse server reports device and default changes, and playing apps
+        // (sink-input) for the per-app mixer. Recording streams (source-output) are left to the
+        // privacy widget.
         let trigger = Trigger::default();
         ctx.on_command_lines(
             "pactl",
@@ -155,9 +157,15 @@ impl Audio {
             },
             trigger.clone(),
         );
+        let sent = Arc::new(Dedup::default());
         ctx.poll_events(trigger, Duration::from_secs(60), move || {
-            let c = c.clone();
-            async move { c.send(Msg::Audio(fetch().await)) }
+            let (c, sent) = (c.clone(), sent.clone());
+            async move {
+                let state = fetch().await;
+                if sent.changed(&state) {
+                    c.send(Msg::Audio(state));
+                }
+            }
         });
         // Slider drags only apply the latest value, so they don't queue up processes.
         Self {
