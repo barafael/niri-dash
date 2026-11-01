@@ -25,11 +25,14 @@ pub mod weather;
 pub mod wifi;
 
 use smithay_client_toolkit::reexports::calloop::channel::Sender;
+use std::collections::HashMap;
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{Notify, watch};
+use zbus::zvariant::{OwnedValue, Value};
 
 /// An image that the UI thread turns into a `slint::Image`.
 #[derive(Debug, Clone, PartialEq)]
@@ -390,6 +393,57 @@ impl Ctx {
         });
     }
 
+    /// Fire `trigger` when files in `dir` change. Like the other watchers, it only watches while
+    /// the dashboard is shown. A directory that doesn't exist (yet) isn't watched; the source's
+    /// fallback poll covers it.
+    pub fn on_dir_changes(&self, dir: PathBuf, trigger: Trigger) {
+        use notify::{RecursiveMode, Watcher};
+        if self.dormant {
+            return;
+        }
+        let ctx = self.clone();
+        self.rt.spawn(async move {
+            loop {
+                ctx.until_visible(true).await;
+                let (t, d) = (trigger.clone(), dir.clone());
+                let watcher =
+                    notify::recommended_watcher(move |ev: notify::Result<notify::Event>| {
+                        if ev.is_ok_and(|e| !e.kind.is_access()) {
+                            log::debug!("change: {}", d.display());
+                            t.fire();
+                        }
+                    })
+                    .and_then(|mut w| w.watch(&dir, RecursiveMode::NonRecursive).map(|()| w));
+                if let Err(e) = &watcher {
+                    log::debug!("watching {}: {e}", dir.display());
+                }
+                // On hide, dropping the watcher stops it.
+                ctx.until_visible(false).await;
+                drop(watcher);
+            }
+        });
+    }
+
+    /// A channel where only the latest value counts: `apply` runs for the newest one whenever it
+    /// is free, so slider drags don't queue up work.
+    pub fn latest<T, F, Fut>(&self, mut apply: F) -> watch::Sender<Option<T>>
+    where
+        T: Clone + Send + Sync + 'static,
+        F: FnMut(T) -> Fut + Send + 'static,
+        Fut: Future<Output = ()> + Send,
+    {
+        let (tx, mut rx) = watch::channel(None::<T>);
+        self.spawn(async move {
+            while rx.changed().await.is_ok() {
+                let v = rx.borrow_and_update().clone();
+                if let Some(v) = v {
+                    apply(v).await;
+                }
+            }
+        });
+        tx
+    }
+
     pub fn spawn<Fut>(&self, fut: Fut)
     where
         Fut: Future<Output = ()> + Send + 'static,
@@ -480,6 +534,60 @@ pub fn spawn_detached(program: &str, args: &[&str]) -> Result<(), CmdError> {
     Ok(())
 }
 
+/// A sysfs attribute: the file's contents, trimmed and parsed.
+pub fn sysfs<T: FromStr>(path: impl AsRef<Path>) -> Option<T> {
+    std::fs::read_to_string(path).ok()?.trim().parse().ok()
+}
+
+/// A value from a D-Bus property map (`a{sv}`), if it's there with the right type.
+pub fn prop<'a, T>(map: &'a HashMap<String, OwnedValue>, key: &str) -> Option<T>
+where
+    T: TryFrom<&'a Value<'a>>,
+    <T as TryFrom<&'a Value<'a>>>::Error: Into<zbus::zvariant::Error>,
+{
+    let v: &'a Value<'a> = map.get(key)?;
+    v.downcast_ref().ok()
+}
+
+/// A string from a D-Bus property map.
+pub fn prop_str(map: &HashMap<String, OwnedValue>, key: &str) -> Option<String> {
+    prop::<&str>(map, key).map(str::to_string)
+}
+
+/// Decode the five XML entities. `&amp;` goes last, so `&amp;lt;` stays `&lt;`.
+pub fn unescape_entities(s: &str) -> String {
+    s.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&")
+}
+
+/// Collapse whitespace and cut to `max` characters, the last of them an ellipsis.
+pub fn one_line(s: &str, max: usize) -> String {
+    let flat: String = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    if flat.chars().count() <= max {
+        flat
+    } else {
+        let mut cut: String = flat.chars().take(max - 1).collect();
+        cut.push('…');
+        cut
+    }
+}
+
+/// A title without a leading activity spinner: terminals running Claude Code (and other tools)
+/// animate the first character of their title (⠋⠙⠹, ◐◑◒◓, ✳✶✻✽…) several times a second, which
+/// would otherwise make every frame of the spinner a change to show.
+pub fn strip_spinner(title: &str) -> &str {
+    let mut chars = title.chars();
+    match chars.next() {
+        Some('\u{2800}'..='\u{28FF}' | '\u{25D0}'..='\u{25D3}' | '\u{2722}'..='\u{273D}' | '·') => {
+            chars.as_str().trim_start()
+        }
+        _ => title,
+    }
+}
+
 pub fn which(program: &str) -> Option<PathBuf> {
     std::env::var_os("PATH").and_then(|paths| {
         std::env::split_paths(&paths)
@@ -497,4 +605,30 @@ pub fn locale() -> (chrono::Locale, bool) {
     let name = raw.split(['.', '@']).next().unwrap_or("");
     let loc = chrono::Locale::try_from(name).unwrap_or(chrono::Locale::en_US);
     (loc, name.starts_with("en_US"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn flattens_and_cuts() {
+        assert_eq!(one_line("a\n  b\tc", 10), "a b c");
+        assert_eq!(one_line("abcdefghij", 5), "abcd…");
+    }
+
+    #[test]
+    fn entities() {
+        assert_eq!(
+            unescape_entities("&lt;b&gt; &amp;lt; &quot;"),
+            "<b> &lt; \""
+        );
+    }
+
+    #[test]
+    fn spinners() {
+        assert_eq!(strip_spinner("✳ Fix the build"), "Fix the build");
+        assert_eq!(strip_spinner("⠙ cargo test"), "cargo test");
+        assert_eq!(strip_spinner("plain title"), "plain title");
+    }
 }

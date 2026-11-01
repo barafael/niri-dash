@@ -115,12 +115,7 @@ pub fn shrink(w: u32, h: u32, rgba: Vec<u8>, max: u32) -> (u32, u32, Vec<u8>) {
 
 /// One-line preview of text: whitespace collapsed, cut at a sensible length.
 pub fn preview(text: &str) -> String {
-    let collapsed: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    if collapsed.chars().count() > 300 {
-        collapsed.chars().take(300).collect::<String>() + "…"
-    } else {
-        collapsed
-    }
+    super::one_line(text, 300)
 }
 
 #[cfg(test)]

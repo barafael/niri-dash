@@ -1,7 +1,7 @@
 //! Battery from sysfs, power profiles through `powerprofilesctl`.
 
-use super::{Ctx, Msg, Trigger, run, signals_from};
-use std::path::{Path, PathBuf};
+use super::{Ctx, Msg, Trigger, prop, prop_str, run, signals_from, sysfs};
+use std::path::PathBuf;
 use std::time::Duration;
 
 /// A power-profiles-daemon profile; the kebab-case name is what powerprofilesctl uses.
@@ -90,29 +90,19 @@ async fn peripherals(ctx: &Ctx) -> zbus::Result<Vec<Peripheral>> {
             .await?
             .body()
             .deserialize()?;
-        let get_bool = |k: &str| props.get(k).and_then(|v| v.downcast_ref::<bool>().ok());
-        let ty = props
-            .get("Type")
-            .and_then(|v| v.downcast_ref::<u32>().ok())
-            .unwrap_or(0);
+        let ty = prop::<u32>(&props, "Type").unwrap_or(0);
         // 1 line power, 2 battery, 3 UPS: this machine's own supplies.
-        if get_bool("PowerSupply") == Some(true) || matches!(ty, 1..=3) {
+        if prop(&props, "PowerSupply") == Some(true) || matches!(ty, 1..=3) {
             continue;
         }
-        if get_bool("IsPresent") == Some(false) {
+        if prop(&props, "IsPresent") == Some(false) {
             continue;
         }
-        let percent = props
-            .get("Percentage")
-            .and_then(|v| v.downcast_ref::<f64>().ok())
-            .unwrap_or(0.0);
+        let percent = prop::<f64>(&props, "Percentage").unwrap_or(0.0);
         if percent <= 0.0 {
             continue;
         }
-        let name = props
-            .get("Model")
-            .and_then(|v| v.downcast_ref::<&str>().ok())
-            .map(str::to_string)
+        let name = prop_str(&props, "Model")
             .filter(|m| !m.is_empty())
             .unwrap_or_else(|| "Device".into());
         out.push(Peripheral {
@@ -125,25 +115,16 @@ async fn peripherals(ctx: &Ctx) -> zbus::Result<Vec<Peripheral>> {
     Ok(out)
 }
 
-fn read(p: &Path, f: &str) -> Option<String> {
-    std::fs::read_to_string(p.join(f))
-        .ok()
-        .map(|s| s.trim().to_string())
-}
-
-fn read_f(p: &Path, f: &str) -> Option<f64> {
-    read(p, f)?.parse().ok()
-}
-
 fn supplies() -> (Option<PathBuf>, Option<PathBuf>) {
     let mut bat = None;
     let mut ac = None;
     if let Ok(rd) = std::fs::read_dir("/sys/class/power_supply") {
         for e in rd.flatten() {
             let p = e.path();
-            match read(&p, "type").as_deref() {
+            match sysfs::<String>(p.join("type")).as_deref() {
                 Some("Battery")
-                    if bat.is_none() && read(&p, "scope").as_deref() != Some("Device") =>
+                    if bat.is_none()
+                        && sysfs::<String>(p.join("scope")).as_deref() != Some("Device") =>
                 {
                     bat = Some(p)
                 }
@@ -166,7 +147,7 @@ fn fmt_duration(hours: f64) -> String {
 
 fn battery(state: &mut State) {
     let (bat, ac) = supplies();
-    state.plugged = ac.as_deref().and_then(|a| read(a, "online")).as_deref() == Some("1");
+    state.plugged = ac.is_some_and(|a| sysfs::<String>(a.join("online")).as_deref() == Some("1"));
     let Some(b) = bat else {
         state.status_text = if state.plugged {
             "On AC power".into()
@@ -175,24 +156,21 @@ fn battery(state: &mut State) {
         };
         return;
     };
+    let num = |attr: &str| sysfs::<f64>(b.join(attr));
     state.has_battery = true;
-    state.percent = read_f(&b, "capacity").unwrap_or(0.0) as i32;
-    let status = read(&b, "status").unwrap_or_default();
+    state.percent = num("capacity").unwrap_or(0.0) as i32;
+    let status: String = sysfs(b.join("status")).unwrap_or_default();
     state.charging = status == "Charging";
     // Energy in µWh / power in µW, or charge in µAh / current in µA (times voltage).
-    let volts = read_f(&b, "voltage_now").map(|v| v / 1e6);
-    let (now, full, rate) = match (
-        read_f(&b, "energy_now"),
-        read_f(&b, "energy_full"),
-        read_f(&b, "power_now"),
-    ) {
+    let volts = num("voltage_now").map(|v| v / 1e6);
+    let (now, full, rate) = match (num("energy_now"), num("energy_full"), num("power_now")) {
         (Some(n), Some(f), r) => (Some(n / 1e6), Some(f / 1e6), r.map(|r| r / 1e6)),
         _ => {
             let v = volts.unwrap_or(0.0);
             (
-                read_f(&b, "charge_now").map(|c| c / 1e6 * v),
-                read_f(&b, "charge_full").map(|c| c / 1e6 * v),
-                read_f(&b, "current_now").map(|c| c / 1e6 * v),
+                num("charge_now").map(|c| c / 1e6 * v),
+                num("charge_full").map(|c| c / 1e6 * v),
+                num("current_now").map(|c| c / 1e6 * v),
             )
         }
     };

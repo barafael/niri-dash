@@ -1,9 +1,9 @@
 //! CPU, memory, network, disks and GPU, sampled once a second. History is kept even while hidden
 //! so the graphs are full when the dashboard opens.
 
-use super::{Ctx, Msg};
+use super::{Ctx, Msg, sysfs};
 use std::collections::{HashMap, VecDeque};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use sysinfo::{
     Components, CpuRefreshKind, Disks, MemoryRefreshKind, Networks, ProcessRefreshKind,
@@ -106,10 +106,6 @@ struct GpuDev {
     dev: PathBuf,
     hwmon: Option<PathBuf>,
     name: String,
-}
-
-fn read_u64(p: &Path) -> Option<u64> {
-    std::fs::read_to_string(p).ok()?.trim().parse().ok()
 }
 
 fn find_gpu() -> Option<GpuDev> {
@@ -258,7 +254,7 @@ pub fn start(ctx: Ctx) {
                 push(&mut io_hist, ((read + written) as f64 / dt) as f32);
                 let gpu_busy = gpu
                     .as_ref()
-                    .and_then(|g| read_u64(&g.dev.join("gpu_busy_percent")))
+                    .and_then(|g| sysfs::<u64>(g.dev.join("gpu_busy_percent")))
                     .map(|b| b as f32 / 100.0);
                 if let Some(b) = gpu_busy {
                     push(&mut gpu_hist, b);
@@ -341,15 +337,16 @@ pub fn start(ctx: Ctx) {
                         .map(|d| d.used)
                         .unwrap_or(0.0);
                     let gpu_snap = gpu.as_ref().zip(gpu_busy).map(|(g, busy)| {
-                        let vram_used = read_u64(&g.dev.join("mem_info_vram_used")).unwrap_or(0);
-                        let vram_total = read_u64(&g.dev.join("mem_info_vram_total")).unwrap_or(0);
+                        let vram_used = sysfs::<u64>(g.dev.join("mem_info_vram_used")).unwrap_or(0);
+                        let vram_total =
+                            sysfs::<u64>(g.dev.join("mem_info_vram_total")).unwrap_or(0);
                         let temp = g
                             .hwmon
                             .as_ref()
-                            .and_then(|h| read_u64(&h.join("temp1_input")));
+                            .and_then(|h| sysfs::<u64>(h.join("temp1_input")));
                         let power = g.hwmon.as_ref().and_then(|h| {
-                            read_u64(&h.join("power1_average"))
-                                .or_else(|| read_u64(&h.join("power1_input")))
+                            sysfs::<u64>(h.join("power1_average"))
+                                .or_else(|| sysfs::<u64>(h.join("power1_input")))
                         });
                         Gpu {
                             name: g.name.clone(),

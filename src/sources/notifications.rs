@@ -1,7 +1,7 @@
 //! A minimal org.freedesktop.Notifications server that keeps a history for the dashboard. It only
 //! claims the bus name if nobody else has it, so a running mako/dunst/swaync wins.
 
-use super::{Ctx, IconSrc, Msg, icons, osd::Osd};
+use super::{Ctx, IconSrc, Msg, icons, osd::Osd, prop, unescape_entities};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use zbus::fdo::RequestNameFlags;
@@ -144,12 +144,7 @@ fn publish(ctx: &Ctx, store: &Mutex<Store>) {
 fn osd_icon(app_icon: &str, hints: &HashMap<String, OwnedValue>, urgent: bool) -> String {
     let name = |s: &str| (!s.is_empty() && !s.contains('/')).then(|| s.to_string());
     name(app_icon)
-        .or_else(|| {
-            hints
-                .get("desktop-entry")
-                .and_then(|v| v.downcast_ref::<&str>().ok())
-                .and_then(name)
-        })
+        .or_else(|| prop::<&str>(hints, "desktop-entry").and_then(name))
         .unwrap_or_else(|| {
             if urgent {
                 "dialog-warning".into()
@@ -171,11 +166,7 @@ pub fn strip_markup(s: &str) -> String {
             _ => {}
         }
     }
-    out.replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&apos;", "'")
-        .replace("&amp;", "&")
+    unescape_entities(&out)
 }
 
 fn image_data(v: &OwnedValue) -> Option<IconSrc> {
@@ -210,26 +201,20 @@ fn resolve_icon(app_icon: &str, hints: &HashMap<String, OwnedValue>) -> IconSrc 
             return img;
         }
     }
-    let str_hint = |k: &str| {
-        hints
-            .get(k)
-            .and_then(|v| v.downcast_ref::<&str>().ok())
-            .map(str::to_string)
-    };
     for path in [
-        str_hint("image-path"),
-        str_hint("image_path"),
-        Some(app_icon.to_string()),
+        prop::<&str>(hints, "image-path"),
+        prop::<&str>(hints, "image_path"),
+        Some(app_icon),
     ]
     .into_iter()
     .flatten()
     {
-        let path = path.strip_prefix("file://").unwrap_or(&path).to_string();
-        if let Some(p) = icons::lookup(&path, 48) {
+        let path = path.strip_prefix("file://").unwrap_or(path);
+        if let Some(p) = icons::lookup(path, 48) {
             return IconSrc::Path(p);
         }
     }
-    if let Some(p) = str_hint("desktop-entry").and_then(|e| icons::desktop_entry_icon(&e)) {
+    if let Some(p) = prop::<&str>(hints, "desktop-entry").and_then(icons::desktop_entry_icon) {
         return IconSrc::Path(p);
     }
     IconSrc::None
@@ -249,10 +234,7 @@ impl Server {
         hints: HashMap<String, OwnedValue>,
         _expire_timeout: i32,
     ) -> u32 {
-        let urgent = hints
-            .get("urgency")
-            .and_then(|v| v.downcast_ref::<u8>().ok())
-            == Some(2);
+        let urgent = prop::<u8>(&hints, "urgency") == Some(2);
         let icon = resolve_icon(&app_icon, &hints);
         let popup_icon = osd_icon(&app_icon, &hints, urgent);
         let actions = actions

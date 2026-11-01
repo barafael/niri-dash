@@ -2,7 +2,7 @@
 //! "timer done", "screen sharing started". Without swayosd installed (or its server running)
 //! nothing is shown; the dashboard keeps the notification history either way.
 
-use super::{Ctx, run, which};
+use super::{Ctx, one_line, run, which};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -72,6 +72,7 @@ impl Osd {
 
 fn send(ctx: &Ctx, text: String, icon: String) {
     ctx.spawn(async move {
+        // The OSD is one short line.
         let text = one_line(&text, 90);
         if let Err(e) = run(
             "swayosd-client",
@@ -82,27 +83,4 @@ fn send(ctx: &Ctx, text: String, icon: String) {
             log::debug!("swayosd: {e}");
         }
     });
-}
-
-/// Collapse whitespace and cut to `max` characters; the OSD is one short line.
-pub fn one_line(s: &str, max: usize) -> String {
-    let flat: String = s.split_whitespace().collect::<Vec<_>>().join(" ");
-    if flat.chars().count() <= max {
-        flat
-    } else {
-        let mut cut: String = flat.chars().take(max - 1).collect();
-        cut.push('…');
-        cut
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::one_line;
-
-    #[test]
-    fn flattens_and_cuts() {
-        assert_eq!(one_line("a\n  b\tc", 10), "a b c");
-        assert_eq!(one_line("abcdefghij", 5), "abcd…");
-    }
 }

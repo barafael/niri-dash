@@ -2,10 +2,11 @@
 //! matched to their niri window by walking up the process tree.
 
 use super::niri::request;
-use super::{Ctx, Msg, Trigger};
+use super::{Ctx, Msg, Trigger, strip_spinner};
 use niri_ipc::{Request, Response};
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Deserialize)]
@@ -84,24 +85,22 @@ fn tilde(path: &str) -> String {
 
 /// Window titles from Claude Code start with a status glyph (✳ idle, a spinner while busy).
 fn strip_glyph(title: &str) -> String {
-    let t = title.trim();
-    match t.chars().next() {
-        Some(c) if !c.is_alphanumeric() && !c.is_ascii_punctuation() => {
-            t[c.len_utf8()..].trim().to_string()
-        }
-        _ => t.to_string(),
-    }
+    strip_spinner(title.trim()).to_string()
+}
+
+/// Where Claude Code keeps one file per running session.
+fn sessions_dir() -> PathBuf {
+    dirs::home_dir()
+        .unwrap_or_default()
+        .join(".claude")
+        .join("sessions")
 }
 
 fn fetch() -> State {
-    let dir = dirs::home_dir()
-        .unwrap_or_default()
-        .join(".claude")
-        .join("sessions");
-    let Ok(rd) = std::fs::read_dir(&dir) else {
+    let Ok(rd) = std::fs::read_dir(sessions_dir()) else {
         return State::default();
     };
-    // pid -> (window id, title, workspace id)
+    // pid -> (window id, title)
     let windows: HashMap<i32, (u64, String)> = match request(Request::Windows) {
         Ok(Response::Windows(ws)) => ws
             .into_iter()
@@ -201,13 +200,7 @@ pub fn start(ctx: Ctx) {
     let c = ctx.clone();
     // Claude Code rewrites ~/.claude/sessions/<pid>.json on every status change.
     let trigger = Trigger::default();
-    watch_dir(
-        dirs::home_dir()
-            .unwrap_or_default()
-            .join(".claude")
-            .join("sessions"),
-        trigger.clone(),
-    );
+    ctx.on_dir_changes(sessions_dir(), trigger.clone());
     // The fallback also keeps the "5 min" texts current.
     let sent = std::sync::Arc::new(super::Dedup::default());
     ctx.poll_events(trigger, Duration::from_secs(30), move || {
@@ -220,29 +213,6 @@ pub fn start(ctx: Ctx) {
             }
         }
     });
-}
-
-/// Fire `trigger` when files in `dir` change. The watcher lives for the rest of the process.
-fn watch_dir(dir: std::path::PathBuf, trigger: Trigger) {
-    use notify::{RecursiveMode, Watcher};
-    let _ = std::fs::create_dir_all(&dir);
-    let mut watcher = match notify::recommended_watcher(move |ev: notify::Result<notify::Event>| {
-        if ev.is_ok_and(|e| !e.kind.is_access()) {
-            log::debug!("change: claude sessions");
-            trigger.fire();
-        }
-    }) {
-        Ok(w) => w,
-        Err(e) => {
-            log::warn!("watching {}: {e}", dir.display());
-            return;
-        }
-    };
-    if let Err(e) = watcher.watch(&dir, RecursiveMode::NonRecursive) {
-        log::warn!("watching {}: {e}", dir.display());
-        return;
-    }
-    std::mem::forget(watcher);
 }
 
 #[cfg(test)]

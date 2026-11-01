@@ -126,47 +126,16 @@ pub struct Audio {
     ctx: Ctx,
     sink: watch::Sender<Option<f32>>,
     source: watch::Sender<Option<f32>>,
-    /// Per-app volume: (node id, volume), latest wins.
+    /// Per-app volume: (node id, volume).
     stream: watch::Sender<Option<(u32, f32)>>,
 }
 
-fn stream_applier(ctx: &Ctx) -> watch::Sender<Option<(u32, f32)>> {
-    let (tx, mut rx) = watch::channel(None::<(u32, f32)>);
-    ctx.spawn(async move {
-        while rx.changed().await.is_ok() {
-            let v = *rx.borrow_and_update();
-            if let Some((id, v)) = v {
-                let _ = run(
-                    "wpctl",
-                    &[
-                        "set-volume",
-                        &id.to_string(),
-                        &format!("{:.3}", v.clamp(0.0, 1.0)),
-                    ],
-                )
-                .await;
-            }
-        }
-    });
-    tx
-}
-
-/// Apply only the latest requested value, so slider drags don't queue up processes.
-fn applier(ctx: &Ctx, target: &'static str) -> watch::Sender<Option<f32>> {
-    let (tx, mut rx) = watch::channel(None::<f32>);
-    ctx.spawn(async move {
-        while rx.changed().await.is_ok() {
-            let v = *rx.borrow_and_update();
-            if let Some(v) = v {
-                let _ = run(
-                    "wpctl",
-                    &["set-volume", target, &format!("{:.3}", v.clamp(0.0, 1.0))],
-                )
-                .await;
-            }
-        }
-    });
-    tx
+/// Set the volume of a node: its id, or a default device like `@DEFAULT_AUDIO_SINK@`.
+async fn set_node_volume(node: &str, v: f32) {
+    let v = format!("{:.3}", v.clamp(0.0, 1.0));
+    if let Err(e) = run("wpctl", &["set-volume", node, &v]).await {
+        log::debug!("wpctl set-volume {node}: {e}");
+    }
 }
 
 impl Audio {
@@ -190,10 +159,13 @@ impl Audio {
             let c = c.clone();
             async move { c.send(Msg::Audio(fetch().await)) }
         });
+        // Slider drags only apply the latest value, so they don't queue up processes.
         Self {
-            sink: applier(&ctx, SINK),
-            source: applier(&ctx, SOURCE),
-            stream: stream_applier(&ctx),
+            sink: ctx.latest(|v| set_node_volume(SINK, v)),
+            source: ctx.latest(|v| set_node_volume(SOURCE, v)),
+            stream: ctx.latest(|(id, v): (u32, f32)| async move {
+                set_node_volume(&id.to_string(), v).await
+            }),
             ctx,
         }
     }

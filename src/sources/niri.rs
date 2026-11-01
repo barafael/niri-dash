@@ -1,6 +1,6 @@
 //! Windows and workspaces from niri's event stream; window actions over the IPC socket.
 
-use super::{Ctx, IconSrc, Msg, icons};
+use super::{Ctx, IconSrc, Msg, icons, strip_spinner};
 use niri_ipc::state::{EventStreamState, EventStreamStatePart};
 use niri_ipc::{Action, Reply, Request, Response, socket::Socket};
 use std::time::Duration;
@@ -281,17 +281,4 @@ pub fn close(ctx: &Ctx, id: u64) {
     ctx.act("Close window", async move {
         action_async(Action::CloseWindow { id: Some(id) }).await
     });
-}
-
-/// A title without a leading activity spinner: terminals running Claude Code (and other tools)
-/// animate the first character of their title (⠋⠙⠹, ◐◑◒◓, ✳✶✻✽…) several times a second, which
-/// would otherwise make every frame of the spinner a change to show.
-fn strip_spinner(title: &str) -> &str {
-    let mut chars = title.chars();
-    match chars.next() {
-        Some(c) if matches!(c, '\u{2800}'..='\u{28FF}' | '\u{25D0}'..='\u{25D3}' | '\u{2722}'..='\u{273D}' | '·') => {
-            chars.as_str().trim_start()
-        }
-        _ => title,
-    }
 }

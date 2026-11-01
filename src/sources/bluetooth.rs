@@ -1,13 +1,13 @@
 //! Bluetooth through BlueZ on the system bus.
 
-use super::{Ctx, Msg, Trigger, signals_from};
+use super::{Ctx, Msg, Trigger, prop, prop_str, signals_from};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use zbus::Connection;
 use zbus::fdo::{ObjectManagerProxy, PropertiesProxy};
 use zbus::names::InterfaceName;
-use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
+use zbus::zvariant::{OwnedObjectPath, Value};
 
 #[derive(Debug, thiserror::Error)]
 enum Error {
@@ -46,20 +46,6 @@ pub struct State {
     pub status: String,
 }
 
-fn get_bool(props: &HashMap<String, OwnedValue>, key: &str) -> bool {
-    props
-        .get(key)
-        .and_then(|v| v.downcast_ref::<bool>().ok())
-        .unwrap_or(false)
-}
-
-fn get_str(props: &HashMap<String, OwnedValue>, key: &str) -> Option<String> {
-    props
-        .get(key)
-        .and_then(|v| v.downcast_ref::<&str>().ok())
-        .map(str::to_string)
-}
-
 async fn fetch(conn: &Connection) -> Result<State> {
     let om = ObjectManagerProxy::builder(conn)
         .destination("org.bluez")?
@@ -76,21 +62,21 @@ async fn fetch(conn: &Connection) -> Result<State> {
                 "org.bluez.Adapter1" if state.adapter.is_empty() => {
                     state.available = true;
                     state.adapter = path.to_string();
-                    state.powered = get_bool(props, "Powered");
+                    state.powered = prop(props, "Powered").unwrap_or(false);
                 }
                 "org.bluez.Device1" => {
-                    let paired = get_bool(props, "Paired");
-                    let connected = get_bool(props, "Connected");
+                    let paired = prop(props, "Paired").unwrap_or(false);
+                    let connected = prop(props, "Connected").unwrap_or(false);
                     if !paired && !connected {
                         continue;
                     }
                     state.devices.push(Device {
                         path: path.to_string(),
-                        address: get_str(props, "Address").unwrap_or_default(),
-                        name: get_str(props, "Alias")
-                            .or_else(|| get_str(props, "Name"))
+                        address: prop_str(props, "Address").unwrap_or_default(),
+                        name: prop_str(props, "Alias")
+                            .or_else(|| prop_str(props, "Name"))
                             .unwrap_or_else(|| "Unknown".into()),
-                        kind: get_str(props, "Icon").unwrap_or_default(),
+                        kind: prop_str(props, "Icon").unwrap_or_default(),
                         connected,
                         paired,
                         battery: -1,
@@ -98,10 +84,7 @@ async fn fetch(conn: &Connection) -> Result<State> {
                     });
                 }
                 "org.bluez.Battery1" => {
-                    if let Some(p) = props
-                        .get("Percentage")
-                        .and_then(|v| v.downcast_ref::<u8>().ok())
-                    {
+                    if let Some(p) = prop::<u8>(props, "Percentage") {
                         batteries.insert(path.to_string(), p as i32);
                     }
                 }

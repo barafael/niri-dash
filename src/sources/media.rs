@@ -1,6 +1,6 @@
 //! Now playing, from MPRIS players on the session bus.
 
-use super::{Ctx, Msg, Trigger};
+use super::{Ctx, Msg, Trigger, prop, prop_str};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -38,26 +38,17 @@ async fn player_proxy<'a>(conn: &Connection, name: &'a str) -> Result<zbus::Prox
     Ok(zbus::Proxy::new(conn, name.to_string(), OBJ, "org.mpris.MediaPlayer2.Player").await?)
 }
 
-fn meta_str(m: &HashMap<String, OwnedValue>, k: &str) -> Option<String> {
-    m.get(k)
-        .and_then(|v| v.downcast_ref::<&str>().ok())
-        .map(str::to_string)
-}
-
 fn meta_artist(m: &HashMap<String, OwnedValue>) -> String {
     m.get("xesam:artist")
         .and_then(|v| v.try_clone().ok())
         .and_then(|v| Vec::<String>::try_from(v).ok())
         .map(|a| a.join(", "))
-        .or_else(|| meta_str(m, "xesam:artist"))
+        .or_else(|| prop_str(m, "xesam:artist"))
         .unwrap_or_default()
 }
 
 fn meta_len(m: &HashMap<String, OwnedValue>) -> Option<i64> {
-    let v = m.get("mpris:length")?;
-    v.downcast_ref::<i64>()
-        .ok()
-        .or_else(|| v.downcast_ref::<u64>().ok().map(|u| u as i64))
+    prop::<i64>(m, "mpris:length").or_else(|| prop::<u64>(m, "mpris:length").map(|u| u as i64))
 }
 
 fn fmt_time(us: i64) -> String {
@@ -76,7 +67,7 @@ async fn read_player(conn: &Connection, name: &str) -> Result<State> {
         .await
         .unwrap_or_else(|_| name.trim_start_matches(PREFIX).to_string());
     let len = meta_len(&meta);
-    let art = meta_str(&meta, "mpris:artUrl")
+    let art = prop_str(&meta, "mpris:artUrl")
         .and_then(|u| {
             u.strip_prefix("file://")
                 .map(|p| std::path::PathBuf::from(p.replace("%20", " ")))
@@ -85,7 +76,7 @@ async fn read_player(conn: &Connection, name: &str) -> Result<State> {
     Ok(State {
         bus_name: name.to_string(),
         player: identity,
-        title: meta_str(&meta, "xesam:title").unwrap_or_default(),
+        title: prop_str(&meta, "xesam:title").unwrap_or_default(),
         artist: meta_artist(&meta),
         playing: status == "Playing",
         art,

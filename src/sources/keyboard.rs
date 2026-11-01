@@ -1,6 +1,7 @@
 //! Short labels for keyboard layouts. niri reports layouts by their XKB description ("English
 //! (US)", "German"); the XKB rules file has the indicator text for each ("en", "de").
 
+use super::unescape_entities;
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
@@ -35,19 +36,11 @@ pub fn parse_rules(xml: &str) -> HashMap<String, String> {
             && let Some(desc) = tag(body, "description")
         {
             let label = short.unwrap_or_else(|| layout_short.clone());
-            map.insert(unescape(desc), label);
+            map.insert(unescape_entities(desc), label);
         }
         before = chunk;
     }
     map
-}
-
-fn unescape(s: &str) -> String {
-    s.replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&apos;", "'")
 }
 
 fn table() -> &'static HashMap<String, String> {
