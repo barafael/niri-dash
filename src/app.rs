@@ -8,8 +8,11 @@ use crate::sources::{
     inhibit::Inhibit, media::Media, niri, notifications::Notifications, tray, weather::Weather,
     wifi::Wifi,
 };
-use crate::theme;
-use crate::{Control, named_socket_path, socket_path};
+use crate::{
+    Clipboard as UiClipboard, Control, Dash, Power as UiPower, Shell as UiShell, Tray as UiTray,
+    WidgetInst, named_socket_path, socket_path, theme,
+};
+use config::watch_config;
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
 use slint::platform::{Platform, WindowAdapter};
 use slint::{
@@ -27,11 +30,6 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-
-use crate::{
-    Clipboard as UiClipboard, Dash, Power as UiPower, Shell as UiShell, Tray as UiTray, WidgetInst,
-};
-use config::watch_config;
 
 mod audio;
 mod clipboard;
@@ -169,9 +167,12 @@ struct App {
     /// used are dropped past `IMAGE_CACHE`.
     images: RefCell<HashMap<PathBuf, (Option<Image>, u64)>>,
     image_uses: Cell<u64>,
+    /// Controls from the UI, run by the event loop, which has the shell at hand.
     pending: RefCell<Vec<Control>>,
     locale: sources::Locale,
+    /// When the brightness slider was last dragged.
     brightness_touched: Cell<Option<Instant>>,
+    /// The tray items as last reported, and the address of the one whose menu is open.
     tray_items: RefCell<Vec<tray::Item>>,
     menu_address: RefCell<String>,
     toast_timer: Timer,
@@ -185,9 +186,11 @@ struct App {
     hide_at: Cell<Option<Instant>>,
     /// While dragging: the widget being dragged (0 for a new one) and where others would go.
     preview: RefCell<Option<(u32, crate::layout::Reflow)>>,
+    /// The niri window of each Claude session, by pid.
     claude_windows: RefCell<HashMap<i32, u64>>,
     /// config.kdl as we last wrote it, to ignore our own writes when watching the file.
     last_written: RefCell<String>,
+    /// config.kdl doesn't parse, so edits aren't saved over it.
     config_broken: Cell<bool>,
     /// Files the watcher checks for changes (config.kdl and the active theme).
     watched: Arc<Mutex<Vec<PathBuf>>>,
