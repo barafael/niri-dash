@@ -37,6 +37,7 @@ pub enum Kind {
     KeyboardLayout,
     ColorPicker,
     Timer,
+    Stopwatch,
     Notes,
     Privacy,
     NightLight,
@@ -65,6 +66,7 @@ impl Kind {
                 default_size: (4, 2),
                 min_size: (2, 1),
                 can_be_round: true,
+                starts_round: false,
                 settings: &[Hours, Seconds, Date, Zones],
                 icon: "preferences-system-time",
             },
@@ -74,6 +76,7 @@ impl Kind {
                 default_size: (4, 4),
                 min_size: (3, 3),
                 can_be_round: true,
+                starts_round: false,
                 settings: &[FirstDay, WeekNumbers],
                 icon: "x-office-calendar",
             },
@@ -83,6 +86,7 @@ impl Kind {
                 default_size: (4, 3),
                 min_size: (2, 2),
                 can_be_round: true,
+                starts_round: false,
                 settings: &[History, Cores],
                 icon: "utilities-system-monitor",
             },
@@ -92,6 +96,7 @@ impl Kind {
                 default_size: (5, 5),
                 min_size: (3, 2),
                 can_be_round: false,
+                starts_round: false,
                 settings: &[],
                 icon: "preferences-system-windows",
             },
@@ -101,6 +106,7 @@ impl Kind {
                 default_size: (4, 3),
                 min_size: (3, 2),
                 can_be_round: true,
+                starts_round: false,
                 settings: &[],
                 icon: "utilities-terminal",
             },
@@ -110,6 +116,7 @@ impl Kind {
                 default_size: (3, 4),
                 min_size: (2, 2),
                 can_be_round: true,
+                starts_round: false,
                 settings: &[],
                 icon: "network-wireless",
             },
@@ -119,6 +126,7 @@ impl Kind {
                 default_size: (3, 3),
                 min_size: (2, 2),
                 can_be_round: true,
+                starts_round: false,
                 settings: &[],
                 icon: "bluetooth",
             },
@@ -128,6 +136,7 @@ impl Kind {
                 default_size: (3, 2),
                 min_size: (2, 1),
                 can_be_round: true,
+                starts_round: false,
                 settings: &[],
                 icon: "battery",
             },
@@ -137,6 +146,7 @@ impl Kind {
                 default_size: (3, 3),
                 min_size: (2, 1),
                 can_be_round: true,
+                starts_round: false,
                 settings: &[],
                 icon: "audio-volume-high",
             },
@@ -146,6 +156,7 @@ impl Kind {
                 default_size: (3, 1),
                 min_size: (2, 1),
                 can_be_round: true,
+                starts_round: false,
                 settings: &[],
                 icon: "video-display",
             },
@@ -155,6 +166,7 @@ impl Kind {
                 default_size: (4, 5),
                 min_size: (3, 2),
                 can_be_round: false,
+                starts_round: false,
                 settings: &[],
                 icon: "preferences-system-notifications",
             },
@@ -164,6 +176,7 @@ impl Kind {
                 default_size: (4, 1),
                 min_size: (1, 1),
                 can_be_round: false,
+                starts_round: false,
                 settings: &[],
                 icon: "preferences-desktop",
             },
@@ -173,6 +186,7 @@ impl Kind {
                 default_size: (5, 2),
                 min_size: (3, 1),
                 can_be_round: false,
+                starts_round: false,
                 settings: &[],
                 icon: "multimedia-player",
             },
@@ -182,6 +196,7 @@ impl Kind {
                 default_size: (4, 1),
                 min_size: (3, 1),
                 can_be_round: false,
+                starts_round: false,
                 settings: &[Lock, Suspend, Logout, Restart, PowerOff, Confirm],
                 icon: "system-shutdown",
             },
@@ -191,6 +206,7 @@ impl Kind {
                 default_size: (4, 4),
                 min_size: (3, 2),
                 can_be_round: false,
+                starts_round: false,
                 settings: &[],
                 icon: "edit-paste",
             },
@@ -200,6 +216,7 @@ impl Kind {
                 default_size: (4, 2),
                 min_size: (2, 1),
                 can_be_round: true,
+                starts_round: false,
                 settings: &[Location, Units],
                 icon: "weather-few-clouds",
             },
@@ -209,6 +226,7 @@ impl Kind {
                 default_size: (4, 3),
                 min_size: (2, 2),
                 can_be_round: true,
+                starts_round: false,
                 settings: &[History, TopApps],
                 icon: "utilities-system-monitor",
             },
@@ -218,6 +236,7 @@ impl Kind {
                 default_size: (4, 2),
                 min_size: (3, 1),
                 can_be_round: true,
+                starts_round: false,
                 settings: &[HideSystem],
                 icon: "drive-harddisk",
             },
@@ -227,6 +246,7 @@ impl Kind {
                 default_size: (4, 2),
                 min_size: (2, 1),
                 can_be_round: true,
+                starts_round: false,
                 settings: &[History],
                 icon: "network-transmit-receive",
             },
@@ -236,6 +256,7 @@ impl Kind {
                 default_size: (4, 2),
                 min_size: (2, 1),
                 can_be_round: true,
+                starts_round: false,
                 settings: &[History],
                 icon: "video-display",
             },
@@ -245,6 +266,7 @@ impl Kind {
                 default_size: (4, 3),
                 min_size: (3, 2),
                 can_be_round: true,
+                starts_round: false,
                 settings: &[],
                 icon: "utilities-system-monitor",
             },
@@ -254,6 +276,7 @@ impl Kind {
                 default_size: (4, 2),
                 min_size: (3, 2),
                 can_be_round: false,
+                starts_round: false,
                 settings: &[Character, Wildness, Interval, Command],
                 icon: "face-smile",
             },
@@ -263,6 +286,7 @@ impl Kind {
                 default_size: (2, 1),
                 min_size: (1, 1),
                 can_be_round: true,
+                starts_round: false,
                 settings: &[],
                 icon: "input-keyboard",
             },
@@ -272,17 +296,29 @@ impl Kind {
                 default_size: (3, 2),
                 min_size: (2, 1),
                 can_be_round: true,
+                starts_round: false,
                 settings: &[],
                 icon: "color-select",
             },
             Kind::Timer => &KindInfo {
                 title: "Timer",
-                description: "Countdown or stopwatch (setting); presets and laps when bigger",
+                description: "Countdown with a ring; scroll to set, presets when bigger",
                 default_size: (3, 2),
                 min_size: (2, 1),
                 can_be_round: true,
-                settings: &[Mode],
+                starts_round: true,
+                settings: &[],
                 icon: "alarm-symbolic",
+            },
+            Kind::Stopwatch => &KindInfo {
+                title: "Stopwatch",
+                description: "Laps; a seconds dial when round, the lap list when taller",
+                default_size: (3, 3),
+                min_size: (2, 1),
+                can_be_round: true,
+                starts_round: true,
+                settings: &[],
+                icon: "chronometer",
             },
             Kind::Notes => &KindInfo {
                 title: "Sticky note",
@@ -290,6 +326,7 @@ impl Kind {
                 default_size: (3, 3),
                 min_size: (2, 1),
                 can_be_round: false,
+                starts_round: false,
                 settings: &[Note],
                 icon: "accessories-text-editor",
             },
@@ -299,6 +336,7 @@ impl Kind {
                 default_size: (3, 2),
                 min_size: (2, 1),
                 can_be_round: true,
+                starts_round: false,
                 settings: &[],
                 icon: "security-high",
             },
@@ -308,6 +346,7 @@ impl Kind {
                 default_size: (3, 1),
                 min_size: (2, 1),
                 can_be_round: true,
+                starts_round: false,
                 settings: &[],
                 icon: "weather-clear-night",
             },
@@ -317,6 +356,7 @@ impl Kind {
                 default_size: (3, 2),
                 min_size: (2, 1),
                 can_be_round: false,
+                starts_round: false,
                 settings: &[],
                 icon: "drive-removable-media",
             },
@@ -326,6 +366,7 @@ impl Kind {
                 default_size: (3, 2),
                 min_size: (2, 1),
                 can_be_round: true,
+                starts_round: false,
                 settings: &[],
                 icon: "smartphone",
             },
@@ -346,11 +387,36 @@ pub struct KindInfo {
     pub min_size: (i32, i32),
     /// Whether a round version makes sense (lists don't fit in a circle).
     pub can_be_round: bool,
+    /// Whether a new instance is round (at [`ROUND_SIZE`]), and one in config.kdl without a
+    /// `shape` too.
+    pub starts_round: bool,
     /// Its settings ([`crate::widget_settings`]), in the order the sidebar shows them.
     pub settings: &'static [crate::widget_settings::Opt],
     /// A themed icon name from the freedesktop icon naming spec (or one most themes have), for
     /// the desktop entry.
     pub icon: &'static str,
+}
+
+/// The size of a round widget that doesn't give one.
+pub const ROUND_SIZE: i32 = 2;
+
+impl KindInfo {
+    /// The shape a new instance (or one in config.kdl without a `shape`) has.
+    pub fn new_shape(&self) -> Shape {
+        if self.starts_round {
+            Shape::Round
+        } else {
+            Shape::Rect
+        }
+    }
+
+    /// The (w, h) of a new instance.
+    pub fn new_size(&self) -> (i32, i32) {
+        match self.new_shape() {
+            Shape::Rect => self.default_size,
+            Shape::Round => (ROUND_SIZE, ROUND_SIZE),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, EnumString, AsRefStr)]
@@ -685,7 +751,7 @@ impl Layout {
                     .and_then(|v| v.as_string())
                     .map(Shape::from_str)
                 {
-                    None => Shape::Rect,
+                    None => kind.info().new_shape(),
                     Some(Ok(Shape::Round)) if !kind.info().can_be_round => {
                         warnings.push(format!("{name} can't be round"));
                         Shape::Rect
@@ -700,11 +766,19 @@ impl Layout {
                 let size = int(node, "size");
                 let w = int(node, "width")
                     .or(size)
-                    .unwrap_or(if shape == Shape::Round { 2 } else { dw })
+                    .unwrap_or(if shape == Shape::Round {
+                        ROUND_SIZE
+                    } else {
+                        dw
+                    })
                     .max(1);
                 let h = int(node, "height")
                     .or(size)
-                    .unwrap_or(if shape == Shape::Round { 2 } else { dh })
+                    .unwrap_or(if shape == Shape::Round {
+                        ROUND_SIZE
+                    } else {
+                        dh
+                    })
                     .max(1);
                 let (w, h) = shape.fit(w, h);
                 let (Some(col), Some(row)) = (int(node, "col"), int(node, "row")) else {
@@ -997,11 +1071,11 @@ impl Layout {
             .find(|p| p.kind == kind)
             .cloned()
             .unwrap_or_else(|| {
-                let (w, h) = kind.info().default_size;
+                let (w, h) = kind.info().new_size();
                 Placed {
                     id: 0,
                     kind,
-                    shape: Shape::Rect,
+                    shape: kind.info().new_shape(),
                     col: 0,
                     row: 0,
                     w,
@@ -1100,11 +1174,20 @@ impl Layout {
     /// Add a widget at the first free spot, shrinking towards its minimum size if needed.
     pub fn add(&mut self, kind: Kind) -> Option<u32> {
         let id = self.next_id;
-        let (dw, dh) = kind.info().default_size;
-        let (mw, mh) = kind.info().min_size;
+        let shape = kind.info().new_shape();
+        let (dw, dh) = kind.info().new_size();
+        let (mw, mh) = match shape {
+            Shape::Rect => kind.info().min_size,
+            Shape::Round => (1, 1),
+        };
         let mut sizes = vec![(dw, dh)];
         let (mut w, mut h) = (dw, dh);
         while w > mw || h > mh {
+            if shape == Shape::Round {
+                (w, h) = (w - 1, h - 1);
+                sizes.push((w, h));
+                continue;
+            }
             if w > mw && w >= h {
                 w -= 1;
             } else if h > mh {
@@ -1119,7 +1202,7 @@ impl Layout {
                 self.widgets.push(Placed {
                     id,
                     kind,
-                    shape: Shape::Rect,
+                    shape,
                     col,
                     row,
                     w,
@@ -1363,7 +1446,12 @@ fn write_widget(node: &mut KdlNode, w: &Placed) {
         }
         Shape::Rect => {
             remove_prop(node, "size");
-            remove_prop(node, "shape");
+            if w.kind.info().starts_round {
+                // Without it, the widget would come back round.
+                set_prop(node, "shape", Shape::Rect.as_ref().into());
+            } else {
+                remove_prop(node, "shape");
+            }
             set_int(node, "width", w.w);
             set_int(node, "height", w.h);
         }
@@ -2054,7 +2142,7 @@ impl Layout {
 
     /// Add a widget of its default size at a spot, pushing others aside.
     pub fn add_at(&mut self, kind: Kind, col: i32, row: i32) -> Option<u32> {
-        let (w, h) = kind.info().default_size;
+        let (w, h) = kind.info().new_size();
         let target = Rect { col, row, w, h };
         let moves = self.reflow(0, target, (0, 1))?;
         self.apply_reflow(&moves);
@@ -2063,7 +2151,7 @@ impl Layout {
         self.widgets.push(Placed {
             id,
             kind,
-            shape: Shape::Rect,
+            shape: kind.info().new_shape(),
             col,
             row,
             w,
@@ -2243,6 +2331,7 @@ mod tests {
                 "keyboard-layout",
                 "color-picker",
                 "timer",
+                "stopwatch",
                 "notes",
                 "privacy",
                 "night-light",
@@ -2355,6 +2444,41 @@ mod tests {
                 (0, 1)
             )
             .is_none()
+        );
+    }
+
+    #[test]
+    fn timers_start_round() {
+        for kind in Kind::iter().filter(|k| k.info().starts_round) {
+            assert!(kind.info().can_be_round, "{kind:?}");
+        }
+        let (mut l, _) = Layout::parse("layout {\n}\n").unwrap();
+        l.set_screen_grid(16, 9);
+        let timer = l.add(Kind::Timer).unwrap();
+        let p = l.get(timer).unwrap();
+        assert_eq!((p.shape, p.w, p.h), (Shape::Round, ROUND_SIZE, ROUND_SIZE));
+        let sw = l.add_at(Kind::Stopwatch, 4, 0).unwrap();
+        assert_eq!(l.get(sw).unwrap().shape, Shape::Round);
+        // Made rectangular, a stopwatch says so in the file, or it would come back round.
+        assert!(l.toggle_shape(sw));
+        let out = l.render();
+        assert!(
+            out.lines()
+                .any(|l| l.contains("stopwatch") && l.contains("shape=\"rect\"")),
+            "{out}"
+        );
+        let (l, warnings) = Layout::parse(&out).unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let shapes: Vec<_> = l.widgets.iter().map(|w| (w.kind, w.shape)).collect();
+        assert_eq!(
+            shapes,
+            [(Kind::Timer, Shape::Round), (Kind::Stopwatch, Shape::Rect)]
+        );
+        // Without a shape, a timer in the file is round.
+        let (l, _) = Layout::parse("layout {\n  timer col=0 row=0\n}\n").unwrap();
+        assert_eq!(
+            (l.widgets[0].shape, l.widgets[0].w),
+            (Shape::Round, ROUND_SIZE)
         );
     }
 

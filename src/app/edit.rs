@@ -29,7 +29,6 @@ fn to_opts(p: &Placed, us: bool) -> crate::WidgetOpts {
         restart: b(Opt::Restart),
         poweroff: b(Opt::PowerOff),
         confirm: b(Opt::Confirm),
-        stopwatch: get_str(v, Opt::Mode, us) == "stopwatch",
         character: character_to_ui(character(p, us)),
     }
 }
@@ -483,8 +482,8 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
                     kind: kind_to_ui(k),
                     title: info.title.into(),
                     description: info.description.into(),
-                    w: info.default_size.0,
-                    h: info.default_size.1,
+                    w: info.new_size().0,
+                    h: info.new_size().1,
                 }
             })
             .collect(),

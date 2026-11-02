@@ -142,6 +142,7 @@ impl App {
         let s = self.timers.stopwatch.borrow();
         let elapsed = s.elapsed(now);
         t.set_sw_text(crate::timer::format(elapsed, true).into());
+        t.set_sw_fraction(elapsed.as_secs_f32() % 60.0 / 60.0);
         t.set_sw_running(s.running());
         t.set_sw_started(!elapsed.is_zero());
         if t.get_laps().row_count() != s.laps.len() {

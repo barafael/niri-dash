@@ -25,8 +25,6 @@ pub enum Opt {
     Seconds,
     Date,
     Zones,
-    // Timer.
-    Mode,
     // Notes.
     Note,
     // Calendar.
@@ -79,7 +77,6 @@ impl Opt {
             Opt::Seconds => "Seconds",
             Opt::Date => "Date",
             Opt::Zones => "Other time zones",
-            Opt::Mode => "Shows",
             Opt::Note => "Note",
             Opt::FirstDay => "Week starts on",
             Opt::WeekNumbers => "Week numbers",
@@ -109,7 +106,6 @@ impl Opt {
             Opt::Zones => Ty::Text {
                 placeholder: "e.g. Asia/Tokyo, New York",
             },
-            Opt::Mode => Ty::Choice(&["timer", "stopwatch"]),
             Opt::Note => Ty::Text {
                 placeholder: "notes (same name, same note)",
             },
@@ -145,7 +141,6 @@ impl Opt {
             Opt::Hours => KdlValue::Integer(if us { 12 } else { 24 }),
             Opt::Seconds | Opt::Date => KdlValue::Bool(true),
             Opt::Zones => text(""),
-            Opt::Mode => text("timer"),
             Opt::Note => text(""),
             Opt::FirstDay => text(if us { "sunday" } else { "monday" }),
             Opt::WeekNumbers => KdlValue::Bool(false),

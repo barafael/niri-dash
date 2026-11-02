@@ -1,7 +1,7 @@
 // Small tools: keyboard layout, color picker, timer and stopwatch, sticky notes, clipboard
 // history.
 import { Theme, Icons } from "../theme.slint";
-import { KeyboardLayouts, LayoutItem, ColorPicker, PickedColor, Countdown, Notes, Clipboard, Shell, WidgetOpts } from "../data.slint";
+import { KeyboardLayouts, LayoutItem, ColorPicker, PickedColor, Countdown, Notes, Clipboard, Shell } from "../data.slint";
 import { Icon, IconButton, TextButton, Header, Row, Muted, Empty, ScrollList, Ring, Bar, RoundFace } from "../common.slint";
 
 // Scrolls through a list of choices a notch at a time, also with touchpads' small steps.
@@ -214,9 +214,11 @@ export component ColorPickerWidget inherits Rectangle {
 component TimerButtons inherits HorizontalLayout {
     in property <bool> stopwatch;
     in property <length> size: 36px;
+    // The play / pause button (a round face's click does that instead).
+    in property <bool> primary: true;
     spacing: 6px;
     alignment: center;
-    IconButton {
+    if root.primary: IconButton {
         y: (parent.height - self.height) / 2;
         size: root.size;
         fill: Theme.accent-soft;
@@ -244,44 +246,57 @@ component TimerButtons inherits HorizontalLayout {
     }
 }
 
-export component TimerWidget inherits Rectangle {
+// The timer and the stopwatch: big time, and the buttons; round, a ring around it.
+component TimerBody inherits Rectangle {
     in property <bool> round;
-    in property <WidgetOpts> opts;
-    property <bool> sw: root.opts.stopwatch;
+    in property <bool> sw;
     property <string> shown: root.sw ? Countdown.sw-text : Countdown.done ? "Done" : Countdown.text;
     property <color> tint: !root.sw && Countdown.done ? Theme.warn : Theme.text;
     // Room for presets / lap buttons, and for the list of laps.
     property <bool> extras: root.height > 150px;
     property <bool> lap-list: root.sw && root.height > 260px && Countdown.laps.length > 0;
-    if root.round: Rectangle {
+    // Square and centered, should the widget not be (a standalone app's window).
+    if root.round: face := Rectangle {
+        width: min(root.width, root.height);
+        height: self.width;
+        property <length> ring: max(5px, self.width * 0.06);
+        // Buttons under the time once the face has room for them.
+        property <bool> buttons: self.width >= 140px;
         if !root.sw: Ring {
             width: 100%;
             height: 100%;
             value: Countdown.running || Countdown.paused ? Countdown.fraction : 0;
-            thickness: max(6px, root.width * 0.07);
+            thickness: face.ring;
             tint: Countdown.paused ? Theme.faint : Theme.accent;
         }
-        VerticalLayout {
-            alignment: center;
-            spacing: 2px;
-            Text {
-                text: root.shown;
-                horizontal-alignment: center;
-                font-size: clamp(root.width * 0.2, 14px, 48px);
-                font-weight: Theme.font-weight-display;
-                color: root.tint;
-            }
-            Text {
-                text: root.sw ? (Countdown.sw-running ? "running" : "stopwatch")
-                    : Countdown.running ? "running" : Countdown.paused ? "paused" : "timer";
-                horizontal-alignment: center;
-                font-size: Theme.font-small;
-                color: Theme.faint;
+        if root.sw: Ring {
+            width: 100%;
+            height: 100%;
+            value: Countdown.sw-started ? Countdown.sw-fraction : 0;
+            thickness: face.ring;
+            tint: Countdown.sw-running ? Theme.accent : Theme.faint;
+        }
+        // A stopwatch's dial: a mark every five seconds inside the ring, where there is room.
+        if root.sw && face.buttons: Rectangle {
+            property <length> r: face.width / 2 - face.ring * 2.2;
+            property <length> dot: max(2px, face.width * 0.018);
+            for i in 12: Rectangle {
+                x: face.width / 2 + parent.r * sin(i * 30deg) - self.width / 2;
+                y: face.width / 2 - parent.r * cos(i * 30deg) - self.height / 2;
+                width: Math.mod(i, 3) == 0 ? parent.dot * 1.6 : parent.dot;
+                height: self.width;
+                border-radius: self.width / 2;
+                background: Theme.faint;
             }
         }
+        // Click starts and pauses, a double click resets (it also clicks twice, which a reset
+        // makes moot); scrolling sets the countdown.
         TouchArea {
             clicked => {
                 if (root.sw) { Countdown.sw-toggle(); } else { Countdown.toggle(); }
+            }
+            double-clicked => {
+                if (root.sw) { Countdown.sw-reset(); } else { Countdown.reset(); }
             }
             scroll-event(e) => {
                 if (!root.sw) {
@@ -290,11 +305,40 @@ export component TimerWidget inherits Rectangle {
                 accept
             }
         }
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            padding: face.ring * 2;
+            Text {
+                text: root.shown;
+                horizontal-alignment: center;
+                // As big as fits across the face.
+                font-size: clamp(min(face.width * 0.21, face.width * 1.1 / max(4, root.shown.character-count)), 12px, 56px);
+                font-weight: Theme.font-weight-display;
+                color: root.tint;
+            }
+            Text {
+                text: root.sw
+                    ? (Countdown.sw-running ? "running" : Countdown.sw-started ? "paused" : "stopwatch")
+                        + (Countdown.laps.length > 0 ? " · " + Countdown.laps.length + (Countdown.laps.length == 1 ? " lap" : " laps") : "")
+                    : Countdown.running ? "running" : Countdown.paused ? "paused" : face.buttons ? "scroll to set" : "timer";
+                horizontal-alignment: center;
+                font-size: Theme.font-small;
+                color: Theme.faint;
+                overflow: elide;
+            }
+            if face.buttons: TimerButtons {
+                height: 34px;
+                stopwatch: root.sw;
+                size: 30px;
+                primary: false;
+            }
+        }
     }
     if !root.round: VerticalLayout {
         padding: Theme.pad;
         spacing: 10px;
-        alignment: root.lap-list ? start : center;
+        alignment: root.lap-list ? stretch : center;
         HorizontalLayout {
             spacing: 12px;
             Text {
@@ -358,6 +402,22 @@ export component TimerWidget inherits Rectangle {
                 }
             }
         }
+    }
+}
+
+export component TimerWidget inherits Rectangle {
+    in property <bool> round;
+    TimerBody {
+        round: root.round;
+        sw: false;
+    }
+}
+
+export component StopwatchWidget inherits Rectangle {
+    in property <bool> round;
+    TimerBody {
+        round: root.round;
+        sw: true;
     }
 }
 

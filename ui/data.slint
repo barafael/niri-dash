@@ -1,7 +1,7 @@
 // Data the Rust side pushes into the UI, one global per source, plus the callbacks widgets use to
 // act on it. Several widget instances of the same kind share one global.
 
-export enum WidgetKind { clock, calendar, system-monitor, windows, claude-sessions, wifi, bluetooth, battery, volume, brightness, notifications, tray, media, session, clipboard, weather, memory, disks, network, gpu, claude-usage, mascot, keyboard-layout, color-picker, timer, notes, privacy, night-light, removable-drives, phone }
+export enum WidgetKind { clock, calendar, system-monitor, windows, claude-sessions, wifi, bluetooth, battery, volume, brightness, notifications, tray, media, session, clipboard, weather, memory, disks, network, gpu, claude-usage, mascot, keyboard-layout, color-picker, timer, stopwatch, notes, privacy, night-light, removable-drives, phone }
 export enum Shape { rect, round }
 
 // The sidebar's sections.
@@ -36,8 +36,6 @@ export struct WidgetOpts {
     confirm: bool,
     // Mascot.
     character: Character,
-    // Timer widget: a stopwatch instead.
-    stopwatch: bool,
 }
 
 export struct WidgetInst {
@@ -603,6 +601,8 @@ export global Countdown {
     callback preset(int);
     callback adjust(int);
     in property <string> sw-text: "0:00.0";
+    // How far the second hand is round: the part of the current minute gone by.
+    in property <float> sw-fraction;
     in property <bool> sw-running;
     // Started at all (running or paused with time on it).
     in property <bool> sw-started;

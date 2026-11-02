@@ -37,6 +37,7 @@ pub(super) fn kind_to_ui(k: Kind) -> WidgetKind {
         Kind::Phone => WidgetKind::Phone,
         Kind::Notes => WidgetKind::Notes,
         Kind::Timer => WidgetKind::Timer,
+        Kind::Stopwatch => WidgetKind::Stopwatch,
         Kind::ColorPicker => WidgetKind::ColorPicker,
         Kind::KeyboardLayout => WidgetKind::KeyboardLayout,
     }

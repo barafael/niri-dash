@@ -547,6 +547,7 @@ fn feeds(kind: Kind) -> &'static [Feed] {
         Kind::Privacy => &[Feed::Niri, Feed::Privacy],
         Kind::Notes => &[],
         Kind::Timer => &[Feed::Notifications],
+        Kind::Stopwatch => &[],
         Kind::ColorPicker => &[],
         Kind::KeyboardLayout => &[Feed::Niri],
         // A standalone night-light app asks the daemon, which holds the gamma control.
