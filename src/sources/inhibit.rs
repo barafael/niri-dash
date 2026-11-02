@@ -12,16 +12,24 @@ use tokio::sync::watch;
 use zbus::Connection;
 use zbus::zvariant::OwnedFd;
 
+/// zbus errors are boxed: a `zbus::Error` is large, and unboxed it would make every `Result`
+/// here as big.
 #[derive(Debug, thiserror::Error)]
 enum Error {
     #[error("{dest}.Inhibit: {source}")]
     Inhibit {
         dest: &'static str,
         #[source]
-        source: zbus::Error,
+        source: Box<zbus::Error>,
     },
     #[error(transparent)]
-    Dbus(#[from] zbus::Error),
+    Dbus(Box<zbus::Error>),
+}
+
+impl From<zbus::Error> for Error {
+    fn from(e: zbus::Error) -> Self {
+        Error::Dbus(Box::new(e))
+    }
 }
 
 type Result<T, E = Error> = std::result::Result<T, E>;
@@ -57,7 +65,10 @@ impl Cookie {
         let cookie: u32 = conn
             .call_method(Some(dest), path, Some(iface), "Inhibit", &(WHO, WHY))
             .await
-            .map_err(|source| Error::Inhibit { dest, source })?
+            .map_err(|e| Error::Inhibit {
+                dest,
+                source: Box::new(e),
+            })?
             .body()
             .deserialize()?;
         Ok(Self {
@@ -125,9 +136,9 @@ async fn logind_inhibit(ctx: &Ctx) -> Result<OwnedFd> {
             &("idle", WHO, WHY, "block"),
         )
         .await
-        .map_err(|source| Error::Inhibit {
+        .map_err(|e| Error::Inhibit {
             dest: "org.freedesktop.login1",
-            source,
+            source: Box::new(e),
         })?
         .body()
         .deserialize()?;
