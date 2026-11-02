@@ -1,4 +1,4 @@
-//! The PipeWire graph from `pw-dump`: devices, app streams, their links and the default devices.
+//! The PipeWire graph from `pw-dump`: devices, app streams, their links and the default output.
 //! Used for per-app volume and for the privacy indicator (who records, who films).
 
 use super::{CmdError, run};
@@ -49,9 +49,8 @@ pub struct Graph {
     pub nodes: Vec<Node>,
     /// (output node, input node).
     pub links: Vec<(u32, u32)>,
-    /// Default devices by node name.
+    /// The default output, by node name.
     pub default_sink: String,
-    pub default_source: String,
 }
 
 impl Graph {
@@ -173,12 +172,8 @@ pub fn parse(json: &str) -> Result<Graph, serde_json::Error> {
                     .into_iter()
                     .flatten()
                 {
-                    let key = s(m, "key");
-                    let value = m.get("value").map(|v| s(v, "name")).unwrap_or_default();
-                    match key.as_str() {
-                        "default.audio.sink" => g.default_sink = value,
-                        "default.audio.source" => g.default_source = value,
-                        _ => {}
+                    if s(m, "key") == "default.audio.sink" {
+                        g.default_sink = m.get("value").map(|v| s(v, "name")).unwrap_or_default();
                     }
                 }
             }

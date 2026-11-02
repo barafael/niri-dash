@@ -111,7 +111,6 @@ pub struct Bluetooth {
     last: Arc<Mutex<State>>,
     sent: Arc<Dedup<State>>,
     busy: Arc<Mutex<Vec<String>>>,
-    status: Arc<Mutex<String>>,
 }
 
 impl Bluetooth {
@@ -121,7 +120,6 @@ impl Bluetooth {
             last: Default::default(),
             sent: Default::default(),
             busy: Default::default(),
-            status: Default::default(),
         };
         let m = me.clone();
         let trigger = Trigger::default();
@@ -155,7 +153,6 @@ impl Bluetooth {
         for d in &mut state.devices {
             d.busy = busy.contains(&d.address);
         }
-        state.status = self.status.lock().map(|s| s.clone()).unwrap_or_default();
         if let Ok(mut l) = self.last.lock() {
             *l = state.clone();
         }
