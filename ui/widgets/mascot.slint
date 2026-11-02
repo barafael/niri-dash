@@ -140,7 +140,6 @@ component Figure inherits Rectangle {
 }
 
 export component MascotWidget inherits Rectangle {
-    in property <bool> round;
     in property <WidgetOpts> opts;
     in property <int> id;
     property <MascotLine> line: Mascots.lines[root.id];
@@ -267,7 +266,6 @@ export component MascotWidget inherits Rectangle {
 
     // A click anywhere: the next line. The pointer is what the pupils follow.
     touch := TouchArea {
-        mouse-cursor: pointer;
         clicked => { Mascots.next(root.id); }
     }
 }

@@ -1,7 +1,7 @@
-// Privacy indicator, night light, removable drives, phone.
+// Privacy indicator: who uses the microphone, camera or screen.
 import { Theme, Icons } from "../theme.slint";
-import { Privacy, PrivacyKind, PrivacyItem } from "../data.slint";
-import { Icon, IconButton, TextButton, Header, Row, Muted, Empty, ScrollList, Ring, Slider, Switch, RingKnob } from "../common.slint";
+import { Privacy, PrivacyKind } from "../data.slint";
+import { Icon, TextButton, Header, Muted, Empty, ScrollList } from "../common.slint";
 
 component PrivacyDot inherits Rectangle {
     in property <image> icon;

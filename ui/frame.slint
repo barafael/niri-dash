@@ -8,10 +8,7 @@ import { MemoryWidget, DisksWidget, NetworkWidget, GpuWidget, ClaudeUsageWidget 
 import { WifiWidget, BluetoothWidget } from "widgets/net.slint";
 import { WindowsWidget, NotificationsWidget, TrayWidget, MediaWidget } from "widgets/desk.slint";
 import { MascotWidget } from "widgets/mascot.slint";
-import { KeyboardLayoutWidget } from "widgets/tools.slint";
-import { ColorPickerWidget } from "widgets/tools.slint";
-import { TimerWidget } from "widgets/tools.slint";
-import { NotesWidget } from "widgets/tools.slint";
+import { KeyboardLayoutWidget, ColorPickerWidget, TimerWidget, NotesWidget } from "widgets/tools.slint";
 import { PrivacyWidget } from "widgets/devices.slint";
 
 // A widget's content, picked by kind; fills its parent.
@@ -39,7 +36,7 @@ export component WidgetBody inherits Rectangle {
     if root.inst.kind == WidgetKind.claude-usage: ClaudeUsageWidget { round: root.round; }
     if root.inst.kind == WidgetKind.media: MediaWidget { round: root.round; }
     if root.inst.kind == WidgetKind.session: SessionWidget { round: root.round; opts: root.inst.opts; }
-    if root.inst.kind == WidgetKind.mascot: MascotWidget { round: root.round; opts: root.inst.opts; id: root.inst.id; }
+    if root.inst.kind == WidgetKind.mascot: MascotWidget { opts: root.inst.opts; id: root.inst.id; }
     if root.inst.kind == WidgetKind.keyboard-layout: KeyboardLayoutWidget { round: root.round; }
     if root.inst.kind == WidgetKind.color-picker: ColorPickerWidget { round: root.round; }
     if root.inst.kind == WidgetKind.timer: TimerWidget { round: root.round; opts: root.inst.opts; }
@@ -169,7 +166,6 @@ export component WidgetFrame inherits Rectangle {
         mover := TouchArea {
             enabled: root.editing;
             visible: root.editing;
-            mouse-cursor: move;
             // Moved far enough to count as a drag rather than a click.
             property <bool> dragged;
             changed has-hover => { root.cursor(self.has-hover ? PointerShape.move : PointerShape.normal); }
@@ -266,7 +262,6 @@ export component WidgetFrame inherits Rectangle {
         }
         sizer := TouchArea {
             enabled: root.editing;
-            mouse-cursor: nwse-resize;
             changed has-hover => { root.cursor(self.has-hover ? PointerShape.resize : (mover.has-hover ? PointerShape.move : PointerShape.normal)); }
             moved => {
                 if (self.pressed) {

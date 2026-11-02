@@ -1,5 +1,5 @@
 import { Theme, Icons } from "theme.slint";
-import { WidgetInst, WidgetKind, Shape, PaletteItem, Tray, MenuEntry, MenuToggle, DrawerTab, PointerShape } from "data.slint";
+import { WidgetInst, WidgetKind, Shape, PaletteItem, Tray, MenuToggle, DrawerTab, PointerShape } from "data.slint";
 import { Icon, IconButton, TextButton, Muted, Switch } from "common.slint";
 import { WidgetFrame, WidgetBody } from "frame.slint";
 import { LineEdit } from "std-widgets.slint";
@@ -493,7 +493,6 @@ export component Dash inherits Window {
 
     // While carrying, the whole window follows the pointer; a click drops, right click cancels.
     if root.drag-mode == DragMode.carry: TouchArea {
-        mouse-cursor: move;
         changed mouse-x => { root.drag-px = self.mouse-x; }
         changed mouse-y => { root.drag-py = self.mouse-y; }
         pointer-event(e) => {
@@ -617,7 +616,6 @@ export component Dash inherits Window {
                                 }
                             }
                             pt := TouchArea {
-                                mouse-cursor: grab;
                                 pointer-event(e) => {
                                     if (e.kind == PointerEventKind.down) {
                                         entry.dragged-out = false;

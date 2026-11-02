@@ -1,6 +1,7 @@
 import { WeatherIcon } from "data.slint";
 
-// Every value here can be overridden by a theme file (~/.config/niri-dash/themes/*.kdl).
+// Rust sets these from the chosen color scheme and style (~/.config/niri-dash/colorschemes/*.kdl
+// and styles/*.kdl) and the user's adjustments.
 export global Theme {
     in-out property <color> backdrop: #07090dd9;
     in-out property <color> card: #161a22f2;
@@ -72,7 +73,6 @@ export global Icons {
     out property <image> coffee: @image-url("icons/coffee.svg");
     out property <image> logout: @image-url("icons/logout.svg");
     out property <image> restart: @image-url("icons/restart.svg");
-    out property <image> monitor: @image-url("icons/monitor.svg");
     out property <image> play: @image-url("icons/play.svg");
     out property <image> pause: @image-url("icons/pause.svg");
     out property <image> next: @image-url("icons/next.svg");
@@ -89,10 +89,8 @@ export global Icons {
     out property <image> chevron-right: @image-url("icons/chevron-right.svg");
     out property <image> check: @image-url("icons/check.svg");
     out property <image> lock-small: @image-url("icons/lock-small.svg");
-    out property <image> grid: @image-url("icons/grid.svg");
     out property <image> resize: @image-url("icons/resize.svg");
     out property <image> window: @image-url("icons/window.svg");
-    out property <image> cpu: @image-url("icons/cpu.svg");
     out property <image> reset: @image-url("icons/reset.svg");
     out property <image> clipboard: @image-url("icons/clipboard.svg");
     out property <image> sparkle: @image-url("icons/sparkle.svg");
@@ -103,24 +101,14 @@ export global Icons {
     out property <image> rain: @image-url("icons/rain.svg");
     out property <image> snow: @image-url("icons/snow.svg");
     out property <image> storm: @image-url("icons/storm.svg");
-    out property <image> trash: @image-url("icons/trash.svg");
-    out property <image> image: @image-url("icons/image.svg");
     out property <image> keyboard: @image-url("icons/keyboard.svg");
     out property <image> pipette: @image-url("icons/pipette.svg");
-    out property <image> timer: @image-url("icons/timer.svg");
     out property <image> note: @image-url("icons/note.svg");
     out property <image> camera: @image-url("icons/camera.svg");
     out property <image> screen-share: @image-url("icons/screen-share.svg");
-    out property <image> usb: @image-url("icons/usb.svg");
-    out property <image> eject: @image-url("icons/eject.svg");
     out property <image> phone: @image-url("icons/phone.svg");
     out property <image> mouse: @image-url("icons/mouse.svg");
     out property <image> headphones: @image-url("icons/headphones.svg");
     out property <image> gamepad: @image-url("icons/gamepad.svg");
-    out property <image> folder: @image-url("icons/folder.svg");
-    out property <image> send: @image-url("icons/send.svg");
     out property <image> flag: @image-url("icons/flag.svg");
-    out property <image> globe: @image-url("icons/globe.svg");
-    out property <image> copy: @image-url("icons/copy.svg");
-    out property <image> ring: @image-url("icons/ring.svg");
 }
