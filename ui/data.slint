@@ -215,14 +215,19 @@ export global Windows {
 }
 
 export struct WifiNet {
+    // SSID and how it is joined: networks sharing an SSID but not that are separate rows.
+    key: string,
     ssid: string,
     signal: int,
     secure: bool,
     active: bool,
     known: bool,
+    // How it is joined, when another row has the same SSID (an evil twin, say); else "".
+    tag: string,
 }
 
 export struct WifiSaved {
+    key: string,
     uuid: string,
     ssid: string,
     in-range: bool,
@@ -238,6 +243,7 @@ export struct WifiFact {
 
 // The network the details page shows.
 export struct WifiDetail {
+    key: string,
     ssid: string,
     in-range: bool,
     active: bool,
@@ -249,6 +255,8 @@ export struct WifiDetail {
 
 // The password prompt; no prompt while `ssid` is empty.
 export struct WifiPrompt {
+    // A new prompt (not just a new message) has a new serial; its fields start empty.
+    serial: int,
     ssid: string,
     // 0: a password, 1: a WEP key, 2: a user name and password (Enterprise).
     kind: int,
@@ -268,7 +276,7 @@ export global Wifi {
     in property <bool> blocked;
     in property <string> ssid;
     in property <int> signal;
-    // The network being joined right now.
+    // The key of the network being joined right now.
     in property <string> connecting;
     in property <[WifiNet]> networks;
     in property <[WifiSaved]> saved;
@@ -286,15 +294,17 @@ export global Wifi {
     callback toggle();
     callback rescan();
     callback connect(string);
-    // The prompt's answer: user name, password, method (0 PEAP, 1 TTLS).
-    callback answer(string, string, int);
+    // The answer to prompt `serial`: user name, password, method (0 PEAP, 1 TTLS), and for a
+    // new Enterprise network the server's domain, or true to skip checking the server.
+    callback answer(int, string, string, int, string, bool);
     callback cancel-prompt();
-    // A hidden network: name, security (0 open, 1 WPA, 2 Enterprise), user name, password, method.
-    callback join-hidden(string, int, string, string, int);
+    // A hidden network: name, security (0 open, 1 WPA, 2 Enterprise), user name, password,
+    // method, server domain, skip the server check.
+    callback join-hidden(string, int, string, string, int, string, bool);
     callback disconnect();
     callback forget(string);
     callback set-autoconnect(string, bool);
-    // Show the details of a network ("" for none).
+    // Show the details of the network with this key ("" for none).
     callback select(string);
     callback reveal(string);
     callback hide-secret();
@@ -305,6 +315,8 @@ export struct BtDevice {
     address: string,
     name: string,
     connected: bool,
+    // Connected without being paired: its name is only what it claims.
+    paired: bool,
     battery: int,
     busy: bool,
 }

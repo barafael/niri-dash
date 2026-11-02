@@ -106,6 +106,10 @@ pub struct Answer {
     pub identity: String,
     pub password: String,
     pub eap: Eap,
+    /// For a new Enterprise network: the domain its server's certificate must be issued for.
+    pub domain: String,
+    /// For a new Enterprise network: don't check the server's certificate at all.
+    pub insecure: bool,
 }
 
 /// What the password prompt asks for.
@@ -130,6 +134,9 @@ impl PromptKind {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Prompt {
+    /// Which prompt this is: the UI clears its fields for a new one, and an answer typed for
+    /// an earlier one is dropped rather than sent to another network.
+    pub serial: u64,
     pub ssid: String,
     pub kind: PromptKind,
     /// The last password didn't work.
@@ -177,6 +184,7 @@ impl std::fmt::Display for Activity {
 /// The network the details page shows: in range, saved, or both.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Detail {
+    pub key: String,
     pub ssid: String,
     pub network: Option<Network>,
     pub profile: Option<Profile>,
@@ -190,8 +198,10 @@ pub struct State {
     pub blocked: bool,
     pub ssid: String,
     pub signal: i32,
-    /// The network NetworkManager is joining right now (also when it does so by itself).
+    /// The network NetworkManager is joining right now (also when it does so by itself): its
+    /// SSID, and its key (see `nm::key`).
     pub connecting: String,
+    pub connecting_key: String,
     pub networks: Vec<Network>,
     /// Saved networks, last used first.
     pub saved: Vec<Profile>,
@@ -206,14 +216,16 @@ pub struct State {
 }
 
 impl State {
-    fn network(&self, ssid: &str) -> Option<&Network> {
-        self.networks.iter().find(|n| n.ssid == ssid)
+    /// The network in range with this key (see `nm::key`).
+    fn network(&self, key: &str) -> Option<&Network> {
+        self.networks.iter().find(|n| n.key() == key)
     }
 
-    fn profile(&self, ssid: &str) -> Option<&Profile> {
-        self.network(ssid)
+    /// The saved profile for this key.
+    fn profile(&self, key: &str) -> Option<&Profile> {
+        self.network(key)
             .and_then(|n| n.profile.as_ref())
-            .or_else(|| self.saved.iter().find(|p| p.ssid == ssid))
+            .or_else(|| self.saved.iter().find(|p| p.key() == key))
     }
 }
 
@@ -231,8 +243,12 @@ struct Local {
     agent_asked: bool,
     /// The prompt was cancelled during the current activation.
     cancelled: bool,
+    /// The key of the network whose details are shown.
     selected: String,
     secret: Option<Secret>,
+    /// Bumped whenever a shown password must go: a reveal still on its way is then dropped.
+    secret_gen: u64,
+    prompt_serial: u64,
     scan_requested: Option<(Instant, i64)>,
     portal_checked: Option<Instant>,
 }
@@ -299,6 +315,19 @@ impl Wifi {
             }
         });
         agent::start(me.clone());
+        // A shown password doesn't outlive the dashboard being hidden.
+        let m = me.clone();
+        ctx.spawn(async move {
+            loop {
+                m.ctx.until_visible(true).await;
+                m.ctx.until_visible(false).await;
+                m.hide_secret();
+                let mut last = m.last.lock().unwrap_or_else(|e| e.into_inner());
+                if last.secret.take().is_some() {
+                    m.ctx.send(Msg::Wifi(Box::new(last.clone())));
+                }
+            }
+        });
         me
     }
 
@@ -330,23 +359,20 @@ impl Wifi {
         state.saved = saved;
         if snap.enabled {
             self.scan_if_due(&conn, dev_path, snap.last_scan).await;
-            let active_ssid = match &snap.active {
-                Some((path, activating)) => {
-                    let ssid = profiles
-                        .iter()
-                        .find(|p| &p.path == path)
-                        .map(|p| p.ssid.clone())
-                        .unwrap_or_default();
-                    if *activating {
-                        state.connecting = ssid;
-                        String::new()
-                    } else {
-                        ssid
-                    }
+            let active = snap.active.as_ref().and_then(|(path, activating)| {
+                let p = profiles.iter().find(|p| &p.path == path)?;
+                Some((p.ssid.clone(), p.key(), *activating))
+            });
+            let (active_ssid, active_key) = match active {
+                Some((ssid, key, true)) => {
+                    state.connecting = ssid;
+                    state.connecting_key = key;
+                    (String::new(), String::new())
                 }
-                None => String::new(),
+                Some((ssid, key, false)) => (ssid, key),
+                None => Default::default(),
             };
-            state.networks = nm::networks(&snap.aps, &profiles, &active_ssid);
+            state.networks = nm::networks(&snap.aps, &profiles, &active_key);
             if let Some(a) = state.networks.iter().find(|n| n.active) {
                 state.ssid = a.ssid.clone();
                 state.signal = a.signal;
@@ -368,11 +394,16 @@ impl Wifi {
             at.elapsed() < Duration::from_secs(10) && from == snap.last_scan
         });
         if !local.selected.is_empty() {
-            let ssid = local.selected.clone();
-            let network = state.network(&ssid).cloned();
-            let profile = state.profile(&ssid).cloned();
-            if network.is_some() || profile.is_some() {
+            let key = local.selected.clone();
+            let network = state.network(&key).cloned();
+            let profile = state.profile(&key).cloned();
+            let ssid = network
+                .as_ref()
+                .map(|n| n.ssid.clone())
+                .or_else(|| profile.as_ref().map(|p| p.ssid.clone()));
+            if let Some(ssid) = ssid {
                 state.detail = Some(Detail {
+                    key,
                     ssid,
                     network,
                     profile,
@@ -392,6 +423,7 @@ impl Wifi {
             == Some(true)
         {
             local.secret = None;
+            local.secret_gen += 1;
         }
         state.secret = local.secret.clone();
         Ok(state)
@@ -516,17 +548,18 @@ impl Wifi {
         self.ctx.refresh();
     }
 
-    /// Join `ssid`: through its saved profile, or a new one, asking for a password first if it
-    /// takes one.
-    pub fn connect(&self, ssid: String) {
+    /// Join the network with this key (see `nm::key`): through its saved profile, or a new
+    /// one, asking for a password first if it takes one.
+    pub fn connect(&self, key: String) {
         let last = self.last();
-        if let Some(p) = last.profile(&ssid) {
-            self.activate(ssid, Activation::Profile(p.path.clone()));
+        if let Some(p) = last.profile(&key) {
+            self.activate(p.ssid.clone(), Activation::Profile(p.path.clone()));
             return;
         }
-        let Some(net) = last.network(&ssid).cloned() else {
+        let Some(net) = last.network(&key).cloned() else {
             return;
         };
+        let ssid = net.ssid.clone();
         if net.security.needs_secret() {
             self.ask(Prompt {
                 ssid,
@@ -562,7 +595,7 @@ impl Wifi {
             3 => "none",
             _ => "",
         };
-        if let Some(why) = check_answer(key_mgmt, &answer) {
+        if let Some(why) = check_answer(key_mgmt, true, &answer) {
             self.fail(why);
             return;
         }
@@ -582,23 +615,32 @@ impl Wifi {
         if let Some((_, tx)) = local.reply.take() {
             let _ = tx.send(None);
         }
-        local.prompt = Some(prompt);
+        local.prompt_serial += 1;
+        local.prompt = Some(Prompt {
+            serial: local.prompt_serial,
+            ..prompt
+        });
         drop(local);
         self.ctx.refresh();
     }
 
-    /// The prompt was answered: hand the answer to the agent's waiting request, or connect.
-    pub fn answer(&self, answer: Answer) {
+    /// The prompt `serial` was answered: hand the answer to the agent's waiting request, or
+    /// connect. An answer to a prompt that has since been replaced goes nowhere.
+    pub fn answer(&self, serial: u64, answer: Answer) {
         let mut local = self.local();
         let Some(prompt) = local.prompt.clone() else {
             return;
         };
+        if prompt.serial != serial {
+            log::debug!("wifi: dropping an answer to an earlier prompt");
+            return;
+        }
         let key_mgmt = match prompt.kind {
             PromptKind::Wep => "none",
             PromptKind::Enterprise => "wpa-eap",
             PromptKind::Password => "wpa-psk",
         };
-        if let Some(why) = check_answer(key_mgmt, &answer) {
+        if let Some(why) = check_answer(key_mgmt, prompt.new, &answer) {
             local.prompt = Some(Prompt {
                 message: why,
                 ..prompt
@@ -620,7 +662,7 @@ impl Wifi {
                 let me = self.clone();
                 let ssid = prompt.ssid.clone();
                 self.ctx.spawn(async move {
-                    match me.store_secret(&profile.uuid, prompt.kind, &answer).await {
+                    match me.store_secret(&profile, prompt.kind, &answer).await {
                         Ok(()) => {
                             me.forget_profiles();
                             me.activate(ssid, Activation::Profile(profile.path));
@@ -685,8 +727,10 @@ impl Wifi {
             .member("StateChanged")?
             .build();
         let mut changes = zbus::MessageStream::for_match_rule(rule, &conn, Some(64)).await?;
+        let mut activated = None;
         let (created, retry_with) = match how {
             Activation::Profile(path) => {
+                activated = Some(path.clone());
                 nm::call(
                     &conn,
                     nm::NM_PATH,
@@ -767,18 +811,17 @@ impl Wifi {
         }
         // A password problem nobody was asked about (no agent got the request): ask here.
         if matches!(reason, 7..=11) && !asked {
-            let last = self.last();
-            let security = last
-                .network(ssid)
-                .map(|n| n.security)
-                .or_else(|| last.profile(ssid).map(|p| p.security()))
-                .unwrap_or_default();
+            // The profile that was activated, not just any with that SSID.
+            let profile = activated.and_then(|path| {
+                self.profile_at(&path)
+                    .or_else(|| self.last().saved.into_iter().find(|p| p.path == path))
+            });
+            let (key_mgmt, ap, hidden) = retry_with.unwrap_or_default();
+            let security = match &profile {
+                Some(p) => p.security(),
+                None => nm::security_of(&key_mgmt),
+            };
             if security.needs_secret() {
-                let profile = match &created {
-                    Some(_) => None,
-                    None => last.profile(ssid).cloned(),
-                };
-                let (key_mgmt, ap, hidden) = retry_with.unwrap_or_default();
                 self.local().activity = Activity::Idle;
                 self.ask(Prompt {
                     ssid: ssid.into(),
@@ -832,30 +875,49 @@ impl Wifi {
         });
     }
 
-    /// Put a password into a saved profile, stored by NetworkManager itself (not an agent).
-    /// NetworkManager keeps the profile's other secrets.
+    /// Put a password into a saved profile whose password NetworkManager keeps itself.
+    /// NetworkManager keeps the profile's other secrets. A password kept elsewhere (a keyring,
+    /// through another agent) or never stored stays that way: it isn't moved into
+    /// NetworkManager's files.
     async fn store_secret(
         &self,
-        uuid: &str,
+        profile: &Profile,
         kind: PromptKind,
         answer: &Answer,
     ) -> Result<(), Error> {
+        let conn = self.ctx.bus(true).await?;
+        let settings = nm::settings(&conn, &profile.path).await?;
+        let (setting, flags_key) = match kind {
+            PromptKind::Password => ("802-11-wireless-security", "psk-flags"),
+            PromptKind::Wep => ("802-11-wireless-security", "wep-key-flags"),
+            PromptKind::Enterprise => ("802-1x", "password-flags"),
+        };
+        let flags: u32 = settings
+            .get(setting)
+            .and_then(|v| super::prop(v, flags_key))
+            .unwrap_or(0);
+        if flags != 0 {
+            return Err(Error::Other(
+                "its password is kept outside NetworkManager (a keyring); change it there".into(),
+            ));
+        }
         let mut patch = nmrs::SettingsPatch::default();
         patch.raw_overlay = Some(secret_overlay(kind, answer));
         self.nmrs()
             .await?
-            .update_saved_connection(uuid, patch)
+            .update_saved_connection(&profile.uuid, patch)
             .await?;
         Ok(())
     }
 
-    /// Show the details page of `ssid` ("" to leave it).
-    pub fn select(&self, ssid: String) {
+    /// Show the details page of the network with this key ("" to leave it).
+    pub fn select(&self, key: String) {
         let mut local = self.local();
-        if local.selected != ssid {
+        if local.selected != key {
             local.secret = None;
+            local.secret_gen += 1;
         }
-        local.selected = ssid;
+        local.selected = key;
         drop(local);
         self.ctx.refresh();
     }
@@ -867,6 +929,7 @@ impl Wifi {
             return;
         };
         let me = self.clone();
+        let generation = self.local().secret_gen;
         self.ctx.act("Show password", async move {
             let security = profile.security();
             let password = if security.needs_secret() {
@@ -890,17 +953,24 @@ impl Wifi {
                 String::new()
             };
             let text = nm::qr_text(&profile.ssid, security, &password, profile.hidden);
-            me.local().secret = Some(Secret {
-                uuid,
-                password,
-                qr: qr_image(&text),
-            });
+            let mut local = me.local();
+            // Hidden, or another page, while NetworkManager answered: don't show it after all.
+            if local.secret_gen == generation {
+                local.secret = Some(Secret {
+                    uuid,
+                    password,
+                    qr: qr_image(&text),
+                });
+            }
             Ok::<_, Error>(())
         });
     }
 
     pub fn hide_secret(&self) {
-        self.local().secret = None;
+        let mut local = self.local();
+        local.secret = None;
+        local.secret_gen += 1;
+        drop(local);
         self.ctx.refresh();
     }
 
@@ -935,7 +1005,11 @@ impl Wifi {
         if let Some((_, old)) = local.reply.take() {
             let _ = old.send(None);
         }
-        local.prompt = Some(prompt);
+        local.prompt_serial += 1;
+        local.prompt = Some(Prompt {
+            serial: local.prompt_serial,
+            ..prompt
+        });
         local.reply = Some((connection, tx));
         local.agent_asked = true;
         if matches!(local.activity, Activity::Connecting(_)) {
@@ -1045,7 +1119,8 @@ pub fn facts(d: &Detail, link: &Link) -> Vec<(String, String)> {
 }
 
 /// Why `answer` can't work for `key_mgmt`, if it can't.
-fn check_answer(key_mgmt: &str, answer: &Answer) -> Option<String> {
+/// `new`: for a connection still to be made (an Enterprise one then needs the server's domain).
+fn check_answer(key_mgmt: &str, new: bool, answer: &Answer) -> Option<String> {
     let pw = &answer.password;
     match key_mgmt {
         "wpa-psk" | "sae" => {
@@ -1054,12 +1129,17 @@ fn check_answer(key_mgmt: &str, answer: &Answer) -> Option<String> {
                 .then(|| "A WPA password has 8 to 63 characters.".into())
         }
         "wpa-eap" if answer.identity.trim().is_empty() => Some("Enter a user name.".into()),
+        "wpa-eap" if new && !answer.insecure && answer.domain.trim().is_empty() => Some(
+            "Enter the server's domain (the network's admins know it), or turn off the \
+             certificate check."
+                .into(),
+        ),
         "none" | "wpa-eap" if pw.is_empty() => Some("Enter the password.".into()),
         _ => None,
     }
 }
 
-/// The settings that put `answer` into a profile, as system-owned secrets.
+/// The settings that put `answer` into a profile (whose secrets NetworkManager keeps).
 fn secret_overlay(kind: PromptKind, answer: &Answer) -> nm::Settings {
     let v = |v: zbus::zvariant::Value<'_>| {
         zbus::zvariant::OwnedValue::try_from(v).expect("plain values have no fds")
@@ -1067,24 +1147,17 @@ fn secret_overlay(kind: PromptKind, answer: &Answer) -> nm::Settings {
     let (setting, values) = match kind {
         PromptKind::Password => (
             "802-11-wireless-security",
-            vec![
-                ("psk", v(answer.password.as_str().into())),
-                ("psk-flags", v(0u32.into())),
-            ],
+            vec![("psk", v(answer.password.as_str().into()))],
         ),
         PromptKind::Wep => (
             "802-11-wireless-security",
-            vec![
-                ("wep-key0", v(answer.password.as_str().into())),
-                ("wep-key-flags", v(0u32.into())),
-            ],
+            vec![("wep-key0", v(answer.password.as_str().into()))],
         ),
         PromptKind::Enterprise => (
             "802-1x",
             vec![
                 ("identity", v(answer.identity.as_str().into())),
                 ("password", v(answer.password.as_str().into())),
-                ("password-flags", v(0u32.into())),
             ],
         ),
     };
@@ -1134,11 +1207,29 @@ mod tests {
             password: p.into(),
             ..Default::default()
         };
-        assert!(check_answer("wpa-psk", &pw("short")).is_some());
-        assert!(check_answer("wpa-psk", &pw("long enough")).is_none());
-        assert!(check_answer("sae", &pw(&"z".repeat(64))).is_some());
-        assert!(check_answer("wpa-psk", &pw(&"ab".repeat(32))).is_none());
-        assert!(check_answer("wpa-eap", &pw("secret")).is_some());
-        assert!(check_answer("", &pw("")).is_none());
+        assert!(check_answer("wpa-psk", true, &pw("short")).is_some());
+        assert!(check_answer("wpa-psk", true, &pw("long enough")).is_none());
+        assert!(check_answer("sae", true, &pw(&"z".repeat(64))).is_some());
+        assert!(check_answer("wpa-psk", true, &pw(&"ab".repeat(32))).is_none());
+        assert!(check_answer("wpa-eap", true, &pw("secret")).is_some());
+        assert!(check_answer("", true, &pw("")).is_none());
+        // A new Enterprise network needs the server's domain, or an explicit "don't check".
+        let eap = Answer {
+            identity: "me".into(),
+            password: "secret".into(),
+            ..Default::default()
+        };
+        assert!(check_answer("wpa-eap", true, &eap).is_some());
+        assert!(check_answer("wpa-eap", false, &eap).is_none());
+        let with_domain = Answer {
+            domain: "example.org".into(),
+            ..eap.clone()
+        };
+        assert!(check_answer("wpa-eap", true, &with_domain).is_none());
+        let insecure = Answer {
+            insecure: true,
+            ..eap
+        };
+        assert!(check_answer("wpa-eap", true, &insecure).is_none());
     }
 }

@@ -84,19 +84,41 @@ pub struct Profile {
     pub hotspot: bool,
 }
 
-impl Profile {
-    pub fn security(&self) -> Security {
-        match self.key_mgmt.as_str() {
-            "" => Security::Open,
-            "owe" => Security::Owe,
-            "none" | "ieee8021x" => Security::Wep,
-            "wpa-eap" | "wpa-eap-suite-b-192" => Security::Enterprise,
-            _ => Security::Personal,
-        }
+/// The security a connection's key-mgmt stands for.
+pub fn security_of(key_mgmt: &str) -> Security {
+    match key_mgmt {
+        "" => Security::Open,
+        "owe" => Security::Owe,
+        "none" | "ieee8021x" => Security::Wep,
+        "wpa-eap" | "wpa-eap-suite-b-192" => Security::Enterprise,
+        _ => Security::Personal,
     }
 }
 
-/// One network: every access point sharing an SSID.
+/// What identifies a network: its SSID and how it is joined. Access points that share an SSID
+/// but differ in that are different networks, so an open access point named like a WPA network
+/// (an evil twin) gets a row of its own rather than making the network look open.
+pub fn key(ssid: &str, security: Security) -> String {
+    let class = match security {
+        Security::Open | Security::Owe => 'o',
+        Security::Personal => 'p',
+        Security::Wep => 'w',
+        Security::Enterprise => 'e',
+    };
+    format!("{class}{ssid}")
+}
+
+impl Profile {
+    pub fn security(&self) -> Security {
+        security_of(&self.key_mgmt)
+    }
+
+    pub fn key(&self) -> String {
+        key(&self.ssid, self.security())
+    }
+}
+
+/// One network: the access points that share an SSID and how they are joined.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Network {
     pub ssid: String,
@@ -117,6 +139,10 @@ pub struct Network {
 }
 
 impl Network {
+    pub fn key(&self) -> String {
+        key(&self.ssid, self.security)
+    }
+
     pub fn known(&self) -> bool {
         self.profile.is_some()
     }
@@ -184,12 +210,13 @@ pub fn channel(freq: u32) -> u32 {
 }
 
 /// Group access points into networks, sorted active first, then saved, then by signal.
-pub fn networks(aps: &[Ap], profiles: &[Profile], active_ssid: &str) -> Vec<Network> {
+pub fn networks(aps: &[Ap], profiles: &[Profile], active_key: &str) -> Vec<Network> {
     let mut nets: Vec<Network> = Vec::new();
     for ap in aps.iter().filter(|a| named(&a.ssid)) {
         let sec = ap.security();
         let km = ap.wpa | ap.rsn;
-        let i = match nets.iter().position(|n| n.ssid == ap.ssid) {
+        let k = key(&ap.ssid, sec);
+        let i = match nets.iter().position(|n| n.key() == k) {
             Some(i) => i,
             None => {
                 nets.push(Network {
@@ -203,6 +230,7 @@ pub fn networks(aps: &[Ap], profiles: &[Profile], active_ssid: &str) -> Vec<Netw
             }
         };
         let n = &mut nets[i];
+        // Open and OWE access points of one network: it is joined through an open one.
         n.aps += 1;
         n.bands |= band_bit(ap.freq);
         n.signal = n.signal.max(ap.strength.into());
@@ -226,10 +254,11 @@ pub fn networks(aps: &[Ap], profiles: &[Profile], active_ssid: &str) -> Vec<Netw
         {
             n.ap = best.path.clone();
         }
-        n.active = !active_ssid.is_empty() && n.ssid == active_ssid;
+        let k = n.key();
+        n.active = k == active_key;
         n.profile = profiles
             .iter()
-            .filter(|p| p.ssid == n.ssid && !p.hotspot)
+            .filter(|p| !p.hotspot && p.key() == k)
             .max_by_key(|p| p.timestamp)
             .cloned();
     }
@@ -579,16 +608,23 @@ pub fn new_connection(
                 Eap::Ttls => ("ttls", "pap"),
             };
             let identity = answer.map(|a| a.identity.clone()).unwrap_or_default();
-            s.insert(
-                "802-1x",
-                HashMap::from([
-                    ("eap", Value::from(vec![eap.to_string()])),
-                    ("phase2-auth", Value::from(phase2)),
-                    ("identity", Value::from(identity)),
-                    ("password", Value::from(password)),
-                    ("password-flags", Value::from(0u32)),
-                ]),
-            );
+            let mut eap_settings = HashMap::from([
+                ("eap", Value::from(vec![eap.to_string()])),
+                ("phase2-auth", Value::from(phase2)),
+                ("identity", Value::from(identity)),
+                ("password", Value::from(password)),
+                ("password-flags", Value::from(0u32)),
+            ]);
+            // The server proves who it is with a certificate from a known authority, issued
+            // for the network's domain; without that check an evil twin gets the password.
+            if let Some(a) = answer.filter(|a| !a.insecure) {
+                eap_settings.insert("system-ca-certs", Value::from(true));
+                eap_settings.insert(
+                    "domain-suffix-match",
+                    Value::from(a.domain.trim().to_string()),
+                );
+            }
+            s.insert("802-1x", eap_settings);
         }
         _ => {}
     }
@@ -667,9 +703,10 @@ mod tests {
         let profiles = [Profile {
             ssid: "Pixel".into(),
             uuid: "u1".into(),
+            key_mgmt: "sae".into(),
             ..Default::default()
         }];
-        let nets = networks(&aps, &profiles, "Pixel");
+        let nets = networks(&aps, &profiles, "pPixel");
         let summary: Vec<_> = nets
             .iter()
             .map(|n| {
@@ -701,6 +738,50 @@ mod tests {
         assert_eq!(pycon.security_label(), "WPA2/WPA3");
         assert_eq!(pycon.key_mgmt(), "wpa-psk");
         assert_eq!(pycon.ap, "/ap/pycon/84");
+    }
+
+    #[test]
+    fn evil_twin() {
+        // An open access point named like a saved WPA network is a network of its own, not a
+        // reason to join "Corp" without a password; neither does it take Corp's profile.
+        let aps = [ap("Corp", 60, SEC_PSK, 2412), ap("Corp", 90, 0, 2437)];
+        let profiles = [Profile {
+            ssid: "Corp".into(),
+            key_mgmt: "wpa-psk".into(),
+            ..Default::default()
+        }];
+        let nets = networks(&aps, &profiles, "");
+        let summary: Vec<_> = nets
+            .iter()
+            .map(|n| (n.key(), n.security, n.known(), n.ap.as_str()))
+            .collect();
+        assert_eq!(
+            summary,
+            [
+                ("pCorp".to_string(), Security::Personal, true, "/ap/Corp/60"),
+                ("oCorp".to_string(), Security::Open, false, "/ap/Corp/90"),
+            ]
+        );
+    }
+
+    #[test]
+    fn eap_checks_the_server() {
+        let answer = Answer {
+            identity: "me".into(),
+            password: "pw".into(),
+            domain: "example.org".into(),
+            ..Default::default()
+        };
+        let s = new_connection("eduroam", "wpa-eap", false, Some(&answer));
+        let eap = &s["802-1x"];
+        assert_eq!(eap["system-ca-certs"], Value::from(true));
+        assert_eq!(eap["domain-suffix-match"], Value::from("example.org"));
+        let unsafe_answer = Answer {
+            insecure: true,
+            ..answer
+        };
+        let s = new_connection("eduroam", "wpa-eap", false, Some(&unsafe_answer));
+        assert!(!s["802-1x"].contains_key("system-ca-certs"));
     }
 
     #[test]

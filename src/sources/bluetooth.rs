@@ -31,6 +31,9 @@ pub struct Device {
     pub address: String,
     pub name: String,
     pub connected: bool,
+    /// Paired (bonded) with this machine. A device can connect without that; its name is then
+    /// only what it says about itself.
+    pub paired: bool,
     pub battery: i32,
     pub busy: bool,
 }
@@ -62,7 +65,8 @@ async fn fetch(conn: &Connection) -> Result<State> {
                     state.powered = prop(props, "Powered").unwrap_or(false);
                 }
                 "org.bluez.Device1" => {
-                    let paired = prop(props, "Paired").unwrap_or(false);
+                    let paired = prop(props, "Paired").unwrap_or(false)
+                        || prop(props, "Bonded").unwrap_or(false);
                     let connected = prop(props, "Connected").unwrap_or(false);
                     if !paired && !connected {
                         continue;
@@ -74,6 +78,7 @@ async fn fetch(conn: &Connection) -> Result<State> {
                             .or_else(|| prop_str(props, "Name"))
                             .unwrap_or_else(|| "Unknown".into()),
                         connected,
+                        paired,
                         battery: -1,
                         busy: false,
                     });

@@ -186,7 +186,7 @@ impl App {
         w.set_blocked(s.blocked);
         w.set_ssid(s.ssid.as_str().into());
         w.set_signal(s.signal);
-        w.set_connecting(s.connecting.as_str().into());
+        w.set_connecting(s.connecting_key.as_str().into());
         let status = match &s.activity {
             Activity::Idle if !s.connecting.is_empty() => {
                 format!("Connecting to {}…", s.connecting)
@@ -199,6 +199,7 @@ impl App {
         w.set_portal(s.link.connectivity == sources::wifi::Connectivity::Portal);
         w.set_prompt(match &s.prompt {
             Some(p) => WifiPrompt {
+                serial: p.serial as i32,
                 ssid: p.ssid.as_str().into(),
                 kind: match p.kind {
                     PromptKind::Password => 0,
@@ -214,6 +215,7 @@ impl App {
         });
         w.set_detail(match &s.detail {
             Some(d) => WifiDetail {
+                key: d.key.as_str().into(),
                 ssid: d.ssid.as_str().into(),
                 in_range: d.network.is_some(),
                 active: d.network.as_ref().is_some_and(|n| n.active),
@@ -255,8 +257,10 @@ impl App {
             s.saved
                 .iter()
                 .map(|p| {
-                    let in_range = s.networks.iter().any(|n| n.ssid == p.ssid);
+                    let key = p.key();
+                    let in_range = s.networks.iter().any(|n| n.key() == key);
                     WifiSaved {
+                        key: key.into(),
                         uuid: p.uuid.as_str().into(),
                         ssid: p.ssid.as_str().into(),
                         in_range,
@@ -274,12 +278,21 @@ impl App {
         w.set_networks(model(
             s.networks
                 .iter()
-                .map(|n| WifiNet {
-                    ssid: n.ssid.as_str().into(),
-                    signal: n.signal,
-                    secure: n.security.needs_secret(),
-                    active: n.active,
-                    known: n.known(),
+                .map(|n| {
+                    let twins = s.networks.iter().filter(|m| m.ssid == n.ssid).count();
+                    WifiNet {
+                        key: n.key().into(),
+                        ssid: n.ssid.as_str().into(),
+                        signal: n.signal,
+                        secure: n.security.needs_secret(),
+                        active: n.active,
+                        known: n.known(),
+                        tag: if twins > 1 {
+                            n.security_label().into()
+                        } else {
+                            Default::default()
+                        },
+                    }
                 })
                 .collect(),
         ));
@@ -298,6 +311,7 @@ impl App {
                     address: d.address.into(),
                     name: d.name.into(),
                     connected: d.connected,
+                    paired: d.paired,
                     battery: d.battery,
                     busy: d.busy,
                 })
@@ -434,27 +448,36 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     let a = app.clone();
     w.on_connect(move |ssid| a.wifi.connect(ssid.into()));
     let a = app.clone();
-    w.on_answer(move |identity, password, eap| {
-        a.wifi.answer(sources::wifi::Answer {
-            identity: identity.into(),
-            password: password.into(),
-            eap: sources::wifi::Eap::from_index(eap),
-        })
-    });
-    let a = app.clone();
-    w.on_cancel_prompt(move || a.wifi.cancel_prompt());
-    let a = app.clone();
-    w.on_join_hidden(move |ssid, security, identity, password, eap| {
-        a.wifi.join_hidden(
-            ssid.into(),
-            security,
+    w.on_answer(move |serial, identity, password, eap, domain, insecure| {
+        a.wifi.answer(
+            serial.max(0) as u64,
             sources::wifi::Answer {
                 identity: identity.into(),
                 password: password.into(),
                 eap: sources::wifi::Eap::from_index(eap),
+                domain: domain.into(),
+                insecure,
             },
         )
     });
+    let a = app.clone();
+    w.on_cancel_prompt(move || a.wifi.cancel_prompt());
+    let a = app.clone();
+    w.on_join_hidden(
+        move |ssid, security, identity, password, eap, domain, insecure| {
+            a.wifi.join_hidden(
+                ssid.into(),
+                security,
+                sources::wifi::Answer {
+                    identity: identity.into(),
+                    password: password.into(),
+                    eap: sources::wifi::Eap::from_index(eap),
+                    domain: domain.into(),
+                    insecure,
+                },
+            )
+        },
+    );
     let a = app.clone();
     w.on_disconnect(move || a.wifi.disconnect());
     let a = app.clone();

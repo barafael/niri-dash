@@ -20,22 +20,45 @@ component Choice inherits HorizontalLayout {
 component PasswordField inherits HorizontalLayout {
     in property <string> placeholder: "Password";
     in property <bool> focus-first;
-    out property <string> text: field.text;
+    in-out property <string> text <=> field.text;
     callback accepted();
-    callback edited(string);
     field := LineEdit {
         input-type: password;
         placeholder-text: root.placeholder;
         accepted => { root.accepted(); }
-        edited(t) => { root.edited(t); }
         init => {
             if (root.focus-first) {
                 self.focus();
             }
         }
     }
-    public function clear() {
-        field.text = "";
+}
+
+// For a new Enterprise network: the domain the server's certificate must be issued for, or an
+// explicit "don't check" (an evil twin could then take the password).
+component ServerCheck inherits VerticalLayout {
+    in-out property <string> domain;
+    in-out property <bool> insecure;
+    spacing: 6px;
+    if !root.insecure: LineEdit {
+        placeholder-text: "Server domain, e.g. example.org";
+        text <=> root.domain;
+    }
+    HorizontalLayout {
+        spacing: 8px;
+        Text {
+            text: "Don't check the server (unsafe)";
+            color: root.insecure ? Theme.warn : Theme.dim;
+            font-size: Theme.font-small;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+        Switch {
+            y: (parent.height - self.height) / 2;
+            checked: root.insecure;
+            toggled => { root.insecure = !root.insecure; }
+        }
     }
 }
 
@@ -43,7 +66,17 @@ component PasswordField inherits HorizontalLayout {
 // NetworkManager (through the secret agent) for a saved one.
 component WifiPasswordPrompt inherits Rectangle {
     property <bool> enterprise: Wifi.prompt.kind == 2;
+    property <bool> new-enterprise: root.enterprise && Wifi.prompt.new;
     property <int> method;
+    property <string> identity;
+    property <string> password;
+    property <string> domain;
+    property <bool> insecure;
+    // A new prompt (another network, or another request) starts empty, so nothing typed for
+    // one network is sent to another.
+    property <int> serial: Wifi.prompt.serial;
+    changed serial => { root.reset(); }
+    init => { root.reset(); }
     border-radius: Theme.radius-small;
     background: Theme.card-raised;
     VerticalLayout {
@@ -56,20 +89,24 @@ component WifiPasswordPrompt inherits Rectangle {
             font-weight: 600;
             overflow: elide;
         }
-        if root.enterprise && Wifi.prompt.new: Choice {
+        if root.new-enterprise: Choice {
             options: ["PEAP", "TTLS"];
             picked <=> root.method;
         }
-        if root.enterprise: user := LineEdit {
+        if root.enterprise: LineEdit {
             placeholder-text: "User name";
-            text: Wifi.prompt.identity;
+            text <=> root.identity;
             init => { self.focus(); }
-            edited(t) => { root.identity = t; }
         }
-        pw := PasswordField {
+        PasswordField {
             placeholder: Wifi.prompt.kind == 1 ? "WEP key" : "Password";
             focus-first: !root.enterprise;
+            text <=> root.password;
             accepted => { root.submit(); }
+        }
+        if root.new-enterprise: ServerCheck {
+            domain <=> root.domain;
+            insecure <=> root.insecure;
         }
         if Wifi.prompt.message != "": Text {
             text: Wifi.prompt.message;
@@ -91,10 +128,16 @@ component WifiPasswordPrompt inherits Rectangle {
             }
         }
     }
-    property <string> identity: Wifi.prompt.identity;
+    function reset() {
+        root.identity = Wifi.prompt.identity;
+        root.password = "";
+        root.domain = "";
+        root.insecure = false;
+        root.method = 0;
+    }
     function submit() {
-        Wifi.answer(root.identity, pw.text, root.method);
-        pw.clear();
+        Wifi.answer(Wifi.prompt.serial, root.identity, root.password, root.method, root.domain, root.insecure);
+        root.password = "";
     }
 }
 
@@ -105,10 +148,11 @@ export component WifiWidget inherits Rectangle {
     // Where the details page goes back to.
     property <int> back-to;
     property <bool> asking: Wifi.prompt.ssid != "";
-    function open(ssid: string, from: int) {
+    // The details page of the network with this key.
+    function open(key: string, from: int) {
         root.back-to = from;
         root.page = 1;
-        Wifi.select(ssid);
+        Wifi.select(key);
     }
     function back() {
         if (root.page == 1) {
@@ -116,8 +160,19 @@ export component WifiWidget inherits Rectangle {
             Wifi.hide-secret();
             root.page = root.back-to;
         } else {
+            root.reset-hidden();
             root.page = 0;
         }
+    }
+    // The hidden-network form starts empty, and forgets what was typed once used or left.
+    function reset-hidden() {
+        root.hidden-ssid = "";
+        root.hidden-security = 1;
+        root.hidden-identity = "";
+        root.hidden-password = "";
+        root.hidden-method = 0;
+        root.hidden-domain = "";
+        root.hidden-insecure = false;
     }
     if root.round: RoundFace {
         icon: Wifi.enabled ? Icons.wifi : Icons.wifi-off;
@@ -217,9 +272,9 @@ export component WifiWidget inherits Rectangle {
                 selected: n.active;
                 clicked => {
                     if (n.active) {
-                        root.open(n.ssid, 0);
+                        root.open(n.key, 0);
                     } else {
-                        Wifi.connect(n.ssid);
+                        Wifi.connect(n.key);
                     }
                 }
                 HorizontalLayout {
@@ -240,8 +295,12 @@ export component WifiWidget inherits Rectangle {
                         overflow: elide;
                         horizontal-stretch: 1;
                     }
-                    if n.ssid == Wifi.connecting: Muted {
+                    if n.key == Wifi.connecting: Muted {
                         text: "joining…";
+                    }
+                    if n.tag != "": Muted {
+                        text: n.tag;
+                        color: n.secure ? Theme.dim : Theme.warn;
                     }
                     if n.secure: Icon {
                         y: (parent.height - self.height) / 2;
@@ -260,7 +319,7 @@ export component WifiWidget inherits Rectangle {
                         icon: Icons.chevron-right;
                         size: 26px;
                         tint: Theme.dim;
-                        clicked => { root.open(n.ssid, 0); }
+                        clicked => { root.open(n.key, 0); }
                     }
                 }
             }
@@ -269,7 +328,10 @@ export component WifiWidget inherits Rectangle {
                 text: Wifi.scanning ? "Scanning…" : "No networks found";
             }
             Row {
-                clicked => { root.page = 2; }
+                clicked => {
+                    root.reset-hidden();
+                    root.page = 2;
+                }
                 HorizontalLayout {
                     padding-left: 10px;
                     spacing: 8px;
@@ -420,7 +482,7 @@ export component WifiWidget inherits Rectangle {
                     text: "Connect";
                     primary: true;
                     enabled: Wifi.enabled;
-                    clicked => { Wifi.connect(Wifi.detail.ssid); }
+                    clicked => { Wifi.connect(Wifi.detail.key); }
                 }
             }
         }
@@ -429,33 +491,40 @@ export component WifiWidget inherits Rectangle {
             vertical-stretch: 1;
             VerticalLayout {
                 spacing: 6px;
-                hidden-ssid := LineEdit {
+                LineEdit {
                     placeholder-text: "Network name (SSID)";
+                    text <=> root.hidden-ssid;
                     init => { self.focus(); }
                 }
-                security := Choice {
+                Choice {
                     options: ["Open", "WPA", "802.1X"];
-                    picked: 1;
+                    picked <=> root.hidden-security;
                 }
-                if security.picked == 2: Choice {
+                if root.hidden-security == 2: Choice {
                     options: ["PEAP", "TTLS"];
                     picked <=> root.hidden-method;
                 }
-                if security.picked == 2: LineEdit {
+                if root.hidden-security == 2: LineEdit {
                     placeholder-text: "User name";
-                    edited(t) => { root.hidden-identity = t; }
+                    text <=> root.hidden-identity;
                 }
-                if security.picked != 0: PasswordField {
-                    edited(t) => { root.hidden-password = t; }
+                // Bound both ways: what is sent is what the field shows.
+                if root.hidden-security != 0: PasswordField {
+                    text <=> root.hidden-password;
+                }
+                if root.hidden-security == 2: ServerCheck {
+                    domain <=> root.hidden-domain;
+                    insecure <=> root.hidden-insecure;
                 }
                 HorizontalLayout {
                     alignment: end;
                     TextButton {
                         text: "Join";
                         primary: true;
-                        enabled: hidden-ssid.text != "";
+                        enabled: root.hidden-ssid != "";
                         clicked => {
-                            Wifi.join-hidden(hidden-ssid.text, security.picked, root.hidden-identity, root.hidden-password, root.hidden-method);
+                            Wifi.join-hidden(root.hidden-ssid, root.hidden-security, root.hidden-identity, root.hidden-password, root.hidden-method, root.hidden-domain, root.hidden-insecure);
+                            root.reset-hidden();
                             root.page = 0;
                         }
                     }
@@ -466,7 +535,7 @@ export component WifiWidget inherits Rectangle {
         if Wifi.available && root.page == 3: ScrollList {
             vertical-stretch: 1;
             for s in Wifi.saved: Row {
-                clicked => { root.open(s.ssid, 3); }
+                clicked => { root.open(s.key, 3); }
                 HorizontalLayout {
                     padding-left: 10px;
                     padding-right: 2px;
@@ -492,9 +561,13 @@ export component WifiWidget inherits Rectangle {
             }
         }
     }
+    property <string> hidden-ssid;
+    property <int> hidden-security: 1;
     property <string> hidden-identity;
     property <string> hidden-password;
     property <int> hidden-method;
+    property <string> hidden-domain;
+    property <bool> hidden-insecure;
 }
 
 export component BluetoothWidget inherits Rectangle {
@@ -561,7 +634,8 @@ export component BluetoothWidget inherits Rectangle {
                         }
                     }
                     Muted {
-                        text: d.busy ? "…" : d.battery >= 0 ? d.battery + "%" : d.connected ? "connected" : "";
+                        text: d.busy ? "…" : !d.paired ? "not paired" : d.battery >= 0 ? d.battery + "%" : d.connected ? "connected" : "";
+                        color: d.paired ? Theme.dim : Theme.warn;
                     }
                 }
             }
