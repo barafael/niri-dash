@@ -22,6 +22,7 @@ pub(super) struct History {
 /// wide, so this covers scale 2.
 const CLIP_THUMB: u32 = 240;
 
+/// A clipboard history entry, with what the UI shows for it.
 struct ClipEntry {
     clip: Clip,
     text: String,

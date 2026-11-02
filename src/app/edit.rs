@@ -127,10 +127,11 @@ impl App {
 
     /// The main direction of a move, used to prefer pushing others that way.
     fn direction(&self, id: u32, col: i32, row: i32) -> (i32, i32) {
-        let Some(p) = self.layout.borrow().get(id).cloned() else {
+        let Some((from_col, from_row)) = self.layout.borrow().get(id).map(|p| (p.col, p.row))
+        else {
             return (0, 1);
         };
-        let (dc, dr) = (col - p.col, row - p.row);
+        let (dc, dr) = (col - from_col, row - from_row);
         if dc.abs() > dr.abs() {
             (dc.signum(), 0)
         } else if dr != 0 {
@@ -311,10 +312,8 @@ impl App {
         self.layout_changed();
         self.refresh_settings();
         if kind == Kind::Weather {
-            self.apply_settings();
-        }
-        if kind == Kind::Mascot {
-            self.sync_mascots();
+            let config = self.layout.borrow().weather_config(self.locale.us);
+            self.weather.configure(config);
         }
     }
 }
@@ -409,10 +408,8 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     });
     ui.set_palette(model(
         Kind::iter()
-            .collect::<Vec<_>>()
-            .iter()
             .map(|k| PaletteItem {
-                kind: kind_to_ui(*k),
+                kind: kind_to_ui(k),
                 title: k.title().into(),
                 description: k.description().into(),
                 w: k.default_size().0,

@@ -118,7 +118,7 @@ fn set_if_changed<T: Clone + 'static>(
         }
     }
 }
-/// A clipboard history entry, with what the UI shows for it.
+
 /// How long a slider the user dragged keeps its value against what the source reports, which
 /// lags behind.
 const TOUCH_HOLD: Duration = Duration::from_millis(1500);
@@ -279,9 +279,10 @@ impl App {
         crate::state::save(&s);
     }
 
-    /// Called every loop iteration: starts the entrance once the surface is configured, and
-    /// removes the surface when the exit animation is over.
-    fn tick_visibility(&self, shell: &mut Shell) {
+    /// Called every loop iteration: starts the entrance once the surface is configured, removes
+    /// the surface when the exit animation is over, and does what needs the shell (a copied
+    /// clipboard entry, a color pick once the dashboard is out of the way).
+    fn tick(&self, shell: &mut Shell) {
         // Start the entrance only once the first (still invisible) frame is on screen: that frame
         // is the expensive one (buffers, full repaint), and the animation shouldn't run while it
         // renders.
@@ -360,7 +361,8 @@ impl App {
         let motion = self.ui().global::<crate::Theme>().get_motion();
         self.ui().set_shown(false);
         self.reveal_pending.set(false);
-        // Matches the exit animation lengths in app.slint / frame.slint.
+        // The exit animations in app.slint and frame.slint take 70 ms (times the motion); the
+        // surface goes once their last frame is drawn.
         self.hide_at.set(Some(
             Instant::now() + Duration::from_millis((80.0 * motion) as u64),
         ));
@@ -528,7 +530,7 @@ fn feeds(kind: Kind) -> &'static [Feed] {
 
 /// Whether a standalone app keeps running when its window closes, so the next `niri-dash app`
 /// shows it again with its state. The clipboard does: its history is what it is for.
-pub fn resident(kind: Kind) -> bool {
+fn resident(kind: Kind) -> bool {
     kind == Kind::Clipboard
 }
 
@@ -766,7 +768,7 @@ fn serve(
         for c in pending {
             app.control(&mut shell, c);
         }
-        app.tick_visibility(&mut shell);
+        app.tick(&mut shell);
         if shell.closed_by_compositor {
             shell.closed_by_compositor = false;
             app.hide(&mut shell);
