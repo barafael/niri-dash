@@ -1,12 +1,12 @@
 //! The mascot widgets: matching the board to the layout, their commands and their lines.
 
-use super::App;
 use super::edit::character;
 use super::enums::outfit_to_ui;
+use super::{App, set_if_changed};
 use crate::Dash;
-use crate::layout::{Kind, Placed};
+use crate::layout::Kind;
 use crate::sources::{Ctx, Msg};
-use slint::{ComponentHandle, Model, ModelRc, Timer, TimerMode, VecModel};
+use slint::{ComponentHandle, ModelRc, Timer, TimerMode, VecModel};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -39,15 +39,9 @@ impl App {
         use crate::mascots::Spec;
         use crate::widget_settings::{Opt, get_int, get_str};
         let us = self.locale.1;
-        let layout = self.layout.borrow();
-        let solo = self.solo.map(|k| layout.solo_widget(k));
-        let placed: Vec<&Placed> = match &solo {
-            Some(p) => vec![p],
-            None => layout.visible(),
-        };
-        let specs = placed
-            .into_iter()
-            .filter(|p| p.kind == Kind::Mascot)
+        let specs = self
+            .placed_of(Kind::Mascot)
+            .iter()
             .map(|p| {
                 let v = &p.settings;
                 Spec {
@@ -59,7 +53,6 @@ impl App {
                 }
             })
             .collect();
-        drop(layout);
         let todo = self.mascots.board.borrow_mut().sync(specs, Instant::now());
         self.mascot_todo(todo);
     }
@@ -93,16 +86,7 @@ impl App {
             }
         }
         drop(board);
-        let model = &self.mascots.lines;
-        if model.row_count() == rows.len() {
-            for (i, row) in rows.into_iter().enumerate() {
-                if model.row_data(i).as_ref() != Some(&row) {
-                    model.set_row_data(i, row);
-                }
-            }
-        } else {
-            model.set_vec(rows);
-        }
+        set_if_changed(&self.mascots.lines, rows, |a, b| a == b);
     }
 
     fn mascot_tick(&self) {

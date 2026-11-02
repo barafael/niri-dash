@@ -1,7 +1,7 @@
 //! Edit mode: moving, resizing, adding and removing widgets, and the widget settings tab.
 
 use super::enums::{character_to_ui, kind_from_ui, kind_to_ui};
-use super::{App, model};
+use super::{App, model, set_if_changed};
 use crate::layout::{Kind, Placed, Shape as LShape};
 use crate::{Dash, PaletteItem, Shape, WidgetInst};
 use slint::Model;
@@ -94,13 +94,25 @@ impl App {
         let same_ids = self.widgets.row_count() == new.len()
             && self.widgets.iter().zip(&new).all(|(a, b)| a.id == b.id);
         if same_ids {
-            for (i, w) in new.into_iter().enumerate() {
-                if self.widgets.row_data(i).as_ref() != Some(&w) {
-                    self.widgets.set_row_data(i, w);
-                }
-            }
+            set_if_changed(&self.widgets, new, |a, b| a == b);
         } else {
             self.widgets.set_vec(new);
+        }
+    }
+
+    /// The widgets of `kind` on show: the standalone app's own, or the visible ones on the
+    /// dashboard.
+    pub(super) fn placed_of(&self, kind: Kind) -> Vec<Placed> {
+        let layout = self.layout.borrow();
+        match self.solo {
+            Some(k) if k == kind => vec![layout.solo_widget(kind)],
+            Some(_) => Vec::new(),
+            None => layout
+                .visible()
+                .into_iter()
+                .filter(|p| p.kind == kind)
+                .cloned()
+                .collect(),
         }
     }
 

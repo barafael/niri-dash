@@ -134,18 +134,7 @@ impl App {
     fn tick_zones(&self) {
         use crate::widget_settings::{Opt, get_int, get_str};
         let us = self.locale.1;
-        let layout = self.layout.borrow();
-        let clocks: Vec<crate::layout::Placed> = match self.solo {
-            Some(Kind::Clock) => vec![layout.solo_widget(Kind::Clock)],
-            Some(_) => Vec::new(),
-            None => layout
-                .visible()
-                .into_iter()
-                .filter(|p| p.kind == Kind::Clock)
-                .cloned()
-                .collect(),
-        };
-        drop(layout);
+        let clocks = self.placed_of(Kind::Clock);
         let now = chrono::Utc::now();
         let mut rows: Vec<crate::ZoneList> = Vec::new();
         for p in clocks {

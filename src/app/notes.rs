@@ -38,18 +38,7 @@ impl App {
     fn note_widgets(&self) -> Vec<(u32, String)> {
         use crate::widget_settings::{Opt, get_str};
         let us = self.locale.1;
-        let layout = self.layout.borrow();
-        let placed: Vec<crate::layout::Placed> = match self.solo {
-            Some(Kind::Notes) => vec![layout.solo_widget(Kind::Notes)],
-            Some(_) => Vec::new(),
-            None => layout
-                .visible()
-                .into_iter()
-                .filter(|p| p.kind == Kind::Notes)
-                .cloned()
-                .collect(),
-        };
-        placed
+        self.placed_of(Kind::Notes)
             .into_iter()
             .map(|p| (p.id, note_name(&get_str(&p.settings, Opt::Note, us))))
             .collect()
