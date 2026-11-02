@@ -6,6 +6,7 @@
 //! Both are resolved into a [`Look`]: every value the Slint `Theme` global holds. Switching
 //! themes blends the current look into the new one.
 
+use crate::layout::parse_doc;
 use crate::{Dash, Theme as UiTheme};
 use kdl::{KdlDocument, KdlValue};
 use slint::{Color, ComponentHandle, SharedString};
@@ -13,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use strum::{AsRefStr, EnumCount, EnumIter, EnumString, IntoEnumIterator};
 
-/// Bundled color schemes and styles, written to the config dir on first start.
+/// Bundled color schemes and styles, written to the config dir where missing.
 pub const COLORSCHEMES: &[(&str, &str)] = &[
     (
         "default",
@@ -125,8 +126,19 @@ pub enum StyleValue {
     Flag(bool),
 }
 
+impl StyleValue {
+    /// The value of a numeric variable.
+    pub fn as_f32(&self) -> Option<f32> {
+        match *self {
+            StyleValue::Num(n) => Some(n),
+            StyleValue::Int(i) => Some(i as f32),
+            StyleValue::Text(_) | StyleValue::Flag(_) => None,
+        }
+    }
+}
+
 /// Every style variable, typed.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Style {
     pub radius: f32,
     pub radius_small: f32,
@@ -168,11 +180,7 @@ impl Style {
     /// Set a variable from a KDL value, clamped to a sensible range. Errors describe what was
     /// expected.
     pub fn set(&mut self, var: StyleVar, value: &KdlValue) -> Result<(), &'static str> {
-        let num = match value {
-            KdlValue::Integer(i) => Some(*i as f32),
-            KdlValue::Float(f) => Some(*f as f32),
-            _ => None,
-        };
+        let num = crate::layout::number(value).map(|n| n as f32);
         let need = |n: Option<f32>| n.ok_or("expected a number");
         match var {
             StyleVar::Radius => self.radius = need(num)?.max(0.0),
@@ -331,7 +339,8 @@ pub fn set(ui: &Dash, look: &Look) {
     t.set_card_opacity(s.card_opacity);
 }
 
-/// Blend two looks: colors and sizes in between, everything else switches halfway.
+/// Blend two looks: colors and sizes in between; font family and weight switch halfway, and
+/// motion and glass are the new look's from the start.
 pub fn mix(a: &Look, b: &Look, t: f32) -> Look {
     let channel = |x: u8, y: u8| {
         (x as f32 + (y as f32 - x as f32) * t)
@@ -416,26 +425,12 @@ fn style_of(doc: &KdlDocument, look: &mut Look, warnings: &mut Vec<String>) {
     apply_style(&mut look.style, pairs, warnings);
 }
 
-/// The built-in defaults: the default color scheme and style.
+/// The built-in defaults: the bundled default color scheme and style, which set every color
+/// and every variable.
 fn base() -> Look {
     let mut look = Look {
         colors: [Color::default(); ColorRole::COUNT],
-        style: Style {
-            radius: 20.0,
-            radius_small: 12.0,
-            gap: 7.0,
-            padding: 16.0,
-            border_width: 1.0,
-            font_family: SharedString::new(),
-            font_small: 12.0,
-            font_body: 14.0,
-            font_title: 15.0,
-            font_weight_display: 300,
-            motion: 1.0,
-            glass: false,
-            backdrop_opacity: 1.0,
-            card_opacity: 1.0,
-        },
+        style: Style::default(),
     };
     let mut ignored = Vec::new();
     colors_of(
@@ -475,11 +470,11 @@ pub fn resolve_with(
 ) -> (Look, Vec<String>) {
     let mut look = base();
     let mut warnings = Vec::new();
-    match KdlDocument::parse(colorscheme) {
+    match parse_doc(colorscheme) {
         Ok(doc) => colors_of(&doc, &mut look, &mut warnings),
         Err(e) => warnings.push(format!("color scheme: {e}")),
     }
-    match KdlDocument::parse(style) {
+    match parse_doc(style) {
         Ok(doc) => style_of(&doc, &mut look, &mut warnings),
         Err(e) => warnings.push(format!("style: {e}")),
     }
@@ -494,6 +489,27 @@ pub fn resolve_with(
             .map(|w| format!("config.kdl theme {{ }}: {w}")),
     );
     (look, warnings)
+}
+
+/// The look config.kdl asks for: the named color scheme and style (each falling back to the
+/// default, with a note) with the adjustments on top. The notes include the files' warnings.
+pub fn load_look(
+    colorscheme: &str,
+    style: &str,
+    overrides: &[(String, KdlValue)],
+) -> (Look, Vec<String>) {
+    let mut problems = Vec::new();
+    let ctext = colorscheme_text(colorscheme).unwrap_or_else(|| {
+        problems.push(format!("color scheme \"{colorscheme}\" not found"));
+        DEFAULT_COLORSCHEME.to_string()
+    });
+    let stext = style_text(style).unwrap_or_else(|| {
+        problems.push(format!("style \"{style}\" not found"));
+        DEFAULT_STYLE.to_string()
+    });
+    let (look, warnings) = resolve_with(&ctext, &stext, overrides);
+    problems.extend(warnings);
+    (look, problems)
 }
 
 /// One adjustable style variable: the steps the + and - buttons go through, and a label.
@@ -635,10 +651,12 @@ pub fn step(knob: &Knob, current: f32, delta: i32) -> f32 {
     knob.steps[i as usize]
 }
 
+/// The directory config.kdl is in; color schemes and styles live next to it.
 fn config_dir() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("niri-dash")
+    crate::layout::Layout::path()
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_default()
 }
 
 pub fn colorschemes_dir() -> PathBuf {
@@ -675,6 +693,16 @@ pub fn load_text(path: &Path, bundled: &[(&str, &str)], name: &str) -> Option<St
             .find(|(n, _)| *n == name)
             .map(|(_, t)| t.to_string())
     })
+}
+
+/// The text of a color scheme, by name or path.
+pub fn colorscheme_text(name: &str) -> Option<String> {
+    load_text(&colorscheme_path(name), COLORSCHEMES, name)
+}
+
+/// The text of a style, by name or path.
+pub fn style_text(name: &str) -> Option<String> {
+    load_text(&style_path(name), STYLES, name)
 }
 
 /// Write the bundled color schemes and styles if missing (never overwrites user edits).
@@ -748,6 +776,31 @@ mod tests {
             Some(Color::from_argb_u8(255, 255, 255, 255))
         );
         assert_eq!(parse_color("red"), None);
+    }
+
+    #[test]
+    fn default_style_sets_every_variable() {
+        let doc = KdlDocument::parse(DEFAULT_STYLE).unwrap();
+        let block = doc.get("style").unwrap().children().unwrap();
+        let names: Vec<&str> = block.nodes().iter().map(|n| n.name().value()).collect();
+        for var in StyleVar::iter() {
+            assert!(names.contains(&var.as_ref()), "default.kdl sets {var:?}");
+        }
+        let (_, warnings) = resolve(DEFAULT_COLORSCHEME, DEFAULT_STYLE);
+        assert!(warnings.is_empty(), "{warnings:?}");
+    }
+
+    #[test]
+    fn load_look_falls_back_with_a_note() {
+        let (look, problems) = load_look("/nonexistent/scheme", "/nonexistent/style", &[]);
+        assert_eq!(
+            problems,
+            vec![
+                "color scheme \"/nonexistent/scheme\" not found",
+                "style \"/nonexistent/style\" not found"
+            ]
+        );
+        assert_eq!(look, base());
     }
 
     #[test]
@@ -861,7 +914,7 @@ mod tests {
         assert!(taken.contains(&StyleVar::Radius), "{taken:?}");
         assert!(!taken.contains(&StyleVar::FontFamily), "{taken:?}");
         assert!(!taken.contains(&StyleVar::Glass), "{taken:?}");
-        // The default preset spells out every variable, all at the built-in values.
+        // The default preset is what everything starts from.
         assert!(preset_changes(DEFAULT_STYLE).is_empty());
     }
 }

@@ -462,6 +462,7 @@ pub(crate) fn parse_doc(text: &str) -> Result<KdlDocument, String> {
 }
 
 impl Layout {
+    /// Where config.kdl is. Color schemes and styles live in the same directory.
     pub fn path() -> PathBuf {
         // For development: point at a scratch config instead of the real one.
         if let Some(p) = std::env::var_os("NIRI_DASH_CONFIG") {
