@@ -673,7 +673,7 @@ pub fn run_app(kind: Kind) -> Result<()> {
     // Open at the size the widget has on the dashboard; niri may tile it to another one.
     let config = Layout::load();
     let placed = config.layout.solo_widget(kind);
-    let px = |cells: i32| (cells.max(1) as f32 * config.layout.cell_size).round() as u32;
+    let px = |cells: i32| (cells.max(1) as f32 * crate::layout::AUTO_CELL).round() as u32;
     let (min_w, min_h) = kind.info().min_size;
     let mode = Mode::App {
         app_id: crate::desktop::app_id(kind),

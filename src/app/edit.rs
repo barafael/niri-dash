@@ -208,9 +208,18 @@ impl App {
             (l.cols, l.rows) != (cols, rows)
         };
         if changed {
-            self.layout.borrow_mut().set_grid(cols, rows);
+            self.layout.borrow_mut().set_screen_grid(cols, rows);
             self.sync_widgets();
         }
+    }
+
+    /// Tell the UI about an explicit grid (0 x 0: the automatic one).
+    pub(super) fn apply_grid(&self) {
+        let (cols, rows) = self.layout.borrow().grid.unwrap_or((0, 0));
+        let ui = self.ui();
+        ui.set_grid_cols(cols);
+        ui.set_grid_rows(rows);
+        self.sync_grid();
     }
 
     pub(super) fn set_editing(&self, on: bool) {
@@ -406,9 +415,14 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     });
     let a = app.clone();
     ui.on_reset_layout(move || {
-        a.layout.borrow_mut().reset();
+        let refit = a.layout.borrow_mut().reset();
         a.layout_changed();
+        a.refresh_settings();
+        if let Some(m) = refit.message() {
+            a.toast(&m);
+        }
     });
+    // The grid steppers: index 0 is the columns, 1 the rows. The first step makes the grid
     ui.set_palette(model(
         Kind::iter()
             .map(|k| {

@@ -447,8 +447,10 @@ pub struct Layout {
     pub weather: WeatherConfig,
     /// Takes effect on restart.
     pub renderer: RendererChoice,
-    /// Target cell size in logical pixels; the grid gets as many cells as fit the screen.
-    pub cell_size: f32,
+    /// The `grid columns=… rows=…` the file sets, if any; without it the screen decides
+    /// ([`Layout::set_screen_grid`]).
+    pub grid: Option<(i32, i32)>,
+    /// The grid in use: the explicit one, or what fits the screen.
     pub cols: i32,
     pub rows: i32,
     /// The parsed file, kept so saving only touches what changed.
@@ -458,11 +460,12 @@ pub struct Layout {
 
 const HEADER: &str = r#"// niri-dash layout.
 //
-// The dashboard is a grid of square cells. `cell-size` is the size of a cell in logical pixels;
-// the grid gets as many columns and rows as fit the screen. Every widget sits at a column and row
-// (counting from 0) and spans `width` x `height` cells. Round widgets are square: give them
-// `size=N` and `shape="round"`. Widgets that don't fit a smaller screen, or overlap one listed
-// earlier, are hidden rather than moved.
+// The dashboard is a grid of square cells. `grid columns=16 rows=9` sets how many; the cells get
+// as big as fits the screen. Without a `grid` line there are as many 100 px cells as fit. Every
+// widget sits at a column and row (counting from 0) and spans `width` x `height` cells. Round
+// widgets are square: give them `size=N` and `shape="round"`. Widgets that don't fit a smaller
+// screen, or overlap one listed earlier, are hidden rather than moved. Changing the grid moves the
+// widgets that no longer fit, and removes the ones there is no room for.
 //
 // Edit mode (the pencil, or right-click the background) writes changes back into this file and
 // keeps your comments. Changes you save here show up right away.
@@ -492,8 +495,6 @@ const DEFAULT: &str = r#"
 // The theme: a color scheme (colors) from ~/.config/niri-dash/colorschemes/ and a style
 // (corners, spacing, fonts, animation speed) from styles/. Any scheme goes with any style.
 theme colorscheme="default" style="default"
-
-cell-size 100
 
 // "auto" draws with the GPU (OpenGL ES) when it can, "software" always on the CPU. Read at start.
 // renderer "auto"
@@ -642,15 +643,14 @@ impl Layout {
     pub fn parse(text: &str) -> Result<(Self, Vec<String>), String> {
         let doc = parse_doc(text)?;
         let mut warnings = Vec::new();
-        let cell_size = match doc.get_arg("cell-size").map(number) {
-            None => 100.0,
-            Some(Some(n)) => n as f32,
-            Some(None) => {
-                warnings.push("cell-size must be a number".into());
-                100.0
-            }
+        let grid = grid_of(&doc, &mut warnings);
+        if doc.get("cell-size").is_some() {
+            warnings.push(
+                "cell-size is no longer read: set the number of cells with \
+                 `grid columns=… rows=…` instead"
+                    .into(),
+            );
         }
-        .clamp(40.0, 400.0);
         let theme = theme_of(&doc, &mut warnings);
         let mut weather = WeatherConfig::default();
         if let Some(node) = doc.get("weather") {
@@ -740,9 +740,9 @@ impl Layout {
             style_overrides: theme.overrides,
             weather,
             renderer,
-            cell_size,
-            cols: 16,
-            rows: 9,
+            grid,
+            cols: grid.map_or(16, |g| g.0),
+            rows: grid.map_or(9, |g| g.1),
             doc,
             next_id,
         };
@@ -808,6 +808,9 @@ impl Layout {
         }
         if have.overrides != self.style_overrides {
             write_children(theme_node(&mut doc), &self.style_overrides);
+        }
+        if grid_of(&doc, &mut Vec::new()) != self.grid {
+            write_grid(&mut doc, self.grid);
         }
         if doc.get("layout").is_none() {
             doc.nodes_mut().push(KdlNode::new("layout"));
@@ -881,8 +884,9 @@ impl Layout {
     }
 
     /// Replace the widgets with the ones from a freshly parsed file, keeping ids stable for
-    /// widgets that didn't change so the UI doesn't rebuild them.
-    pub fn replace(&mut self, mut other: Layout) {
+    /// widgets that didn't change so the UI doesn't rebuild them. If the file sets a different
+    /// grid, the widgets are fitted into it ([`Layout::refit`]).
+    pub fn replace(&mut self, mut other: Layout) -> Refit {
         let mut used = vec![false; self.widgets.len()];
         let mut next = self.next_id;
         for w in &mut other.widgets {
@@ -909,14 +913,22 @@ impl Layout {
             }
         }
         other.next_id = next.max(other.widgets.iter().map(|w| w.id + 1).max().unwrap_or(1));
-        other.cols = self.cols;
-        other.rows = self.rows;
+        let regrid = other.grid.is_some() && other.grid != self.grid;
+        if other.grid.is_none() {
+            (other.cols, other.rows) = (self.cols, self.rows);
+        }
         *self = other;
+        if regrid {
+            self.refit()
+        } else {
+            Refit::default()
+        }
     }
 
-    pub fn reset(&mut self) {
+    /// Put the default widgets back. On an explicit grid they are fitted into it.
+    pub fn reset(&mut self) -> Refit {
         let (fresh, _) = Self::parse(&Self::default_text()).expect("default config parses");
-        // Keep the user's file around it (comments, cell-size); only the widgets are reset.
+        // Keep the user's file around it (comments, the grid); only the widgets are reset.
         self.widgets.clear();
         for mut w in fresh.widgets {
             w.node = None;
@@ -924,14 +936,41 @@ impl Layout {
             self.next_id += 1;
             self.widgets.push(w);
         }
+        if self.grid.is_some() {
+            self.refit()
+        } else {
+            Refit::default()
+        }
     }
 
-    /// Set the grid size of the current screen. This never moves widgets: ones that don't fit
-    /// are hidden here and come back on a larger screen, so a transient size can't damage the
-    /// saved layout.
-    pub fn set_grid(&mut self, cols: i32, rows: i32) {
-        self.cols = cols.max(1);
-        self.rows = rows.max(1);
+    /// Set the grid size that fits the current screen, for the automatic grid (an explicit one
+    /// stays). This never moves widgets: ones that don't fit are hidden here and come back on a
+    /// larger screen, so a transient size can't damage the saved layout.
+    pub fn set_screen_grid(&mut self, cols: i32, rows: i32) {
+        if self.grid.is_none() {
+            self.cols = cols.max(1);
+            self.rows = rows.max(1);
+        }
+    }
+
+    /// Use a grid of `cols` x `rows` (clamped to [`COLUMNS`] and [`ROWS`]), or go back to the
+    /// automatic one with `None`. An explicit grid is fitted into ([`Layout::refit`]); the
+    /// automatic one only hides what doesn't fit, as [`Layout::set_screen_grid`] does.
+    pub fn set_grid(&mut self, grid: Option<(i32, i32)>) -> Refit {
+        let grid = grid.map(|(c, r)| {
+            (
+                c.clamp(*COLUMNS.start(), *COLUMNS.end()),
+                r.clamp(*ROWS.start(), *ROWS.end()),
+            )
+        });
+        self.grid = grid;
+        match grid {
+            Some((c, r)) => {
+                (self.cols, self.rows) = (c, r);
+                self.refit()
+            }
+            None => Refit::default(),
+        }
     }
 
     /// Widgets shown on the current grid: inside it and not overlapping an earlier one.
@@ -1133,6 +1172,86 @@ fn theme_node(doc: &mut KdlDocument) -> &mut KdlNode {
         doc.nodes_mut().insert(0, n);
     }
     doc.get_mut("theme").expect("just ensured")
+}
+
+/// How many columns and rows an explicit grid may have.
+pub const COLUMNS: std::ops::RangeInclusive<i32> = 4..=48;
+pub const ROWS: std::ops::RangeInclusive<i32> = 3..=32;
+/// The cell size of the automatic grid (no `grid` node), in logical pixels. The UI has its own
+/// copy (`auto-cell` in app.slint).
+pub const AUTO_CELL: f32 = 100.0;
+
+/// What the `grid columns=C rows=R` node sets, clamped to [`COLUMNS`] and [`ROWS`]; `None`
+/// (the screen decides) without one.
+fn grid_of(doc: &KdlDocument, warnings: &mut Vec<String>) -> Option<(i32, i32)> {
+    let node = doc.get("grid")?;
+    let (Some(c), Some(r)) = (int(node, "columns"), int(node, "rows")) else {
+        warnings.push("grid needs columns= and rows= (whole numbers)".into());
+        return None;
+    };
+    let mut clamp = |v: i32, range: std::ops::RangeInclusive<i32>, what: &str| {
+        if !range.contains(&v) {
+            warnings.push(format!(
+                "grid {what} must be {} to {}",
+                range.start(),
+                range.end()
+            ));
+        }
+        v.clamp(*range.start(), *range.end())
+    };
+    Some((clamp(c, COLUMNS, "columns"), clamp(r, ROWS, "rows")))
+}
+
+/// Write the grid into the document: update the `grid` node, add one (in place of an old
+/// `cell-size` line, or after the theme), or remove it for the automatic grid. A removed node's
+/// comments stay, on the node after it.
+fn write_grid(doc: &mut KdlDocument, grid: Option<(i32, i32)>) {
+    let nodes = doc.nodes_mut();
+    let at = nodes.iter().position(|n| n.name().value() == "grid");
+    match (grid, at) {
+        (Some((c, r)), Some(i)) => {
+            set_int(&mut nodes[i], "columns", c);
+            set_int(&mut nodes[i], "rows", r);
+        }
+        (Some((c, r)), None) => {
+            let mut node = KdlNode::new("grid");
+            node.push(new_entry(Some("columns"), KdlValue::Integer(c.into())));
+            node.push(new_entry(Some("rows"), KdlValue::Integer(r.into())));
+            let mut format = KdlNodeFormat {
+                terminator: "\n".into(),
+                ..Default::default()
+            };
+            if let Some(i) = nodes.iter().position(|n| n.name().value() == "cell-size") {
+                format.leading = nodes[i]
+                    .format()
+                    .map(|f| f.leading.clone())
+                    .unwrap_or_default();
+                node.set_format(format);
+                nodes[i] = node;
+            } else {
+                let i = nodes
+                    .iter()
+                    .position(|n| n.name().value() == "theme")
+                    .map_or(0, |i| i + 1);
+                // After a blank line, unless it opens the file.
+                format.leading = if i == 0 { String::new() } else { "\n".into() };
+                node.set_format(format);
+                nodes.insert(i, node);
+            }
+        }
+        (None, Some(i)) => {
+            let gone = nodes.remove(i);
+            let leading = gone.format().map(|f| f.leading.clone()).unwrap_or_default();
+            if !leading.trim().is_empty()
+                && let Some(next) = nodes.get_mut(i)
+            {
+                let mut f = next.format().cloned().unwrap_or_default();
+                f.leading = leading + &f.leading;
+                next.set_format(f);
+            }
+        }
+        (None, None) => {}
+    }
 }
 
 /// `name value` children of a node, plus the names of children without a single value.
@@ -1344,6 +1463,15 @@ impl Occupancy {
         self.cells.iter().filter(|c| !**c).count() as i32
     }
 
+    /// The free `w` x `h` spot closest to `near` (a top-left corner, which may lie outside the
+    /// grid); the first in reading order among equally close ones.
+    fn nearest(&self, w: i32, h: i32, near: (i32, i32)) -> Option<Rect> {
+        (0..=self.rows - h)
+            .flat_map(|row| (0..=self.cols - w).map(move |col| Rect { col, row, w, h }))
+            .filter(|r| self.fits(r))
+            .min_by_key(|r| (r.col - near.0).abs() + (r.row - near.1).abs())
+    }
+
     /// Place every item somewhere free, biggest first, each as close to its old spot as possible;
     /// backtracks within `budget` steps.
     fn pack(&mut self, items: &[(u32, Rect)], budget: &mut u32) -> Option<Vec<(u32, Rect)>> {
@@ -1493,6 +1621,31 @@ impl Occupancy {
 
 /// New rectangles (position, and size if it had to shrink) for the widgets a placement moves.
 pub type Reflow = Vec<(u32, Rect)>;
+
+/// What fitting the widgets into a changed grid did ([`Layout::refit`]).
+#[derive(Debug, Default)]
+pub struct Refit {
+    /// How many widgets moved (or shrank).
+    pub moved: usize,
+    /// The widgets there was no room for, removed from the layout, in reading order of where
+    /// they were.
+    pub evicted: Vec<Placed>,
+}
+
+impl Refit {
+    /// Whether the layout changed, so it needs saving.
+    pub fn changed(&self) -> bool {
+        self.moved > 0 || !self.evicted.is_empty()
+    }
+
+    /// The toast that tells about removed widgets, if any were.
+    pub fn message(&self) -> Option<String> {
+        (!self.evicted.is_empty()).then(|| {
+            let names: Vec<&str> = self.evicted.iter().map(|p| p.kind.info().title).collect();
+            format!("Removed {}: no room", names.join(", "))
+        })
+    }
+}
 
 impl Layout {
     fn others(&self, id: u32) -> Vec<(u32, Rect)> {
@@ -1770,6 +1923,87 @@ impl Layout {
         Some(pos)
     }
 
+    /// Make every widget show on the current grid, after it changed. Widgets that do show stay
+    /// where they are. The others (outside the grid, or under one listed earlier) move into the
+    /// free space: first all together by the bounded packing search (which may shrink them
+    /// towards their minimum size, then lets them grow back); if that finds nothing, one by one
+    /// in reading order of where they were, each to the free spot nearest its old one at the
+    /// biggest size that fits anywhere. Widgets that don't fit even at their minimum size are
+    /// removed.
+    pub fn refit(&mut self) -> Refit {
+        let shown: Vec<u32> = self.visible().iter().map(|w| w.id).collect();
+        let mut occ = Occupancy::new(self.cols, self.rows);
+        let mut misfits = Vec::new();
+        for p in &self.widgets {
+            if shown.contains(&p.id) {
+                occ.set(&p.rect(), true);
+            } else {
+                let (mw, mh) = p.min_size();
+                misfits.push(Item {
+                    id: p.id,
+                    orig: p.rect(),
+                    min_w: mw.min(p.w),
+                    min_h: mh.min(p.h),
+                    round: p.shape == Shape::Round,
+                });
+            }
+        }
+        if misfits.is_empty() {
+            return Refit::default();
+        }
+        misfits.sort_by_key(|m| (m.orig.row, m.orig.col));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(50);
+        let mut budget = 5000;
+        let mut evicted = Vec::new();
+        let moves = match occ.pack_shrinking(&misfits, &mut budget, deadline) {
+            Some(placed) => {
+                let all = self
+                    .widgets
+                    .iter()
+                    .map(|p| (p.id, p.rect()))
+                    .collect::<Vec<_>>();
+                let none = Rect {
+                    col: 0,
+                    row: 0,
+                    w: 0,
+                    h: 0,
+                };
+                let mut pos = self.regrow(none, merge(&all, placed));
+                pos.retain(|(id, _)| !shown.contains(id));
+                pos
+            }
+            None => {
+                let mut moves = Vec::new();
+                for m in &misfits {
+                    let near = (m.orig.col, m.orig.row);
+                    match m
+                        .sizes()
+                        .into_iter()
+                        .find_map(|(w, h)| occ.nearest(w, h, near))
+                    {
+                        Some(r) => {
+                            occ.set(&r, true);
+                            moves.push((m.id, r));
+                        }
+                        None => evicted.push(m.id),
+                    }
+                }
+                moves
+            }
+        };
+        self.apply_reflow(&moves);
+        let evicted: Vec<Placed> = evicted
+            .iter()
+            .filter_map(|id| self.get(*id).cloned())
+            .collect();
+        self.widgets
+            .retain(|w| evicted.iter().all(|e| e.id != w.id));
+        Refit {
+            moved: moves.len(),
+            evicted,
+        }
+    }
+
     /// Apply a reflow computed by [`Layout::reflow`].
     pub fn apply_reflow(&mut self, moves: &Reflow) {
         for &(id, r) in moves {
@@ -1848,7 +2082,7 @@ mod tests {
     fn grid() -> Layout {
         let (mut l, warnings) = Layout::parse(&Layout::default_text()).unwrap();
         assert!(warnings.is_empty(), "{warnings:?}");
-        l.set_grid(16, 9);
+        l.set_screen_grid(16, 9);
         l
     }
 
@@ -1916,9 +2150,9 @@ mod tests {
             .iter()
             .map(|w| (w.id, w.col, w.row, w.w, w.h))
             .collect();
-        l.set_grid(4, 3);
+        l.set_screen_grid(4, 3);
         assert!(l.hidden_count() > 0);
-        l.set_grid(16, 9);
+        l.set_screen_grid(16, 9);
         let after: Vec<_> = l
             .widgets
             .iter()
@@ -1931,18 +2165,17 @@ mod tests {
     #[test]
     fn overlapping_widget_from_file_is_hidden() {
         let (mut l, _) = Layout::parse("layout {\n clock col=0 row=0 width=4 height=2\n calendar col=1 row=1 width=4 height=4\n}").unwrap();
-        l.set_grid(16, 9);
+        l.set_screen_grid(16, 9);
         assert_eq!(l.visible().len(), 1);
         assert_eq!(l.hidden_count(), 1);
     }
 
     #[test]
     fn edits_keep_comments_and_formatting() {
-        let text = "// my dash\ncell-size 90\n\nlayout {\n    // the clock\n    clock    col=0 row=0 width=4 height=2\n    weird-thing col=1\n    calendar col=0 row=2 width=4 height=4 // month\n    tray col=5 row=0 width=2 height=1\n}\n";
+        let text = "// my dash\ngrid columns=16 rows=9 // laptop\n\nlayout {\n    // the clock\n    clock    col=0 row=0 width=4 height=2\n    weird-thing col=1\n    calendar col=0 row=2 width=4 height=4 // month\n    tray col=5 row=0 width=2 height=1\n}\n";
         let (mut l, warnings) = Layout::parse(text).unwrap();
         assert_eq!(warnings, vec!["unknown widget `weird-thing`"]);
-        assert_eq!(l.cell_size, 90.0);
-        l.set_grid(16, 9);
+        assert_eq!(l.grid, Some((16, 9)));
         let clock = id_of(&l, Kind::Clock);
         assert!(l.can_place(clock, 6, 3, 4, 2));
         assert!(l.move_reflow(clock, 6, 3, (0, 1)));
@@ -1952,6 +2185,7 @@ mod tests {
         l.add(Kind::Session).unwrap();
         let out = l.render();
         assert!(out.contains("// my dash"), "{out}");
+        assert!(out.contains("grid columns=16 rows=9 // laptop"), "{out}");
         assert!(out.contains("// the clock"), "{out}");
         assert!(
             out.contains("clock    col=6 row=3 width=4 height=2"),
@@ -2072,7 +2306,7 @@ mod tests {
     fn reflow_pushes_aside() {
         let mut l = grid();
         // The default layout fills 16x9 exactly; leave room to push into.
-        l.set_grid(16, 12);
+        l.set_screen_grid(16, 12);
         let clock = id_of(&l, Kind::Clock);
         // Onto the windows widget: the others make room.
         assert!(l.move_reflow(clock, 4, 0, (1, 0)));
@@ -2420,5 +2654,197 @@ mod tests {
         let (back, w) = Layout::parse(&out).unwrap();
         assert!(w.is_empty(), "{w:?}\n{out}");
         assert_eq!(back.style_overrides, l.style_overrides, "{out}");
+    }
+
+    fn rects(l: &Layout) -> Vec<(u32, Rect)> {
+        l.widgets.iter().map(|w| (w.id, w.rect())).collect()
+    }
+
+    /// Every widget shows: inside the grid and on top of no other.
+    fn all_shown(l: &Layout) {
+        assert_eq!(l.visible().len(), l.widgets.len(), "{:?}", rects(l));
+    }
+
+    #[test]
+    fn grid_parses() {
+        let (l, w) = Layout::parse("grid columns=8 rows=5\nlayout {\n}\n").unwrap();
+        assert!(w.is_empty(), "{w:?}");
+        assert_eq!((l.grid, l.cols, l.rows), (Some((8, 5)), 8, 5));
+
+        let (l, _) = Layout::parse("layout {\n}\n").unwrap();
+        assert_eq!(l.grid, None, "no grid node: the screen decides");
+
+        let (l, w) = Layout::parse("grid columns=100 rows=1\nlayout {\n}\n").unwrap();
+        assert_eq!(l.grid, Some((*COLUMNS.end(), *ROWS.start())));
+        assert_eq!(
+            w,
+            vec!["grid columns must be 4 to 48", "grid rows must be 3 to 32"]
+        );
+
+        let (l, w) = Layout::parse("grid columns=8\nlayout {\n}\n").unwrap();
+        assert_eq!(l.grid, None);
+        assert_eq!(w, vec!["grid needs columns= and rows= (whole numbers)"]);
+    }
+
+    #[test]
+    fn cell_size_is_gone() {
+        let (l, w) = Layout::parse("cell-size 90\nlayout {\n}\n").unwrap();
+        assert_eq!(l.grid, None);
+        assert_eq!(w.len(), 1);
+        assert!(w[0].contains("`grid columns=… rows=…`"), "{w:?}");
+    }
+
+    #[test]
+    fn misfit_shrinks_to_fit() {
+        let text = "layout {\n    clock col=0 row=0 width=4 height=4\n    calendar col=10 row=0 width=5 height=5\n}\n";
+        let (mut l, _) = Layout::parse(text).unwrap();
+        l.set_screen_grid(16, 9);
+        let clock = l.get(id_of(&l, Kind::Clock)).unwrap().rect();
+        let refit = l.set_grid(Some((8, 4)));
+        assert!(refit.evicted.is_empty(), "{refit:?}");
+        assert_eq!(refit.moved, 1);
+        all_shown(&l);
+        assert_eq!(l.get(id_of(&l, Kind::Clock)).unwrap().rect(), clock);
+        let cal = l.get(id_of(&l, Kind::Calendar)).unwrap();
+        assert_eq!((cal.col, cal.row, cal.w, cal.h), (4, 0, 4, 4));
+    }
+
+    #[test]
+    fn eviction_goes_by_reading_order() {
+        // Room for one of the two, even at their minimum sizes; the first in reading order of
+        // where they were gets it.
+        let evicted = |text: &str| {
+            let (mut l, _) = Layout::parse(text).unwrap();
+            l.set_screen_grid(16, 9);
+            let refit = l.set_grid(Some((8, 4)));
+            all_shown(&l);
+            assert_eq!(refit.moved, 1);
+            assert_eq!(refit.evicted.len(), 1);
+            assert_eq!(l.widgets.len(), 2);
+            (refit.evicted[0].kind, refit.message().unwrap())
+        };
+        assert_eq!(
+            evicted(
+                "layout {\n    clock col=0 row=0 width=4 height=4\n    wifi col=0 row=5 width=3 height=4\n    calendar col=8 row=0 width=4 height=4\n}\n"
+            ),
+            (Kind::Wifi, "Removed Wi-Fi: no room".into())
+        );
+        assert_eq!(
+            evicted(
+                "layout {\n    clock col=0 row=0 width=4 height=4\n    wifi col=8 row=0 width=3 height=4\n    calendar col=0 row=5 width=4 height=4\n}\n"
+            ),
+            (Kind::Calendar, "Removed Calendar: no room".into())
+        );
+    }
+
+    #[test]
+    fn smaller_grid_fits_or_evicts() {
+        let mut l = grid();
+        let before = rects(&l);
+        let refit = l.set_grid(Some((8, 5)));
+        all_shown(&l);
+        assert!(!refit.evicted.is_empty());
+        assert_eq!(l.widgets.len() + refit.evicted.len(), before.len());
+        // What showed on the small grid already stays put.
+        for (id, r) in before {
+            if r.inside(8, 5) {
+                assert_eq!(l.get(id).map(Placed::rect), Some(r));
+            }
+        }
+        // Evicted widgets are gone from the file too.
+        let out = l.render();
+        let (back, _) = Layout::parse(&out).unwrap();
+        assert_eq!(back.widgets.len(), l.widgets.len(), "{out}");
+        assert_eq!(back.grid, Some((8, 5)));
+    }
+
+    #[test]
+    fn growing_the_grid_moves_nothing() {
+        let mut l = grid();
+        let before = rects(&l);
+        let refit = l.set_grid(Some((20, 12)));
+        assert!(!refit.changed(), "{refit:?}");
+        assert_eq!(rects(&l), before);
+        l.set_grid(Some((8, 5)));
+        let small = rects(&l);
+        assert!(!l.set_grid(Some((9, 5))).changed());
+        assert!(!l.set_grid(Some((9, 7))).changed());
+        assert_eq!(rects(&l), small);
+    }
+
+    #[test]
+    fn automatic_grid_hides_instead() {
+        let mut l = grid();
+        l.set_grid(Some((16, 9)));
+        let before = rects(&l);
+        // Back to automatic, then a small screen: hidden, not moved or removed.
+        assert!(!l.set_grid(None).changed());
+        l.set_screen_grid(8, 5);
+        assert!(l.hidden_count() > 0);
+        assert_eq!(rects(&l), before);
+    }
+
+    #[test]
+    fn reload_with_another_grid_refits() {
+        let mut l = grid();
+        let (same, _) = Layout::parse(&Layout::default_text()).unwrap();
+        assert!(!l.replace(same).changed(), "same file, nothing to fit");
+        let text = Layout::default_text().replace("layout {", "grid columns=8 rows=5\nlayout {");
+        let (fresh, _) = Layout::parse(&text).unwrap();
+        let refit = l.replace(fresh);
+        assert!(!refit.evicted.is_empty());
+        assert_eq!((l.cols, l.rows), (8, 5));
+        all_shown(&l);
+        // Reading it again changes nothing more.
+        let (again, _) = Layout::parse(&l.render()).unwrap();
+        assert!(!l.replace(again).changed());
+    }
+
+    #[test]
+    fn grid_round_trips_keeping_comments() {
+        // An existing node is updated in place, with its comments.
+        let text = "// my dash\n// small screen\ngrid columns=16 rows=9 // laptop\n\nlayout {\n    clock col=0 row=0 width=4 height=2\n}\n";
+        let (mut l, _) = Layout::parse(text).unwrap();
+        assert_eq!(l.render(), text, "unchanged: written as it was");
+        l.set_grid(Some((10, 6)));
+        let out = l.render();
+        assert_eq!(
+            out,
+            text.replace("columns=16 rows=9", "columns=10 rows=6"),
+            "{out}"
+        );
+        let (mut back, _) = Layout::parse(&out).unwrap();
+        assert_eq!(back.grid, Some((10, 6)));
+        assert_eq!(back.render(), out);
+        // Back to automatic: the node goes, the comments above it stay.
+        l.set_grid(None);
+        let out = l.render();
+        assert!(!out.contains("grid"), "{out}");
+        assert!(out.contains("// my dash\n// small screen\n"), "{out}");
+        assert_eq!(Layout::parse(&out).unwrap().0.grid, None);
+
+        // Without a node, one is added after the theme.
+        let mut l = grid();
+        l.set_grid(Some((12, 7)));
+        let out = l.render();
+        assert!(
+            out.contains("style=\"default\"\n\ngrid columns=12 rows=7\n\n"),
+            "{out}"
+        );
+        let (mut back, w) = Layout::parse(&out).unwrap();
+        assert!(w.is_empty(), "{w:?}");
+        assert_eq!(back.grid, Some((12, 7)));
+        assert_eq!(back.render(), out);
+
+        // An old cell-size line is replaced, keeping its comment.
+        let (mut l, _) =
+            Layout::parse("// size\ncell-size 90\nlayout {\n    clock col=0 row=0\n}\n").unwrap();
+        l.set_grid(Some((12, 7)));
+        let out = l.render();
+        assert!(
+            out.starts_with("// size\ngrid columns=12 rows=7\nlayout {"),
+            "{out}"
+        );
+        assert!(Layout::parse(&out).unwrap().1.is_empty());
     }
 }

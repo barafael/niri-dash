@@ -311,8 +311,11 @@ export component Dash inherits Window {
     in property <string> toast;
     in property <bool> toast-shown;
     in property <int> hidden-widgets;
-    // Target cell size from config.kdl.
-    in property <length> cell-size: 100px;
+    // The grid config.kdl sets (`grid columns=… rows=…`); 0 x 0 for the automatic one.
+    in property <int> grid-cols;
+    in property <int> grid-rows;
+    // The cell size of the automatic grid (layout::AUTO_CELL).
+    property <length> auto-cell: 100px;
     // Set by Rust once the surface is on screen, cleared just before it is hidden.
     in property <bool> shown: true;
     property <float> reveal: self.shown ? 1 : 0;
@@ -339,8 +342,9 @@ export component Dash inherits Window {
         self.adjust-id = 0;
     }
 
-    // Grid geometry. Rust reads cols/rows and adapts the layout to them. The column count comes
-    // from the full width; an open drawer only shrinks the cells, so nothing gets hidden.
+    // Grid geometry. Rust reads cols/rows and adapts the layout to them. The automatic grid has as
+    // many cells as fit the full width; an explicit one has its counts, and its cells are as big
+    // as fits. Either way, an open drawer only shrinks the cells, so nothing gets hidden.
     property <length> margin: 24px;
     property <length> bar: 44px;
     property <length> drawer-w: 340px;
@@ -354,8 +358,8 @@ export component Dash inherits Window {
     property <length> edge: 16px;
     property <length> drawer-y: self.bar + 8px;
     property <length> avail-w: self.width - self.drawer-shift * (self.drawer-w + self.edge);
-    out property <int> cols: max(4, floor((self.width - 2 * self.margin) / self.cell-size));
-    out property <int> rows: max(3, floor((self.height - self.bar - self.margin) / self.cell-size));
+    out property <int> cols: self.grid-cols > 0 ? self.grid-cols : max(4, floor((self.width - 2 * self.margin) / self.auto-cell));
+    out property <int> rows: self.grid-rows > 0 ? self.grid-rows : max(3, floor((self.height - self.bar - self.margin) / self.auto-cell));
     // The space the grid may take. Cells reach `Theme.gap` past their cards, so with the drawer
     // open the grid's bounds are the cards' bounds widened by a gap.
     property <length> grid-side: self.margin + self.drawer-shift * (self.edge - Theme.gap - self.margin);
@@ -515,7 +519,7 @@ export component Dash inherits Window {
             text: root.drag-mode == DragMode.carry ? "Click where it should go · Esc cancels"
                 : root.adjust-id != 0 ? "Drag to move, corner to resize, ◯/▢ to change shape · click outside or Esc when done"
                 : !root.editing ? "" : "Edit mode: drag to move (others make room), corner to resize, click a widget for its settings"
-                + (root.hidden-widgets > 0 ? "  ·  " + root.hidden-widgets + " widget(s) don't fit this screen" : "");
+                + (root.hidden-widgets > 0 ? "  ·  " + root.hidden-widgets + " widget(s) don't fit " + (root.grid-cols > 0 ? "the grid" : "this screen") : "");
             color: Theme.dim;
             font-size: Theme.font-body;
             vertical-alignment: center;

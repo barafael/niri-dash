@@ -19,13 +19,10 @@ impl App {
     }
 
     pub(super) fn apply_settings(&self) {
-        let (weather, cell) = {
-            let l = self.layout.borrow();
-            (l.weather_config(self.locale.us), l.cell_size)
-        };
+        let weather = self.layout.borrow().weather_config(self.locale.us);
         self.apply_look(self.ctx.visible());
         self.weather.configure(weather);
-        self.ui().set_cell_size(cell);
+        self.apply_grid();
     }
 
     pub(super) fn reload_config(&self) {
@@ -41,13 +38,21 @@ impl App {
         match Layout::parse(&text) {
             Ok((fresh, warnings)) => {
                 self.config_broken.set(false);
-                self.layout.borrow_mut().replace(fresh);
+                let refit = self.layout.borrow_mut().replace(fresh);
                 *self.last_written.borrow_mut() = text;
                 self.apply_settings();
                 self.sync_widgets();
                 self.refresh_settings();
+                if refit.changed() {
+                    self.save_layout();
+                }
+                let mut messages = Vec::new();
                 if !warnings.is_empty() {
-                    self.toast(&format!("config.kdl: {}", warnings.join("; ")));
+                    messages.push(format!("config.kdl: {}", warnings.join("; ")));
+                }
+                messages.extend(refit.message());
+                if !messages.is_empty() {
+                    self.toast(&messages.join("  ·  "));
                 }
             }
             Err(e) => {
