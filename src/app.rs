@@ -230,11 +230,24 @@ fn to_opts(p: &Placed, us: bool) -> crate::WidgetOpts {
         poweroff: b(Opt::PowerOff),
         confirm: b(Opt::Confirm),
         stopwatch: get_str(v, Opt::Mode, us) == "stopwatch",
-        character: match get_str(v, Opt::Character, us).as_str() {
-            "zolli" => crate::Character::Zolli,
-            "verschnitti" => crate::Character::Verschnitti,
-            _ => crate::Character::Schraubi,
-        },
+        character: character_to_ui(character(p, us)),
+    }
+}
+
+/// A mascot widget's character.
+fn character(p: &Placed, us: bool) -> crate::mascots::Character {
+    use crate::widget_settings::{Opt, get_str};
+    get_str(&p.settings, Opt::Character, us)
+        .parse()
+        .expect("the setting only takes character names")
+}
+
+fn character_to_ui(c: crate::mascots::Character) -> crate::Character {
+    use crate::mascots::Character as C;
+    match c {
+        C::Schraubi => crate::Character::Schraubi,
+        C::Zolli => crate::Character::Zolli,
+        C::Verschnitti => crate::Character::Verschnitti,
     }
 }
 
@@ -1136,7 +1149,7 @@ impl App {
 
     /// Match the mascots to the mascot widgets on the dashboard (or the standalone app's).
     fn sync_mascots(&self) {
-        use crate::mascots::{Character, Spec};
+        use crate::mascots::Spec;
         use crate::widget_settings::{Opt, get_int, get_str};
         let us = self.locale.1;
         let layout = self.layout.borrow();
@@ -1152,11 +1165,9 @@ impl App {
                 let v = &p.settings;
                 Spec {
                     id: p.id,
-                    character: get_str(v, Opt::Character, us)
-                        .parse()
-                        .unwrap_or(Character::Schraubi),
-                    wildness: get_int(v, Opt::Wildness, us).clamp(0, 4) as u8,
-                    interval: Duration::from_secs(get_int(v, Opt::Interval, us).max(5) as u64),
+                    character: character(p, us),
+                    wildness: get_int(v, Opt::Wildness, us) as u8,
+                    interval: Duration::from_secs(get_int(v, Opt::Interval, us) as u64),
                     command: get_str(v, Opt::Command, us),
                 }
             })
