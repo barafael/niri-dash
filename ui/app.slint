@@ -874,24 +874,18 @@ export component Dash inherits Window {
                             : st.description != "" ? st.description : (st.motion == 0 ? "no animations" : "");
                         current: st.current;
                         clicked => { root.choose-style(st.name); }
-                        // Two cards with the style's corner radius and gap, scaled down.
+                        // Two cards with the style's corner radius and gap, scaled down. They sit
+                        // in one rectangle that fills the preview slot: `parent` of the slot's
+                        // direct children would be the whole card.
                         Rectangle {
-                            x: 0;
-                            width: (parent.width - st.gap * 0.6px) / 2;
-                            height: parent.height;
-                            border-radius: min(self.width / 2, st.radius * 0.45px);
-                            background: Theme.card;
-                            border-width: 1px;
-                            border-color: Theme.border;
-                        }
-                        Rectangle {
-                            x: parent.width - self.width;
-                            width: (parent.width - st.gap * 0.6px) / 2;
-                            height: parent.height;
-                            border-radius: min(self.width / 2, st.radius * 0.45px);
-                            background: Theme.card;
-                            border-width: 1px;
-                            border-color: Theme.border;
+                            for i in 2: Rectangle {
+                                x: i * (parent.width - self.width);
+                                width: (parent.width - st.gap * 0.6px) / 2;
+                                border-radius: min(self.width / 2, st.radius * 0.45px);
+                                background: Theme.card;
+                                border-width: 1px;
+                                border-color: Theme.border;
+                            }
                         }
                     }
                     HorizontalLayout {

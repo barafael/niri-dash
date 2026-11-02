@@ -185,8 +185,8 @@ impl Style {
         match var {
             StyleVar::Radius => self.radius = need(num)?.max(0.0),
             StyleVar::RadiusSmall => self.radius_small = need(num)?.max(0.0),
-            StyleVar::Gap => self.gap = need(num)?.clamp(0.0, 40.0),
-            StyleVar::Padding => self.padding = need(num)?.clamp(0.0, 60.0),
+            StyleVar::Gap => self.gap = need(num)?.clamp(0.0, 64.0),
+            StyleVar::Padding => self.padding = need(num)?.clamp(0.0, 64.0),
             StyleVar::BorderWidth => self.border_width = need(num)?.clamp(0.0, 8.0),
             StyleVar::FontFamily => {
                 self.font_family = value.as_string().ok_or("expected a string")?.into()
@@ -524,63 +524,73 @@ pub const KNOBS: &[Knob] = &[
         var: StyleVar::Radius,
         label: "Corner radius",
         steps: &[
-            0., 2., 4., 6., 8., 10., 12., 14., 16., 18., 20., 24., 28., 32., 40.,
+            0., 2., 4., 6., 8., 10., 12., 14., 16., 18., 20., 24., 28., 32., 40., 48., 56., 64.,
         ],
     },
     Knob {
         var: StyleVar::RadiusSmall,
         label: "Inner corner radius",
-        steps: &[0., 2., 4., 6., 8., 10., 12., 14., 16., 20.],
+        steps: &[0., 2., 4., 6., 8., 10., 12., 14., 16., 20., 24., 28., 32.],
     },
     Knob {
         var: StyleVar::Gap,
         label: "Widget spacing",
-        steps: &[0., 2., 3., 4., 5., 6., 7., 8., 9., 10., 12., 14., 16.],
+        steps: &[
+            0., 1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 12., 14., 16., 20., 24., 28., 32., 40.,
+        ],
     },
     Knob {
         var: StyleVar::Padding,
         label: "Widget padding",
-        steps: &[6., 8., 10., 12., 14., 16., 18., 20., 24., 28.],
+        steps: &[
+            0., 2., 4., 6., 8., 10., 12., 14., 16., 18., 20., 24., 28., 32., 40., 48.,
+        ],
     },
     Knob {
         var: StyleVar::BorderWidth,
         label: "Border width",
-        steps: &[0., 1., 2., 3.],
+        steps: &[0., 1., 2., 3., 4., 5., 6., 8.],
     },
     Knob {
         var: StyleVar::FontSmall,
         label: "Small text",
-        steps: &[9., 10., 11., 12., 13., 14., 15., 16.],
+        steps: &[
+            7., 8., 9., 10., 11., 12., 13., 14., 15., 16., 18., 20., 22., 24.,
+        ],
     },
     Knob {
         var: StyleVar::FontBody,
         label: "Body text",
-        steps: &[10., 11., 12., 13., 14., 15., 16., 17., 18., 20.],
+        steps: &[
+            8., 9., 10., 11., 12., 13., 14., 15., 16., 17., 18., 20., 22., 24., 28.,
+        ],
     },
     Knob {
         var: StyleVar::FontTitle,
         label: "Titles",
-        steps: &[11., 12., 13., 14., 15., 16., 17., 18., 20., 22., 24.],
+        steps: &[
+            8., 10., 11., 12., 13., 14., 15., 16., 17., 18., 20., 22., 24., 28., 32., 40.,
+        ],
     },
     Knob {
         var: StyleVar::FontWeightDisplay,
         label: "Big numbers weight",
-        steps: &[100., 200., 300., 400., 500., 600., 700.],
+        steps: &[100., 200., 300., 400., 500., 600., 700., 800., 900.],
     },
     Knob {
         var: StyleVar::Motion,
         label: "Animations",
-        steps: &[0., 0.35, 0.6, 1.0, 1.4, 2.0],
+        steps: &[0., 0.35, 0.6, 1.0, 1.4, 2.0, 3.0, 5.0],
     },
     Knob {
         var: StyleVar::BackdropOpacity,
         label: "Screen dimming",
-        steps: &[0., 0.2, 0.4, 0.55, 0.7, 0.85, 1.0],
+        steps: &[0., 0.1, 0.2, 0.3, 0.4, 0.55, 0.7, 0.85, 1.0],
     },
     Knob {
         var: StyleVar::CardOpacity,
         label: "Widget opacity",
-        steps: &[0.4, 0.55, 0.7, 0.8, 0.9, 1.0],
+        steps: &[0.1, 0.2, 0.3, 0.4, 0.55, 0.7, 0.8, 0.9, 1.0],
     },
 ];
 
@@ -630,7 +640,8 @@ pub fn knob_text(var: StyleVar, v: f32) -> String {
             x if x < 0.9 => "fast".into(),
             x if x < 1.2 => "normal".into(),
             x if x < 1.7 => "slow".into(),
-            _ => "slower".into(),
+            x if x < 2.5 => "slower".into(),
+            _ => "very slow".into(),
         },
         StyleVar::FontWeightDisplay => format!("{v:.0}"),
         StyleVar::BackdropOpacity | StyleVar::CardOpacity => format!("{:.0} %", v * 100.0),
