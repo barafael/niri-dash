@@ -283,6 +283,22 @@ pub fn focus(ctx: &Ctx, id: u64) {
     });
 }
 
+/// Focus the window of process `pid`, if it has one.
+pub fn focus_pid(ctx: &Ctx, pid: i32) {
+    ctx.act("Focus window", async move {
+        tokio::task::spawn_blocking(move || {
+            let Response::Windows(windows) = request(Request::Windows)? else {
+                return Ok(());
+            };
+            match windows.iter().find(|w| w.pid == Some(pid)) {
+                Some(w) => action(Action::FocusWindow { id: w.id }),
+                None => Ok(()),
+            }
+        })
+        .await?
+    });
+}
+
 pub fn close(ctx: &Ctx, id: u64) {
     ctx.act("Close window", async move {
         action_async(Action::CloseWindow { id: Some(id) }).await

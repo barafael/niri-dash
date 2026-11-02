@@ -149,7 +149,7 @@ pub struct Ctx {
     /// A dormant context starts nothing: a source built with it stays idle (standalone apps
     /// only run the sources their widget shows).
     dormant: bool,
-    pub rt: tokio::runtime::Handle,
+    rt: tokio::runtime::Handle,
 }
 
 impl Ctx {
@@ -482,20 +482,43 @@ pub enum CmdError {
     /// It ran and exited with an error; the message is what it printed.
     #[error("{message}")]
     Failed { program: String, message: String },
+    #[error("{program} took over {} s", .after.as_secs())]
+    TimedOut { program: String, after: Duration },
 }
 
 /// Run a command and return its stdout; a non-zero exit is an error carrying stderr.
 pub async fn run(program: &str, args: &[&str]) -> Result<String, CmdError> {
-    let out = tokio::process::Command::new(program)
+    run_with(program, args, &[], None).await
+}
+
+/// Like [`run`], with extra environment variables, and killed if it takes longer than `timeout`.
+pub async fn run_with(
+    program: &str,
+    args: &[&str],
+    env: &[(&str, &str)],
+    timeout: Option<Duration>,
+) -> Result<String, CmdError> {
+    let output = tokio::process::Command::new(program)
         .args(args)
+        .envs(env.iter().copied())
         .stdin(std::process::Stdio::null())
         .kill_on_drop(true)
-        .output()
-        .await
-        .map_err(|source| CmdError::Spawn {
-            program: program.into(),
-            source,
-        })?;
+        .output();
+    let output = match timeout {
+        Some(after) => {
+            tokio::time::timeout(after, output)
+                .await
+                .map_err(|_| CmdError::TimedOut {
+                    program: program.into(),
+                    after,
+                })?
+        }
+        None => output.await,
+    };
+    let out = output.map_err(|source| CmdError::Spawn {
+        program: program.into(),
+        source,
+    })?;
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr);
         let err = err.trim();

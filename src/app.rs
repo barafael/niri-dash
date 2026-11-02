@@ -335,7 +335,7 @@ impl App {
             self.set_awake(true);
         } else if self.solo.is_some() {
             // Already open: bring the window to the front.
-            focus_own_window(&self.ctx);
+            niri::focus_pid(&self.ctx, std::process::id() as i32);
         }
         if edit && self.solo.is_none() {
             self.set_editing(true);
@@ -654,24 +654,6 @@ pub fn run_app(kind: Kind) -> Result<()> {
     let result = serve(listener, mode, Some(kind), Some(Control::Show), config);
     let _ = std::fs::remove_file(&path);
     result
-}
-
-/// Bring this app's window to the front (niri knows it by our pid).
-fn focus_own_window(ctx: &Ctx) {
-    let pid = std::process::id() as i32;
-    ctx.act("Focus window", async move {
-        tokio::task::spawn_blocking(move || {
-            let niri_ipc::Response::Windows(windows) = niri::request(niri_ipc::Request::Windows)?
-            else {
-                return Ok(());
-            };
-            match windows.iter().find(|w| w.pid == Some(pid)) {
-                Some(w) => niri::action(niri_ipc::Action::FocusWindow { id: w.id }),
-                None => Ok(()),
-            }
-        })
-        .await?
-    });
 }
 
 /// The runtime the sources run on.

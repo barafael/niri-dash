@@ -5,7 +5,7 @@ use super::enums::outfit_to_ui;
 use super::{App, set_if_changed};
 use crate::Dash;
 use crate::layout::Kind;
-use crate::sources::{Ctx, Msg};
+use crate::sources::{self, Ctx, Msg};
 use slint::{ComponentHandle, ModelRc, Timer, TimerMode, VecModel};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -121,33 +121,18 @@ impl App {
 /// Run a mascot widget's `command` (with `NIRI_DASH_MASCOT` set to its name) and send back what
 /// it printed. A command that fails, hangs or prints nothing gets a remark of the mascot's own.
 fn run_mascot_command(ctx: &Ctx, id: u32, command: String, name: &'static str) {
-    let ctx2 = ctx.clone();
-    ctx.rt.spawn(async move {
-        let run = tokio::process::Command::new("sh")
-            .arg("-c")
-            .arg(&command)
-            .env("NIRI_DASH_MASCOT", name)
-            .stdin(std::process::Stdio::null())
-            .kill_on_drop(true)
-            .output();
-        let out = match tokio::time::timeout(Duration::from_secs(10), run).await {
-            Ok(Ok(o)) if o.status.success() => {
-                crate::mascots::from_command_output(&String::from_utf8_lossy(&o.stdout))
-            }
-            Ok(Ok(o)) => {
-                log::warn!("mascot command {command:?} failed: {}", o.status);
-                None
-            }
-            Ok(Err(e)) => {
+    let c = ctx.clone();
+    ctx.spawn(async move {
+        let env = [("NIRI_DASH_MASCOT", name)];
+        let timeout = Some(Duration::from_secs(10));
+        let out = match sources::run_with("sh", &["-c", &command], &env, timeout).await {
+            Ok(stdout) => crate::mascots::from_command_output(&stdout),
+            Err(e) => {
                 log::warn!("mascot command {command:?}: {e}");
                 None
             }
-            Err(_) => {
-                log::warn!("mascot command {command:?} took over 10 s");
-                None
-            }
         };
-        ctx2.send(Msg::MascotAnswer(id, out));
+        c.send(Msg::MascotAnswer(id, out));
     });
 }
 
