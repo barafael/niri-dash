@@ -209,6 +209,16 @@ pub enum Shape {
     Round,
 }
 
+impl Shape {
+    /// A size this shape can have: round widgets are square, as big as the larger side.
+    fn fit(self, w: i32, h: i32) -> (i32, i32) {
+        match self {
+            Shape::Rect => (w, h),
+            Shape::Round => (w.max(h), w.max(h)),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Placed {
     pub id: u32,
@@ -225,11 +235,21 @@ pub struct Placed {
 }
 
 impl Placed {
-    fn overlaps(&self, col: i32, row: i32, w: i32, h: i32) -> bool {
-        self.col < col + w
-            && col < self.col + self.w
-            && self.row < row + h
-            && row < self.row + self.h
+    pub fn rect(&self) -> Rect {
+        Rect {
+            col: self.col,
+            row: self.row,
+            w: self.w,
+            h: self.h,
+        }
+    }
+
+    /// The smallest size it may be resized to; round widgets go down to a single cell.
+    fn min_size(&self) -> (i32, i32) {
+        match self.shape {
+            Shape::Rect => self.kind.min_size(),
+            Shape::Round => (1, 1),
+        }
     }
 }
 
@@ -517,18 +537,15 @@ impl Layout {
                 };
                 let (dw, dh) = kind.default_size();
                 let size = int(node, "size");
-                let mut w = int(node, "width")
+                let w = int(node, "width")
                     .or(size)
                     .unwrap_or(if shape == Shape::Round { 2 } else { dw })
                     .max(1);
-                let mut h = int(node, "height")
+                let h = int(node, "height")
                     .or(size)
                     .unwrap_or(if shape == Shape::Round { 2 } else { dh })
                     .max(1);
-                if shape == Shape::Round {
-                    let d = w.max(h);
-                    (w, h) = (d, d);
-                }
+                let (w, h) = shape.fit(w, h);
                 let (Some(col), Some(row)) = (int(node, "col"), int(node, "row")) else {
                     warnings.push(format!("{name}: needs col= and row="));
                     continue;
@@ -730,16 +747,13 @@ impl Layout {
     pub fn reset(&mut self) {
         let (fresh, _) = Self::parse(&Self::default_text()).expect("default config parses");
         // Keep the user's file around it (comments, cell-size); only the widgets are reset.
-        let old_nodes: Vec<Placed> = std::mem::take(&mut self.widgets);
-        let mut next = self.next_id;
+        self.widgets.clear();
         for mut w in fresh.widgets {
             w.node = None;
-            w.id = next;
-            next += 1;
+            w.id = self.next_id;
+            self.next_id += 1;
             self.widgets.push(w);
         }
-        self.next_id = next;
-        drop(old_nodes);
     }
 
     /// Set the grid size of the current screen. This never moves widgets: ones that don't fit
@@ -754,9 +768,8 @@ impl Layout {
     pub fn visible(&self) -> Vec<&Placed> {
         let mut shown: Vec<&Placed> = Vec::new();
         for w in &self.widgets {
-            let inside =
-                w.col >= 0 && w.row >= 0 && w.col + w.w <= self.cols && w.row + w.h <= self.rows;
-            if inside && shown.iter().all(|o| !o.overlaps(w.col, w.row, w.w, w.h)) {
+            let r = w.rect();
+            if self.in_bounds(&r) && shown.iter().all(|o| !o.rect().overlaps(&r)) {
                 shown.push(w);
             }
         }
@@ -799,53 +812,21 @@ impl Layout {
     }
 
     pub fn can_place(&self, id: u32, col: i32, row: i32, w: i32, h: i32) -> bool {
-        if col < 0 || row < 0 || w < 1 || h < 1 || col + w > self.cols || row + h > self.rows {
-            return false;
-        }
-        self.visible()
-            .into_iter()
-            .filter(|o| o.id != id)
-            .all(|o| !o.overlaps(col, row, w, h))
+        let r = Rect { col, row, w, h };
+        w >= 1
+            && h >= 1
+            && self.in_bounds(&r)
+            && self
+                .visible()
+                .into_iter()
+                .filter(|o| o.id != id)
+                .all(|o| !o.rect().overlaps(&r))
     }
 
     fn free_spot(&self, id: u32, w: i32, h: i32) -> Option<(i32, i32)> {
         (0..=self.rows - h)
             .flat_map(|r| (0..=self.cols - w).map(move |c| (c, r)))
             .find(|&(c, r)| self.can_place(id, c, r, w, h))
-    }
-
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub fn move_to(&mut self, id: u32, col: i32, row: i32) -> bool {
-        let Some(p) = self.get(id) else { return false };
-        let (w, h) = (p.w, p.h);
-        if !self.can_place(id, col, row, w, h) {
-            return false;
-        }
-        let p = self.get_mut(id).expect("checked");
-        (p.col, p.row) = (col, row);
-        true
-    }
-
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub fn resize(&mut self, id: u32, w: i32, h: i32) -> bool {
-        let Some(p) = self.get(id) else { return false };
-        let (min_w, min_h) = if p.shape == Shape::Round {
-            (1, 1)
-        } else {
-            p.kind.min_size()
-        };
-        let (mut w, mut h) = (w.max(min_w), h.max(min_h));
-        if p.shape == Shape::Round {
-            let d = w.max(h);
-            (w, h) = (d, d);
-        }
-        let (col, row) = (p.col, p.row);
-        if !self.can_place(id, col, row, w, h) {
-            return false;
-        }
-        let p = self.get_mut(id).expect("checked");
-        (p.w, p.h) = (w, h);
-        true
     }
 
     /// Round widgets are square; switching tries to keep the footprint and falls back to the
@@ -1116,6 +1097,11 @@ impl Rect {
             && self.row < o.row + o.h
             && o.row < self.row + self.h
     }
+
+    /// Whether it lies within a grid of `cols` x `rows` cells.
+    fn inside(&self, cols: i32, rows: i32) -> bool {
+        self.col >= 0 && self.row >= 0 && self.col + self.w <= cols && self.row + self.h <= rows
+    }
 }
 
 /// A widget the packer may move, and how small it may get.
@@ -1178,10 +1164,7 @@ impl Occupancy {
     }
 
     fn fits(&self, r: &Rect) -> bool {
-        r.col >= 0
-            && r.row >= 0
-            && r.col + r.w <= self.cols
-            && r.row + r.h <= self.rows
+        r.inside(self.cols, self.rows)
             && (r.row..r.row + r.h).all(|row| {
                 (r.col..r.col + r.w).all(|col| !self.cells[(row * self.cols + col) as usize])
             })
@@ -1338,7 +1321,6 @@ impl Occupancy {
     }
 }
 
-/// New positions for the widgets a placement moves out of the way.
 /// New rectangles (position, and size if it had to shrink) for the widgets a placement moves.
 pub type Reflow = Vec<(u32, Rect)>;
 
@@ -1347,22 +1329,12 @@ impl Layout {
         self.visible()
             .into_iter()
             .filter(|w| w.id != id)
-            .map(|w| {
-                (
-                    w.id,
-                    Rect {
-                        col: w.col,
-                        row: w.row,
-                        w: w.w,
-                        h: w.h,
-                    },
-                )
-            })
+            .map(|w| (w.id, w.rect()))
             .collect()
     }
 
     fn in_bounds(&self, r: &Rect) -> bool {
-        r.col >= 0 && r.row >= 0 && r.col + r.w <= self.cols && r.row + r.h <= self.rows
+        r.inside(self.cols, self.rows)
     }
 
     /// Make room for widget `id` (0 for one being added) at `target`, moving others as little
@@ -1450,11 +1422,7 @@ impl Layout {
                 .iter()
                 .map(|&i| {
                     let (id, r) = others[i];
-                    let (mw, mh) = match self.get(id) {
-                        Some(p) if p.shape == Shape::Round => (1, 1),
-                        Some(p) => p.kind.min_size(),
-                        None => (r.w, r.h),
-                    };
+                    let (mw, mh) = self.get(id).map_or((r.w, r.h), Placed::min_size);
                     Item {
                         id,
                         orig: r,
@@ -1647,8 +1615,7 @@ impl Layout {
         let target = Rect {
             col,
             row,
-            w: p.w,
-            h: p.h,
+            ..p.rect()
         };
         let Some(moves) = self.reflow(id, target, prefer) else {
             return false;
@@ -1663,12 +1630,7 @@ impl Layout {
     pub fn resize_reflow(&mut self, id: u32, w: i32, h: i32) -> bool {
         let Some(p) = self.get(id) else { return false };
         let (w, h) = self.clamp_size(p, w, h);
-        let target = Rect {
-            col: p.col,
-            row: p.row,
-            w,
-            h,
-        };
+        let target = Rect { w, h, ..p.rect() };
         let grow = (i32::from(w > p.w), i32::from(h > p.h));
         let prefer = if grow.1 > 0 { (0, 1) } else { (1, 0) };
         let Some(moves) = self.reflow(id, target, prefer) else {
@@ -1680,18 +1642,10 @@ impl Layout {
         true
     }
 
+    /// The size a resize of `p` to `w` x `h` gives: at least its minimum, square if round.
     pub fn clamp_size(&self, p: &Placed, w: i32, h: i32) -> (i32, i32) {
-        let (min_w, min_h) = if p.shape == Shape::Round {
-            (1, 1)
-        } else {
-            p.kind.min_size()
-        };
-        let (mut w, mut h) = (w.max(min_w), h.max(min_h));
-        if p.shape == Shape::Round {
-            let d = w.max(h);
-            (w, h) = (d, d);
-        }
-        (w, h)
+        let (min_w, min_h) = p.min_size();
+        p.shape.fit(w.max(min_w), h.max(min_h))
     }
 
     /// Add a widget of its default size at a spot, pushing others aside.
@@ -1742,12 +1696,22 @@ mod tests {
     }
 
     #[test]
-    fn move_rejects_overlap_and_accepts_free() {
+    fn can_place_rejects_overlap_and_accepts_free() {
         let mut l = grid();
         let clock = id_of(&l, Kind::Clock);
-        assert!(!l.move_to(clock, 4, 0), "onto windows widget");
+        assert!(!l.can_place(clock, 4, 0, 4, 2), "onto windows widget");
         l.remove(id_of(&l, Kind::Windows));
-        assert!(l.move_to(clock, 4, 0));
+        assert!(l.can_place(clock, 4, 0, 4, 2));
+        let before = l.widgets.iter().map(Placed::rect).collect::<Vec<_>>();
+        assert!(l.move_reflow(clock, 4, 0, (0, 1)));
+        let moved: Vec<_> = l
+            .widgets
+            .iter()
+            .filter(|w| w.id != clock)
+            .map(Placed::rect)
+            .filter(|r| !before.contains(r))
+            .collect();
+        assert!(moved.is_empty(), "nothing else moves: {moved:?}");
     }
 
     #[test]
@@ -1758,12 +1722,18 @@ mod tests {
         assert!(l.toggle_shape(clock));
         let p = l.get(clock).unwrap();
         assert_eq!((p.shape, p.w, p.h), (Shape::Round, 2, 2));
+        assert_eq!(l.clamp_size(p, 3, 2), (3, 3));
+        assert_eq!(
+            l.clamp_size(p, 0, 0),
+            (1, 1),
+            "round ones go down to a cell"
+        );
         assert!(
-            !l.resize(clock, 3, 2),
+            !l.can_place(clock, p.col, p.row, 3, 3),
             "3x3 would overlap the weather widget"
         );
         l.remove(id_of(&l, Kind::Weather));
-        assert!(l.resize(clock, 3, 2));
+        assert!(l.resize_reflow(clock, 3, 2));
         let p = l.get(clock).unwrap();
         assert_eq!((p.w, p.h), (3, 3));
     }
@@ -1804,7 +1774,8 @@ mod tests {
         assert_eq!(l.cell_size, 90.0);
         l.set_grid(16, 9);
         let clock = id_of(&l, Kind::Clock);
-        assert!(l.move_to(clock, 6, 3));
+        assert!(l.can_place(clock, 6, 3, 4, 2));
+        assert!(l.move_reflow(clock, 6, 3, (0, 1)));
         l.remove(id_of(&l, Kind::Tray));
         let cal = id_of(&l, Kind::Calendar);
         assert!(l.toggle_shape(cal));
