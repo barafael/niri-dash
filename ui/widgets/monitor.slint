@@ -1,6 +1,6 @@
 import { Theme, Icons } from "../theme.slint";
 import { Perf, ClaudeUsage, Claude, WidgetOpts } from "../data.slint";
-import { Icon, Ring, Graph, Muted, Empty } from "../common.slint";
+import { Graph, Header, Muted, Empty, Bar, RoundGauge } from "../common.slint";
 
 // A label and a value on one line.
 component Stat inherits HorizontalLayout {
@@ -22,62 +22,6 @@ component Stat inherits HorizontalLayout {
     }
 }
 
-// A thin usage bar.
-component Bar inherits Rectangle {
-    in property <float> value;
-    in property <color> tint: Theme.accent;
-    height: 6px;
-    border-radius: 3px;
-    background: Theme.track;
-    Rectangle {
-        x: 0;
-        width: parent.width * clamp(root.value, 0, 1);
-        border-radius: 3px;
-        background: root.value > 0.9 ? Theme.bad : root.tint;
-    }
-}
-
-// A round widget: a ring with a big number and a caption.
-component RoundGauge inherits Rectangle {
-    in property <float> value;
-    in property <float> inner: -1;
-    in property <color> tint: Theme.accent;
-    in property <color> inner-tint: Theme.good;
-    in property <string> big;
-    in property <string> caption;
-    Ring {
-        width: 100%;
-        height: 100%;
-        value: root.value;
-        thickness: max(6px, root.width * 0.06);
-        tint: root.value > 0.9 ? Theme.bad : root.tint;
-    }
-    if root.inner >= 0: Ring {
-        width: 76%;
-        height: 76%;
-        value: root.inner;
-        thickness: max(5px, root.width * 0.05);
-        tint: root.inner-tint;
-    }
-    VerticalLayout {
-        alignment: center;
-        Text {
-            text: root.big;
-            horizontal-alignment: center;
-            font-size: max(13px, root.width * 0.15);
-            font-weight: Theme.font-weight-display;
-            color: Theme.text;
-        }
-        Text {
-            text: root.caption;
-            horizontal-alignment: center;
-            font-size: max(9px, root.width * 0.06);
-            color: Theme.dim;
-            overflow: elide;
-        }
-    }
-}
-
 export component MemoryWidget inherits Rectangle {
     in property <bool> round;
     in property <WidgetOpts> opts;
@@ -92,19 +36,12 @@ export component MemoryWidget inherits Rectangle {
     if !root.round: VerticalLayout {
         padding: Theme.pad;
         spacing: 6px;
-        HorizontalLayout {
-            height: 28px;
-            spacing: 8px;
-            Text {
-                text: "Memory";
-                font-size: Theme.font-title;
-                font-weight: 600;
-                color: Theme.text;
-                vertical-alignment: center;
-            }
+        Header {
+            title: "Memory";
             Muted {
                 text: Perf.mem-used-text;
                 horizontal-stretch: 1;
+                horizontal-alignment: right;
             }
             Text {
                 text: Math.round(Perf.mem * 100) + "%";
@@ -149,16 +86,8 @@ export component DisksWidget inherits Rectangle {
     if !root.round: VerticalLayout {
         padding: Theme.pad;
         spacing: 6px;
-        HorizontalLayout {
-            height: 24px;
-            spacing: 8px;
-            Text {
-                text: "Disks";
-                font-size: Theme.font-title;
-                font-weight: 600;
-                color: Theme.text;
-                vertical-alignment: center;
-            }
+        Header {
+            title: "Disks";
             Muted {
                 text: Perf.disk-read-text + "  ·  " + Perf.disk-write-text;
                 horizontal-stretch: 1;
@@ -190,35 +119,24 @@ export component DisksWidget inherits Rectangle {
 export component NetworkWidget inherits Rectangle {
     in property <bool> round;
     in property <WidgetOpts> opts;
-    if root.round: Rectangle {
-        Ring {
-            width: 100%;
-            height: 100%;
-            value: Perf.net-rx-frac;
-            thickness: max(6px, root.width * 0.06);
-            tint: Theme.accent;
+    // Both rings are relative to the recent peak, so a full one is nothing to warn about.
+    if root.round: RoundGauge {
+        value: Perf.net-rx-frac;
+        inner: Perf.net-tx-frac;
+        tint: Theme.accent;
+        inner-tint: Theme.warn;
+        high-is-bad: false;
+        Text {
+            text: "↓ " + Perf.net-rx-text;
+            horizontal-alignment: center;
+            font-size: max(10px, root.width * 0.075);
+            color: Theme.accent;
         }
-        Ring {
-            width: 76%;
-            height: 76%;
-            value: Perf.net-tx-frac;
-            thickness: max(5px, root.width * 0.05);
-            tint: Theme.warn;
-        }
-        VerticalLayout {
-            alignment: center;
-            Text {
-                text: "↓ " + Perf.net-rx-text;
-                horizontal-alignment: center;
-                font-size: max(10px, root.width * 0.075);
-                color: Theme.accent;
-            }
-            Text {
-                text: "↑ " + Perf.net-tx-text;
-                horizontal-alignment: center;
-                font-size: max(10px, root.width * 0.075);
-                color: Theme.warn;
-            }
+        Text {
+            text: "↑ " + Perf.net-tx-text;
+            horizontal-alignment: center;
+            font-size: max(10px, root.width * 0.075);
+            color: Theme.warn;
         }
     }
     if !root.round: VerticalLayout {
@@ -284,19 +202,12 @@ export component GpuWidget inherits Rectangle {
     if Perf.has-gpu && !root.round: VerticalLayout {
         padding: Theme.pad;
         spacing: 6px;
-        HorizontalLayout {
-            height: 24px;
-            spacing: 8px;
-            Text {
-                text: "GPU";
-                font-size: Theme.font-title;
-                font-weight: 600;
-                color: Theme.text;
-                vertical-alignment: center;
-            }
+        Header {
+            title: "GPU";
             Muted {
                 text: Perf.gpu-name;
                 horizontal-stretch: 1;
+                horizontal-alignment: right;
             }
             Muted {
                 text: Perf.gpu-temp-text + (Perf.gpu-power-text != "" ? "  ·  " + Perf.gpu-power-text : "");
@@ -337,22 +248,10 @@ export component ClaudeUsageWidget inherits Rectangle {
     if !root.round: VerticalLayout {
         padding: Theme.pad;
         spacing: 6px;
-        HorizontalLayout {
-            height: 26px;
-            spacing: 8px;
-            Icon {
-                y: (parent.height - self.height) / 2;
-                source: Icons.sparkle;
-                size: 18px;
-                tint: Theme.accent;
-            }
-            Text {
-                text: "Claude";
-                font-size: Theme.font-title;
-                font-weight: 600;
-                color: Theme.text;
-                vertical-alignment: center;
-            }
+        Header {
+            icon: Icons.sparkle;
+            icon-color: Theme.accent;
+            title: "Claude";
             Rectangle {
                 y: (parent.height - self.height) / 2;
                 height: 20px;
@@ -365,7 +264,6 @@ export component ClaudeUsageWidget inherits Rectangle {
                     color: Theme.accent;
                 }
             }
-            Rectangle { horizontal-stretch: 1; }
             Muted {
                 text: Claude.sessions.length == 0 ? "no sessions"
                     : Claude.busy + " working · " + (Claude.sessions.length - Claude.busy) + " waiting";

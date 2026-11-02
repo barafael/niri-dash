@@ -1,40 +1,17 @@
 import { Theme, Icons } from "../theme.slint";
 import { Perf, Power, PowerProfile, DeviceKind, Audio, Brightness, Session, WidgetOpts } from "../data.slint";
-import { Icon, IconButton, Ring, Graph, Slider, RingKnob, Row, Muted, Switch, ScrollList } from "../common.slint";
+import { Icon, Ring, Graph, RingKnob, Row, Muted, Switch, ScrollList, RoundGauge, SliderRow } from "../common.slint";
 
 export component PerfWidget inherits Rectangle {
     in property <bool> round;
     in property <WidgetOpts> opts;
-    if root.round: Rectangle {
-        Ring {
-            width: 100%;
-            height: 100%;
-            value: Perf.cpu;
-            thickness: max(6px, root.width * 0.06);
-            tint: Perf.cpu > 0.85 ? Theme.bad : Theme.accent;
-        }
-        Ring {
-            width: 76%;
-            height: 76%;
-            value: Perf.mem;
-            thickness: max(5px, root.width * 0.05);
-            tint: Theme.good;
-        }
-        VerticalLayout {
-            alignment: center;
-            Text {
-                text: Math.round(Perf.cpu * 100) + "%";
-                horizontal-alignment: center;
-                font-size: max(13px, root.width * 0.15);
-                color: Theme.text;
-            }
-            Text {
-                text: "CPU · RAM " + Math.round(Perf.mem * 100) + "%";
-                horizontal-alignment: center;
-                font-size: max(9px, root.width * 0.055);
-                color: Theme.dim;
-            }
-        }
+    if root.round: RoundGauge {
+        value: Perf.cpu;
+        inner: Perf.mem;
+        tint: Theme.accent;
+        inner-tint: Theme.good;
+        big: Math.round(Perf.cpu * 100) + "%";
+        caption: "CPU · RAM " + Math.round(Perf.mem * 100) + "%";
     }
     if !root.round: VerticalLayout {
         padding: Theme.pad;
@@ -374,49 +351,21 @@ export component AudioWidget inherits Rectangle {
                 }
             }
         }
-        HorizontalLayout {
-            spacing: 8px;
-            IconButton {
-                icon: Audio.muted ? Icons.volume-mute : Icons.volume;
-                tint: Audio.muted ? Theme.faint : Theme.text;
-                clicked => { Audio.toggle-mute(); }
-            }
-            Slider {
-                y: (parent.height - self.height) / 2;
-                value <=> Audio.volume;
-                tint: Audio.muted ? Theme.faint : Theme.accent;
-                changed(v) => { Audio.set-volume(v); }
-            }
-            Text {
-                width: 38px;
-                text: Math.round(Audio.volume * 100) + "%";
-                color: Theme.dim;
-                font-size: Theme.font-small;
-                vertical-alignment: center;
-                horizontal-alignment: right;
-            }
+        SliderRow {
+            value <=> Audio.volume;
+            icon: Audio.muted ? Icons.volume-mute : Icons.volume;
+            icon-tint: Audio.muted ? Theme.faint : Theme.text;
+            tint: Audio.muted ? Theme.faint : Theme.accent;
+            changed(v) => { Audio.set-volume(v); }
+            icon-clicked => { Audio.toggle-mute(); }
         }
-        if root.height > 130px: HorizontalLayout {
-            spacing: 8px;
-            IconButton {
-                icon: Audio.mic-muted ? Icons.mic-off : Icons.mic;
-                tint: Audio.mic-muted ? Theme.faint : Theme.text;
-                clicked => { Audio.toggle-mic-mute(); }
-            }
-            Slider {
-                y: (parent.height - self.height) / 2;
-                value <=> Audio.mic-volume;
-                tint: Audio.mic-muted ? Theme.faint : Theme.good;
-                changed(v) => { Audio.set-mic-volume(v); }
-            }
-            Text {
-                width: 38px;
-                text: Math.round(Audio.mic-volume * 100) + "%";
-                color: Theme.dim;
-                font-size: Theme.font-small;
-                vertical-alignment: center;
-                horizontal-alignment: right;
-            }
+        if root.height > 130px: SliderRow {
+            value <=> Audio.mic-volume;
+            icon: Audio.mic-muted ? Icons.mic-off : Icons.mic;
+            icon-tint: Audio.mic-muted ? Theme.faint : Theme.text;
+            tint: Audio.mic-muted ? Theme.faint : Theme.good;
+            changed(v) => { Audio.set-mic-volume(v); }
+            icon-clicked => { Audio.toggle-mic-mute(); }
         }
         if root.show-apps && !root.picking: Rectangle {
             height: 1px;
@@ -448,28 +397,14 @@ export component AudioWidget inherits Rectangle {
                         overflow: elide;
                     }
                 }
-                HorizontalLayout {
-                    spacing: 8px;
-                    IconButton {
-                        size: 28px;
-                        icon: st.muted ? Icons.volume-mute : Icons.volume;
-                        tint: st.muted ? Theme.faint : Theme.text;
-                        clicked => { Audio.toggle-stream-mute(st.id); }
-                    }
-                    Slider {
-                        y: (parent.height - self.height) / 2;
-                        value <=> st.volume;
-                        tint: st.muted ? Theme.faint : Theme.accent;
-                        changed(v) => { Audio.set-stream-volume(st.id, v); }
-                    }
-                    Text {
-                        width: 38px;
-                        text: Math.round(st.volume * 100) + "%";
-                        color: Theme.dim;
-                        font-size: Theme.font-small;
-                        vertical-alignment: center;
-                        horizontal-alignment: right;
-                    }
+                SliderRow {
+                    value <=> st.volume;
+                    icon: st.muted ? Icons.volume-mute : Icons.volume;
+                    icon-tint: st.muted ? Theme.faint : Theme.text;
+                    icon-box: 28px;
+                    tint: st.muted ? Theme.faint : Theme.accent;
+                    changed(v) => { Audio.set-stream-volume(st.id, v); }
+                    icon-clicked => { Audio.toggle-stream-mute(st.id); }
                 }
             }
         }
@@ -486,31 +421,16 @@ export component BrightnessWidget inherits Rectangle {
         changed(v) => { Brightness.set(v); }
         clicked => { Brightness.set(Brightness.level > 0.6 ? 0.3 : 1.0); }
     }
-    if !root.round: HorizontalLayout {
+    if !root.round: SliderRow {
         padding-left: Theme.pad;
         padding-right: Theme.pad;
-        spacing: 8px;
-        Icon {
-            y: (parent.height - self.height) / 2;
-            source: Icons.sun;
-            size: 20px;
-            tint: Theme.warn;
-        }
-        Slider {
-            y: (parent.height - self.height) / 2;
-            value <=> Brightness.level;
-            tint: Theme.warn;
-            enabled: Brightness.available;
-            changed(v) => { Brightness.set(v); }
-        }
-        Text {
-            width: 38px;
-            text: Math.round(Brightness.level * 100) + "%";
-            color: Theme.dim;
-            font-size: Theme.font-small;
-            vertical-alignment: center;
-            horizontal-alignment: right;
-        }
+        value <=> Brightness.level;
+        icon: Icons.sun;
+        icon-tint: Theme.warn;
+        icon-clickable: false;
+        tint: Theme.warn;
+        enabled: Brightness.available;
+        changed(v) => { Brightness.set(v); }
     }
 }
 

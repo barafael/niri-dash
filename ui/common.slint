@@ -24,7 +24,7 @@ export component IconButton inherits Rectangle {
     border-radius: min(self.height / 2, Theme.radius-small);
     background: active ? Theme.accent-soft : touch.pressed ? Theme.pressed : touch.has-hover ? Theme.hover : fill;
     opacity: enabled ? 1 : 0.4;
-    animate background { duration: 100ms; }
+    animate background { duration: 100ms * Theme.motion; }
     Icon {
         source: root.icon;
         size: root.icon-size;
@@ -84,7 +84,7 @@ export component Switch inherits Rectangle {
     border-radius: min(self.height / 2, Theme.radius-small);
     background: checked ? Theme.accent : Theme.track;
     opacity: enabled ? 1 : 0.4;
-    animate background { duration: 120ms; }
+    animate background { duration: 120ms * Theme.motion; }
     Rectangle {
         width: 16px;
         height: 16px;
@@ -92,7 +92,7 @@ export component Switch inherits Rectangle {
         y: 3px;
         x: root.checked ? root.width - self.width - 3px : 3px;
         background: root.checked ? Theme.on-accent : Theme.dim;
-        animate x { duration: 120ms; easing: ease-out; }
+        animate x { duration: 120ms * Theme.motion; easing: ease-out; }
     }
     TouchArea {
         enabled: root.enabled;
@@ -132,6 +132,112 @@ export component Ring inherits Rectangle {
         commands: "M 50 " + (50 - root.r) + " A " + root.r + " " + root.r + " 0 " + (root.v > 0.5 ? "1" : "0") + " 1 "
             + (50 + root.r * sin(root.v * 360deg)) + " " + (50 - root.r * cos(root.v * 360deg));
     }
+}
+
+// A thin progress bar, `value` in 0..1.
+export component Bar inherits Rectangle {
+    in property <float> value;
+    in property <color> tint: Theme.accent;
+    in property <length> thickness: 6px;
+    // Usage rather than progress: nearly full shows in the bad color.
+    in property <bool> high-is-bad: true;
+    height: root.thickness;
+    border-radius: root.thickness / 2;
+    background: Theme.track;
+    Rectangle {
+        x: 0;
+        width: parent.width * clamp(root.value, 0, 1);
+        border-radius: parent.border-radius;
+        background: root.high-is-bad && root.value > 0.9 ? Theme.bad : root.tint;
+    }
+}
+
+// A round widget's gauge: a ring (and an inner one for a second value, if `inner` is set) around
+// a big figure and a caption, or around the children.
+export component RoundGauge inherits Rectangle {
+    in property <float> value;
+    in property <float> inner: -1;
+    in property <color> tint: Theme.accent;
+    in property <color> inner-tint: Theme.good;
+    // Usage rather than progress: a nearly full outer ring shows in the bad color.
+    in property <bool> high-is-bad: true;
+    in property <string> big;
+    in property <string> caption;
+    Ring {
+        width: 100%;
+        height: 100%;
+        value: root.value;
+        thickness: max(6px, root.width * 0.06);
+        tint: root.high-is-bad && root.value > 0.9 ? Theme.bad : root.tint;
+    }
+    if root.inner >= 0: Ring {
+        width: 76%;
+        height: 76%;
+        value: root.inner;
+        thickness: max(5px, root.width * 0.05);
+        tint: root.inner-tint;
+    }
+    VerticalLayout {
+        alignment: center;
+        if root.big != "": Text {
+            text: root.big;
+            horizontal-alignment: center;
+            font-size: max(13px, root.width * 0.15);
+            font-weight: Theme.font-weight-display;
+            color: Theme.text;
+        }
+        if root.caption != "": Text {
+            text: root.caption;
+            horizontal-alignment: center;
+            font-size: max(9px, root.width * 0.06);
+            color: Theme.dim;
+            overflow: elide;
+        }
+        @children
+    }
+}
+
+// A round widget's face: a big icon over a title and a caption, each shown if set. `on` tints the
+// background; a child TouchArea makes it a button.
+export component RoundFace inherits Rectangle {
+    in property <image> icon;
+    // `transparent` keeps the icon's own colors (an app icon).
+    in property <color> tint: Theme.dim;
+    in property <string> title;
+    // The title is a figure (a temperature): bigger, in the display weight.
+    in property <bool> big;
+    in property <string> caption;
+    in property <bool> on;
+    border-radius: self.width / 2;
+    background: root.on ? Theme.accent-soft : transparent;
+    VerticalLayout {
+        alignment: center;
+        spacing: 2px;
+        HorizontalLayout {
+            alignment: center;
+            Icon {
+                source: root.icon;
+                size: root.width * 0.3;
+                tint: root.tint;
+            }
+        }
+        if root.title != "": Text {
+            text: root.title;
+            horizontal-alignment: center;
+            font-size: root.big ? root.width * 0.2 : max(11px, root.width * 0.085);
+            font-weight: root.big ? Theme.font-weight-display : 400;
+            color: Theme.text;
+            overflow: elide;
+        }
+        if root.caption != "": Text {
+            text: root.caption;
+            horizontal-alignment: center;
+            font-size: max(10px, root.width * 0.075);
+            color: Theme.dim;
+            overflow: elide;
+        }
+    }
+    @children
 }
 
 // A history line chart, newest sample on the right, `capacity` samples wide. A Path keeps its
@@ -245,6 +351,52 @@ export component Slider inherits Rectangle {
     }
 }
 
+// An icon, a slider and the value in percent. The icon is a button unless `icon-clickable` is off.
+export component SliderRow inherits HorizontalLayout {
+    in-out property <float> value;
+    in property <image> icon;
+    in property <color> icon-tint: Theme.text;
+    in property <bool> icon-clickable: true;
+    in property <length> icon-box: 32px;
+    in property <color> tint: Theme.accent;
+    in property <bool> enabled: true;
+    callback changed(float);
+    callback icon-clicked();
+    spacing: 8px;
+    if root.icon-clickable: IconButton {
+        y: (parent.height - self.height) / 2;
+        size: root.icon-box;
+        icon: root.icon;
+        tint: root.icon-tint;
+        clicked => { root.icon-clicked(); }
+    }
+    if !root.icon-clickable: Rectangle {
+        y: (parent.height - self.height) / 2;
+        width: root.icon-box;
+        height: root.icon-box;
+        Icon {
+            source: root.icon;
+            size: root.icon-box * 0.55;
+            tint: root.icon-tint;
+        }
+    }
+    Slider {
+        y: (parent.height - self.height) / 2;
+        value <=> root.value;
+        tint: root.tint;
+        enabled: root.enabled;
+        changed(v) => { root.changed(v); }
+    }
+    Text {
+        width: 38px;
+        text: Math.round(root.value * 100) + "%";
+        color: Theme.dim;
+        font-size: Theme.font-small;
+        vertical-alignment: center;
+        horizontal-alignment: right;
+    }
+}
+
 // Round knob: a ring showing `value`; scroll adjusts, click calls `clicked`.
 export component RingKnob inherits Rectangle {
     in-out property <float> value;
@@ -289,13 +441,14 @@ export component RingKnob inherits Rectangle {
     }
 }
 
+// A widget's title row; the icon is optional, the children go on the right.
 export component Header inherits HorizontalLayout {
     in property <image> icon;
     in property <string> title;
     in property <color> icon-color: Theme.dim;
     spacing: 8px;
     height: 28px;
-    Icon {
+    if root.icon.width > 0: Icon {
         y: (parent.height - self.height) / 2;
         source: root.icon;
         size: 18px;
@@ -336,6 +489,15 @@ export component Row inherits Rectangle {
         }
     }
     @children
+}
+
+// A small heading over a group of rows.
+export component SectionLabel inherits Text {
+    font-size: Theme.font-small;
+    font-weight: 600;
+    color: Theme.faint;
+    vertical-alignment: bottom;
+    overflow: elide;
 }
 
 export component Muted inherits Text {

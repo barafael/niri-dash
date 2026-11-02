@@ -1,6 +1,6 @@
 import { Theme, Icons } from "../theme.slint";
 import { Clock, Calendar, CalDay, WidgetOpts, ZoneTime } from "../data.slint";
-import { IconButton } from "../common.slint";
+import { IconButton, Header } from "../common.slint";
 
 component Hand inherits Path {
     in property <angle> angle;
@@ -201,16 +201,9 @@ export component CalendarWidget inherits Rectangle {
     if !root.round: VerticalLayout {
         padding: Theme.pad;
         spacing: 6px;
-        HorizontalLayout {
-            height: 30px;
-            Text {
-                text: Calendar.title;
-                font-size: Theme.font-title;
-                font-weight: 600;
-                color: Theme.text;
-                vertical-alignment: center;
-                horizontal-stretch: 1;
-            }
+        Header {
+            title: Calendar.title;
+            spacing: 0px;
             IconButton {
                 icon: Icons.chevron-left;
                 size: 28px;

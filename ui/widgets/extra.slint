@@ -1,6 +1,6 @@
 import { Theme, Icons } from "../theme.slint";
 import { Claude, Clipboard, Weather, Shell } from "../data.slint";
-import { Icon, IconButton, TextButton, Ring, Header, Row, Muted, Empty, ScrollList } from "../common.slint";
+import { Icon, IconButton, TextButton, Ring, Header, Row, Muted, Empty, ScrollList, RoundFace } from "../common.slint";
 
 // A session's status: accent with a halo while working. Deliberately still: any animation here
 // means a redraw several times a second, and every frame makes the compositor recomposite the
@@ -103,23 +103,10 @@ export component ClaudeWidget inherits Rectangle {
 
 export component ClipboardWidget inherits Rectangle {
     in property <bool> round;
-    if root.round: VerticalLayout {
-        alignment: center;
-        spacing: 2px;
-        HorizontalLayout {
-            alignment: center;
-            Icon {
-                source: Icons.clipboard;
-                size: root.width * 0.3;
-                tint: Clipboard.items.length > 0 ? Theme.accent : Theme.faint;
-            }
-        }
-        Text {
-            text: Clipboard.items.length + " items";
-            horizontal-alignment: center;
-            font-size: max(10px, root.width * 0.08);
-            color: Theme.dim;
-        }
+    if root.round: RoundFace {
+        icon: Icons.clipboard;
+        tint: Clipboard.items.length > 0 ? Theme.accent : Theme.faint;
+        caption: Clipboard.items.length + " items";
     }
     if !root.round: VerticalLayout {
         padding: Theme.pad;
@@ -195,31 +182,12 @@ export component WeatherWidget inherits Rectangle {
             text: Weather.error != "" ? Weather.error : "Loading weather…";
         }
     }
-    if Weather.loaded && root.round: VerticalLayout {
-        alignment: center;
-        spacing: 0px;
-        HorizontalLayout {
-            alignment: center;
-            Icon {
-                source: Icons.weather(Weather.icon);
-                size: root.width * 0.3;
-                tint: Theme.warn;
-            }
-        }
-        Text {
-            text: Weather.temp;
-            horizontal-alignment: center;
-            font-size: root.width * 0.2;
-            font-weight: Theme.font-weight-display;
-            color: Theme.text;
-        }
-        Text {
-            text: Weather.place;
-            horizontal-alignment: center;
-            font-size: max(9px, root.width * 0.065);
-            color: Theme.dim;
-            overflow: elide;
-        }
+    if Weather.loaded && root.round: RoundFace {
+        icon: Icons.weather(Weather.icon);
+        tint: Theme.warn;
+        title: Weather.temp;
+        big: true;
+        caption: Weather.place;
     }
     if Weather.loaded && !root.round: VerticalLayout {
         padding: Theme.pad;

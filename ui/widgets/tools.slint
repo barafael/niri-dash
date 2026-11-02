@@ -2,7 +2,7 @@
 import { Theme, Icons } from "../theme.slint";
 import { KeyboardLayouts, LayoutItem, ColorPicker, PickedColor, Countdown, Notes, Shell, WidgetOpts } from "../data.slint";
 import { TextEdit } from "std-widgets.slint";
-import { Icon, IconButton, TextButton, Header, Row, Muted, ScrollList, Ring } from "../common.slint";
+import { Icon, IconButton, TextButton, Header, Row, Muted, ScrollList, Ring, Bar } from "../common.slint";
 
 // Scrolls through a list of choices a notch at a time, also with touchpads' small steps.
 component NotchScroll inherits TouchArea {
@@ -310,16 +310,11 @@ export component TimerWidget inherits Rectangle {
                 stopwatch: root.sw;
             }
         }
-        if !root.sw && (Countdown.running || Countdown.paused): Rectangle {
-            height: 4px;
-            border-radius: 2px;
-            background: Theme.track;
-            Rectangle {
-                x: 0;
-                width: parent.width * Countdown.fraction;
-                border-radius: 2px;
-                background: Countdown.paused ? Theme.faint : Theme.accent;
-            }
+        if !root.sw && (Countdown.running || Countdown.paused): Bar {
+            value: Countdown.fraction;
+            tint: Countdown.paused ? Theme.faint : Theme.accent;
+            thickness: 4px;
+            high-is-bad: false;
         }
         if !root.sw && root.extras: HorizontalLayout {
             spacing: 6px;

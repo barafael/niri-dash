@@ -1,58 +1,22 @@
 import { LineEdit } from "std-widgets.slint";
 import { Theme, Icons } from "../theme.slint";
 import { Wifi, Bluetooth } from "../data.slint";
-import { Icon, IconButton, TextButton, Switch, Header, Row, Muted, Empty, SignalBars, ScrollList } from "../common.slint";
-
-component RoundToggle inherits Rectangle {
-    in property <image> icon;
-    in property <bool> on;
-    in property <string> line1;
-    in property <string> line2;
-    callback toggled();
-    border-radius: self.width / 2;
-    background: on ? Theme.accent-soft : transparent;
-    VerticalLayout {
-        alignment: center;
-        spacing: 2px;
-        HorizontalLayout {
-            alignment: center;
-            Icon {
-                source: root.icon;
-                size: root.width * 0.3;
-                tint: root.on ? Theme.accent : Theme.faint;
-            }
-        }
-        Text {
-            text: root.line1;
-            horizontal-alignment: center;
-            font-size: max(11px, root.width * 0.085);
-            color: Theme.text;
-            overflow: elide;
-        }
-        Text {
-            text: root.line2;
-            horizontal-alignment: center;
-            font-size: max(9px, root.width * 0.06);
-            color: Theme.dim;
-            overflow: elide;
-        }
-    }
-    TouchArea {
-        clicked => { root.toggled(); }
-    }
-}
+import { Icon, IconButton, TextButton, Switch, Header, Row, Muted, Empty, SignalBars, ScrollList, RoundFace } from "../common.slint";
 
 export component WifiWidget inherits Rectangle {
     in property <bool> round;
     // SSID waiting for a password, if any.
     property <string> asking;
     property <bool> asking-open: self.asking != "";
-    if root.round: RoundToggle {
+    if root.round: RoundFace {
         icon: Wifi.enabled ? Icons.wifi : Icons.wifi-off;
         on: Wifi.enabled && Wifi.ssid != "";
-        line1: !Wifi.available ? "No Wi-Fi" : !Wifi.enabled ? "Off" : Wifi.ssid != "" ? Wifi.ssid : "Not connected";
-        line2: Wifi.enabled && Wifi.ssid != "" ? Wifi.signal + "%" : "";
-        toggled => { Wifi.toggle(); }
+        tint: self.on ? Theme.accent : Theme.faint;
+        title: !Wifi.available ? "No Wi-Fi" : !Wifi.enabled ? "Off" : Wifi.ssid != "" ? Wifi.ssid : "Not connected";
+        caption: Wifi.enabled && Wifi.ssid != "" ? Wifi.signal + "%" : "";
+        TouchArea {
+            clicked => { Wifi.toggle(); }
+        }
     }
     if !root.round: VerticalLayout {
         padding: Theme.pad;
@@ -173,11 +137,14 @@ export component WifiWidget inherits Rectangle {
 
 export component BluetoothWidget inherits Rectangle {
     in property <bool> round;
-    if root.round: RoundToggle {
+    if root.round: RoundFace {
         icon: Icons.bluetooth;
         on: Bluetooth.powered;
-        line1: !Bluetooth.available ? "No adapter" : !Bluetooth.powered ? "Off" : Bluetooth.connected-count > 0 ? Bluetooth.connected-count + " connected" : "On";
-        toggled => { Bluetooth.toggle(); }
+        tint: self.on ? Theme.accent : Theme.faint;
+        title: !Bluetooth.available ? "No adapter" : !Bluetooth.powered ? "Off" : Bluetooth.connected-count > 0 ? Bluetooth.connected-count + " connected" : "On";
+        TouchArea {
+            clicked => { Bluetooth.toggle(); }
+        }
     }
     if !root.round: VerticalLayout {
         padding: Theme.pad;

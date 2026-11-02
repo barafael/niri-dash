@@ -1,31 +1,13 @@
 import { Theme, Icons } from "../theme.slint";
 import { Windows, Notifications, Tray, Media, Shell } from "../data.slint";
-import { Icon, IconButton, TextButton, Ring, Header, Row, Muted, Empty, ScrollList } from "../common.slint";
+import { Icon, IconButton, TextButton, Ring, Header, Row, Muted, Empty, ScrollList, RoundFace, SectionLabel, Bar } from "../common.slint";
 
 export component WindowsWidget inherits Rectangle {
     in property <bool> round;
-    if root.round: VerticalLayout {
-        alignment: center;
-        spacing: 4px;
-        HorizontalLayout {
-            alignment: center;
-            if Windows.has-focused-icon: Image {
-                source: Windows.focused-icon;
-                width: root.width * 0.34;
-                height: self.width;
-            }
-            if !Windows.has-focused-icon: Icon {
-                source: Icons.window;
-                size: root.width * 0.3;
-                tint: Theme.dim;
-            }
-        }
-        Text {
-            text: Windows.count + " windows";
-            horizontal-alignment: center;
-            font-size: max(10px, root.width * 0.075);
-            color: Theme.dim;
-        }
+    if root.round: RoundFace {
+        icon: Windows.has-focused-icon ? Windows.focused-icon : Icons.window;
+        tint: Windows.has-focused-icon ? transparent : Theme.dim;
+        caption: Windows.count + " windows";
     }
     if !root.round: VerticalLayout {
         padding: Theme.pad;
@@ -45,15 +27,10 @@ export component WindowsWidget inherits Rectangle {
             vertical-stretch: 1;
             for w in Windows.items: Rectangle {
                 height: w.header ? 26px : 38px;
-                if w.header: Text {
+                if w.header: SectionLabel {
                     x: 6px;
                     width: parent.width - 12px;
                     text: w.title;
-                    font-size: Theme.font-small;
-                    font-weight: 600;
-                    color: Theme.faint;
-                    vertical-alignment: bottom;
-                    overflow: elide;
                 }
                 if !w.header: Row {
                     height: parent.height - 2px;
@@ -110,26 +87,11 @@ export component WindowsWidget inherits Rectangle {
 
 export component NotificationsWidget inherits Rectangle {
     in property <bool> round;
-    if root.round: Rectangle {
-        VerticalLayout {
-            alignment: center;
-            spacing: 2px;
-            HorizontalLayout {
-                alignment: center;
-                Icon {
-                    source: Notifications.dnd ? Icons.bell-off : Icons.bell;
-                    size: root.width * 0.3;
-                    tint: Notifications.dnd ? Theme.warn : Notifications.items.length > 0 ? Theme.accent : Theme.faint;
-                }
-            }
-            Text {
-                text: Notifications.dnd ? (Notifications.missed > 0 ? Notifications.missed + " missed" : "Paused")
-                    : Notifications.items.length == 0 ? "None" : Notifications.items.length + " new";
-                horizontal-alignment: center;
-                font-size: max(10px, root.width * 0.08);
-                color: Theme.dim;
-            }
-        }
+    if root.round: RoundFace {
+        icon: Notifications.dnd ? Icons.bell-off : Icons.bell;
+        tint: Notifications.dnd ? Theme.warn : Notifications.items.length > 0 ? Theme.accent : Theme.faint;
+        caption: Notifications.dnd ? (Notifications.missed > 0 ? Notifications.missed + " missed" : "Paused")
+            : Notifications.items.length == 0 ? "None" : Notifications.items.length + " new";
     }
     // The do-not-disturb choices are showing.
     property <bool> choosing;
@@ -409,16 +371,10 @@ export component MediaWidget inherits Rectangle {
                     visible: Media.available;
                     horizontal-alignment: Media.has-art ? left : center;
                 }
-                if Media.available: Rectangle {
-                    height: 4px;
-                    border-radius: 2px;
-                    background: Theme.track;
-                    Rectangle {
-                        x: 0;
-                        width: parent.width * clamp(Media.progress, 0, 1);
-                        border-radius: 2px;
-                        background: Theme.accent;
-                    }
+                if Media.available: Bar {
+                    value: Media.progress;
+                    thickness: 4px;
+                    high-is-bad: false;
                 }
             }
         }
