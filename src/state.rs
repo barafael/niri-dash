@@ -1,30 +1,13 @@
-//! Runtime state the daemon keeps across restarts: night light, do not disturb, the timer and the
-//! picked colors. It lives in `~/.local/state/niri-dash/state.json`; config.kdl stays the
+//! Runtime state the daemon keeps across restarts: do not disturb, the timer and the picked
+//! colors. It lives in `~/.local/state/niri-dash/state.json`; config.kdl stays the
 //! user's hand-written file and isn't touched for these.
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct NightLight {
-    pub on: bool,
-    pub kelvin: u32,
-}
-
-impl Default for NightLight {
-    fn default() -> Self {
-        Self {
-            on: false,
-            kelvin: 4500,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct State {
-    pub night_light: NightLight,
     /// Do not disturb: off when absent, until this time (Unix seconds), or `i64::MAX` for
     /// "until turned off".
     pub dnd_until: Option<i64>,
@@ -74,10 +57,9 @@ mod tests {
         };
         let text = serde_json::to_string(&s).unwrap();
         assert_eq!(serde_json::from_str::<State>(&text).unwrap(), s);
-        // Older or hand-edited files with fields missing still load.
-        let s: State = serde_json::from_str(r#"{"night_light":{"on":true}}"#).unwrap();
-        assert!(s.night_light.on);
-        assert_eq!(s.night_light.kelvin, 4500);
+        // Files with fields missing, or ones it doesn't know, still load.
+        let s: State = serde_json::from_str(r#"{"timer_secs":60,"other":1}"#).unwrap();
+        assert_eq!(s.timer_secs, 60);
         assert_eq!(s.dnd_until, None);
     }
 }
