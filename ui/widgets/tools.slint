@@ -1,7 +1,6 @@
 // Small tools: keyboard layout, color picker, timer and stopwatch, sticky notes.
 import { Theme, Icons } from "../theme.slint";
 import { KeyboardLayouts, LayoutItem, ColorPicker, PickedColor, Countdown, Notes, Shell, WidgetOpts } from "../data.slint";
-import { TextEdit } from "std-widgets.slint";
 import { Icon, IconButton, TextButton, Header, Row, Muted, ScrollList, Ring, Bar } from "../common.slint";
 
 // Scrolls through a list of choices a notch at a time, also with touchpads' small steps.
@@ -71,7 +70,7 @@ export component KeyboardLayoutWidget inherits Rectangle {
                         y: (parent.height - self.height) / 2;
                         width: 34px;
                         height: 22px;
-                        border-radius: 6px;
+                        border-radius: min(6px, Theme.radius-small);
                         background: i == KeyboardLayouts.current ? Theme.accent : Theme.card-raised;
                         Text {
                             text: l.short;
@@ -99,7 +98,7 @@ component CopyText inherits Rectangle {
     in property <length> font: Theme.font-body;
     in property <color> tint: Theme.text;
     height: 24px;
-    border-radius: 6px;
+    border-radius: min(6px, Theme.radius-small);
     background: touch.pressed ? Theme.pressed : touch.has-hover ? Theme.hover : transparent;
     Text {
         x: 6px;
@@ -361,13 +360,83 @@ export component TimerWidget inherits Rectangle {
     }
 }
 
+// A note's text area in the theme's colors (std-widgets' TextEdit only has a light and a dark
+// look). Scrolls to keep the cursor in view.
+component NoteEdit inherits Rectangle {
+    in-out property <string> text <=> input.text;
+    in property <string> placeholder-text;
+    callback edited(string);
+    property <length> line: input.font-size * 1.4;
+    border-radius: Theme.radius-small;
+    background: Theme.subtle;
+    border-width: 1px;
+    border-color: input.has-focus ? Theme.accent : Theme.border;
+    forward-focus: input;
+    ContextMenuArea {
+        Menu {
+            MenuItem {
+                title: "Cut";
+                activated => { input.cut(); }
+            }
+            MenuItem {
+                title: "Copy";
+                enabled: root.text != "";
+                activated => { input.copy(); }
+            }
+            MenuItem {
+                title: "Paste";
+                activated => { input.paste(); }
+            }
+            MenuItem {
+                title: "Select All";
+                enabled: root.text != "";
+                activated => { input.select-all(); }
+            }
+        }
+        flick := Flickable {
+            x: Theme.pad-tight;
+            y: Theme.pad-tight;
+            width: parent.width - 2 * Theme.pad-tight;
+            height: parent.height - 2 * Theme.pad-tight;
+            content-height: max(self.height, input.preferred-height);
+            input := TextInput {
+                width: flick.width;
+                single-line: false;
+                wrap: word-wrap;
+                font-size: Theme.font-body;
+                color: Theme.text;
+                selection-background-color: Theme.accent-soft;
+                selection-foreground-color: Theme.text;
+                page-height: flick.height;
+                edited => { root.edited(self.text); }
+                cursor-position-changed(cpos) => {
+                    if (cpos.y + flick.content-y < 0px) {
+                        flick.content-y = -cpos.y;
+                    } else if (cpos.y + flick.content-y > flick.height - root.line) {
+                        flick.content-y = min(0px, flick.height - cpos.y - root.line);
+                    }
+                }
+            }
+        }
+    }
+    Text {
+        x: flick.x;
+        y: flick.y;
+        width: flick.width;
+        text: root.text == "" && input.preedit-text == "" ? root.placeholder-text : "";
+        font-size: input.font-size;
+        color: Theme.faint;
+        overflow: elide;
+    }
+}
+
 export component NotesWidget inherits Rectangle {
     in property <int> id;
     property <string> text: root.id < Notes.texts.length ? Notes.texts[root.id] : "";
     property <string> name: root.id < Notes.names.length ? Notes.names[root.id] : "Notes";
     VerticalLayout {
         padding: Theme.pad;
-        padding-top: root.height > 150px ? Theme.pad : 8px;
+        padding-top: root.height > 150px ? Theme.pad : Theme.pad-tight;
         spacing: 6px;
         if root.height > 150px: Header {
             icon: Icons.note;
@@ -383,12 +452,10 @@ export component NotesWidget inherits Rectangle {
                 }
                 reject
             }
-            edit := TextEdit {
+            NoteEdit {
                 width: 100%;
                 height: 100%;
                 text: root.text;
-                wrap: word-wrap;
-                font-size: Theme.font-body;
                 placeholder-text: "Write something…";
                 edited(t) => { Notes.edited(root.id, t); }
             }

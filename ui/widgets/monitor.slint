@@ -296,7 +296,7 @@ export component ClaudeUsageWidget inherits Rectangle {
             height: 18px;
             for m in ClaudeUsage.models: Rectangle {
                 horizontal-stretch: max(0.15, m.share);
-                border-radius: 4px;
+                border-radius: min(4px, Theme.radius-small);
                 background: Theme.card-raised;
                 Text {
                     text: m.name + " " + Math.round(m.share * 100) + "%";

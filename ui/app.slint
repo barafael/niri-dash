@@ -2,7 +2,7 @@ import { Theme, Icons } from "theme.slint";
 import { WidgetInst, WidgetKind, Shape, PaletteItem, Tray, MenuToggle, DrawerTab, PointerShape } from "data.slint";
 import { Icon, IconButton, TextButton, Muted, Switch, SectionLabel } from "common.slint";
 import { WidgetFrame, WidgetBody } from "frame.slint";
-import { LineEdit } from "std-widgets.slint";
+import { LineEdit, Palette } from "std-widgets.slint";
 
 export { Theme, Icons }
 export * from "data.slint";
@@ -315,6 +315,14 @@ export component Dash inherits Window {
     property <float> edit-fade: self.editing ? 1 : 0;
     animate edit-fade { duration: 160ms * Theme.motion; easing: ease-out; }
     out property <PointerShape> cursor;
+    // Slint's own inputs (LineEdit, TextEdit) come in a light and a dark variant: the one that
+    // matches the cards.
+    property <bool> light-cards: Theme.card.to-hsv().value > 0.5;
+    function match-inputs() {
+        Palette.color-scheme = self.light-cards ? ColorScheme.light : ColorScheme.dark;
+    }
+    init => { self.match-inputs(); }
+    changed light-cards => { self.match-inputs(); }
     changed editing => {
         if (!self.editing) {
             self.cursor = PointerShape.normal;

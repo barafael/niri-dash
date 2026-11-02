@@ -44,10 +44,10 @@ export component WifiWidget inherits Rectangle {
         }
         if root.asking-open: Rectangle {
             height: 76px;
-            border-radius: 12px;
+            border-radius: Theme.radius-small;
             background: Theme.card-raised;
             VerticalLayout {
-                padding: 8px;
+                padding: Theme.pad-tight;
                 spacing: 6px;
                 Muted {
                     text: "Password for " + root.asking;

@@ -311,7 +311,7 @@ export component AudioWidget inherits Rectangle {
         }
         if root.can-pick: Rectangle {
             height: 24px;
-            border-radius: 6px;
+            border-radius: min(6px, Theme.radius-small);
             background: pick-touch.has-hover ? Theme.hover : transparent;
             HorizontalLayout {
                 padding-left: 4px;
@@ -516,7 +516,7 @@ export component SessionWidget inherits Rectangle {
         }
     }
     if !root.round: HorizontalLayout {
-        padding: 10px;
+        padding: Theme.pad-tight;
         spacing: 8px;
         if root.opts.lock: SessionButton {
             icon: Icons.lock;

@@ -154,7 +154,7 @@ export component NotificationsWidget inherits Rectangle {
                 card := Rectangle {
                     y: 0;
                     height: self.preferred-height;
-                    border-radius: 12px;
+                    border-radius: Theme.radius-small;
                     background: ta.has-hover ? Theme.card-raised.brighter(0.15) : Theme.card-raised;
                     border-width: n.urgent ? 1px : 0;
                     border-color: Theme.bad;
@@ -167,7 +167,7 @@ export component NotificationsWidget inherits Rectangle {
                         }
                     }
                     HorizontalLayout {
-                        padding: 10px;
+                        padding: Theme.pad-tight;
                         spacing: 10px;
                         if n.has-icon: Image {
                             source: n.icon;
@@ -218,7 +218,7 @@ export component NotificationsWidget inherits Rectangle {
 
 export component TrayWidget inherits Rectangle {
     in property <bool> round;
-    property <length> inset: root.round ? root.width * 0.17 : 10px;
+    property <length> inset: root.round ? root.width * 0.17 : Theme.pad-tight;
     property <length> slot: root.round ? max(28px, (root.width - 2 * self.inset) / 3) : min(44px, root.height - 2 * self.inset);
     property <int> per-row: max(1, floor((root.width - 2 * self.inset) / self.slot));
     if Tray.items.length == 0: Empty {
@@ -290,12 +290,12 @@ export component MediaWidget inherits Rectangle {
     // One lane (a single cell tall): art, title, controls side by side.
     property <bool> lane: root.height < 120px;
     if !root.round && root.lane: HorizontalLayout {
-        padding-left: 10px;
-        padding-right: 10px;
+        padding-left: Theme.pad-tight;
+        padding-right: Theme.pad-tight;
         spacing: 10px;
         if Media.has-art: Image {
             y: (parent.height - self.height) / 2;
-            width: min(48px, root.height - 20px);
+            width: min(48px, root.height - 2 * Theme.pad-tight);
             height: self.width;
             source: Media.art;
             image-fit: cover;
@@ -342,7 +342,7 @@ export component MediaWidget inherits Rectangle {
         }
     }
     if !root.round && !root.lane: VerticalLayout {
-        padding: 12px;
+        padding: Theme.pad-tight;
         spacing: 6px;
         alignment: center;
         // Art and text on top, the controls centered underneath.
@@ -350,7 +350,7 @@ export component MediaWidget inherits Rectangle {
             spacing: 12px;
             vertical-stretch: 1;
             if Media.has-art: Image {
-                width: max(0px, root.height - 24px - 46px);
+                width: max(0px, root.height - 2 * Theme.pad-tight - 46px);
                 source: Media.art;
                 image-fit: cover;
             }

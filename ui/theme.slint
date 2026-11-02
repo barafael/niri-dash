@@ -27,6 +27,8 @@ export global Theme {
     in-out property <length> radius-small: 12px;
     in-out property <length> gap: 7px;
     in-out property <length> pad: 16px;
+    // For widgets whose content wants the room, and for cards inside a widget.
+    out property <length> pad-tight: max(6px, self.pad * 0.6);
     in-out property <length> font-small: 12px;
     in-out property <length> font-body: 14px;
     in-out property <length> font-title: 15px;

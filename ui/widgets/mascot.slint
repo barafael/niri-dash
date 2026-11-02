@@ -147,7 +147,7 @@ export component MascotWidget inherits Rectangle {
     // The bubble's own colours, the tooltip yellow of the assistant they parody.
     property <color> paper: #ffffe1;
     property <color> ink: #1d2733;
-    property <length> edge: max(6px, Theme.pad * 0.6);
+    property <length> edge: Theme.pad-tight;
 
     // Out from behind the bottom edge. Ducks for a moment on every new line.
     property <bool> up: true;
