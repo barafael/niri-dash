@@ -240,9 +240,14 @@ component ChoiceCard inherits Rectangle {
                 color: Theme.text;
                 overflow: elide;
             }
-            Muted {
+            // Text rather than Muted: in several color schemes `dim` is too faint on the
+            // raised and accent-tinted card backgrounds.
+            Text {
                 text: root.description;
                 visible: self.text != "";
+                color: Theme.text;
+                font-size: Theme.font-small;
+                overflow: elide;
             }
         }
         if root.current: Icon {
@@ -876,15 +881,18 @@ export component Dash inherits Window {
                         clicked => { root.choose-style(st.name); }
                         // Two cards with the style's corner radius and gap, scaled down. They sit
                         // in one rectangle that fills the preview slot: `parent` of the slot's
-                        // direct children would be the whole card.
+                        // direct children would be the whole card. They are drawn in the text
+                        // color, which every color scheme keeps legible on the sidebar; the
+                        // scheme's own card and border colors are too close to it to show the
+                        // shapes.
                         Rectangle {
                             for i in 2: Rectangle {
                                 x: i * (parent.width - self.width);
                                 width: (parent.width - st.gap * 0.6px) / 2;
                                 border-radius: min(self.width / 2, st.radius * 0.45px);
-                                background: Theme.card;
+                                background: Theme.text.with-alpha(0.16);
                                 border-width: 1px;
-                                border-color: Theme.border;
+                                border-color: Theme.text.with-alpha(0.55);
                             }
                         }
                     }
