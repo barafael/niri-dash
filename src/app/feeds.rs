@@ -7,7 +7,8 @@ use crate::sources::{self, IconSrc, niri, tray};
 use crate::{
     Bluetooth as UiBluetooth, BtDevice, Claude as UiClaude, ClaudeSession, Control, Dash,
     Media as UiMedia, MenuEntry, Perf, Tray as UiTray, TrayItem, Weather as UiWeather, WeatherDay,
-    Wifi as UiWifi, WifiNet, WinItem, Windows as UiWindows,
+    Wifi as UiWifi, WifiDetail, WifiFact, WifiNet, WifiPrompt, WifiSaved, WinItem,
+    Windows as UiWindows,
 };
 use slint::ComponentHandle;
 use std::rc::Rc;
@@ -177,27 +178,108 @@ impl App {
     }
 
     pub(super) fn show_wifi(&self, s: sources::wifi::State) {
+        use sources::wifi::{Activity, PromptKind};
         let ui = self.ui();
         let w = ui.global::<UiWifi>();
         w.set_available(s.available);
         w.set_enabled(s.enabled);
-        w.set_ssid(s.ssid.into());
+        w.set_blocked(s.blocked);
+        w.set_ssid(s.ssid.as_str().into());
         w.set_signal(s.signal);
-        w.set_status(s.activity.to_string().into());
-        w.set_needs_password(match &s.activity {
-            sources::wifi::Activity::NeedsPassword(ssid) => ssid.as_str().into(),
-            _ => Default::default(),
+        w.set_connecting(s.connecting.as_str().into());
+        let status = match &s.activity {
+            Activity::Idle if !s.connecting.is_empty() => {
+                format!("Connecting to {}…", s.connecting)
+            }
+            a => a.to_string(),
+        };
+        w.set_status(status.into());
+        w.set_failed(matches!(s.activity, Activity::Failed(_)));
+        w.set_scanning(s.scanning);
+        w.set_portal(s.link.connectivity == sources::wifi::Connectivity::Portal);
+        w.set_prompt(match &s.prompt {
+            Some(p) => WifiPrompt {
+                ssid: p.ssid.as_str().into(),
+                kind: match p.kind {
+                    PromptKind::Password => 0,
+                    PromptKind::Wep => 1,
+                    PromptKind::Enterprise => 2,
+                },
+                retry: p.retry,
+                new: p.new,
+                identity: p.identity.as_str().into(),
+                message: p.message.as_str().into(),
+            },
+            None => WifiPrompt::default(),
         });
-        w.set_busy(s.activity.busy());
+        w.set_detail(match &s.detail {
+            Some(d) => WifiDetail {
+                ssid: d.ssid.as_str().into(),
+                in_range: d.network.is_some(),
+                active: d.network.as_ref().is_some_and(|n| n.active),
+                known: d.profile.is_some(),
+                uuid: d
+                    .profile
+                    .as_ref()
+                    .map(|p| p.uuid.as_str())
+                    .unwrap_or_default()
+                    .into(),
+                autoconnect: d.profile.as_ref().is_some_and(|p| p.autoconnect),
+                facts: model(
+                    sources::wifi::facts(d, &s.link)
+                        .into_iter()
+                        .map(|(label, value)| WifiFact {
+                            label: label.into(),
+                            value: value.into(),
+                        })
+                        .collect(),
+                ),
+            },
+            None => WifiDetail::default(),
+        });
+        w.set_revealed(s.secret.is_some());
+        w.set_password(
+            s.secret
+                .as_ref()
+                .map(|x| x.password.as_str())
+                .unwrap_or_default()
+                .into(),
+        );
+        w.set_qr(
+            s.secret
+                .as_ref()
+                .and_then(|x| self.image(&x.qr))
+                .unwrap_or_default(),
+        );
+        w.set_saved(model(
+            s.saved
+                .iter()
+                .map(|p| {
+                    let in_range = s.networks.iter().any(|n| n.ssid == p.ssid);
+                    WifiSaved {
+                        uuid: p.uuid.as_str().into(),
+                        ssid: p.ssid.as_str().into(),
+                        in_range,
+                        detail: if in_range {
+                            "in range".into()
+                        } else if p.timestamp > 0 {
+                            sources::wifi::day(p.timestamp).into()
+                        } else {
+                            "never used".into()
+                        },
+                    }
+                })
+                .collect(),
+        ));
         w.set_networks(model(
             s.networks
-                .into_iter()
+                .iter()
                 .map(|n| WifiNet {
-                    ssid: n.ssid.into(),
+                    ssid: n.ssid.as_str().into(),
                     signal: n.signal,
-                    secure: n.secure,
+                    secure: n.security.needs_secret(),
                     active: n.active,
-                    known: n.profile.is_some(),
+                    known: n.known(),
                 })
                 .collect(),
         ));
@@ -350,9 +432,43 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     let a = app.clone();
     w.on_rescan(move || a.wifi.rescan());
     let a = app.clone();
-    w.on_connect(move |ssid, pw| a.wifi.connect(ssid.into(), pw.into()));
+    w.on_connect(move |ssid| a.wifi.connect(ssid.into()));
+    let a = app.clone();
+    w.on_answer(move |identity, password, eap| {
+        a.wifi.answer(sources::wifi::Answer {
+            identity: identity.into(),
+            password: password.into(),
+            eap: sources::wifi::Eap::from_index(eap),
+        })
+    });
+    let a = app.clone();
+    w.on_cancel_prompt(move || a.wifi.cancel_prompt());
+    let a = app.clone();
+    w.on_join_hidden(move |ssid, security, identity, password, eap| {
+        a.wifi.join_hidden(
+            ssid.into(),
+            security,
+            sources::wifi::Answer {
+                identity: identity.into(),
+                password: password.into(),
+                eap: sources::wifi::Eap::from_index(eap),
+            },
+        )
+    });
     let a = app.clone();
     w.on_disconnect(move || a.wifi.disconnect());
+    let a = app.clone();
+    w.on_forget(move |uuid| a.wifi.forget(uuid.into()));
+    let a = app.clone();
+    w.on_set_autoconnect(move |uuid, on| a.wifi.set_autoconnect(uuid.into(), on));
+    let a = app.clone();
+    w.on_select(move |ssid| a.wifi.select(ssid.into()));
+    let a = app.clone();
+    w.on_reveal(move |uuid| a.wifi.reveal(uuid.into()));
+    let a = app.clone();
+    w.on_hide_secret(move || a.wifi.hide_secret());
+    let a = app.clone();
+    w.on_sign_in(move || a.wifi.sign_in());
     // Bluetooth.
     let b = ui.global::<UiBluetooth>();
     let a = app.clone();

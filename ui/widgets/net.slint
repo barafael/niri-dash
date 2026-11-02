@@ -3,16 +3,120 @@ import { Theme, Icons } from "../theme.slint";
 import { Wifi, Bluetooth } from "../data.slint";
 import { Icon, IconButton, TextButton, Switch, Header, Row, Muted, Empty, SignalBars, ScrollList, RoundFace } from "../common.slint";
 
+// A row of choices, one of them picked (security type, EAP method).
+component Choice inherits HorizontalLayout {
+    in property <[string]> options;
+    in-out property <int> picked;
+    spacing: 4px;
+    for o[i] in root.options: TextButton {
+        text: o;
+        primary: i == root.picked;
+        horizontal-stretch: 1;
+        clicked => { root.picked = i; }
+    }
+}
+
+// A password field (the LineEdit has its own button to show what was typed).
+component PasswordField inherits HorizontalLayout {
+    in property <string> placeholder: "Password";
+    in property <bool> focus-first;
+    out property <string> text: field.text;
+    callback accepted();
+    callback edited(string);
+    field := LineEdit {
+        input-type: password;
+        placeholder-text: root.placeholder;
+        accepted => { root.accepted(); }
+        edited(t) => { root.edited(t); }
+        init => {
+            if (root.focus-first) {
+                self.focus();
+            }
+        }
+    }
+    public function clear() {
+        field.text = "";
+    }
+}
+
+// The prompt for a network's password: asked by the widget for a new network, or by
+// NetworkManager (through the secret agent) for a saved one.
+component WifiPasswordPrompt inherits Rectangle {
+    property <bool> enterprise: Wifi.prompt.kind == 2;
+    property <int> method;
+    border-radius: Theme.radius-small;
+    background: Theme.card-raised;
+    VerticalLayout {
+        padding: Theme.pad-tight;
+        spacing: 6px;
+        Text {
+            text: (Wifi.prompt.retry ? "Wrong password for " : root.enterprise ? "Sign in to " : "Password for ") + Wifi.prompt.ssid;
+            color: Wifi.prompt.retry ? Theme.warn : Theme.text;
+            font-size: Theme.font-small;
+            font-weight: 600;
+            overflow: elide;
+        }
+        if root.enterprise && Wifi.prompt.new: Choice {
+            options: ["PEAP", "TTLS"];
+            picked <=> root.method;
+        }
+        if root.enterprise: user := LineEdit {
+            placeholder-text: "User name";
+            text: Wifi.prompt.identity;
+            init => { self.focus(); }
+            edited(t) => { root.identity = t; }
+        }
+        pw := PasswordField {
+            placeholder: Wifi.prompt.kind == 1 ? "WEP key" : "Password";
+            focus-first: !root.enterprise;
+            accepted => { root.submit(); }
+        }
+        if Wifi.prompt.message != "": Text {
+            text: Wifi.prompt.message;
+            color: Theme.bad;
+            font-size: Theme.font-small;
+            wrap: word-wrap;
+        }
+        HorizontalLayout {
+            spacing: 6px;
+            alignment: end;
+            TextButton {
+                text: "Cancel";
+                clicked => { Wifi.cancel-prompt(); }
+            }
+            TextButton {
+                text: "Join";
+                primary: true;
+                clicked => { root.submit(); }
+            }
+        }
+    }
+    property <string> identity: Wifi.prompt.identity;
+    function submit() {
+        Wifi.answer(root.identity, pw.text, root.method);
+        pw.clear();
+    }
+}
+
 export component WifiWidget inherits Rectangle {
     in property <bool> round;
-    // SSID waiting for a password, if any.
-    property <string> asking;
-    property <bool> asking-open: self.asking != "";
-    // A join that failed for want of a password asks for one, also for a saved network.
-    property <string> refused: Wifi.needs-password;
-    changed refused => {
-        if (root.refused != "") {
-            root.asking = root.refused;
+    // 0: networks, 1: one network's details, 2: join a hidden network, 3: saved networks.
+    property <int> page;
+    // Where the details page goes back to.
+    property <int> back-to;
+    property <bool> asking: Wifi.prompt.ssid != "";
+    function open(ssid: string, from: int) {
+        root.back-to = from;
+        root.page = 1;
+        Wifi.select(ssid);
+    }
+    function back() {
+        if (root.page == 1) {
+            Wifi.select("");
+            Wifi.hide-secret();
+            root.page = root.back-to;
+        } else {
+            root.page = 0;
         }
     }
     if root.round: RoundFace {
@@ -28,88 +132,99 @@ export component WifiWidget inherits Rectangle {
     if !root.round: VerticalLayout {
         padding: Theme.pad;
         spacing: 6px;
-        Header {
+        if root.page == 0: Header {
             icon: Wifi.enabled ? Icons.wifi : Icons.wifi-off;
             icon-color: Wifi.enabled ? Theme.accent : Theme.faint;
             title: "Wi-Fi";
             IconButton {
                 icon: Icons.refresh;
                 size: 28px;
-                enabled: Wifi.enabled && !Wifi.busy;
+                enabled: Wifi.enabled && !Wifi.scanning;
                 clicked => { Wifi.rescan(); }
             }
             Switch {
                 y: (parent.height - self.height) / 2;
                 checked: Wifi.enabled;
-                enabled: Wifi.available;
+                enabled: Wifi.available && !Wifi.blocked;
                 toggled => { Wifi.toggle(); }
+            }
+        }
+        if root.page != 0: HorizontalLayout {
+            height: 28px;
+            spacing: 4px;
+            IconButton {
+                y: (parent.height - self.height) / 2;
+                icon: Icons.chevron-left;
+                size: 28px;
+                clicked => { root.back(); }
+            }
+            Text {
+                text: root.page == 1 ? Wifi.detail.ssid : root.page == 2 ? "Hidden network" : "Saved networks";
+                font-size: Theme.font-title;
+                font-weight: 600;
+                color: Theme.text;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 1;
             }
         }
         Muted {
             text: Wifi.status;
+            color: Wifi.failed ? Theme.bad : Theme.dim;
             visible: Wifi.status != "";
+            wrap: word-wrap;
         }
-        if root.asking-open: Rectangle {
-            height: 76px;
-            border-radius: Theme.radius-small;
-            background: Theme.card-raised;
-            VerticalLayout {
-                padding: Theme.pad-tight;
-                spacing: 6px;
-                Muted {
-                    text: "Password for " + root.asking;
-                }
-                HorizontalLayout {
-                    spacing: 6px;
-                    pw := LineEdit {
-                        input-type: password;
-                        placeholder-text: "Password";
-                        accepted(text) => {
-                            Wifi.connect(root.asking, text);
-                            root.asking = "";
-                        }
-                        init => { self.focus(); }
-                    }
-                    TextButton {
-                        text: "Join";
-                        primary: true;
-                        clicked => {
-                            Wifi.connect(root.asking, pw.text);
-                            root.asking = "";
-                        }
-                    }
-                    IconButton {
-                        icon: Icons.close;
-                        size: 30px;
-                        clicked => { root.asking = ""; }
-                    }
-                }
-            }
-        }
+        if root.asking: WifiPasswordPrompt { }
         if !Wifi.available: Empty {
             vertical-stretch: 1;
             text: "No Wi-Fi device (NetworkManager)";
         }
-        if Wifi.available && !Wifi.enabled: Empty {
+        if Wifi.available && Wifi.blocked: Empty {
+            vertical-stretch: 1;
+            text: "Wi-Fi is blocked (airplane mode or a hardware switch)";
+        }
+        if Wifi.available && !Wifi.blocked && !Wifi.enabled && root.page == 0: Empty {
             vertical-stretch: 1;
             text: "Wi-Fi is off";
         }
-        if Wifi.available && Wifi.enabled: ScrollList {
+        // The networks around, then the ways to the other pages.
+        if Wifi.available && Wifi.enabled && root.page == 0: ScrollList {
             vertical-stretch: 1;
+            if Wifi.portal: Row {
+                background: self.hovered ? Theme.warn.with-alpha(0.3) : Theme.warn.with-alpha(0.18);
+                clicked => { Wifi.sign-in(); }
+                HorizontalLayout {
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    spacing: 8px;
+                    Icon {
+                        y: (parent.height - self.height) / 2;
+                        source: Icons.globe;
+                        size: 16px;
+                        tint: Theme.warn;
+                    }
+                    Text {
+                        text: "Sign in to the network";
+                        color: Theme.text;
+                        font-size: Theme.font-body;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                    }
+                }
+            }
             for n in Wifi.networks: Row {
                 selected: n.active;
                 clicked => {
                     if (n.active) {
-                        // Clicking the active network does nothing; the button disconnects.
-                    } else if (n.secure && !n.known) {
-                        root.asking = n.ssid;
+                        root.open(n.ssid, 0);
                     } else {
-                        Wifi.connect(n.ssid, "");
+                        Wifi.connect(n.ssid);
                     }
                 }
                 HorizontalLayout {
                     padding-left: 10px;
-                    padding-right: 6px;
+                    padding-right: 2px;
                     spacing: 8px;
                     SignalBars {
                         y: (parent.height - self.height) / 2;
@@ -120,9 +235,13 @@ export component WifiWidget inherits Rectangle {
                         text: n.ssid;
                         color: n.active ? Theme.accent : Theme.text;
                         font-size: Theme.font-body;
+                        font-weight: n.known ? 600 : 400;
                         vertical-alignment: center;
                         overflow: elide;
                         horizontal-stretch: 1;
+                    }
+                    if n.ssid == Wifi.connecting: Muted {
+                        text: "joining…";
                     }
                     if n.secure: Icon {
                         y: (parent.height - self.height) / 2;
@@ -136,10 +255,246 @@ export component WifiWidget inherits Rectangle {
                         size: 26px;
                         clicked => { Wifi.disconnect(); }
                     }
+                    IconButton {
+                        y: (parent.height - self.height) / 2;
+                        icon: Icons.chevron-right;
+                        size: 26px;
+                        tint: Theme.dim;
+                        clicked => { root.open(n.ssid, 0); }
+                    }
+                }
+            }
+            if Wifi.networks.length == 0: Empty {
+                height: 48px;
+                text: Wifi.scanning ? "Scanning…" : "No networks found";
+            }
+            Row {
+                clicked => { root.page = 2; }
+                HorizontalLayout {
+                    padding-left: 10px;
+                    spacing: 8px;
+                    Icon {
+                        y: (parent.height - self.height) / 2;
+                        source: Icons.plus;
+                        size: 16px;
+                        tint: Theme.dim;
+                    }
+                    Text {
+                        text: "Hidden network…";
+                        color: Theme.dim;
+                        font-size: Theme.font-body;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+                }
+            }
+            if Wifi.saved.length > 0: Row {
+                clicked => { root.page = 3; }
+                HorizontalLayout {
+                    padding-left: 10px;
+                    padding-right: 2px;
+                    spacing: 8px;
+                    Icon {
+                        y: (parent.height - self.height) / 2;
+                        source: Icons.check;
+                        size: 16px;
+                        tint: Theme.dim;
+                    }
+                    Text {
+                        text: "Saved networks (" + Wifi.saved.length + ")";
+                        color: Theme.dim;
+                        font-size: Theme.font-body;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+                    Icon {
+                        y: (parent.height - self.height) / 2;
+                        source: Icons.chevron-right;
+                        size: 16px;
+                        tint: Theme.dim;
+                    }
+                }
+            }
+        }
+        // One network: what NetworkManager knows about it, and what can be done with it.
+        if Wifi.available && root.page == 1: ScrollList {
+            vertical-stretch: 1;
+            if Wifi.detail.ssid == "": Empty {
+                height: 48px;
+                text: "This network is gone.";
+            }
+            for f in Wifi.detail.facts: HorizontalLayout {
+                height: 24px;
+                spacing: 8px;
+                Muted {
+                    text: f.label;
+                    width: 34%;
+                }
+                Text {
+                    text: f.value;
+                    color: Theme.text;
+                    font-size: Theme.font-small;
+                    vertical-alignment: center;
+                    horizontal-alignment: right;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+            }
+            if Wifi.detail.known: HorizontalLayout {
+                height: 34px;
+                spacing: 8px;
+                Text {
+                    text: "Connect automatically";
+                    color: Theme.text;
+                    font-size: Theme.font-body;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+                Switch {
+                    y: (parent.height - self.height) / 2;
+                    checked: Wifi.detail.autoconnect;
+                    toggled => { Wifi.set-autoconnect(Wifi.detail.uuid, !Wifi.detail.autoconnect); }
+                }
+            }
+            if Wifi.detail.known && Wifi.revealed: VerticalLayout {
+                spacing: 6px;
+                padding-top: 4px;
+                if Wifi.password != "": HorizontalLayout {
+                    spacing: 8px;
+                    Muted {
+                        text: "Password";
+                        width: 34%;
+                    }
+                    Text {
+                        text: Wifi.password;
+                        color: Theme.text;
+                        font-size: Theme.font-body;
+                        horizontal-alignment: right;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                    }
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    Image {
+                        source: Wifi.qr;
+                        width: min(160px, root.width - 2 * Theme.pad);
+                        height: self.width;
+                        image-rendering: pixelated;
+                    }
+                }
+                Muted {
+                    text: "Scan with a phone camera to join.";
+                    horizontal-alignment: center;
+                }
+            }
+            HorizontalLayout {
+                padding-top: 6px;
+                spacing: 6px;
+                alignment: end;
+                if Wifi.detail.known: TextButton {
+                    text: "Forget";
+                    danger: true;
+                    clicked => {
+                        Wifi.forget(Wifi.detail.uuid);
+                        root.back();
+                    }
+                }
+                if Wifi.detail.known: TextButton {
+                    text: Wifi.revealed ? "Hide" : "Share";
+                    clicked => {
+                        if (Wifi.revealed) {
+                            Wifi.hide-secret();
+                        } else {
+                            Wifi.reveal(Wifi.detail.uuid);
+                        }
+                    }
+                }
+                if Wifi.detail.active: TextButton {
+                    text: "Disconnect";
+                    clicked => { Wifi.disconnect(); }
+                }
+                if !Wifi.detail.active && Wifi.detail.ssid != "": TextButton {
+                    text: "Connect";
+                    primary: true;
+                    enabled: Wifi.enabled;
+                    clicked => { Wifi.connect(Wifi.detail.ssid); }
+                }
+            }
+        }
+        // A network that doesn't broadcast its name.
+        if Wifi.available && Wifi.enabled && root.page == 2: ScrollList {
+            vertical-stretch: 1;
+            VerticalLayout {
+                spacing: 6px;
+                hidden-ssid := LineEdit {
+                    placeholder-text: "Network name (SSID)";
+                    init => { self.focus(); }
+                }
+                security := Choice {
+                    options: ["Open", "WPA", "802.1X"];
+                    picked: 1;
+                }
+                if security.picked == 2: Choice {
+                    options: ["PEAP", "TTLS"];
+                    picked <=> root.hidden-method;
+                }
+                if security.picked == 2: LineEdit {
+                    placeholder-text: "User name";
+                    edited(t) => { root.hidden-identity = t; }
+                }
+                if security.picked != 0: PasswordField {
+                    edited(t) => { root.hidden-password = t; }
+                }
+                HorizontalLayout {
+                    alignment: end;
+                    TextButton {
+                        text: "Join";
+                        primary: true;
+                        enabled: hidden-ssid.text != "";
+                        clicked => {
+                            Wifi.join-hidden(hidden-ssid.text, security.picked, root.hidden-identity, root.hidden-password, root.hidden-method);
+                            root.page = 0;
+                        }
+                    }
+                }
+            }
+        }
+        // Every saved network, last used first; in range or not.
+        if Wifi.available && root.page == 3: ScrollList {
+            vertical-stretch: 1;
+            for s in Wifi.saved: Row {
+                clicked => { root.open(s.ssid, 3); }
+                HorizontalLayout {
+                    padding-left: 10px;
+                    padding-right: 2px;
+                    spacing: 8px;
+                    Text {
+                        text: s.ssid;
+                        color: s.ssid == Wifi.ssid ? Theme.accent : Theme.text;
+                        font-size: Theme.font-body;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                    }
+                    Muted {
+                        text: s.detail;
+                    }
+                    Icon {
+                        y: (parent.height - self.height) / 2;
+                        source: Icons.chevron-right;
+                        size: 16px;
+                        tint: Theme.dim;
+                    }
                 }
             }
         }
     }
+    property <string> hidden-identity;
+    property <string> hidden-password;
+    property <int> hidden-method;
 }
 
 export component BluetoothWidget inherits Rectangle {

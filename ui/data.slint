@@ -224,20 +224,83 @@ export struct WifiNet {
     known: bool,
 }
 
+export struct WifiSaved {
+    uuid: string,
+    ssid: string,
+    in-range: bool,
+    // In range, or when it was last used.
+    detail: string,
+}
+
+// One line of a network's details page.
+export struct WifiFact {
+    label: string,
+    value: string,
+}
+
+// The network the details page shows.
+export struct WifiDetail {
+    ssid: string,
+    in-range: bool,
+    active: bool,
+    known: bool,
+    uuid: string,
+    autoconnect: bool,
+    facts: [WifiFact],
+}
+
+// The password prompt; no prompt while `ssid` is empty.
+export struct WifiPrompt {
+    ssid: string,
+    // 0: a password, 1: a WEP key, 2: a user name and password (Enterprise).
+    kind: int,
+    // The last password didn't work.
+    retry: bool,
+    // A network not saved yet: an Enterprise one can choose its method.
+    new: bool,
+    identity: string,
+    // Why it asks again, e.g. a password too short.
+    message: string,
+}
+
 export global Wifi {
     in property <bool> available;
     in property <bool> enabled;
+    // Off through a hardware switch or rfkill.
+    in property <bool> blocked;
     in property <string> ssid;
     in property <int> signal;
+    // The network being joined right now.
+    in property <string> connecting;
     in property <[WifiNet]> networks;
+    in property <[WifiSaved]> saved;
     in property <string> status;
-    // SSID whose join failed for a missing or wrong password, if any.
-    in property <string> needs-password;
-    in property <bool> busy;
+    in property <bool> failed;
+    in property <bool> scanning;
+    // The network wants a login in the browser first.
+    in property <bool> portal;
+    in property <WifiPrompt> prompt;
+    in property <WifiDetail> detail;
+    // A saved network's password and QR code, while shown.
+    in property <bool> revealed;
+    in property <string> password;
+    in property <image> qr;
     callback toggle();
     callback rescan();
-    callback connect(string, string);
+    callback connect(string);
+    // The prompt's answer: user name, password, method (0 PEAP, 1 TTLS).
+    callback answer(string, string, int);
+    callback cancel-prompt();
+    // A hidden network: name, security (0 open, 1 WPA, 2 Enterprise), user name, password, method.
+    callback join-hidden(string, int, string, string, int);
     callback disconnect();
+    callback forget(string);
+    callback set-autoconnect(string, bool);
+    // Show the details of a network ("" for none).
+    callback select(string);
+    callback reveal(string);
+    callback hide-secret();
+    callback sign-in();
 }
 
 export struct BtDevice {

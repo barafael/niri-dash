@@ -419,7 +419,7 @@ impl App {
             Msg::Claude(s) => self.show_claude(s),
             Msg::Windows(s) => self.show_windows(s),
             Msg::KeyboardLayouts(l) => self.show_keyboard_layouts(l),
-            Msg::Wifi(s) => self.show_wifi(s),
+            Msg::Wifi(s) => self.show_wifi(*s),
             Msg::Bluetooth(s) => self.show_bluetooth(s),
             Msg::Brightness(level) => self.show_brightness(level),
             Msg::Tray(items) => self.show_tray(items),

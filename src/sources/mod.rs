@@ -51,7 +51,7 @@ pub enum IconSrc {
 pub enum Msg {
     Perf(Box<perf::Snapshot>),
     Windows(niri::WindowsState),
-    Wifi(wifi::State),
+    Wifi(Box<wifi::State>),
     Bluetooth(bluetooth::State),
     Power(power::State),
     /// Whether we block sleep and screen locking right now.
