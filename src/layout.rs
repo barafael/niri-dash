@@ -6,7 +6,7 @@
 use kdl::{KdlDocument, KdlEntry, KdlEntryFormat, KdlNode, KdlNodeFormat, KdlValue};
 use std::path::PathBuf;
 use std::str::FromStr;
-use strum::{AsRefStr, EnumIter, EnumString, IntoStaticStr};
+use strum::{AsRefStr, EnumIter, EnumString, IntoEnumIterator, IntoStaticStr};
 
 /// A widget type. Its name ([`Kind::name`]) is what config.kdl uses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, EnumString, AsRefStr, IntoStaticStr)]
@@ -284,9 +284,26 @@ const HEADER: &str = r#"// niri-dash layout.
 // Edit mode (the pencil, or right-click the background) writes changes back into this file and
 // keeps your comments. Changes you save here show up right away.
 //
-// Widgets: clock calendar system-monitor windows claude-sessions wifi bluetooth battery volume
-//          brightness notifications tray media session clipboard weather
 "#;
+
+/// The header's list of widget names, wrapped like the rest of it.
+fn widget_list() -> String {
+    const WIDTH: usize = 99;
+    let mut out = String::new();
+    let mut line = String::from("// Widgets:");
+    for name in Kind::iter().map(Kind::name) {
+        if line.len() + 1 + name.len() > WIDTH {
+            out.push_str(&line);
+            out.push('\n');
+            line = String::from("//         ");
+        }
+        line.push(' ');
+        line.push_str(name);
+    }
+    out.push_str(&line);
+    out.push('\n');
+    out
+}
 
 const DEFAULT: &str = r#"
 // The theme: a color scheme (colors) from ~/.config/niri-dash/colorschemes/ and a style
@@ -322,17 +339,21 @@ layout {
 }
 "#;
 
-fn int(node: &KdlNode, key: &str) -> Option<i32> {
-    let v = node
-        .entries()
-        .iter()
-        .find(|e| e.name().is_some_and(|n| n.value() == key))?
-        .value();
+/// A KDL number, integer or not.
+pub(crate) fn number(v: &KdlValue) -> Option<f64> {
     match v {
-        KdlValue::Integer(i) => i32::try_from(*i).ok(),
-        KdlValue::Float(f) => Some(f.round() as i32),
+        KdlValue::Integer(i) => Some(*i as f64),
+        KdlValue::Float(f) => Some(*f),
         _ => None,
     }
+}
+
+/// A property as a whole number (rounded); `None` if missing, not a number or out of range.
+fn int(node: &KdlNode, key: &str) -> Option<i32> {
+    let n = number(node.get(key)?)?.round();
+    (f64::from(i32::MIN)..=f64::from(i32::MAX))
+        .contains(&n)
+        .then_some(n as i32)
 }
 
 fn remove_prop(node: &mut KdlNode, key: &str) {
@@ -340,32 +361,41 @@ fn remove_prop(node: &mut KdlNode, key: &str) {
         .retain(|e| e.name().is_none_or(|n| n.value() != key));
 }
 
-/// Set a property, keeping the entry's position and spacing if it exists. `repr` is how the
-/// value is written (kdl keeps the original text of a value, so it must be updated too).
-fn set_prop(node: &mut KdlNode, key: &str, value: KdlValue, repr: String) {
-    let existing = node
-        .entries_mut()
-        .iter_mut()
-        .find(|e| e.name().is_some_and(|n| n.value() == key));
-    match existing {
-        Some(e) if *e.value() == value => {}
-        Some(e) => {
-            e.set_value(value);
-            match e.format_mut() {
-                Some(f) => f.value_repr = repr,
-                None => e.autoformat(),
-            }
-        }
-        None => {
-            let mut e = KdlEntry::new_prop(key, value);
-            e.set_format(KdlEntryFormat {
-                value_repr: repr,
-                leading: " ".into(),
-                ..Default::default()
-            });
-            node.push(e);
-        }
+/// Set a property, keeping the entry's position and spacing if it exists.
+fn set_prop(node: &mut KdlNode, key: &str, value: KdlValue) {
+    match node.entry_mut(key) {
+        Some(e) => set_entry_value(e, value),
+        None => node.push(new_entry(Some(key), value)),
     }
+}
+
+/// Change an entry's value. kdl keeps the original text of a value, so that is updated too;
+/// an unchanged value keeps its text as written.
+fn set_entry_value(e: &mut KdlEntry, value: KdlValue) {
+    if *e.value() == value {
+        return;
+    }
+    let repr = value_repr(&value);
+    e.set_value(value);
+    match e.format_mut() {
+        Some(f) => f.value_repr = repr,
+        None => e.autoformat(),
+    }
+}
+
+/// A new entry after a space: a property `key=value`, or an argument without a key.
+fn new_entry(key: Option<&str>, value: KdlValue) -> KdlEntry {
+    let repr = value_repr(&value);
+    let mut e = match key {
+        Some(key) => KdlEntry::new_prop(key, value),
+        None => KdlEntry::new(value),
+    };
+    e.set_format(KdlEntryFormat {
+        value_repr: repr,
+        leading: " ".into(),
+        ..Default::default()
+    });
+    e
 }
 
 fn value_repr(v: &KdlValue) -> String {
@@ -388,15 +418,11 @@ fn value_repr(v: &KdlValue) -> String {
 }
 
 fn set_int(node: &mut KdlNode, key: &str, value: i32) {
-    set_prop(
-        node,
-        key,
-        KdlValue::Integer(value as i128),
-        value.to_string(),
-    );
+    set_prop(node, key, KdlValue::Integer(value.into()));
 }
 
-fn parse_doc(text: &str) -> Result<KdlDocument, String> {
+/// Parse a KDL file; a syntax error names its line.
+pub(crate) fn parse_doc(text: &str) -> Result<KdlDocument, String> {
     KdlDocument::parse(text).map_err(|e| {
         let detail = e.diagnostics.first().map(|d| {
             let line = text[..d.span.offset().min(text.len())]
@@ -428,57 +454,30 @@ impl Layout {
     }
 
     pub fn default_text() -> String {
-        format!("{HEADER}{DEFAULT}")
+        format!("{HEADER}{}{DEFAULT}", widget_list())
     }
 
     /// Parse a config. Unknown widgets and bad values are skipped with a warning.
     pub fn parse(text: &str) -> Result<(Self, Vec<String>), String> {
         let doc = parse_doc(text)?;
         let mut warnings = Vec::new();
-        let cell_size = match doc.get_arg("cell-size") {
-            Some(KdlValue::Integer(i)) => *i as f32,
-            Some(KdlValue::Float(f)) => *f as f32,
-            Some(_) => {
+        let cell_size = match doc.get_arg("cell-size").map(number) {
+            None => 100.0,
+            Some(Some(n)) => n as f32,
+            Some(None) => {
                 warnings.push("cell-size must be a number".into());
                 100.0
             }
-            None => 100.0,
         }
         .clamp(40.0, 400.0);
-        // `theme colorscheme="…" style="…"`.
-        let (mut colorscheme, mut style) = ("default".to_string(), "default".to_string());
-        let mut style_overrides: Vec<(String, KdlValue)> = Vec::new();
-        if let Some(node) = doc.get("theme") {
-            let prop = |k: &str| {
-                node.entries()
-                    .iter()
-                    .find(|e| e.name().is_some_and(|n| n.value() == k))
-                    .and_then(|e| e.value().as_string())
-            };
-            if let Some(c) = prop("colorscheme").filter(|s| !s.is_empty()) {
-                colorscheme = c.to_string();
-            }
-            if let Some(st) = prop("style").filter(|s| !s.is_empty()) {
-                style = st.to_string();
-            }
-            let (values, bad) = child_values(node);
-            style_overrides = values;
-            warnings.extend(
-                bad.into_iter()
-                    .map(|k| format!("theme {{ {k} }}: expected a value")),
-            );
-        }
+        let theme = theme_of(&doc, &mut warnings);
         let mut weather = WeatherConfig::default();
         if let Some(node) = doc.get("weather") {
             weather.location = node
                 .get("location")
                 .and_then(|v| v.as_string())
                 .map(str::to_string);
-            let num = |k: &str| match node.get(k) {
-                Some(KdlValue::Float(f)) => Some(*f),
-                Some(KdlValue::Integer(i)) => Some(*i as f64),
-                _ => None,
-            };
+            let num = |k: &str| node.get(k).and_then(number);
             weather.coords = num("latitude").zip(num("longitude"));
             weather.fahrenheit =
                 node.get("units").and_then(|v| v.as_string()) == Some("fahrenheit");
@@ -558,9 +557,9 @@ impl Layout {
         }
         let layout = Layout {
             widgets,
-            colorscheme,
-            style,
-            style_overrides,
+            colorscheme: theme.colorscheme,
+            style: theme.style,
+            style_overrides: theme.overrides,
             weather,
             renderer,
             cell_size,
@@ -609,41 +608,16 @@ impl Layout {
     /// removed widgets dropped and new ones appended. Everything else is kept as written.
     pub fn to_text(&mut self) -> String {
         let mut doc = self.doc.clone();
-        // The theme line: rewrite it only if it changed.
-        let want = (self.colorscheme.clone(), self.style.clone());
-        let have = Layout::parse(&doc.to_string())
-            .ok()
-            .map(|(l, _)| (l.colorscheme, l.style));
-        if have.as_ref() != Some(&want) {
-            if doc.get("theme").is_none() {
-                let mut n = KdlNode::new("theme");
-                n.autoformat();
-                doc.nodes_mut().insert(0, n);
-            }
-            let node = doc.get_mut("theme").expect("ensured above");
-            set_prop(
-                node,
-                "colorscheme",
-                KdlValue::String(want.0.clone()),
-                format!("{:?}", want.0),
-            );
-            set_prop(
-                node,
-                "style",
-                KdlValue::String(want.1.clone()),
-                format!("{:?}", want.1),
-            );
+        // The theme node is rewritten only where it changed; style overrides are its children,
+        // keeping any the user formatted by hand.
+        let have = theme_of(&doc, &mut Vec::new());
+        if (&have.colorscheme, &have.style) != (&self.colorscheme, &self.style) {
+            let node = theme_node(&mut doc);
+            set_prop(node, "colorscheme", self.colorscheme.clone().into());
+            set_prop(node, "style", self.style.clone().into());
         }
-        // Style overrides as the theme node's children, keeping any the user formatted by hand.
-        let have_over = Layout::parse(&doc.to_string())
-            .ok()
-            .map(|(l, _)| l.style_overrides)
-            .unwrap_or_default();
-        if have_over != self.style_overrides {
-            let node = doc
-                .get_mut("theme")
-                .expect("theme node written above or present");
-            write_children(node, &self.style_overrides);
+        if have.overrides != self.style_overrides {
+            write_children(theme_node(&mut doc), &self.style_overrides);
         }
         if doc.get("layout").is_none() {
             doc.nodes_mut().push(KdlNode::new("layout"));
@@ -971,6 +945,45 @@ impl Layout {
     }
 }
 
+/// What the `theme colorscheme="…" style="…" { var value … }` node picks; defaults for what it
+/// leaves out.
+struct ThemeLine {
+    colorscheme: String,
+    style: String,
+    overrides: Vec<(String, KdlValue)>,
+}
+
+fn theme_of(doc: &KdlDocument, warnings: &mut Vec<String>) -> ThemeLine {
+    let node = doc.get("theme");
+    let name = |key: &str| {
+        node.and_then(|n| n.get(key))
+            .and_then(KdlValue::as_string)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("default")
+            .to_string()
+    };
+    let (overrides, bad) = node.map(child_values).unwrap_or_default();
+    warnings.extend(
+        bad.into_iter()
+            .map(|k| format!("theme {{ {k} }}: expected a value")),
+    );
+    ThemeLine {
+        colorscheme: name("colorscheme"),
+        style: name("style"),
+        overrides,
+    }
+}
+
+/// The document's theme node, added at the top if there is none.
+fn theme_node(doc: &mut KdlDocument) -> &mut KdlNode {
+    if doc.get("theme").is_none() {
+        let mut n = KdlNode::new("theme");
+        n.autoformat();
+        doc.nodes_mut().insert(0, n);
+    }
+    doc.get_mut("theme").expect("just ensured")
+}
+
 /// `name value` children of a node, plus the names of children without a single value.
 fn child_values(node: &KdlNode) -> (Vec<(String, KdlValue)>, Vec<String>) {
     let mut values = Vec::new();
@@ -1021,29 +1034,17 @@ fn write_children(node: &mut KdlNode, items: &[(String, KdlValue)]) {
     let old: Vec<KdlNode> = children.nodes().to_vec();
     let mut nodes = Vec::new();
     for (key, value) in items {
-        let repr = value_repr(value);
         match old.iter().find(|n| n.name().value() == key) {
             Some(n) => {
                 let mut n = n.clone();
-                if let Some(e) = n.entries_mut().iter_mut().find(|e| e.name().is_none())
-                    && e.value() != value
-                {
-                    e.set_value(value.clone());
-                    if let Some(f) = e.format_mut() {
-                        f.value_repr = repr;
-                    }
+                if let Some(e) = n.entry_mut(0) {
+                    set_entry_value(e, value.clone());
                 }
                 nodes.push(n);
             }
             None => {
                 let mut n = KdlNode::new(key.as_str());
-                let mut e = KdlEntry::new(value.clone());
-                e.set_format(KdlEntryFormat {
-                    value_repr: repr,
-                    leading: " ".into(),
-                    ..Default::default()
-                });
-                n.push(e);
+                n.push(new_entry(None, value.clone()));
                 n.set_format(KdlNodeFormat {
                     leading: indent.clone(),
                     terminator: "\n".into(),
@@ -1088,13 +1089,7 @@ fn write_widget(node: &mut KdlNode, w: &Placed) {
             remove_prop(node, "width");
             remove_prop(node, "height");
             set_int(node, "size", w.w);
-            let round = Shape::Round.as_ref();
-            set_prop(
-                node,
-                "shape",
-                KdlValue::String(round.into()),
-                format!("{round:?}"),
-            );
+            set_prop(node, "shape", Shape::Round.as_ref().into());
         }
         Shape::Rect => {
             remove_prop(node, "size");
@@ -1725,7 +1720,6 @@ impl Layout {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use strum::IntoEnumIterator;
 
     fn grid() -> Layout {
         let (mut l, warnings) = Layout::parse(&Layout::default_text()).unwrap();
@@ -1858,6 +1852,37 @@ mod tests {
             ),
             (Kind::Audio, Shape::Round, 2, 2)
         );
+    }
+
+    #[test]
+    fn default_header_lists_every_widget() {
+        let text = Layout::default_text();
+        let list: Vec<&str> = text
+            .lines()
+            .skip_while(|l| !l.starts_with("// Widgets:"))
+            .take_while(|l| l.starts_with("//") && *l != "//")
+            .collect();
+        assert!(list.iter().all(|l| l.len() <= 99), "{list:?}");
+        let names: Vec<&str> = list
+            .iter()
+            .flat_map(|l| {
+                l.trim_start_matches("// Widgets:")
+                    .trim_start_matches("//")
+                    .split_whitespace()
+            })
+            .collect();
+        let all: Vec<&str> = Kind::iter().map(Kind::name).collect();
+        assert_eq!(names, all);
+    }
+
+    #[test]
+    fn style_overrides_without_a_theme_node() {
+        let (mut l, _) = Layout::parse("layout {\n}\n").unwrap();
+        l.style_overrides = vec![("radius".into(), KdlValue::Integer(8))];
+        let out = l.to_text();
+        let (back, w) = Layout::parse(&out).unwrap();
+        assert!(w.is_empty(), "{w:?}\n{out}");
+        assert_eq!(back.style_overrides, l.style_overrides, "{out}");
     }
 
     #[test]
