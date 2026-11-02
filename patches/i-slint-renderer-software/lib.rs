@@ -2022,18 +2022,17 @@ impl<B: target_pixel_buffer::TargetPixelBuffer> ProcessScene for RenderToBuffer<
         // niri-dash patch: see process_filled_path.
         let region = self.dirty_region.intersection(&clip_geometry);
         for b in region.iter_box() {
-            let clip = b.to_rect();
-        path::render_stroked_path(
-            &commands,
-            &path_geometry,
-            &clip,
-            color,
-            stroke_width,
-            stroke_line_cap,
-            stroke_line_join,
-            stroke_miter_limit,
-            self.buffer,
-        );
+            path::render_stroked_path(
+                &commands,
+                &path_geometry,
+                &b.to_rect(),
+                color,
+                stroke_width,
+                stroke_line_cap,
+                stroke_line_join,
+                stroke_miter_limit,
+                self.buffer,
+            );
         }
     }
 }
