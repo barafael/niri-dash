@@ -883,7 +883,7 @@ mod tests {
         let k = KNOBS.iter().find(|k| k.var == StyleVar::Radius).unwrap();
         assert_eq!(step(k, 20.0, 1), 24.0);
         assert_eq!(step(k, 21.0, -1), 18.0, "snaps to 20 first");
-        assert_eq!(step(k, 40.0, 1), 40.0, "clamps");
+        assert_eq!(step(k, 64.0, 1), 64.0, "clamps");
         let over = [
             ("radius".to_string(), KdlValue::Integer(4)),
             ("glass".to_string(), KdlValue::Bool(true)),
