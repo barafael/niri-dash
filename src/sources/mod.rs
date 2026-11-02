@@ -10,6 +10,7 @@ pub mod claude_usage;
 pub mod clipboard;
 pub mod icons;
 pub mod inhibit;
+pub mod kde;
 pub mod kdeconnect;
 pub mod keyboard;
 pub mod media;
@@ -69,8 +70,8 @@ pub enum Msg {
     ConfigChanged,
     Media(Option<media::State>),
     Toast(String),
-    /// niri's keyboard layouts changed (or niri went away: None).
-    KeyboardLayouts(Option<niri_ipc::KeyboardLayouts>),
+    /// The keyboard layouts changed (or the compositor stopped telling: None).
+    KeyboardLayouts(Option<keyboard::Layouts>),
     /// The screencasts niri is running.
     Casts(Vec<niri::ScreenCast>),
     /// The color picker returned (None: cancelled).
@@ -85,6 +86,8 @@ pub enum Msg {
     Phones(kdeconnect::State),
     /// `niri-dash night-light …`, or a standalone night-light app's change.
     NightLight(crate::gamma::Cmd),
+    /// KWin's own night light changed (on Plasma, which has no gamma control for us).
+    KwinNightLight(kde::NightLightState),
     Control(crate::Control),
     /// A line for the mascots, from `niri-dash say`.
     MascotSay(crate::mascots::Say),
@@ -234,6 +237,11 @@ impl Ctx {
             &self.buses.session
         };
         *slot.lock().await = None;
+    }
+
+    /// The runtime the sources run on.
+    pub fn runtime(&self) -> &tokio::runtime::Handle {
+        &self.rt
     }
 
     /// Wake every poller now.

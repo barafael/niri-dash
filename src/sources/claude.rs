@@ -1,9 +1,7 @@
 //! Running Claude Code sessions, from the files Claude Code keeps in `~/.claude/sessions/<pid>.json`,
 //! matched to their niri window by walking up the process tree.
 
-use super::niri::request;
 use super::{Ctx, Dedup, Msg, Trigger, strip_spinner};
-use niri_ipc::{Request, Response};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -102,13 +100,7 @@ fn fetch() -> State {
         return State::default();
     };
     // pid -> (window id, title)
-    let windows: HashMap<i32, (u64, String)> = match request(Request::Windows) {
-        Ok(Response::Windows(ws)) => ws
-            .into_iter()
-            .filter_map(|w| Some((w.pid?, (w.id, w.title.unwrap_or_default()))))
-            .collect(),
-        _ => HashMap::new(),
-    };
+    let windows: HashMap<i32, (u64, String)> = crate::compositor::windows_by_pid();
     let now_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)

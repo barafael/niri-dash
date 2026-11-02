@@ -1,8 +1,9 @@
-//! The color picker widget: picking a pixel through niri, and the recently picked colors.
+//! The color picker widget: picking a pixel through the compositor (niri or KWin), and the
+//! recently picked colors.
 
 use super::{App, model};
 use crate::shell::Shell;
-use crate::sources::{Msg, niri};
+use crate::sources::Msg;
 use crate::{Control, Dash};
 use slint::ComponentHandle;
 use std::cell::Cell;
@@ -60,15 +61,11 @@ impl App {
     fn run_pick(&self) {
         let ctx = self.ctx.clone();
         self.ctx.spawn(async move {
-            let picked = tokio::task::spawn_blocking(niri::pick_color).await;
-            let rgb = match picked {
-                Ok(Ok(rgb)) => rgb,
-                Ok(Err(e)) => {
-                    ctx.toast(format!("Pick color: {e}"));
-                    None
-                }
+            let rgb = match crate::compositor::pick_color(&ctx).await {
+                Ok(rgb) => rgb,
                 Err(e) => {
                     log::warn!("pick color: {e}");
+                    ctx.toast(format!("Pick color: {e}"));
                     None
                 }
             };

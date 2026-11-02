@@ -3,6 +3,7 @@
 
 use super::enums::{toggle_to_ui, weather_icon_to_ui};
 use super::{App, held, model};
+use crate::compositor;
 use crate::sources::{self, IconSrc, niri, tray};
 use crate::{
     Bluetooth as UiBluetooth, BtDevice, Claude as UiClaude, ClaudeSession, Control, Dash,
@@ -157,21 +158,18 @@ impl App {
         w.set_focused_icon(icon.unwrap_or_default());
     }
 
-    pub(super) fn show_keyboard_layouts(&self, l: Option<niri_ipc::KeyboardLayouts>) {
+    pub(super) fn show_keyboard_layouts(&self, l: Option<sources::keyboard::Layouts>) {
         let ui = self.ui();
         let k = ui.global::<crate::KeyboardLayouts>();
         k.set_available(l.is_some());
-        let l = l.unwrap_or(niri_ipc::KeyboardLayouts {
-            names: Vec::new(),
-            current_idx: 0,
-        });
-        k.set_current(l.current_idx as i32);
+        let l = l.unwrap_or_default();
+        k.set_current(l.current as i32);
         k.set_layouts(model(
-            l.names
-                .iter()
-                .map(|n| crate::LayoutItem {
-                    short: sources::keyboard::short_label(n).into(),
-                    name: n.into(),
+            l.layouts
+                .into_iter()
+                .map(|l| crate::LayoutItem {
+                    short: l.short.into(),
+                    name: l.name.into(),
                 })
                 .collect(),
         ));
@@ -428,17 +426,17 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     // Windows.
     let w = ui.global::<UiWindows>();
     let a = app.clone();
-    w.on_focus(move |id| niri::focus(&a.ctx, id as u64));
+    w.on_focus(move |id| compositor::focus_window(&a.ctx, id as u64));
     let a = app.clone();
-    w.on_close(move |id| niri::close(&a.ctx, id as u64));
-    use niri_ipc::LayoutSwitchTarget as T;
+    w.on_close(move |id| compositor::close_window(&a.ctx, id as u64));
+    use sources::keyboard::Switch;
     let kb = ui.global::<crate::KeyboardLayouts>();
     let a = app.clone();
-    kb.on_next(move || niri::switch_layout(&a.ctx, T::Next));
+    kb.on_next(move || compositor::switch_layout(&a.ctx, Switch::Next));
     let a = app.clone();
-    kb.on_prev(move || niri::switch_layout(&a.ctx, T::Prev));
+    kb.on_prev(move || compositor::switch_layout(&a.ctx, Switch::Prev));
     let a = app.clone();
-    kb.on_pick(move |i| niri::switch_layout(&a.ctx, T::Index(i.clamp(0, 255) as u8)));
+    kb.on_pick(move |i| compositor::switch_layout(&a.ctx, Switch::Index(i.max(0) as u32)));
     // Wi-Fi.
     let w = ui.global::<UiWifi>();
     let a = app.clone();
@@ -549,7 +547,7 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     ui.global::<UiClaude>().on_focus(move |pid| {
         let win = a.claude_windows.borrow().get(&pid).copied();
         if let Some(id) = win {
-            niri::focus(&a.ctx, id);
+            compositor::focus_window(&a.ctx, id);
         }
     });
     // Media.

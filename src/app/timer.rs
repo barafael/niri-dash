@@ -98,7 +98,10 @@ impl App {
         let ui = self.ui();
         ui.global::<crate::Countdown>().set_done(true);
         let text = format!("{} timer is done", crate::timer::format(length, false));
-        self.osd(&text, "alarm-symbolic");
+        // On Plasma the notification pops up by itself.
+        if !self.notifications.elsewhere() {
+            self.osd(&text, "alarm-symbolic");
+        }
         self.notifications.add_local("Timer", &text, "");
         if std::path::Path::new(ALARM_SOUND).exists() {
             let _ = crate::sources::spawn_detached("pw-play", &[ALARM_SOUND]);

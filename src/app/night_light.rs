@@ -1,10 +1,14 @@
 //! The night-light widget and `niri-dash night-light`: warmer screen colors through the shell's
 //! gamma control. Only the daemon drives the gamma tables (two clients can't both hold them); a
 //! standalone night-light app hands its changes to the daemon over the control socket.
+//!
+//! On Plasma, KWin has night light of its own (and no gamma control for us): the widget shows
+//! KWin's, and turning it off pauses KWin's schedule for as long as the daemon runs.
 
 use super::App;
 use crate::gamma::{self, Cmd};
 use crate::shell::Shell;
+use crate::sources::kde::NightLightState;
 use crate::{Dash, NightLight as UiNightLight};
 use slint::{ComponentHandle, Timer, TimerMode};
 use std::cell::Cell;
@@ -38,6 +42,14 @@ fn kelvin(warmth: f32) -> u32 {
 impl App {
     /// On start: bring back what was on before the restart.
     pub(super) fn restore_night_light(&self) {
+        if self.kwin_night.is_some() {
+            // KWin keeps its own state; a pause ended with the daemon.
+            let ui = self.ui();
+            let g = ui.global::<UiNightLight>();
+            g.set_fixed(true);
+            g.set_kelvin(gamma::NEUTRAL as i32);
+            return;
+        }
         let nl = self.state.borrow().night_light;
         if self.solo.is_none() {
             self.night.pending.set(Some(nl.on.then_some(nl.kelvin)));
@@ -50,7 +62,7 @@ impl App {
 
     /// Called every loop iteration: hands a pending change to the shell.
     pub(super) fn tick_night_light(&self, shell: &mut Shell) {
-        if self.solo.is_some() {
+        if self.solo.is_some() || self.kwin_night.is_some() {
             return;
         }
         let available = shell.gamma.available();
@@ -65,6 +77,14 @@ impl App {
     /// Apply a request from the widget, a standalone app or the command line; `announce` shows
     /// the result as an on-screen message (a keybinding has no other feedback).
     pub(super) fn night_light(&self, cmd: Cmd, announce: bool) {
+        if let Some(kwin) = &self.kwin_night {
+            if self.solo.is_some() {
+                self.forward_night_light(cmd);
+            } else {
+                kwin.apply(cmd, announce);
+            }
+            return;
+        }
         let (on, kelvin) = {
             let nl = self.state.borrow().night_light;
             cmd.apply(nl.on, nl.kelvin)
@@ -72,13 +92,7 @@ impl App {
         self.state.borrow_mut().night_light = crate::state::NightLight { on, kelvin };
         self.push_night_light();
         if self.solo.is_some() {
-            if let Err(e) = std::os::unix::net::UnixStream::connect(crate::socket_path())
-                .and_then(|mut s| writeln!(s, "{}", cmd.to_wire()))
-            {
-                self.toast(&format!(
-                    "Night light needs the niri-dash daemon running: {e}"
-                ));
-            }
+            self.forward_night_light(cmd);
             return;
         }
         self.night.pending.set(Some(on.then_some(kelvin)));
@@ -91,6 +105,65 @@ impl App {
             };
             self.osd(&text, "weather-clear-night");
         }
+    }
+
+    /// A standalone app hands night light to the daemon.
+    fn forward_night_light(&self, cmd: Cmd) {
+        if let Err(e) = std::os::unix::net::UnixStream::connect(crate::socket_path())
+            .and_then(|mut s| writeln!(s, "{}", cmd.to_wire()))
+        {
+            self.toast(&format!(
+                "Night light needs the niri-dash daemon running: {e}"
+            ));
+        }
+    }
+
+    /// KWin's night light changed (Plasma).
+    pub(super) fn show_kwin_night_light(&self, s: NightLightState) {
+        let ui = self.ui();
+        let g = ui.global::<UiNightLight>();
+        g.set_fixed(true);
+        g.set_available(s.available);
+        g.set_on(s.on());
+        g.set_kelvin(s.temperature as i32);
+        g.set_warmth(warmth(s.temperature));
+        g.set_status(
+            if !s.available {
+                ""
+            } else if !s.enabled {
+                "Off"
+            } else if s.inhibited {
+                "Paused"
+            } else if s.temperature >= gamma::NEUTRAL {
+                "Day"
+            } else {
+                ""
+            }
+            .into(),
+        );
+        g.set_note(
+            if !s.available {
+                "KWin's night light isn't available"
+            } else if !s.enabled {
+                "Turned off in System Settings"
+            } else if s.inhibited && !s.paused_by_us {
+                "Paused by another program"
+            } else {
+                "Schedule and warmth from System Settings"
+            }
+            .into(),
+        );
+    }
+
+    /// A temperature from the widget: KWin sets its own, so only show it again.
+    fn night_light_kelvin(&self, kelvin: u32) {
+        if self.kwin_night.is_some() {
+            let ui = self.ui();
+            let g = ui.global::<UiNightLight>();
+            g.set_warmth(warmth(g.get_kelvin().max(0) as u32));
+            return;
+        }
+        self.night_light(Cmd::Kelvin(kelvin), false);
     }
 
     fn push_night_light(&self) {
@@ -108,9 +181,9 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     let a = app.clone();
     g.on_toggle(move || a.night_light(Cmd::Toggle, false));
     let a = app.clone();
-    g.on_set_warmth(move |w| a.night_light(Cmd::Kelvin(kelvin(w)), false));
+    g.on_set_warmth(move |w| a.night_light_kelvin(kelvin(w)));
     let a = app.clone();
-    g.on_set_kelvin(move |k| a.night_light(Cmd::Kelvin(k.max(0) as u32), false));
+    g.on_set_kelvin(move |k| a.night_light_kelvin(k.max(0) as u32));
     let w = Rc::downgrade(app);
     app.night.save.start(
         TimerMode::SingleShot,

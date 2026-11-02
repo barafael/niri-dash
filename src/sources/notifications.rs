@@ -1,9 +1,14 @@
 //! A minimal org.freedesktop.Notifications server that keeps a history for the dashboard. It only
 //! claims the bus name if nobody else has it, so a running mako/dunst/swaync wins.
+//!
+//! On Plasma it doesn't try: Plasma shows the notifications and keeps their history. Do not
+//! disturb then pauses Plasma's pop-ups through the server's `Inhibit`, and our own messages (a
+//! timer going off) are sent to Plasma as notifications.
 
 use super::{Ctx, IconSrc, Msg, icons, osd::Osd, prop, unescape_entities};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use tokio::sync::watch;
 use zbus::fdo::RequestNameFlags;
 use zbus::object_server::{InterfaceRef, SignalEmitter};
 use zbus::zvariant::OwnedValue;
@@ -92,7 +97,10 @@ pub fn next_hour(
 
 #[derive(Debug, Clone, Default)]
 pub struct State {
+    /// We are the notification server.
     pub server: bool,
+    /// Another server (Plasma's) shows the notifications, and do not disturb pauses its pop-ups.
+    pub can_pause: bool,
     pub items: Vec<Notification>,
     pub dnd: Dnd,
     /// Notifications that came in without a pop-up during do not disturb.
@@ -101,6 +109,8 @@ pub struct State {
 
 #[derive(Default)]
 struct Store {
+    server: bool,
+    can_pause: bool,
     next_id: u32,
     items: Vec<Notification>,
     dnd: Dnd,
@@ -145,7 +155,8 @@ fn publish(ctx: &Ctx, store: &Mutex<Store>) {
     let state = store
         .lock()
         .map(|s| State {
-            server: true,
+            server: s.server,
+            can_pause: s.can_pause,
             items: s.items.clone(),
             dnd: s.dnd,
             missed: s.missed,
@@ -349,6 +360,10 @@ pub struct Notifications {
     osd: Osd,
     store: Arc<Mutex<Store>>,
     conn: Arc<tokio::sync::OnceCell<zbus::Connection>>,
+    /// Plasma shows the notifications: we leave the bus name to it.
+    plasma: bool,
+    /// Whether do not disturb wants the other server's pop-ups paused.
+    pause: watch::Sender<bool>,
 }
 
 impl Notifications {
@@ -358,12 +373,21 @@ impl Notifications {
             osd: Osd::default(),
             store: Default::default(),
             conn: Default::default(),
+            plasma: crate::compositor::is_kwin(),
+            pause: watch::Sender::new(false),
         };
         let m = me.clone();
+        if me.plasma {
+            ctx.spawn(async move { m.pause_plasma().await });
+            return me;
+        }
         ctx.spawn(async move {
             match m.serve().await {
                 Ok(true) => {
                     log::info!("serving {NAME}");
+                    if let Ok(mut s) = m.store.lock() {
+                        s.server = true;
+                    }
                     publish(&m.ctx, &m.store);
                     // End a timed do not disturb on time, even without new notifications.
                     loop {
@@ -376,10 +400,7 @@ impl Notifications {
                 }
                 Ok(false) => {
                     log::info!("{NAME} is owned by another daemon");
-                    m.ctx.send(Msg::Notifications(State {
-                        server: false,
-                        ..Default::default()
-                    }));
+                    publish(&m.ctx, &m.store);
                 }
                 Err(e) => log::warn!("notification server: {e}"),
             }
@@ -411,6 +432,80 @@ impl Notifications {
         Ok(owned)
     }
 
+    /// On Plasma: hold an inhibition of Plasma's pop-ups while do not disturb is on, and end a
+    /// timed one on time. Plasma lets go of it by itself when our bus connection closes.
+    async fn pause_plasma(&self) {
+        let conn = match self.ctx.bus(false).await {
+            Ok(c) => c,
+            Err(e) => {
+                log::warn!("notifications: {e}");
+                return;
+            }
+        };
+        let can_pause = supports_inhibit(&conn).await;
+        log::info!("Plasma shows notifications; pausing its pop-ups: {can_pause}");
+        if let Ok(mut s) = self.store.lock() {
+            s.can_pause = can_pause;
+        }
+        publish(&self.ctx, &self.store);
+        if !can_pause {
+            return;
+        }
+        let mut rx = self.pause.subscribe();
+        let mut cookie: Option<u32> = None;
+        loop {
+            let want = *rx.borrow_and_update();
+            let result = match (want, cookie) {
+                (true, None) => conn
+                    .call_method(
+                        Some(NAME),
+                        PATH,
+                        Some(NAME),
+                        "Inhibit",
+                        &(
+                            "niri-dash",
+                            "Do not disturb",
+                            HashMap::<&str, zbus::zvariant::Value>::new(),
+                        ),
+                    )
+                    .await
+                    .and_then(|r| r.body().deserialize::<u32>())
+                    .map(|c| cookie = Some(c)),
+                (false, Some(c)) => conn
+                    .call_method(Some(NAME), PATH, Some(NAME), "UnInhibit", &(c,))
+                    .await
+                    .map(|_| cookie = None),
+                _ => Ok(()),
+            };
+            match result {
+                Ok(()) => log::debug!("Plasma pop-ups paused: {}", cookie.is_some()),
+                Err(e) => {
+                    log::warn!("do not disturb: {e}");
+                    self.ctx.toast(format!("Do not disturb: {e}"));
+                }
+            }
+            tokio::select! {
+                changed = rx.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                }
+                _ = tokio::time::sleep(std::time::Duration::from_secs(20)) => {
+                    let expired = self.store.lock().map(|mut s| s.expire()).unwrap_or(false);
+                    if expired {
+                        publish(&self.ctx, &self.store);
+                        self.pause.send_replace(false);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Whether our own messages go to another server (Plasma's) rather than into our history.
+    pub fn elsewhere(&self) -> bool {
+        self.plasma
+    }
+
     /// The pop-ups, shared with the dashboard's own messages so a burst of both is folded into
     /// one summary.
     pub fn osd(&self) -> &Osd {
@@ -440,18 +535,56 @@ impl Notifications {
     }
 
     pub fn set_dnd(&self, dnd: Dnd) {
+        let active = dnd.active(chrono::Local::now());
         if let Ok(mut s) = self.store.lock() {
             s.dnd = dnd;
-            if !dnd.active(chrono::Local::now()) {
+            if !active {
                 s.dnd = Dnd::Off;
                 s.missed = 0;
             }
         }
         publish(&self.ctx, &self.store);
+        self.pause.send_replace(active);
     }
 
-    /// Put one of our own messages (a timer going off) into the history.
+    /// Put one of our own messages (a timer going off) into the history, or on Plasma, send it
+    /// to Plasma as a notification.
     pub fn add_local(&self, app: &str, summary: &str, body: &str) {
+        if self.plasma {
+            let (c, app, summary, body) = (
+                self.ctx.clone(),
+                app.to_string(),
+                summary.to_string(),
+                body.to_string(),
+            );
+            self.ctx.spawn(async move {
+                let sent = async {
+                    c.bus(false)
+                        .await?
+                        .call_method(
+                            Some(NAME),
+                            PATH,
+                            Some(NAME),
+                            "Notify",
+                            &(
+                                app.as_str(),
+                                0u32,
+                                "alarm-symbolic",
+                                summary.as_str(),
+                                body.as_str(),
+                                Vec::<&str>::new(),
+                                HashMap::<&str, zbus::zvariant::Value>::new(),
+                                -1i32,
+                            ),
+                        )
+                        .await
+                };
+                if let Err(e) = sent.await {
+                    log::warn!("notify: {e}");
+                }
+            });
+            return;
+        }
         if let Ok(mut s) = self.store.lock() {
             let id = s.new_id();
             s.push(Notification {
@@ -502,6 +635,27 @@ impl Notifications {
             }
             me.dismiss(id);
         });
+    }
+}
+
+/// Whether the notification server on the bus implements `Inhibit` (Plasma's does).
+async fn supports_inhibit(conn: &zbus::Connection) -> bool {
+    let xml = async {
+        zbus::fdo::IntrospectableProxy::builder(conn)
+            .destination(NAME)?
+            .path(PATH)?
+            .build()
+            .await?
+            .introspect()
+            .await
+            .map_err(zbus::Error::from)
+    };
+    match xml.await {
+        Ok(xml) => xml.contains(r#"name="Inhibit""#),
+        Err(e) => {
+            log::debug!("introspecting {NAME}: {e}");
+            false
+        }
     }
 }
 

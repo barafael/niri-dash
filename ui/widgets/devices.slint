@@ -1,7 +1,7 @@
 // Devices: the privacy indicator (who uses the microphone, camera or screen), removable drives
 // and phones paired through KDE Connect.
 import { Theme, Icons } from "../theme.slint";
-import { Privacy, PrivacyKind, Drives, Phones, PhoneItem } from "../data.slint";
+import { Privacy, PrivacyKind, Drives, Phones, PhoneItem, Desktop } from "../data.slint";
 import { Icon, IconButton, TextButton, Header, Muted, Empty, ScrollList, Row, Ring } from "../common.slint";
 
 component PrivacyDot inherits Rectangle {
@@ -41,7 +41,8 @@ export component PrivacyWidget inherits Rectangle {
                 on: Privacy.camera;
                 size: root.dot;
             }
-            PrivacyDot {
+            // Screen sharing is only known from niri.
+            if Desktop.niri: PrivacyDot {
                 icon: Icons.screen-share;
                 on: Privacy.screen;
                 size: root.dot;
@@ -73,7 +74,7 @@ export component PrivacyWidget inherits Rectangle {
                 on: Privacy.camera;
                 size: 24px;
             }
-            PrivacyDot {
+            if Desktop.niri: PrivacyDot {
                 y: (parent.height - self.height) / 2;
                 icon: Icons.screen-share;
                 on: Privacy.screen;
@@ -82,7 +83,7 @@ export component PrivacyWidget inherits Rectangle {
         }
         if !root.any: Empty {
             vertical-stretch: 1;
-            text: "Nothing uses the microphone, camera or screen";
+            text: Desktop.niri ? "Nothing uses the microphone, camera or screen" : "Nothing uses the microphone or camera";
         }
         if root.any: ScrollList {
             vertical-stretch: 1;

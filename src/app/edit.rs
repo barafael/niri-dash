@@ -474,14 +474,19 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     });
     let a = app.clone();
     ui.on_grid_auto(move || a.change_grid(None));
+    // Widgets that can't work under this compositor go last, saying what they need.
+    let mut kinds: Vec<Kind> = Kind::iter().collect();
+    kinds.sort_by_key(|&k| crate::compositor::caveat(k).is_some_and(|(_, out)| out));
     ui.set_palette(model(
-        Kind::iter()
+        kinds
+            .into_iter()
             .map(|k| {
                 let info = k.info();
+                let caveat = crate::compositor::caveat(k).map(|(text, _)| text);
                 PaletteItem {
                     kind: kind_to_ui(k),
                     title: info.title.into(),
-                    description: info.description.into(),
+                    description: caveat.unwrap_or(info.description).into(),
                     w: info.new_size().0,
                     h: info.new_size().1,
                 }

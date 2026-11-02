@@ -1,6 +1,7 @@
 //! On-screen messages through SwayOSD (`swayosd-client --custom-message`): notification pop-ups,
 //! "timer done", "screen sharing started". Without swayosd installed (or its server running)
-//! nothing is shown; the dashboard keeps the notification history either way.
+//! nothing is shown; the dashboard keeps the notification history either way. On Plasma they go to
+//! Plasma's own on-screen display instead.
 
 use super::{Ctx, one_line, run, which};
 use std::sync::{Arc, Mutex};
@@ -25,7 +26,7 @@ impl Osd {
     /// Show `text` with an icon name from the icon theme. A burst of messages shows the first one
     /// and then a single summary when it settles.
     pub fn show(&self, ctx: &Ctx, text: &str, icon: &str) {
-        if which("swayosd-client").is_none() {
+        if !crate::compositor::is_kwin() && which("swayosd-client").is_none() {
             return;
         }
         let now = Instant::now();
@@ -71,9 +72,16 @@ impl Osd {
 }
 
 fn send(ctx: &Ctx, text: String, icon: String) {
+    let c = ctx.clone();
     ctx.spawn(async move {
         // The OSD is one short line.
         let text = one_line(&text, 90);
+        if crate::compositor::is_kwin() {
+            if let Err(e) = super::kde::show_osd(&c, &text, &icon).await {
+                log::debug!("plasma osd: {e}");
+            }
+            return;
+        }
         if let Err(e) = run(
             "swayosd-client",
             &["--custom-message", &text, "--custom-icon", &icon],

@@ -5,8 +5,8 @@ use crate::layout::{Kind, Layout, Loaded, RendererChoice};
 use crate::shell::{Mode, Shell};
 use crate::sources::{
     self, Ctx, IconSrc, Msg, audio::Audio, bluetooth::Bluetooth, brightness::Brightness,
-    inhibit::Inhibit, kdeconnect::KdeConnect, media::Media, niri, notifications::Notifications,
-    tray, udisks::Drives, weather::Weather, wifi::Wifi,
+    inhibit::Inhibit, kdeconnect::KdeConnect, media::Media, notifications::Notifications, tray,
+    udisks::Drives, weather::Weather, wifi::Wifi,
 };
 use crate::{
     Clipboard as UiClipboard, Control, Dash, Power as UiPower, Shell as UiShell, Tray as UiTray,
@@ -40,6 +40,41 @@ mod devices;
 mod edit;
 mod enums;
 mod feeds;
+
+/// The sources a standalone app of `kind` has to run. Clock and calendar tick on their own, the
+/// clipboard comes from the Wayland side.
+fn feeds(kind: Kind) -> &'static [Feed] {
+    match kind {
+        Kind::Clock | Kind::Calendar | Kind::Clipboard | Kind::Session => &[],
+        Kind::SystemMonitor | Kind::Memory | Kind::Disks | Kind::Network | Kind::Gpu => {
+            &[Feed::Perf]
+        }
+        Kind::Windows => &[Feed::Compositor],
+        Kind::ClaudeSessions => &[Feed::Claude],
+        Kind::ClaudeUsage => &[Feed::ClaudeUsage],
+        Kind::Wifi => &[Feed::Wifi],
+        Kind::Bluetooth => &[Feed::Bluetooth],
+        Kind::Battery => &[Feed::Power, Feed::Inhibit],
+        Kind::Volume => &[Feed::Audio],
+        Kind::Brightness => &[Feed::Brightness],
+        Kind::Notifications => &[Feed::Notifications],
+        Kind::Tray => &[Feed::Tray],
+        Kind::Media => &[Feed::Media],
+        Kind::Weather => &[Feed::Weather],
+        Kind::Mascot => &[],
+        Kind::Privacy => &[Feed::Compositor, Feed::Privacy],
+        Kind::Notes => &[],
+        Kind::Timer => &[Feed::Notifications],
+        Kind::Stopwatch => &[],
+        Kind::ColorPicker => &[],
+        Kind::KeyboardLayout => &[Feed::Compositor],
+        // A standalone night-light app asks the daemon, which holds the gamma control (or the
+        // pause of KWin's night light).
+        Kind::NightLight => &[Feed::NightLight],
+        Kind::RemovableDrives => &[Feed::Drives],
+        Kind::Phone => &[Feed::Phone],
+    }
+}
 mod look;
 mod mascots;
 mod night_light;
@@ -190,7 +225,7 @@ struct App {
     hide_at: Cell<Option<Instant>>,
     /// While dragging: the widget being dragged (0 for a new one) and where others would go.
     preview: RefCell<Option<(u32, crate::layout::Reflow)>>,
-    /// The niri window of each Claude session, by pid.
+    /// The window of each Claude session, by pid (niri only).
     claude_windows: RefCell<HashMap<i32, u64>>,
     /// config.kdl as we last wrote it, to ignore our own writes when watching the file.
     last_written: RefCell<String>,
@@ -217,6 +252,8 @@ struct App {
     picker: color_picker::Picker,
     privacy: privacy::Privacy,
     night: night_light::NightLight,
+    /// KWin's night light, on Plasma.
+    kwin_night: Option<sources::kde::NightLight>,
     mascots: mascots::Mascots,
     clipboard: clipboard::History,
     mixer: audio::Mixer,
@@ -314,11 +351,8 @@ impl App {
     }
 
     fn prepare_for_output(&self, shell: &mut Shell) {
-        if let Ok(niri_ipc::Response::FocusedOutput(Some(out))) =
-            niri::request(niri_ipc::Request::FocusedOutput)
-            && let Some(l) = out.logical
-        {
-            shell.prepare(l.width, l.height, l.scale);
+        if let Some((width, height, scale)) = crate::compositor::focused_output() {
+            shell.prepare(width, height, scale);
             self.sync_grid();
         }
     }
@@ -347,7 +381,7 @@ impl App {
             self.set_awake(true);
         } else if self.solo.is_some() {
             // Already open: bring the window to the front.
-            niri::focus_pid(&self.ctx, std::process::id() as i32);
+            crate::compositor::focus_pid(&self.ctx, std::process::id() as i32);
         }
         if edit && self.solo.is_none() {
             self.set_editing(true);
@@ -435,6 +469,7 @@ impl App {
             Msg::Casts(casts) => self.set_casts(casts),
             Msg::Privacy(usage) => self.set_privacy_usage(usage),
             Msg::NightLight(cmd) => self.night_light(cmd, true),
+            Msg::KwinNightLight(s) => self.show_kwin_night_light(s),
             Msg::Drives(s) => self.show_drives(s),
             Msg::Phones(s) => self.show_phones(s),
             Msg::ColorPicked(rgb) => return self.color_picked(rgb),
@@ -505,7 +540,10 @@ fn control_server(listener: UnixListener, tx: channel::Sender<Msg>) {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Feed {
     Perf,
-    Niri,
+    /// What the compositor reports: windows, keyboard layouts, screencasts.
+    Compositor,
+    /// KWin's night light (on Plasma; elsewhere the daemon holds the gamma control).
+    NightLight,
     Power,
     Claude,
     ClaudeUsage,
@@ -523,40 +561,6 @@ enum Feed {
     Phone,
 }
 
-/// The sources a standalone app of `kind` has to run. Clock and calendar tick on their own, the
-/// clipboard comes from the Wayland side.
-fn feeds(kind: Kind) -> &'static [Feed] {
-    match kind {
-        Kind::Clock | Kind::Calendar | Kind::Clipboard | Kind::Session => &[],
-        Kind::SystemMonitor | Kind::Memory | Kind::Disks | Kind::Network | Kind::Gpu => {
-            &[Feed::Perf]
-        }
-        Kind::Windows => &[Feed::Niri],
-        Kind::ClaudeSessions => &[Feed::Claude],
-        Kind::ClaudeUsage => &[Feed::ClaudeUsage],
-        Kind::Wifi => &[Feed::Wifi],
-        Kind::Bluetooth => &[Feed::Bluetooth],
-        Kind::Battery => &[Feed::Power, Feed::Inhibit],
-        Kind::Volume => &[Feed::Audio],
-        Kind::Brightness => &[Feed::Brightness],
-        Kind::Notifications => &[Feed::Notifications],
-        Kind::Tray => &[Feed::Tray],
-        Kind::Media => &[Feed::Media],
-        Kind::Weather => &[Feed::Weather],
-        Kind::Mascot => &[],
-        Kind::Privacy => &[Feed::Niri, Feed::Privacy],
-        Kind::Notes => &[],
-        Kind::Timer => &[Feed::Notifications],
-        Kind::Stopwatch => &[],
-        Kind::ColorPicker => &[],
-        Kind::KeyboardLayout => &[Feed::Niri],
-        // A standalone night-light app asks the daemon, which holds the gamma control.
-        Kind::NightLight => &[],
-        Kind::RemovableDrives => &[Feed::Drives],
-        Kind::Phone => &[Feed::Phone],
-    }
-}
-
 /// Whether a standalone app keeps running when its window closes, so the next `niri-dash app`
 /// shows it again with its state. The clipboard does: its history is what it is for.
 fn resident(kind: Kind) -> bool {
@@ -564,17 +568,25 @@ fn resident(kind: Kind) -> bool {
 }
 
 fn build(ui: &Dash, ctx: Ctx, solo: Option<Kind>, config: Loaded) -> Rc<App> {
+    let compositor = crate::compositor::detect(ctx.runtime());
+    let kwin = compositor == crate::compositor::Compositor::Kwin;
     let wants = |f: Feed| solo.is_none_or(|k| feeds(k).contains(&f));
     // Sources a standalone app doesn't show get a dormant context: they exist but stay idle.
     let feed_ctx = |f: Feed| ctx.live_if(wants(f));
     sources::perf::start(feed_ctx(Feed::Perf));
-    niri::start(feed_ctx(Feed::Niri));
+    crate::compositor::start(feed_ctx(Feed::Compositor));
     sources::power::start(feed_ctx(Feed::Power));
     sources::claude::start(feed_ctx(Feed::Claude));
     sources::claude_usage::start(feed_ctx(Feed::ClaudeUsage));
     sources::privacy::start(feed_ctx(Feed::Privacy));
     theme::install_bundled();
     ui.set_solo(solo.is_some());
+    let desktop = ui.global::<crate::Desktop>();
+    desktop.set_niri(compositor == crate::compositor::Compositor::Niri);
+    desktop.set_plasma(kwin);
+    if !crate::compositor::has_windows() {
+        ui.global::<crate::Windows>().set_available(false);
+    }
 
     let Loaded {
         layout,
@@ -629,6 +641,7 @@ fn build(ui: &Dash, ctx: Ctx, solo: Option<Kind>, config: Loaded) -> Rc<App> {
         picker: Default::default(),
         privacy: Default::default(),
         night: Default::default(),
+        kwin_night: kwin.then(|| sources::kde::NightLight::start(feed_ctx(Feed::NightLight))),
         mascots: Default::default(),
         clipboard: Default::default(),
         state: RefCell::new(state),
@@ -693,13 +706,15 @@ pub fn run_app(kind: Kind) -> Result<()> {
     result
 }
 
-/// The runtime the sources run on.
+/// The runtime the sources run on. Also decides which compositor this is, before anything asks.
 fn runtime() -> Result<tokio::runtime::Runtime> {
-    Ok(tokio::runtime::Builder::new_multi_thread()
+    let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .thread_name("niri-dash-io")
         .enable_all()
-        .build()?)
+        .build()?;
+    crate::compositor::detect(rt.handle());
+    Ok(rt)
 }
 
 /// Have Slint draw into `window`.

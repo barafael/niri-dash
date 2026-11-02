@@ -1,7 +1,7 @@
 // Small tools: keyboard layout, color picker, timer and stopwatch, sticky notes, clipboard
 // history.
 import { Theme, Icons } from "../theme.slint";
-import { KeyboardLayouts, LayoutItem, ColorPicker, PickedColor, Countdown, Notes, Clipboard, Shell } from "../data.slint";
+import { KeyboardLayouts, LayoutItem, ColorPicker, PickedColor, Countdown, Notes, Clipboard, Shell, Desktop } from "../data.slint";
 import { Icon, IconButton, TextButton, Header, Row, Muted, Empty, ScrollList, Ring, Bar, RoundFace } from "../common.slint";
 
 // Scrolls through a list of choices a notch at a time, also with touchpads' small steps.
@@ -39,7 +39,10 @@ export component KeyboardLayoutWidget inherits Rectangle {
                 color: Theme.text;
             }
             if root.height > 70px && (!root.round || root.width > 150px): Text {
-                text: KeyboardLayouts.available ? root.cur.name : "niri isn't reachable";
+                text: KeyboardLayouts.available ? root.cur.name
+                    : Desktop.niri ? "niri isn't reachable"
+                    : Desktop.plasma ? "Plasma's keyboard layouts aren't reachable"
+                    : "Needs niri or Plasma";
                 horizontal-alignment: center;
                 font-size: Theme.font-small;
                 color: Theme.dim;

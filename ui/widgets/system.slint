@@ -438,11 +438,13 @@ export component BrightnessWidget inherits Rectangle {
 export component NightLightWidget inherits Rectangle {
     in property <bool> round;
     property <string> temp: NightLight.kelvin + " K";
+    property <string> label: NightLight.status != "" ? NightLight.status : NightLight.on ? root.temp : "Off";
+    // With a fixed temperature (KWin), scrolling the ring changes nothing: Rust puts it back.
     if root.round: RingKnob {
         value <=> NightLight.warmth;
         tint: Theme.warn;
         icon: Icons.moon;
-        label: NightLight.on ? root.temp : "Off";
+        label: root.label;
         dimmed: !NightLight.on;
         changed(v) => { NightLight.set-warmth(v); }
         clicked => { NightLight.toggle(); }
@@ -456,7 +458,7 @@ export component NightLightWidget inherits Rectangle {
             icon-color: NightLight.on ? Theme.warn : Theme.dim;
             title: "Night light";
             if NightLight.available && root.width >= 260px: Muted {
-                text: NightLight.on ? root.temp : "Off";
+                text: root.label;
             }
             Switch {
                 y: (parent.height - self.height) / 2;
@@ -465,15 +467,19 @@ export component NightLightWidget inherits Rectangle {
                 toggled => { NightLight.toggle(); }
             }
         }
-        if NightLight.available: Slider {
+        if NightLight.available && !NightLight.fixed: Slider {
             value <=> NightLight.warmth;
             tint: NightLight.on ? Theme.warn : Theme.faint;
             changed(v) => { NightLight.set-warmth(v); }
         }
-        if !NightLight.available: Muted {
+        if NightLight.note != "": Muted {
+            text: NightLight.note;
+            wrap: word-wrap;
+        }
+        if !NightLight.available && NightLight.note == "": Muted {
             text: "The compositor offers no gamma control";
         }
-        if NightLight.available && root.height >= 170px: HorizontalLayout {
+        if NightLight.available && !NightLight.fixed && root.height >= 170px: HorizontalLayout {
             spacing: 6px;
             for p in [3400, 4500, 5500]: TextButton {
                 horizontal-stretch: 1;

@@ -1,6 +1,6 @@
-//! Night light: warmer screen colors through wlr-gamma-control, which niri implements. The gamma
-//! tables stay in effect while we hold the controls; dropping them (or the daemon exiting)
-//! restores the original colors.
+//! Night light: warmer screen colors through wlr-gamma-control, which niri implements (on Plasma,
+//! app/night_light.rs drives KWin's own night light instead). The gamma tables stay in effect
+//! while we hold the controls; dropping them (or the daemon exiting) restores the original colors.
 
 use crate::shell::Shell;
 use crate::sources::Msg;
@@ -100,7 +100,11 @@ impl Gamma {
             .bind::<ZwlrGammaControlManagerV1, _, _>(qh, 1..=1, ())
             .ok();
         if manager.is_none() {
-            log::info!("no wlr-gamma-control; night light is unavailable");
+            if crate::compositor::is_kwin() {
+                log::info!("no wlr-gamma-control; night light goes through KWin's own");
+            } else {
+                log::info!("no wlr-gamma-control; night light is unavailable");
+            }
         }
         Self {
             manager,

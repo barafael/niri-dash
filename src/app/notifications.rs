@@ -18,6 +18,7 @@ impl App {
         let ui = self.ui();
         let n = ui.global::<UiNotifications>();
         n.set_server(s.server);
+        n.set_can_pause(s.can_pause);
         self.sync_dnd(s.dnd, s.missed);
         n.set_items(model(
             s.items

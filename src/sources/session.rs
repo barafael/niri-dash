@@ -1,7 +1,6 @@
 //! Lock, suspend, log out, reboot, power off.
 
 use super::{CmdError, Ctx, run, spawn_detached, which};
-use niri_ipc::Action;
 
 #[derive(Debug, thiserror::Error)]
 enum LockError {
@@ -52,11 +51,9 @@ pub fn poweroff(ctx: &Ctx) {
 }
 
 pub fn logout(ctx: &Ctx) {
-    ctx.act("Log out", async {
-        // niri shows its own confirmation dialog.
-        super::niri::action_async(Action::Quit {
-            skip_confirmation: false,
-        })
-        .await
-    });
+    let c = ctx.clone();
+    ctx.act(
+        "Log out",
+        async move { crate::compositor::logout(&c).await },
+    );
 }

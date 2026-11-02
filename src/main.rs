@@ -7,6 +7,7 @@
 slint::include_modules!();
 
 mod app;
+mod compositor;
 mod desktop;
 mod files;
 mod gamma;

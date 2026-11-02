@@ -1,5 +1,5 @@
 import { Theme, Icons } from "../theme.slint";
-import { Windows, Claude, Notifications, Tray, Media, Shell } from "../data.slint";
+import { Windows, Claude, Notifications, Tray, Media, Shell, Desktop } from "../data.slint";
 import { Icon, IconButton, TextButton, Ring, Header, Row, Muted, Empty, ScrollList, RoundFace, SectionLabel, Bar } from "../common.slint";
 
 export component WindowsWidget inherits Rectangle {
@@ -21,7 +21,7 @@ export component WindowsWidget inherits Rectangle {
         }
         if !Windows.available: Empty {
             vertical-stretch: 1;
-            text: "Not connected to niri";
+            text: Desktop.niri ? "Not connected to niri" : "Window list needs niri";
         }
         ScrollList {
             vertical-stretch: 1;
@@ -91,6 +91,7 @@ export component NotificationsWidget inherits Rectangle {
         icon: Notifications.dnd ? Icons.bell-off : Icons.bell;
         tint: Notifications.dnd ? Theme.warn : Notifications.items.length > 0 ? Theme.accent : Theme.faint;
         caption: Notifications.dnd ? (Notifications.missed > 0 ? Notifications.missed + " missed" : "Paused")
+            : !Notifications.server && Desktop.plasma ? "Pop-ups on"
             : Notifications.items.length == 0 ? "None" : Notifications.items.length + " new";
     }
     // The do-not-disturb choices are showing.
@@ -106,7 +107,7 @@ export component NotificationsWidget inherits Rectangle {
                 text: "Clear";
                 clicked => { Notifications.clear(); }
             }
-            if Notifications.server: IconButton {
+            if Notifications.server || Notifications.can-pause: IconButton {
                 y: (parent.height - self.height) / 2;
                 size: 28px;
                 icon: Notifications.dnd ? Icons.bell-off : Icons.bell;
@@ -139,11 +140,15 @@ export component NotificationsWidget inherits Rectangle {
             text: Notifications.dnd-text + (Notifications.missed > 0 ? " · " + Notifications.missed + " without pop-up" : "");
             color: Theme.warn;
         }
-        if !Notifications.server: Muted {
+        if !Notifications.server && Desktop.plasma: Empty {
+            vertical-stretch: 1;
+            text: Notifications.can-pause ? "Plasma shows notifications; the bell pauses its pop-ups" : "Plasma shows notifications";
+        }
+        if !Notifications.server && !Desktop.plasma: Muted {
             text: "Another notification daemon is running; showing nothing.";
             wrap: word-wrap;
         }
-        if Notifications.items.length == 0: Empty {
+        if Notifications.items.length == 0 && (Notifications.server || !Desktop.plasma): Empty {
             vertical-stretch: 1;
             text: "No notifications";
         }

@@ -1,6 +1,6 @@
 //! Windows and workspaces from niri's event stream; window actions over the IPC socket.
 
-use super::{Ctx, Dedup, IconSrc, Msg, icons, strip_spinner};
+use super::{Ctx, Dedup, IconSrc, Msg, icons, keyboard, strip_spinner};
 use niri_ipc::state::{EventStreamState, EventStreamStatePart};
 use niri_ipc::{Action, Reply, Request, Response, socket::Socket};
 use std::time::Duration;
@@ -147,7 +147,7 @@ fn build(state: &EventStreamState) -> WindowsState {
 #[derive(Default)]
 struct Sent {
     windows: Dedup<WindowsState>,
-    layouts: Dedup<Option<niri_ipc::KeyboardLayouts>>,
+    layouts: Dedup<Option<keyboard::Layouts>>,
     casts: Dedup<Vec<ScreenCast>>,
 }
 
@@ -198,7 +198,9 @@ fn stream(ctx: &Ctx, sent: &Sent) -> Result<()> {
         let config_changed = matches!(ev, niri_ipc::Event::ConfigLoaded { .. });
         state.apply(ev);
         sent.windows(ctx, build(&state));
-        let layouts = state.keyboard_layouts.keyboard_layouts.clone();
+        let layouts = state.keyboard_layouts.keyboard_layouts.as_ref().map(|l| {
+            keyboard::Layouts::from_names(l.names.iter().map(String::as_str), l.current_idx.into())
+        });
         if sent.layouts.changed(&layouts) {
             ctx.send(Msg::KeyboardLayouts(layouts));
         }
@@ -254,7 +256,13 @@ fn casts(state: &EventStreamState) -> Vec<ScreenCast> {
     v
 }
 
-pub fn switch_layout(ctx: &Ctx, layout: niri_ipc::LayoutSwitchTarget) {
+pub fn switch_layout(ctx: &Ctx, to: keyboard::Switch) {
+    use niri_ipc::LayoutSwitchTarget as T;
+    let layout = match to {
+        keyboard::Switch::Next => T::Next,
+        keyboard::Switch::Prev => T::Prev,
+        keyboard::Switch::Index(i) => T::Index(i.min(255) as u8),
+    };
     ctx.act("Switch layout", async move {
         action_async(Action::SwitchLayout { layout }).await
     });

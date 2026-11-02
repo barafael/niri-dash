@@ -1,9 +1,51 @@
-//! Short labels for keyboard layouts. niri reports layouts by their XKB description ("English
-//! (US)", "German"); the XKB rules file has the indicator text for each ("en", "de").
+//! Keyboard layouts as the keyboard-layout widget shows them, whichever compositor reports them,
+//! and short labels for them. niri reports layouts by their XKB description ("English (US)",
+//! "German"); the XKB rules file has the indicator text for each ("en", "de"). Plasma reports
+//! short names itself.
 
 use super::unescape_entities;
 use std::collections::HashMap;
 use std::sync::OnceLock;
+
+/// One configured layout.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Layout {
+    /// "EN", "DE".
+    pub short: String,
+    /// "English (US)".
+    pub name: String,
+}
+
+/// The configured layouts and the active one (an index into `layouts`).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Layouts {
+    pub layouts: Vec<Layout>,
+    pub current: usize,
+}
+
+impl Layouts {
+    /// From XKB descriptions, labelled from the rules file.
+    pub fn from_names<'a>(names: impl IntoIterator<Item = &'a str>, current: usize) -> Self {
+        Self {
+            layouts: names
+                .into_iter()
+                .map(|n| Layout {
+                    short: short_label(n),
+                    name: n.to_string(),
+                })
+                .collect(),
+            current,
+        }
+    }
+}
+
+/// Which layout to switch to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Switch {
+    Next,
+    Prev,
+    Index(u32),
+}
 
 const RULES: &[&str] = &[
     "/usr/share/X11/xkb/rules/evdev.xml",

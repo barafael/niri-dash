@@ -67,6 +67,13 @@ export global Shell {
     callback hide();
 }
 
+// The compositor we run under: niri, KDE Plasma (KWin), or another. Widgets that need one of them
+// say so.
+export global Desktop {
+    in property <bool> niri: true;
+    in property <bool> plasma;
+}
+
 export struct ZoneTime {
     label: string,
     time: string,
@@ -407,6 +414,12 @@ export global Brightness {
 // Night light: warmer screen colors. `warmth` is the slider (0 = neutral 6500 K, 1 = 2500 K).
 export global NightLight {
     in property <bool> available;
+    // The compositor runs night light itself (KWin): only on and off, no temperature control.
+    in property <bool> fixed;
+    // Replaces the temperature next to the switch, e.g. "Day" (empty: the temperature or "Off").
+    in property <string> status;
+    // A line under the switch, e.g. that System Settings has night light turned off.
+    in property <string> note;
     in property <bool> on;
     in property <int> kelvin: 4500;
     in-out property <float> warmth;
@@ -430,6 +443,8 @@ export struct Notif {
 export global Notifications {
     in property <[Notif]> items;
     in property <bool> server;
+    // Another server shows the notifications, and do not disturb pauses its pop-ups (Plasma).
+    in property <bool> can-pause;
     // Do not disturb: on, what it says ("Paused until 7:00"), and how many came in meanwhile.
     in property <bool> dnd;
     in property <string> dnd-text;
