@@ -2798,6 +2798,8 @@ fn serve(
     let ctx = Ctx::new(tx.clone(), rt.handle().clone());
     shell.clip_tx = Some(tx.clone());
     let app = build(&ui, ctx, solo);
+    ui.global::<UiClipboard>()
+        .set_available(shell.has_clipboard());
 
     let a = app.clone();
     event_loop

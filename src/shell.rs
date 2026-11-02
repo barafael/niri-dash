@@ -412,6 +412,11 @@ impl Shell {
         self.surface.is_some()
     }
 
+    /// Whether the compositor offers clipboard access (wlr-data-control).
+    pub fn has_clipboard(&self) -> bool {
+        self.data_control.is_some()
+    }
+
     pub fn show(&mut self) {
         if self.surface.is_some() {
             return;
