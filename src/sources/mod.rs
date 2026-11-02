@@ -596,15 +596,26 @@ pub fn which(program: &str) -> Option<PathBuf> {
     })
 }
 
-/// The locale for dates, from LC_ALL / LC_TIME / LANG; and whether it's US English.
-pub fn locale() -> (chrono::Locale, bool) {
+/// The locale for dates and times.
+#[derive(Debug, Clone, Copy)]
+pub struct Locale {
+    pub chrono: chrono::Locale,
+    /// US English: 12-hour clock, weeks start on Sunday, Fahrenheit.
+    pub us: bool,
+}
+
+/// The locale for dates, from LC_ALL / LC_TIME / LANG.
+pub fn locale() -> Locale {
     let raw = ["LC_ALL", "LC_TIME", "LANG"]
         .iter()
         .find_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty()))
         .unwrap_or_default();
     let name = raw.split(['.', '@']).next().unwrap_or("");
     let loc = chrono::Locale::try_from(name).unwrap_or(chrono::Locale::en_US);
-    (loc, name.starts_with("en_US"))
+    Locale {
+        chrono: loc,
+        us: name.starts_with("en_US"),
+    }
 }
 
 #[cfg(test)]

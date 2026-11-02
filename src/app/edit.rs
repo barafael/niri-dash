@@ -66,14 +66,14 @@ impl App {
         self.sync_mascots();
         self.sync_notes(false);
         if let Some(kind) = self.solo {
-            let inst = to_inst(&self.layout.borrow().solo_widget(kind), self.locale.1);
+            let inst = to_inst(&self.layout.borrow().solo_widget(kind), self.locale.us);
             self.ui().set_solo_inst(inst);
             return;
         }
         self.ui()
             .set_hidden_widgets(self.layout.borrow().hidden_count() as i32);
         let preview = self.preview.borrow();
-        let us = self.locale.1;
+        let us = self.locale.us;
         let new: Vec<WidgetInst> = self
             .layout
             .borrow()
@@ -245,7 +245,7 @@ impl App {
         use crate::widget_settings::{Ty, for_kind, get};
         let ui = self.ui();
         let id = ui.get_settings_id();
-        let us = self.locale.1;
+        let us = self.locale.us;
         let layout = self.layout.borrow();
         let Some(p) = (id != 0).then(|| layout.get(id as u32)).flatten() else {
             if id != 0 {
@@ -295,7 +295,7 @@ impl App {
     ) {
         use crate::widget_settings::{for_kind, get, set};
         let id = self.ui().get_settings_id() as u32;
-        let us = self.locale.1;
+        let us = self.locale.us;
         let kind = {
             let mut layout = self.layout.borrow_mut();
             let Some(kind) = layout.get(id).map(|p| p.kind) else {

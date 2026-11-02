@@ -21,11 +21,24 @@ pub(super) struct ClockState {
     zones: Rc<VecModel<crate::ZoneList>>,
 }
 
-pub(super) fn clock_text(t: chrono::DateTime<chrono::Local>, us: bool) -> String {
+/// A time of day as the locale writes it: "9:41 AM" in the US, "9:41" elsewhere.
+pub(super) fn clock_text(t: chrono::DateTime<Local>, us: bool) -> String {
     if us {
         t.format("%-I:%M %p").to_string()
     } else {
         t.format("%-H:%M").to_string()
+    }
+}
+
+/// When something happened: the time of day, with the date before it if that isn't today.
+pub(super) fn when_text(t: chrono::DateTime<Local>, us: bool) -> String {
+    let time = clock_text(t, us);
+    if t.date_naive() == Local::now().date_naive() {
+        time
+    } else if us {
+        format!("{} {time}", t.format("%-m/%-d"))
+    } else {
+        format!("{} {time}", t.format("%d.%m."))
     }
 }
 
@@ -50,7 +63,7 @@ impl App {
         let now = Local::now();
         let ui = self.ui();
         let c = ui.global::<Clock>();
-        let (loc, us) = self.locale;
+        let (loc, us) = (self.locale.chrono, self.locale.us);
         c.set_time(now.format("%H:%M").to_string().into());
         c.set_seconds(now.format("%S").to_string().into());
         c.set_time12(now.format("%-I:%M").to_string().into());
@@ -81,7 +94,7 @@ impl App {
         let months = today.year() * 12 + today.month0() as i32 + off;
         let (y, m) = (months.div_euclid(12), months.rem_euclid(12) as u32 + 1);
         let first = chrono::NaiveDate::from_ymd_opt(y, m, 1).expect("valid month");
-        let (loc, _) = self.locale;
+        let loc = self.locale.chrono;
         // Six weeks from the Monday (or Sunday) on or before the 1st.
         let grid = |sunday: bool| {
             let back = if sunday {
@@ -133,7 +146,7 @@ impl App {
     /// Refresh `Clock.zones` for every clock widget that lists other zones.
     fn tick_zones(&self) {
         use crate::widget_settings::{Opt, get_int, get_str};
-        let us = self.locale.1;
+        let us = self.locale.us;
         let clocks = self.placed_of(Kind::Clock);
         let now = chrono::Utc::now();
         let mut rows: Vec<crate::ZoneList> = Vec::new();

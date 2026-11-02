@@ -22,7 +22,7 @@ pub(super) struct Picker {
 impl App {
     pub(super) fn color_picked(&self, rgb: Option<[f64; 3]>) -> Option<Control> {
         if let Some(rgb) = rgb {
-            let hex = hex(rgb);
+            let hex = hex(rgb.map(to_u8));
             self.update_state(|s| {
                 s.colors.retain(|c| *c != hex);
                 s.colors.insert(0, hex.clone());
@@ -34,7 +34,6 @@ impl App {
         if self.picker.reshow.take() {
             return Some(Control::Show);
         }
-
         None
     }
 
@@ -96,13 +95,9 @@ fn to_u8(v: f64) -> u8 {
     (v.clamp(0.0, 1.0) * 255.0).round() as u8
 }
 
-fn hex(rgb: [f64; 3]) -> String {
-    format!(
-        "#{:02x}{:02x}{:02x}",
-        to_u8(rgb[0]),
-        to_u8(rgb[1]),
-        to_u8(rgb[2])
-    )
+/// "#rrggbb".
+fn hex([r, g, b]: [u8; 3]) -> String {
+    format!("#{r:02x}{g:02x}{b:02x}")
 }
 
 fn parse_hex(s: &str) -> Option<[u8; 3]> {
@@ -143,7 +138,7 @@ fn picked(c: [u8; 3]) -> crate::PickedColor {
     let (h, s, l) = hsl(c);
     crate::PickedColor {
         color: slint::Color::from_rgb_u8(c[0], c[1], c[2]),
-        hex: format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2]).into(),
+        hex: hex(c).into(),
         rgb: format!("rgb({}, {}, {})", c[0], c[1], c[2]).into(),
         hsl: format!("hsl({h}, {s}%, {l}%)").into(),
     }
@@ -164,7 +159,7 @@ mod tests {
 
     #[test]
     fn color_formats() {
-        assert_eq!(hex([1.0, 0.5, 0.0]), "#ff8000");
+        assert_eq!(hex([1.0, 0.5, 0.0].map(to_u8)), "#ff8000");
         assert_eq!(parse_hex("#ff8000"), Some([255, 128, 0]));
         assert_eq!(parse_hex("ff8000"), None);
         assert_eq!(hsl([255, 0, 0]), (0, 100, 50));

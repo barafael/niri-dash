@@ -2,7 +2,7 @@
 //! Claude, windows, keyboard layout, Wi-Fi, Bluetooth, brightness, tray, weather and media.
 
 use super::enums::weather_icon;
-use super::{App, model};
+use super::{App, held, model};
 use crate::sources::{self, IconSrc, niri, tray};
 use crate::{
     Bluetooth as UiBluetooth, BtDevice, Claude as UiClaude, ClaudeSession, Control, Dash,
@@ -11,7 +11,7 @@ use crate::{
 };
 use slint::ComponentHandle;
 use std::rc::Rc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 impl App {
     pub(super) fn show_perf(&self, s: Box<sources::perf::Snapshot>) {
@@ -223,12 +223,8 @@ impl App {
         let ui = self.ui();
         let b = ui.global::<crate::Brightness>();
         b.set_available(level.is_some());
-        let touched = self
-            .brightness_touched
-            .get()
-            .is_some_and(|t| t.elapsed() < Duration::from_millis(1500));
         if let Some(l) = level
-            && !touched
+            && !self.brightness_touched.get().is_some_and(held)
         {
             b.set_level(l);
         }

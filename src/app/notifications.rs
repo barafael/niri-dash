@@ -1,13 +1,12 @@
 //! The notifications widget and do not disturb.
 
-use super::clock::clock_text;
+use super::clock::{clock_text, when_text};
 use super::{App, model};
 use crate::sources::{
     self,
     notifications::{Dnd, next_hour},
 };
 use crate::{Dash, Notif, Notifications as UiNotifications};
-use chrono::Local;
 use slint::ComponentHandle;
 use std::rc::Rc;
 
@@ -20,7 +19,6 @@ impl App {
         let n = ui.global::<UiNotifications>();
         n.set_server(s.server);
         self.sync_dnd(s.dnd, s.missed);
-        let today = Local::now().date_naive();
         n.set_items(model(
             s.items
                 .iter()
@@ -31,13 +29,7 @@ impl App {
                         app: x.app.as_str().into(),
                         summary: x.summary.as_str().into(),
                         body: x.body.as_str().into(),
-                        time: if x.time.date_naive() == today {
-                            x.time.format("%H:%M")
-                        } else {
-                            x.time.format("%d.%m. %H:%M")
-                        }
-                        .to_string()
-                        .into(),
+                        time: when_text(x.time, self.locale.us).into(),
                         has_icon: icon.is_some(),
                         icon: icon.unwrap_or_default(),
                         has_default: x.has_default(),
@@ -53,7 +45,7 @@ impl App {
         let ui = self.ui();
         let n = ui.global::<crate::Notifications>();
         let now = chrono::Local::now();
-        let us = self.locale.1;
+        let us = self.locale.us;
         n.set_dnd(dnd.active(now));
         n.set_missed(missed as i32);
         n.set_dnd_text(
@@ -99,7 +91,7 @@ impl App {
 
 pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     let n = ui.global::<crate::Notifications>();
-    n.set_morning(clock_text(next_hour(chrono::Local::now(), DND_MORNING), app.locale.1).into());
+    n.set_morning(clock_text(next_hour(chrono::Local::now(), DND_MORNING), app.locale.us).into());
     let a = app.clone();
     n.on_set_dnd(move |choice| {
         let now = chrono::Local::now();

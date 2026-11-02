@@ -120,6 +120,15 @@ fn set_if_changed<T: Clone + 'static>(
     }
 }
 /// A clipboard history entry, with what the UI shows for it.
+/// How long a slider the user dragged keeps its value against what the source reports, which
+/// lags behind.
+const TOUCH_HOLD: Duration = Duration::from_millis(1500);
+
+/// Whether something the user touched at `since` is still held.
+fn held(since: Instant) -> bool {
+    since.elapsed() < TOUCH_HOLD
+}
+
 /// How many images `App::image` keeps by path.
 const IMAGE_CACHE: usize = 96;
 /// Largest side of a raster image kept for display. Album art in a tall media widget is the
@@ -135,12 +144,17 @@ fn small_image(img: Image) -> Image {
     let Some(buf) = img.to_rgba8() else {
         return img;
     };
-    let (w, h, px) = sources::clipboard::shrink(
+    rgba_image(
         buf.width(),
         buf.height(),
         buf.as_bytes().to_vec(),
         IMAGE_MAX,
-    );
+    )
+}
+
+/// An image of RGBA pixels, scaled down to fit `max` on its longer side.
+fn rgba_image(width: u32, height: u32, rgba: Vec<u8>, max: u32) -> Image {
+    let (w, h, px) = sources::clipboard::shrink(width, height, rgba, max);
     Image::from_rgba8(SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(&px, w, h))
 }
 
@@ -157,8 +171,7 @@ struct App {
     images: RefCell<HashMap<PathBuf, (Option<Image>, u64)>>,
     image_uses: Cell<u64>,
     pending: RefCell<Vec<Control>>,
-    locale: (chrono::Locale, bool),
-    audio_touched: Cell<Option<Instant>>,
+    locale: sources::Locale,
     brightness_touched: Cell<Option<Instant>>,
     tray_items: RefCell<Vec<tray::Item>>,
     menu_address: RefCell<String>,
@@ -197,9 +210,7 @@ struct App {
     privacy: privacy::Privacy,
     mascots: mascots::Mascots,
     clipboard: clipboard::History,
-    /// Per-app volume rows, and the slider being dragged (its value isn't overwritten).
-    streams: Rc<VecModel<crate::AudioStream>>,
-    stream_touched: Cell<Option<(u32, std::time::Instant)>>,
+    mixer: audio::Mixer,
 }
 
 impl App {
@@ -236,13 +247,12 @@ impl App {
                 width,
                 height,
                 data,
-            } => {
-                let (w, h, px) =
-                    sources::clipboard::shrink(*width, *height, data.as_ref().clone(), IMAGE_MAX);
-                Some(Image::from_rgba8(
-                    SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(&px, w, h),
-                ))
-            }
+            } => Some(rgba_image(
+                *width,
+                *height,
+                data.as_ref().clone(),
+                IMAGE_MAX,
+            )),
         }
     }
 
@@ -555,7 +565,6 @@ fn build(ui: &Dash, ctx: Ctx, solo: Option<Kind>, config: Loaded) -> Rc<App> {
         image_uses: Cell::new(0),
         pending: Default::default(),
         locale,
-        audio_touched: Cell::new(None),
         brightness_touched: Cell::new(None),
         tray_items: Default::default(),
         menu_address: Default::default(),
@@ -569,7 +578,7 @@ fn build(ui: &Dash, ctx: Ctx, solo: Option<Kind>, config: Loaded) -> Rc<App> {
         last_written: RefCell::new(text),
         config_broken: Cell::new(broken),
         watched: Default::default(),
-        weather: Weather::start(feed_ctx(Feed::Weather), locale.0),
+        weather: Weather::start(feed_ctx(Feed::Weather), locale.chrono),
         wifi: Wifi::start(feed_ctx(Feed::Wifi)),
         bluetooth: Bluetooth::start(feed_ctx(Feed::Bluetooth)),
         audio: Audio::start(feed_ctx(Feed::Audio)),
@@ -578,8 +587,7 @@ fn build(ui: &Dash, ctx: Ctx, solo: Option<Kind>, config: Loaded) -> Rc<App> {
         tray: tray::Tray::start(feed_ctx(Feed::Tray)),
         media: Media::start(feed_ctx(Feed::Media)),
         inhibit: Inhibit::start(feed_ctx(Feed::Inhibit)),
-        streams: Rc::new(VecModel::default()),
-        stream_touched: Cell::new(None),
+        mixer: Default::default(),
         clock: Default::default(),
         timers: timer::Timers::restored(&state),
         notes: Default::default(),

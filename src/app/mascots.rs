@@ -38,7 +38,7 @@ impl App {
     pub(super) fn sync_mascots(&self) {
         use crate::mascots::Spec;
         use crate::widget_settings::{Opt, get_int, get_str};
-        let us = self.locale.1;
+        let us = self.locale.us;
         let specs = self
             .placed_of(Kind::Mascot)
             .iter()

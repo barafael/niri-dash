@@ -37,7 +37,7 @@ impl App {
     /// The notes widgets and their note names, by widget id.
     fn note_widgets(&self) -> Vec<(u32, String)> {
         use crate::widget_settings::{Opt, get_str};
-        let us = self.locale.1;
+        let us = self.locale.us;
         self.placed_of(Kind::Notes)
             .into_iter()
             .map(|p| (p.id, note_name(&get_str(&p.settings, Opt::Note, us))))

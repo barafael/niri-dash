@@ -21,7 +21,7 @@ impl App {
     pub(super) fn apply_settings(&self) {
         let (weather, cell) = {
             let l = self.layout.borrow();
-            (l.weather_config(self.locale.1), l.cell_size)
+            (l.weather_config(self.locale.us), l.cell_size)
         };
         self.apply_look(self.ctx.visible());
         self.weather.configure(weather);

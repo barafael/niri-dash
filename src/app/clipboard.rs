@@ -1,11 +1,12 @@
 //! The clipboard history: what the shell reports, and putting an entry back.
 
-use super::{App, model};
+use super::clock::when_text;
+use super::{App, model, rgba_image};
 use crate::shell::Shell;
 use crate::sources::clipboard::{self, Clip};
 use crate::{ClipItem, Clipboard as UiClipboard, Dash};
 use chrono::Local;
-use slint::{ComponentHandle, Image, Rgba8Pixel, SharedPixelBuffer};
+use slint::{ComponentHandle, Image};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -39,7 +40,7 @@ impl App {
     }
 
     fn clip_items(&self) {
-        let today = Local::now().date_naive();
+        let us = self.locale.us;
         let items: Vec<ClipItem> = self
             .clipboard
             .entries
@@ -47,11 +48,7 @@ impl App {
             .iter()
             .enumerate()
             .map(|(i, c)| {
-                let when = if c.time.date_naive() == today {
-                    c.time.format("%H:%M")
-                } else {
-                    c.time.format("%d.%m. %H:%M")
-                };
+                let when = when_text(c.time, us);
                 let image = c.image.as_ref().map(|(_, _, img)| img.clone());
                 let info = match &c.image {
                     Some((w, h, _)) => format!("{when} · image {w}×{h}"),
@@ -60,7 +57,7 @@ impl App {
                         if lines > 1 {
                             format!("{when} · {lines} lines")
                         } else {
-                            when.to_string()
+                            when
                         }
                     }
                 };
@@ -93,9 +90,8 @@ impl App {
                 let Some((w, h, rgba)) = clipboard::decode_png(&clip.data) else {
                     return;
                 };
-                let (tw, th, small) = clipboard::shrink(w, h, rgba, CLIP_THUMB);
-                let buf = SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(&small, tw, th);
-                (String::from("Image"), Some((w, h, Image::from_rgba8(buf))))
+                let thumb = rgba_image(w, h, rgba, CLIP_THUMB);
+                (String::from("Image"), Some((w, h, thumb)))
             };
             clips.insert(
                 0,
@@ -112,12 +108,19 @@ impl App {
         self.clip_items();
     }
 
+    /// Put `text` on the clipboard.
     pub(super) fn copy_text(&self, text: &str) {
-        *self.clipboard.pending.borrow_mut() = Some(clipboard::Clip {
+        let clip = Clip {
             kind: clipboard::ClipKind::Text,
             data: Arc::new(text.as_bytes().to_vec()),
-        });
-        self.toast(&format!("Copied {text}"));
+        };
+        self.copy(clip, &format!("Copied {text}"));
+    }
+
+    /// Put `clip` on the clipboard (once the event loop gets to it) and say so in a toast.
+    fn copy(&self, clip: Clip, toast: &str) {
+        *self.clipboard.pending.borrow_mut() = Some(clip);
+        self.toast(toast);
     }
 }
 
@@ -132,8 +135,7 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
             .get(i as usize)
             .map(|c| c.clip.clone());
         if let Some(clip) = clip {
-            *a.clipboard.pending.borrow_mut() = Some(clip);
-            a.toast("Copied");
+            a.copy(clip, "Copied");
         }
     });
     let a = app.clone();
