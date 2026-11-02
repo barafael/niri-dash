@@ -560,9 +560,7 @@ impl App {
         let schemes: Vec<crate::SchemeItem> = schemes
             .into_iter()
             .map(|name| {
-                let text =
-                    theme::load_text(&theme::colorscheme_path(&name), theme::COLORSCHEMES, &name)
-                        .unwrap_or_default();
+                let text = theme::colorscheme_text(&name).unwrap_or_default();
                 let (look, _) = theme::resolve(&text, theme::DEFAULT_STYLE);
                 crate::SchemeItem {
                     current: name == cur_c,
@@ -584,8 +582,7 @@ impl App {
         let styles: Vec<crate::StyleItem> = styles
             .into_iter()
             .map(|name| {
-                let text = theme::load_text(&theme::style_path(&name), theme::STYLES, &name)
-                    .unwrap_or_default();
+                let text = theme::style_text(&name).unwrap_or_default();
                 let (look, _) = theme::resolve(theme::DEFAULT_COLORSCHEME, &text);
                 crate::StyleItem {
                     current: name == cur_s,
@@ -612,22 +609,10 @@ impl App {
 
     /// The Style tab's rows: every variable with its current value (preset + adjustments).
     fn refresh_style_vars(&self) {
-        let (cs, st, over) = {
-            let l = self.layout.borrow();
-            (
-                l.colorscheme.clone(),
-                l.style.clone(),
-                l.style_overrides.clone(),
-            )
-        };
-        let (ctext, stext) = self.look_texts(&cs, &st, &mut Vec::new());
-        let (look, _) = theme::resolve_with(&ctext, &stext, &over);
+        let (look, _) = self.current_look();
+        let over = self.layout.borrow().style_overrides.clone();
         let overridden = |var: theme::StyleVar| over.iter().any(|(k, _)| k == var.as_ref());
-        let num = |var: theme::StyleVar| match look.style.get(var) {
-            theme::StyleValue::Num(n) => n,
-            theme::StyleValue::Int(i) => i as f32,
-            _ => 0.0,
-        };
+        let num = |var: theme::StyleVar| look.style.get(var).as_f32().unwrap_or(0.0);
         let mut rows: Vec<crate::StyleRow> = vec![crate::StyleRow {
             key: style_key(theme::StyleVar::Glass),
             kind: crate::RowKind::Toggle,
@@ -673,17 +658,11 @@ impl App {
     }
 
     fn style_step(&self, var: theme::StyleVar, delta: i32) {
-        let (cs, st, over) = {
+        let (now, _) = self.current_look();
+        let (preset, _) = {
             let l = self.layout.borrow();
-            (
-                l.colorscheme.clone(),
-                l.style.clone(),
-                l.style_overrides.clone(),
-            )
+            theme::load_look(&l.colorscheme, &l.style, &[])
         };
-        let (ctext, stext) = self.look_texts(&cs, &st, &mut Vec::new());
-        let (now, _) = theme::resolve_with(&ctext, &stext, &over);
-        let (preset, _) = theme::resolve(&ctext, &stext);
         let value: kdl::KdlValue = match (var, now.style.get(var)) {
             (theme::StyleVar::FontFamily, theme::StyleValue::Text(cur)) => {
                 let fonts = self.fonts();
@@ -703,17 +682,11 @@ impl App {
                 let Some(knob) = theme::KNOBS.iter().find(|k| k.var == var) else {
                     return;
                 };
-                let cur = match cur {
-                    theme::StyleValue::Num(n) => n,
-                    theme::StyleValue::Int(i) => i as f32,
-                    _ => return,
+                let Some(cur) = cur.as_f32() else {
+                    return;
                 };
                 let v = theme::step(knob, cur, delta);
                 if v.fract() == 0.0
-                    && matches!(
-                        now.style.get(var),
-                        theme::StyleValue::Int(_) | theme::StyleValue::Num(_)
-                    )
                     && !matches!(
                         var,
                         theme::StyleVar::Motion
@@ -775,59 +748,28 @@ impl App {
     /// Load the configured color scheme and style and apply them; with `animate`, blend from
     /// the current look over a third of a second (scaled by the new style's motion).
     fn apply_look(&self, animate: bool) {
-        let (c, st, over) = {
+        let (target, problems) = self.current_look();
+        if let Ok(mut w) = self.watched.lock() {
             let l = self.layout.borrow();
-            (
-                l.colorscheme.clone(),
-                l.style.clone(),
-                l.style_overrides.clone(),
-            )
-        };
-        self.apply_look_named(&c, &st, &over, animate);
+            *w = vec![
+                Layout::path(),
+                theme::colorscheme_path(&l.colorscheme),
+                theme::style_path(&l.style),
+            ];
+        }
+        self.show_look(target, &problems, animate);
     }
 
-    /// The color scheme and style texts for names (falling back to the defaults, with a note).
-    fn look_texts(
-        &self,
-        colorscheme: &str,
-        style: &str,
-        problems: &mut Vec<String>,
-    ) -> (String, String) {
-        let ctext = theme::load_text(
-            &theme::colorscheme_path(colorscheme),
-            theme::COLORSCHEMES,
-            colorscheme,
-        )
-        .unwrap_or_else(|| {
-            problems.push(format!("color scheme \"{colorscheme}\" not found"));
-            theme::DEFAULT_COLORSCHEME.to_string()
-        });
-        let stext = theme::load_text(&theme::style_path(style), theme::STYLES, style)
-            .unwrap_or_else(|| {
-                problems.push(format!("style \"{style}\" not found"));
-                theme::DEFAULT_STYLE.to_string()
-            });
-        (ctext, stext)
+    /// The look config.kdl asks for, with notes on anything missing or wrong.
+    fn current_look(&self) -> (theme::Look, Vec<String>) {
+        let l = self.layout.borrow();
+        theme::load_look(&l.colorscheme, &l.style, &l.style_overrides)
     }
 
-    fn apply_look_named(
-        &self,
-        colorscheme: &str,
-        style: &str,
-        overrides: &[(String, kdl::KdlValue)],
-        animate: bool,
-    ) {
-        let cpath = theme::colorscheme_path(colorscheme);
-        let spath = theme::style_path(style);
-        let mut problems = Vec::new();
-        let (ctext, stext) = self.look_texts(colorscheme, style, &mut problems);
-        let (target, warnings) = theme::resolve_with(&ctext, &stext, overrides);
-        problems.extend(warnings);
+    /// Show `target` (blending over to it with `animate`), toasting any `problems` loading it.
+    fn show_look(&self, target: theme::Look, problems: &[String], animate: bool) {
         if !problems.is_empty() {
             self.toast(&format!("Theme: {}", problems.join("; ")));
-        }
-        if let Ok(mut w) = self.watched.lock() {
-            *w = vec![Layout::path(), cpath, spath];
         }
         let ui = self.ui();
         let from = theme::current(&ui);
@@ -1855,8 +1797,8 @@ fn wire(app: &Rc<App>, ui: &Dash) {
         {
             // The preset takes over what it changes; other adjustments (often the font, glass,
             // opacity) stay, since no preset has an opinion on them.
-            let stext = theme::load_text(&theme::style_path(&name), theme::STYLES, name.as_str())
-                .unwrap_or_else(|| theme::DEFAULT_STYLE.to_string());
+            let stext =
+                theme::style_text(&name).unwrap_or_else(|| theme::DEFAULT_STYLE.to_string());
             let taken = theme::preset_changes(&stext);
             let mut l = a.layout.borrow_mut();
             l.style = name.to_string();
@@ -2514,17 +2456,20 @@ pub fn snapshot(
         })
         .map_err(|e| Error::Ui(e.to_string()))?;
     // NIRI_DASH_COLORSCHEME / NIRI_DASH_STYLE preview a theme without touching config.kdl.
-    let (c, st) = {
-        let l = app.layout.borrow();
-        (l.colorscheme.clone(), l.style.clone())
-    };
-    let (c2, st2) = (
-        std::env::var("NIRI_DASH_COLORSCHEME").unwrap_or(c.clone()),
-        std::env::var("NIRI_DASH_STYLE").unwrap_or(st.clone()),
+    let (cs, st) = (
+        std::env::var("NIRI_DASH_COLORSCHEME").ok(),
+        std::env::var("NIRI_DASH_STYLE").ok(),
     );
-    if (c2.as_str(), st2.as_str()) != (c.as_str(), st.as_str()) {
-        let over = app.layout.borrow().style_overrides.clone();
-        app.apply_look_named(&c2, &st2, &over, false);
+    if cs.is_some() || st.is_some() {
+        let (look, problems) = {
+            let l = app.layout.borrow();
+            theme::load_look(
+                cs.as_deref().unwrap_or(&l.colorscheme),
+                st.as_deref().unwrap_or(&l.style),
+                &l.style_overrides,
+            )
+        };
+        app.show_look(look, &problems, false);
     }
     if edit {
         app.set_editing(true);

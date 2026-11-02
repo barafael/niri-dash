@@ -686,7 +686,7 @@ pub fn style_path(name: &str) -> PathBuf {
 }
 
 /// The text of a color scheme or style: its file, else the bundled copy.
-pub fn load_text(path: &Path, bundled: &[(&str, &str)], name: &str) -> Option<String> {
+fn load_text(path: &Path, bundled: &[(&str, &str)], name: &str) -> Option<String> {
     std::fs::read_to_string(path).ok().or_else(|| {
         bundled
             .iter()

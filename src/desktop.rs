@@ -174,25 +174,10 @@ pub fn entries(remove: bool) -> Result<()> {
 /// The corner radius of the configured theme (style plus config.kdl adjustments), so niri can
 /// round the app windows like the dashboard's cards.
 fn theme_radius() -> f32 {
-    use crate::theme;
     let layout = crate::layout::Layout::load().0;
-    let ctext = theme::load_text(
-        &theme::colorscheme_path(&layout.colorscheme),
-        theme::COLORSCHEMES,
-        &layout.colorscheme,
-    )
-    .unwrap_or_else(|| theme::DEFAULT_COLORSCHEME.to_string());
-    let stext = theme::load_text(
-        &theme::style_path(&layout.style),
-        theme::STYLES,
-        &layout.style,
-    )
-    .unwrap_or_else(|| theme::DEFAULT_STYLE.to_string());
-    let (look, _) = theme::resolve_with(&ctext, &stext, &layout.style_overrides);
-    match look.style.get(theme::StyleVar::Radius) {
-        theme::StyleValue::Num(r) => r,
-        _ => 0.0,
-    }
+    let (look, _) =
+        crate::theme::load_look(&layout.colorscheme, &layout.style, &layout.style_overrides);
+    look.style.radius
 }
 
 /// The recommended niri window rules for the standalone apps, as a file to `include`.
