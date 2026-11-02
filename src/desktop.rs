@@ -191,6 +191,12 @@ window-rule {{
 
 /// `niri-dash window-rules [-o FILE]`.
 pub fn window_rules(output: Option<&Path>) -> Result<()> {
+    if !crate::compositor::is_niri() {
+        eprintln!(
+            "niri-dash: these rules are for niri's config; on KDE Plasma, set up window rules in \
+             System Settings (Window Management → Window Rules) matching window class niri-dash-*"
+        );
+    }
     let text = window_rules_text();
     match output {
         None => print!("{text}"),

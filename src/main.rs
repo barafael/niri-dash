@@ -88,8 +88,27 @@ pub enum Control {
     Dnd,
 }
 
+/// The part of `niri-dash --help` for Plasma users.
+const PLASMA_HELP: &str = "\
+On KDE Plasma (6):
+  Start it at login: System Settings > Autostart > Add New > Login Script, and pick the niri-dash
+  binary (or put a .desktop file with Exec=niri-dash daemon into ~/.config/autostart).
+  Bind a key to `niri-dash toggle`: System Settings > Keyboard > Shortcuts > Add New >
+  Command or Script.
+
+  Plasma keeps showing the notifications; the notification widget's bell and `niri-dash dnd`
+  pause Plasma's pop-ups. Night light is KWin's: the switch and `niri-dash night-light` pause
+  or resume its schedule while niri-dash runs; its times and warmth are set in System Settings.
+  Keyboard layouts, the color picker and Log out go through Plasma.
+  Not available on Plasma: the window list, focusing a Claude session's window, and noticing
+  screen sharing; they need niri. `niri-dash window-rules` writes rules for niri only.";
+
 #[derive(Parser)]
-#[command(version, about = "A fullscreen widget dashboard for niri")]
+#[command(
+    version,
+    about = "A fullscreen widget dashboard for niri (and KDE Plasma)",
+    after_long_help = PLASMA_HELP
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
@@ -97,7 +116,8 @@ struct Cli {
 
 #[derive(Subcommand, Clone)]
 enum Command {
-    /// Run the dashboard in the background (the default). Put this in spawn-at-startup.
+    /// Run the dashboard in the background (the default). Put this in niri's spawn-at-startup (or
+    /// Plasma's Autostart).
     Daemon {
         /// Show the dashboard right away.
         #[arg(long)]
@@ -145,7 +165,8 @@ enum Command {
         value: String,
     },
     /// Print niri window rules for the standalone apps (floating, focused, the center third of the
-    /// screen), as a file to `include` from niri's config.
+    /// screen), as a file to `include` from niri's config. For niri only: Plasma has its window
+    /// rules in System Settings.
     WindowRules {
         /// Write them to this file instead of printing them.
         #[arg(short, long)]
