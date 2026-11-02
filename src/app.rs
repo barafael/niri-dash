@@ -663,6 +663,35 @@ fn focus_own_window(ctx: &Ctx) {
     });
 }
 
+/// The runtime the sources run on.
+fn runtime() -> Result<tokio::runtime::Runtime> {
+    Ok(tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .thread_name("niri-dash-io")
+        .enable_all()
+        .build()?)
+}
+
+/// Have Slint draw into `window`.
+fn set_platform(window: Rc<dyn WindowAdapter>) -> Result<()> {
+    slint::platform::set_platform(Box::new(LayerPlatform { window }))
+        .map_err(|e| Error::Ui(format!("slint platform: {e}")))
+}
+
+/// The dashboard UI, shown on the platform's window.
+fn new_ui() -> Result<Dash> {
+    let ui = Dash::new().map_err(|e| Error::Ui(format!("creating UI: {e}")))?;
+    ui.show().map_err(|e| Error::Ui(e.to_string()))?;
+    Ok(ui)
+}
+
+/// The renderer `NIRI_DASH_RENDERER` asks for, overriding the config (for development).
+fn renderer_override() -> Option<crate::layout::RendererChoice> {
+    std::env::var("NIRI_DASH_RENDERER")
+        .ok()
+        .and_then(|r| r.parse().ok())
+}
+
 /// The event loop shared by the dashboard and the standalone apps. Returns when a (non-resident)
 /// app's window closes; the dashboard runs until it is told to quit.
 fn serve(
@@ -671,21 +700,13 @@ fn serve(
     solo: Option<Kind>,
     initial: Option<Control>,
 ) -> Result<()> {
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
-        .thread_name("niri-dash-io")
-        .enable_all()
-        .build()?;
-
+    let rt = runtime()?;
     let conn = Connection::connect_to_env()?;
     let (globals, queue) = registry_queue_init::<Shell>(&conn)?;
     let mut event_loop: EventLoop<'static, Shell> = EventLoop::try_new()?;
     let backend = choose_backend(&conn);
     let window = backend.adapter();
-    slint::platform::set_platform(Box::new(LayerPlatform {
-        window: window.clone(),
-    }))
-    .map_err(|e| Error::Ui(format!("slint platform: {e}")))?;
+    set_platform(window.clone())?;
     let mut shell = Shell::new(
         conn.clone(),
         &globals,
@@ -698,8 +719,7 @@ fn serve(
         .insert(event_loop.handle())
         .map_err(|e| Error::Ui(format!("wayland source: {e}")))?;
 
-    let ui = Dash::new().map_err(|e| Error::Ui(format!("creating UI: {e}")))?;
-    ui.show().map_err(|e| Error::Ui(e.to_string()))?;
+    let ui = new_ui()?;
 
     let (tx, rx) = channel::channel::<Msg>();
     let ctx = Ctx::new(tx.clone(), rt.handle().clone());
@@ -784,10 +804,7 @@ fn serve(
 fn choose_backend(conn: &Connection) -> crate::shell::Backend {
     use crate::layout::RendererChoice;
     use crate::shell::Backend;
-    let choice = std::env::var("NIRI_DASH_RENDERER")
-        .ok()
-        .and_then(|r| r.parse().ok())
-        .unwrap_or_else(|| crate::layout::Layout::load().0.renderer);
+    let choice = renderer_override().unwrap_or_else(|| crate::layout::Layout::load().0.renderer);
     let software =
         || Backend::Software(MinimalSoftwareWindow::new(RepaintBufferType::ReusedBuffer));
     if choice == RendererChoice::Software {

@@ -1,11 +1,10 @@
 //! `niri-dash snapshot`: render the dashboard offscreen into a PNG, with live data, without
 //! touching the screen. A development tool.
 
-use super::{Error, LayerPlatform, Result, build};
+use super::{Error, Result, build, new_ui, renderer_override, runtime, set_platform};
 use crate::layout::Kind;
 use crate::sources::{Ctx, Msg};
-use crate::{Dash, theme};
-use slint::ComponentHandle;
+use crate::theme;
 use slint::platform::software_renderer::{
     MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType,
 };
@@ -68,15 +67,9 @@ pub struct Args {
 
 /// Render the snapshot `args` describe, of the dashboard or of the standalone app `solo`.
 pub fn run(args: &Args, solo: Option<Kind>) -> Result<()> {
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
-        .enable_all()
-        .build()?;
+    let rt = runtime()?;
     // NIRI_DASH_RENDERER=gpu: draw with FemtoVG/OpenGL ES into an offscreen texture instead.
-    let gpu = match std::env::var("NIRI_DASH_RENDERER")
-        .ok()
-        .and_then(|r| r.parse().ok())
-    {
+    let gpu = match renderer_override() {
         Some(crate::layout::RendererChoice::Gpu) => {
             let gl = crate::gpu::Gl::offscreen()?;
             Some((crate::gpu::GpuWindow::new(&gl)?, gl))
@@ -93,10 +86,7 @@ pub fn run(args: &Args, solo: Option<Kind>) -> Result<()> {
         None => soft.clone(),
     };
     let window = adapter.window();
-    slint::platform::set_platform(Box::new(LayerPlatform {
-        window: adapter.clone(),
-    }))
-    .map_err(|e| Error::Ui(format!("slint platform: {e}")))?;
+    set_platform(adapter.clone())?;
     // Draws a frame into `pixels` if anything changed (or always with `full`).
     let render_into = |pixels: &mut [PremultipliedRgbaColor], stride: usize, full: bool| {
         let Some((g, _)) = &gpu else {
@@ -120,8 +110,7 @@ pub fn run(args: &Args, solo: Option<Kind>) -> Result<()> {
         }
         Some(())
     };
-    let ui = Dash::new().map_err(|e| Error::Ui(format!("creating UI: {e}")))?;
-    ui.show().map_err(|e| Error::Ui(e.to_string()))?;
+    let ui = new_ui()?;
     let (pw, ph) = (
         (args.width as f32 * args.scale).round() as u32,
         (args.height as f32 * args.scale).round() as u32,
