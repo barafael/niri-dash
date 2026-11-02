@@ -318,29 +318,96 @@ export global Wifi {
     callback sign-in();
 }
 
+export enum DeviceKind { mouse, keyboard, headphones, gamepad, phone, other }
+
 export struct BtDevice {
     address: string,
     name: string,
+    kind: DeviceKind,
     connected: bool,
     // Connected without being paired: its name is only what it claims.
     paired: bool,
+    // Allowed to connect without asking.
+    trusted: bool,
+    // Its connections are refused.
+    blocked: bool,
     battery: int,
+    // Signal as 0-4 bars while a scan sees it; -1 otherwise.
+    signal: int,
     busy: bool,
+}
+
+// One line of a device's details page.
+export struct BtFact {
+    label: string,
+    value: string,
+}
+
+// The device the details page shows; none while `address` is empty.
+export struct BtDetail {
+    address: string,
+    name: string,
+    kind: DeviceKind,
+    connected: bool,
+    paired: bool,
+    trusted: bool,
+    blocked: bool,
+    facts: [BtFact],
+}
+
+// A pairing prompt; none while `address` is empty.
+export struct BtPrompt {
+    // A new prompt has a new serial: an answer to an earlier one goes nowhere.
+    serial: int,
+    name: string,
+    address: string,
+    // 1: do the codes match, 2: enter the PIN, 3: enter the passkey, 4: type this PIN on the
+    // device, 5: type this passkey on the device, 6: allow pairing.
+    kind: int,
+    // The code to compare or type on the device.
+    code: string,
+    // For 5: how many digits have been typed on the device.
+    entered: int,
 }
 
 export global Bluetooth {
     in property <bool> available;
     in property <bool> powered;
+    // Off through rfkill (airplane mode or a hardware switch).
+    in property <bool> blocked;
+    in property <string> adapter-name;
+    // Looking for devices to pair.
+    in property <bool> discovering;
+    // Paired devices, and connected ones.
     in property <[BtDevice]> devices;
+    // Unpaired devices a scan found, strongest first.
+    in property <[BtDevice]> nearby;
+    // How many devices without a name the scan sees.
+    in property <int> unnamed;
     in property <int> connected-count;
+    in property <string> status;
+    in property <bool> failed;
+    in property <BtPrompt> prompt;
+    in property <BtDetail> detail;
     callback toggle();
+    // Start or stop looking for devices.
+    callback scan(bool);
     callback connect(string);
     callback disconnect(string);
+    callback pair(string);
+    callback cancel-pairing();
+    // The answer to prompt `serial`: yes or no, and the code typed (if it asked for one).
+    callback answer(int, bool, string);
+    // Show a device's details ("" for none).
+    callback select(string);
+    callback set-trusted(string, bool);
+    callback set-blocked(string, bool);
+    callback forget(string);
+    callback rename(string, string);
 }
 
 export enum PowerProfile { power-saver, balanced, performance }
 
-export enum DeviceKind { mouse, keyboard, headphones, gamepad, phone, other }
 
 // A battery of a mouse, keyboard, headset and so on.
 export struct Peripheral {

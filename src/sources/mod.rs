@@ -53,7 +53,7 @@ pub enum Msg {
     Perf(Box<perf::Snapshot>),
     Windows(niri::WindowsState),
     Wifi(Box<wifi::State>),
-    Bluetooth(bluetooth::State),
+    Bluetooth(Box<bluetooth::State>),
     Power(power::State),
     /// Whether we block sleep and screen locking right now.
     Inhibited(bool),
@@ -593,6 +593,24 @@ pub fn prop_str(map: &HashMap<String, OwnedValue>, key: &str) -> Option<String> 
     prop::<&str>(map, key).map(str::to_string)
 }
 
+/// A name chosen by someone else (a Bluetooth device's, a Wi-Fi network's), fit to show: without
+/// control characters, and without the invisible ones that reorder or hide text (bidi
+/// overrides, zero-width characters), which could make one name look like another. At most
+/// 64 characters.
+pub fn clean_label(s: &str) -> String {
+    let invisible = |c: char| {
+        c.is_control()
+            || matches!(c,
+                '\u{200B}'..='\u{200F}'
+                | '\u{202A}'..='\u{202E}'
+                | '\u{2060}'..='\u{2064}'
+                | '\u{2066}'..='\u{2069}'
+                | '\u{FEFF}')
+    };
+    let cleaned: String = s.chars().filter(|&c| !invisible(c)).take(64).collect();
+    cleaned.trim().to_string()
+}
+
 /// Decode the five XML entities. `&amp;` goes last, so `&amp;lt;` stays `&lt;`.
 pub fn unescape_entities(s: &str) -> String {
     s.replace("&lt;", "<")
@@ -659,6 +677,17 @@ pub fn locale() -> Locale {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn labels() {
+        // A right-to-left override would show "Fairbuds" as something else; zero-width and
+        // control characters hide what is there.
+        assert_eq!(super::clean_label("Fair\u{202E}sdub"), "Fairsdub");
+        assert_eq!(super::clean_label(" Home\u{200B}Net\n"), "HomeNet");
+        assert_eq!(super::clean_label(&"x".repeat(100)).len(), 64);
+        assert_eq!(super::clean_label("Café ☕"), "Café ☕");
+    }
+
     use super::*;
 
     #[test]

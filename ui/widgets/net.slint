@@ -1,7 +1,7 @@
 import { LineEdit } from "std-widgets.slint";
 import { Theme, Icons } from "../theme.slint";
-import { Wifi, Bluetooth } from "../data.slint";
-import { Icon, IconButton, TextButton, Switch, Header, Row, Muted, Empty, SignalBars, ScrollList, RoundFace } from "../common.slint";
+import { Wifi, Bluetooth, BtDevice, DeviceKind } from "../data.slint";
+import { Icon, IconButton, TextButton, Switch, Header, Row, SectionLabel, Muted, Empty, SignalBars, ScrollList, RoundFace } from "../common.slint";
 
 // A row of choices, one of them picked (security type, EAP method).
 component Choice inherits HorizontalLayout {
@@ -570,13 +570,157 @@ export component WifiWidget inherits Rectangle {
     property <bool> hidden-insecure;
 }
 
+// A Bluetooth device's icon, by what it is.
+component DeviceIcon inherits Icon {
+    in property <DeviceKind> kind;
+    source: root.kind == DeviceKind.mouse ? Icons.mouse
+        : root.kind == DeviceKind.keyboard ? Icons.keyboard
+        : root.kind == DeviceKind.headphones ? Icons.headphones
+        : root.kind == DeviceKind.gamepad ? Icons.gamepad
+        : root.kind == DeviceKind.phone ? Icons.phone : Icons.bluetooth;
+    size: 16px;
+}
+
+// A pairing prompt: compare a code, type one, or type one shown here on the device.
+component BtPairingPrompt inherits Rectangle {
+    property <int> kind: Bluetooth.prompt.kind;
+    // Asks for a code (2: PIN, 3: passkey).
+    property <bool> asks-code: root.kind == 2 || root.kind == 3;
+    // Shows a code to type on the device.
+    property <bool> shows-code: root.kind == 4 || root.kind == 5;
+    property <string> code;
+    // A new prompt starts empty.
+    property <int> serial: Bluetooth.prompt.serial;
+    changed serial => { root.code = ""; }
+    border-radius: Theme.radius-small;
+    background: Theme.card-raised;
+    VerticalLayout {
+        padding: Theme.pad-tight;
+        spacing: 6px;
+        Text {
+            text: root.kind == 1 ? "Pair with " + Bluetooth.prompt.name + "?"
+                : root.asks-code ? (root.kind == 2 ? "PIN for " : "Passkey for ") + Bluetooth.prompt.name
+                : root.shows-code ? "Type this on " + Bluetooth.prompt.name + ", then Enter"
+                : "Allow " + Bluetooth.prompt.name + " to pair?";
+            color: Theme.text;
+            font-size: Theme.font-small;
+            font-weight: 600;
+            wrap: word-wrap;
+        }
+        // The address too: the name is whatever the device says it is.
+        Muted {
+            text: Bluetooth.prompt.address;
+        }
+        if root.kind == 1 || root.shows-code: Text {
+            text: Bluetooth.prompt.code;
+            color: Theme.accent;
+            font-size: Theme.font-title * 1.6;
+            font-weight: 600;
+            horizontal-alignment: center;
+            letter-spacing: 3px;
+        }
+        if root.kind == 1: Muted {
+            text: "Pair only if the device shows the same number.";
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+        if root.kind == 5 && Bluetooth.prompt.entered > 0: Muted {
+            text: Bluetooth.prompt.entered + " of 6 typed";
+            horizontal-alignment: center;
+        }
+        if root.asks-code: LineEdit {
+            placeholder-text: root.kind == 2 ? "PIN (often 0000)" : "6-digit passkey";
+            input-type: root.kind == 3 ? InputType.number : InputType.text;
+            text <=> root.code;
+            init => { self.focus(); }
+            accepted => { Bluetooth.answer(Bluetooth.prompt.serial, true, root.code); }
+        }
+        HorizontalLayout {
+            spacing: 6px;
+            alignment: end;
+            TextButton {
+                text: root.kind == 1 || root.kind == 6 ? "No" : "Cancel";
+                clicked => {
+                    if (root.shows-code) {
+                        Bluetooth.cancel-pairing();
+                    } else {
+                        Bluetooth.answer(Bluetooth.prompt.serial, false, "");
+                    }
+                }
+            }
+            if !root.shows-code: TextButton {
+                text: root.kind == 1 ? "Yes, they match" : root.kind == 6 ? "Allow" : "Pair";
+                primary: true;
+                enabled: !root.asks-code || root.code != "";
+                clicked => { Bluetooth.answer(Bluetooth.prompt.serial, true, root.code); }
+            }
+        }
+    }
+}
+
+// One device: icon, name, and what's worth knowing at a glance.
+component BtRow inherits Row {
+    in property <BtDevice> device;
+    callback details();
+    selected: root.device.connected;
+    enabled: !root.device.busy;
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 2px;
+        spacing: 8px;
+        DeviceIcon {
+            y: (parent.height - self.height) / 2;
+            kind: root.device.kind;
+            tint: root.device.connected ? Theme.accent : Theme.dim;
+        }
+        Text {
+            text: root.device.name;
+            color: root.device.connected ? Theme.accent : Theme.text;
+            font-size: Theme.font-body;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+        Muted {
+            text: root.device.busy ? "…"
+                : root.device.blocked ? "blocked"
+                : !root.device.paired && root.device.connected ? "not paired"
+                : root.device.battery >= 0 ? root.device.battery + "%" : "";
+            color: (!root.device.paired && root.device.connected) || root.device.blocked ? Theme.warn : Theme.dim;
+        }
+        if root.device.signal >= 0: SignalBars {
+            y: (parent.height - self.height) / 2;
+            signal: root.device.signal * 25;
+        }
+        IconButton {
+            y: (parent.height - self.height) / 2;
+            icon: Icons.chevron-right;
+            size: 26px;
+            tint: Theme.dim;
+            clicked => { root.details(); }
+        }
+    }
+}
+
 export component BluetoothWidget inherits Rectangle {
     in property <bool> round;
+    // 0: devices, 1: one device's details.
+    property <int> page;
+    property <string> rename-to;
+    function open(address: string) {
+        root.rename-to = "";
+        root.page = 1;
+        Bluetooth.select(address);
+    }
+    function back() {
+        Bluetooth.select("");
+        root.page = 0;
+    }
     if root.round: RoundFace {
         icon: Icons.bluetooth;
         on: Bluetooth.powered;
         tint: self.on ? Theme.accent : Theme.faint;
-        title: !Bluetooth.available ? "No adapter" : !Bluetooth.powered ? "Off" : Bluetooth.connected-count > 0 ? Bluetooth.connected-count + " connected" : "On";
+        title: !Bluetooth.available ? "No adapter" : Bluetooth.blocked ? "Blocked" : !Bluetooth.powered ? "Off" : Bluetooth.connected-count > 0 ? Bluetooth.connected-count + " connected" : "On";
         TouchArea {
             clicked => { Bluetooth.toggle(); }
         }
@@ -584,58 +728,226 @@ export component BluetoothWidget inherits Rectangle {
     if !root.round: VerticalLayout {
         padding: Theme.pad;
         spacing: 6px;
-        Header {
+        if root.page == 0: Header {
             icon: Icons.bluetooth;
             icon-color: Bluetooth.powered ? Theme.accent : Theme.faint;
             title: "Bluetooth";
+            IconButton {
+                y: (parent.height - self.height) / 2;
+                icon: Icons.plus;
+                size: 28px;
+                active: Bluetooth.discovering;
+                enabled: Bluetooth.powered;
+                clicked => { Bluetooth.scan(!Bluetooth.discovering); }
+            }
             Switch {
                 y: (parent.height - self.height) / 2;
                 checked: Bluetooth.powered;
-                enabled: Bluetooth.available;
+                enabled: Bluetooth.available && !Bluetooth.blocked;
                 toggled => { Bluetooth.toggle(); }
             }
         }
+        if root.page == 1: HorizontalLayout {
+            height: 28px;
+            spacing: 4px;
+            IconButton {
+                y: (parent.height - self.height) / 2;
+                icon: Icons.chevron-left;
+                size: 28px;
+                clicked => { root.back(); }
+            }
+            Text {
+                text: Bluetooth.detail.name;
+                font-size: Theme.font-title;
+                font-weight: 600;
+                color: Theme.text;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 1;
+            }
+        }
+        Muted {
+            text: Bluetooth.status;
+            color: Bluetooth.failed ? Theme.bad : Theme.dim;
+            visible: Bluetooth.status != "";
+            wrap: word-wrap;
+        }
+        if Bluetooth.prompt.address != "": BtPairingPrompt { }
         if !Bluetooth.available: Empty {
             vertical-stretch: 1;
             text: "No Bluetooth adapter";
         }
-        if Bluetooth.available && !Bluetooth.powered: Empty {
+        if Bluetooth.available && Bluetooth.blocked: Empty {
+            vertical-stretch: 1;
+            text: "Bluetooth is blocked (airplane mode or a hardware switch)";
+        }
+        if Bluetooth.available && !Bluetooth.blocked && !Bluetooth.powered: Empty {
             vertical-stretch: 1;
             text: "Bluetooth is off";
         }
-        if Bluetooth.available && Bluetooth.powered && Bluetooth.devices.length == 0: Empty {
+        // Paired devices, then what a scan finds.
+        if Bluetooth.available && Bluetooth.powered && root.page == 0: ScrollList {
             vertical-stretch: 1;
-            text: "No paired devices";
-        }
-        if Bluetooth.available && Bluetooth.powered: ScrollList {
-            vertical-stretch: Bluetooth.devices.length > 0 ? 1 : 0;
-            for d in Bluetooth.devices: Row {
-                selected: d.connected;
-                enabled: !d.busy;
+            for d in Bluetooth.devices: BtRow {
+                device: d;
                 clicked => {
-                    if (d.connected) {
+                    if (d.blocked) {
+                        root.open(d.address);
+                    } else if (d.connected) {
                         Bluetooth.disconnect(d.address);
                     } else {
                         Bluetooth.connect(d.address);
                     }
                 }
+                details => { root.open(d.address); }
+            }
+            if Bluetooth.devices.length == 0 && !Bluetooth.discovering: Empty {
+                height: 48px;
+                text: "No paired devices";
+            }
+            if Bluetooth.discovering || Bluetooth.nearby.length > 0: SectionLabel {
+                height: 26px;
+                text: Bluetooth.discovering ? "Nearby (looking…)" : "Nearby";
+            }
+            for d in Bluetooth.nearby: BtRow {
+                device: d;
+                clicked => { Bluetooth.pair(d.address); }
+                details => { root.open(d.address); }
+            }
+            if Bluetooth.discovering && Bluetooth.nearby.length == 0: Muted {
+                height: 30px;
+                text: "Put the device into pairing mode.";
+            }
+            if Bluetooth.unnamed > 0: Muted {
+                height: 24px;
+                text: "+ " + Bluetooth.unnamed + (Bluetooth.unnamed == 1 ? " device" : " devices") + " without a name";
+            }
+            Row {
+                clicked => { Bluetooth.scan(!Bluetooth.discovering); }
                 HorizontalLayout {
                     padding-left: 10px;
-                    padding-right: 10px;
                     spacing: 8px;
-                    VerticalLayout {
-                        alignment: center;
-                        horizontal-stretch: 1;
-                        Text {
-                            text: d.name;
-                            color: d.connected ? Theme.accent : Theme.text;
-                            font-size: Theme.font-body;
-                            overflow: elide;
-                        }
+                    Icon {
+                        y: (parent.height - self.height) / 2;
+                        source: Bluetooth.discovering ? Icons.close : Icons.plus;
+                        size: 16px;
+                        tint: Theme.dim;
                     }
-                    Muted {
-                        text: d.busy ? "…" : !d.paired ? "not paired" : d.battery >= 0 ? d.battery + "%" : d.connected ? "connected" : "";
-                        color: d.paired ? Theme.dim : Theme.warn;
+                    Text {
+                        text: Bluetooth.discovering ? "Stop looking" : "Add a device…";
+                        color: Theme.dim;
+                        font-size: Theme.font-body;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+                }
+            }
+        }
+        // One device: what BlueZ knows, and what can be done with it.
+        if Bluetooth.available && root.page == 1: ScrollList {
+            vertical-stretch: 1;
+            if Bluetooth.detail.address == "": Empty {
+                height: 48px;
+                text: "This device is gone.";
+            }
+            for f in Bluetooth.detail.facts: HorizontalLayout {
+                height: 24px;
+                spacing: 8px;
+                Muted {
+                    text: f.label;
+                    width: 34%;
+                }
+                Text {
+                    text: f.value;
+                    color: Theme.text;
+                    font-size: Theme.font-small;
+                    vertical-alignment: center;
+                    horizontal-alignment: right;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+            }
+            if Bluetooth.detail.paired: HorizontalLayout {
+                height: 34px;
+                spacing: 8px;
+                Text {
+                    text: "Connect automatically";
+                    color: Theme.text;
+                    font-size: Theme.font-body;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+                Switch {
+                    y: (parent.height - self.height) / 2;
+                    checked: Bluetooth.detail.trusted;
+                    toggled => { Bluetooth.set-trusted(Bluetooth.detail.address, !Bluetooth.detail.trusted); }
+                }
+            }
+            if Bluetooth.detail.address != "": HorizontalLayout {
+                height: 34px;
+                spacing: 8px;
+                Text {
+                    text: "Block";
+                    color: Theme.text;
+                    font-size: Theme.font-body;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                Switch {
+                    y: (parent.height - self.height) / 2;
+                    checked: Bluetooth.detail.blocked;
+                    toggled => { Bluetooth.set-blocked(Bluetooth.detail.address, !Bluetooth.detail.blocked); }
+                }
+            }
+            if Bluetooth.detail.paired: HorizontalLayout {
+                spacing: 6px;
+                LineEdit {
+                    placeholder-text: "Rename";
+                    text <=> root.rename-to;
+                    accepted => {
+                        Bluetooth.rename(Bluetooth.detail.address, root.rename-to);
+                        root.rename-to = "";
+                    }
+                }
+                TextButton {
+                    text: "Rename";
+                    enabled: root.rename-to != "";
+                    clicked => {
+                        Bluetooth.rename(Bluetooth.detail.address, root.rename-to);
+                        root.rename-to = "";
+                    }
+                }
+            }
+            HorizontalLayout {
+                padding-top: 6px;
+                spacing: 6px;
+                alignment: end;
+                if Bluetooth.detail.paired: TextButton {
+                    text: "Forget";
+                    danger: true;
+                    clicked => {
+                        Bluetooth.forget(Bluetooth.detail.address);
+                        root.back();
+                    }
+                }
+                if Bluetooth.detail.connected: TextButton {
+                    text: "Disconnect";
+                    clicked => { Bluetooth.disconnect(Bluetooth.detail.address); }
+                }
+                if !Bluetooth.detail.connected && Bluetooth.detail.paired && !Bluetooth.detail.blocked: TextButton {
+                    text: "Connect";
+                    primary: true;
+                    enabled: Bluetooth.powered;
+                    clicked => { Bluetooth.connect(Bluetooth.detail.address); }
+                }
+                if !Bluetooth.detail.paired && Bluetooth.detail.address != "" && !Bluetooth.detail.blocked: TextButton {
+                    text: "Pair";
+                    primary: true;
+                    enabled: Bluetooth.powered;
+                    clicked => {
+                        Bluetooth.pair(Bluetooth.detail.address);
+                        root.back();
                     }
                 }
             }

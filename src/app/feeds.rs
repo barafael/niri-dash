@@ -1,15 +1,15 @@
 //! The widgets that show what their source reports and hand clicks back to it: system monitor,
 //! Claude, windows, keyboard layout, Wi-Fi, Bluetooth, brightness, tray, weather and media.
 
-use super::enums::{toggle_to_ui, weather_icon_to_ui};
+use super::enums::{device_kind_to_ui, toggle_to_ui, weather_icon_to_ui};
 use super::{App, held, model};
 use crate::compositor;
 use crate::sources::{self, IconSrc, niri, tray};
 use crate::{
-    Bluetooth as UiBluetooth, BtDevice, Claude as UiClaude, ClaudeSession, Control, Dash,
-    Media as UiMedia, MenuEntry, Perf, Tray as UiTray, TrayItem, Weather as UiWeather, WeatherDay,
-    Wifi as UiWifi, WifiDetail, WifiFact, WifiNet, WifiPrompt, WifiSaved, WinItem,
-    Windows as UiWindows,
+    Bluetooth as UiBluetooth, BtDetail, BtDevice, BtFact, BtPrompt, Claude as UiClaude,
+    ClaudeSession, Control, Dash, Media as UiMedia, MenuEntry, Perf, Tray as UiTray, TrayItem,
+    Weather as UiWeather, WeatherDay, Wifi as UiWifi, WifiDetail, WifiFact, WifiNet, WifiPrompt,
+    WifiSaved, WinItem, Windows as UiWindows,
 };
 use slint::ComponentHandle;
 use std::rc::Rc;
@@ -182,7 +182,7 @@ impl App {
         w.set_available(s.available);
         w.set_enabled(s.enabled);
         w.set_blocked(s.blocked);
-        w.set_ssid(s.ssid.as_str().into());
+        w.set_ssid(sources::clean_label(&s.ssid).into());
         w.set_signal(s.signal);
         w.set_connecting(s.connecting_key.as_str().into());
         let status = match &s.activity {
@@ -198,7 +198,7 @@ impl App {
         w.set_prompt(match &s.prompt {
             Some(p) => WifiPrompt {
                 serial: p.serial as i32,
-                ssid: p.ssid.as_str().into(),
+                ssid: sources::clean_label(&p.ssid).into(),
                 kind: match p.kind {
                     PromptKind::Password => 0,
                     PromptKind::Wep => 1,
@@ -214,7 +214,7 @@ impl App {
         w.set_detail(match &s.detail {
             Some(d) => WifiDetail {
                 key: d.key.as_str().into(),
-                ssid: d.ssid.as_str().into(),
+                ssid: sources::clean_label(&d.ssid).into(),
                 in_range: d.network.is_some(),
                 active: d.network.as_ref().is_some_and(|n| n.active),
                 known: d.profile.is_some(),
@@ -260,7 +260,7 @@ impl App {
                     WifiSaved {
                         key: key.into(),
                         uuid: p.uuid.as_str().into(),
-                        ssid: p.ssid.as_str().into(),
+                        ssid: sources::clean_label(&p.ssid).into(),
                         in_range,
                         detail: if in_range {
                             "in range".into()
@@ -280,7 +280,7 @@ impl App {
                     let twins = s.networks.iter().filter(|m| m.ssid == n.ssid).count();
                     WifiNet {
                         key: n.key().into(),
-                        ssid: n.ssid.as_str().into(),
+                        ssid: sources::clean_label(&n.ssid).into(),
                         signal: n.signal,
                         secure: n.security.needs_secret(),
                         active: n.active,
@@ -297,24 +297,74 @@ impl App {
     }
 
     pub(super) fn show_bluetooth(&self, s: sources::bluetooth::State) {
+        use sources::bluetooth::{Activity, PromptKind};
         let ui = self.ui();
         let b = ui.global::<UiBluetooth>();
+        let device = |d: &sources::bluetooth::Device| BtDevice {
+            address: d.address.as_str().into(),
+            name: d.name.as_str().into(),
+            kind: device_kind_to_ui(d.kind),
+            connected: d.connected,
+            paired: d.paired,
+            trusted: d.trusted,
+            blocked: d.blocked,
+            battery: d.battery,
+            signal: d.bars(),
+            busy: d.busy,
+        };
         b.set_available(s.available);
         b.set_powered(s.powered);
+        b.set_blocked(s.blocked);
+        b.set_adapter_name(s.adapter_name.as_str().into());
+        b.set_discovering(s.discovering);
         b.set_connected_count(s.devices.iter().filter(|d| d.connected).count() as i32);
-        b.set_devices(model(
-            s.devices
-                .into_iter()
-                .map(|d| BtDevice {
-                    address: d.address.into(),
-                    name: d.name.into(),
-                    connected: d.connected,
-                    paired: d.paired,
-                    battery: d.battery,
-                    busy: d.busy,
-                })
-                .collect(),
-        ));
+        b.set_devices(model(s.devices.iter().map(device).collect()));
+        b.set_nearby(model(s.nearby.iter().map(device).collect()));
+        b.set_unnamed(s.unnamed as i32);
+        b.set_status(s.activity.to_string().into());
+        b.set_failed(matches!(s.activity, Activity::Failed(_)));
+        b.set_prompt(match &s.prompt {
+            Some(p) => {
+                let (kind, code, entered) = match &p.kind {
+                    PromptKind::Confirm(k) => (1, format!("{k:06}"), 0),
+                    PromptKind::EnterPin => (2, String::new(), 0),
+                    PromptKind::EnterPasskey => (3, String::new(), 0),
+                    PromptKind::ShowPin(pin) => (4, pin.clone(), 0),
+                    PromptKind::ShowPasskey(k, n) => (5, format!("{k:06}"), i32::from(*n)),
+                    PromptKind::Authorize => (6, String::new(), 0),
+                };
+                BtPrompt {
+                    serial: p.serial as i32,
+                    name: p.name.as_str().into(),
+                    address: p.address.as_str().into(),
+                    kind,
+                    code: code.into(),
+                    entered,
+                }
+            }
+            None => BtPrompt::default(),
+        });
+        b.set_detail(match &s.detail {
+            Some(d) => BtDetail {
+                address: d.address.as_str().into(),
+                name: d.name.as_str().into(),
+                kind: device_kind_to_ui(d.kind),
+                connected: d.connected,
+                paired: d.paired,
+                trusted: d.trusted,
+                blocked: d.blocked,
+                facts: model(
+                    sources::bluetooth::facts(d)
+                        .into_iter()
+                        .map(|(label, value)| BtFact {
+                            label: label.into(),
+                            value: value.into(),
+                        })
+                        .collect(),
+                ),
+            },
+            None => BtDetail::default(),
+        });
     }
 
     pub(super) fn show_brightness(&self, level: Option<f32>) {
@@ -498,6 +548,34 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     b.on_connect(move |addr| a.bluetooth.connect(addr.into()));
     let a = app.clone();
     b.on_disconnect(move |addr| a.bluetooth.disconnect(addr.into()));
+    let a = app.clone();
+    b.on_scan(move |on| a.bluetooth.scan(on));
+    let a = app.clone();
+    b.on_pair(move |addr| a.bluetooth.pair(addr.into()));
+    let a = app.clone();
+    b.on_cancel_pairing(move || a.bluetooth.cancel_pairing());
+    let a = app.clone();
+    b.on_answer(move |serial, yes, code| {
+        use sources::bluetooth::Answer;
+        if !yes {
+            a.bluetooth.decline();
+        } else if code.is_empty() {
+            a.bluetooth.answer(serial.max(0) as u64, Answer::Yes);
+        } else {
+            a.bluetooth
+                .answer(serial.max(0) as u64, Answer::Code(code.into()));
+        }
+    });
+    let a = app.clone();
+    b.on_select(move |addr| a.bluetooth.select(addr.into()));
+    let a = app.clone();
+    b.on_set_trusted(move |addr, on| a.bluetooth.set_trusted(addr.into(), on));
+    let a = app.clone();
+    b.on_set_blocked(move |addr, on| a.bluetooth.set_blocked(addr.into(), on));
+    let a = app.clone();
+    b.on_forget(move |addr| a.bluetooth.forget(addr.into()));
+    let a = app.clone();
+    b.on_rename(move |addr, name| a.bluetooth.rename(addr.into(), name.into()));
     let a = app.clone();
     ui.global::<crate::Brightness>().on_set(move |v| {
         a.brightness_touched.set(Some(Instant::now()));
