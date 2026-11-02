@@ -23,7 +23,7 @@ mod zones;
 use clap::{Parser, Subcommand};
 use std::io::Write;
 use std::os::unix::net::UnixStream;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// What the command line reports when a command fails.
 #[derive(Debug, thiserror::Error)]
@@ -50,28 +50,37 @@ enum Error {
 
 type Result<T, E = Error> = std::result::Result<T, E>;
 
-fn unknown_widget(widget: &str) -> Error {
-    let names: Vec<&str> = <layout::Kind as strum::IntoEnumIterator>::iter()
-        .map(|k| k.name())
-        .collect();
-    Error::UnknownWidget {
-        widget: widget.into(),
-        names: names.join(", "),
-    }
+/// A widget by the name config.kdl uses.
+fn parse_widget(name: &str) -> Result<layout::Kind> {
+    layout::Kind::from_str_opt(name).ok_or_else(|| {
+        let names: Vec<&str> = <layout::Kind as strum::IntoEnumIterator>::iter()
+            .map(|k| k.name())
+            .collect();
+        Error::UnknownWidget {
+            widget: name.into(),
+            names: names.join(", "),
+        }
+    })
 }
 
-/// A command on the control socket; the lowercase name is the wire format.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumString, strum::AsRefStr)]
+/// A command on the control socket, and the subcommand that sends it; the lowercase name is the
+/// wire format.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumString, strum::AsRefStr, Subcommand)]
 #[strum(serialize_all = "lowercase")]
 pub enum Control {
-    Show,
-    Hide,
+    /// Show or hide the dashboard; starts the daemon if it isn't running.
     Toggle,
+    /// Show the dashboard.
+    Show,
+    /// Hide the dashboard.
+    Hide,
+    /// Show the dashboard in edit mode.
     Edit,
+    /// Stop the daemon.
     Quit,
-    /// Toggle blocking sleep and screen locking.
+    /// Turn blocking sleep and screen locking on or off (like Plasma's battery widget switch).
     Inhibit,
-    /// Toggle do not disturb (until turned off).
+    /// Turn do not disturb on or off: notifications are kept without a pop-up.
     Dnd,
 }
 
@@ -90,20 +99,8 @@ enum Command {
         #[arg(long)]
         show: bool,
     },
-    /// Show or hide the dashboard; starts the daemon if it isn't running.
-    Toggle,
-    /// Show the dashboard.
-    Show,
-    /// Hide the dashboard.
-    Hide,
-    /// Show the dashboard in edit mode.
-    Edit,
-    /// Stop the daemon.
-    Quit,
-    /// Turn blocking sleep and screen locking on or off (like Plasma's battery widget switch).
-    Inhibit,
-    /// Turn do not disturb on or off: notifications are kept without a pop-up.
-    Dnd,
+    #[command(flatten)]
+    Control(Control),
     /// Run one widget as a standalone app in its own window, e.g. `niri-dash app clock`. If it is
     /// already running, show and focus it.
     App {
@@ -174,11 +171,15 @@ pub fn named_socket_path(suffix: &str) -> PathBuf {
     dir.join(format!("niri-dash-{display}{suffix}.sock"))
 }
 
+/// Write `line` to the control socket at `path`: `Error::NotRunning` if nothing listens there.
+fn send(path: &Path, line: &str) -> Result<()> {
+    let mut s = UnixStream::connect(path).map_err(Error::NotRunning)?;
+    writeln!(s, "{line}").map_err(Error::Send)
+}
+
 /// `niri-dash app <widget>`: hand the request to a running instance, or become it.
 fn app_client(widget: &str, toggle: bool, quit: bool) -> Result<()> {
-    let Some(kind) = layout::Kind::from_str_opt(widget) else {
-        return Err(unknown_widget(widget));
-    };
+    let kind = parse_widget(widget)?;
     let control = if quit {
         Control::Quit
     } else if toggle {
@@ -186,47 +187,29 @@ fn app_client(widget: &str, toggle: bool, quit: bool) -> Result<()> {
     } else {
         Control::Show
     };
-    match UnixStream::connect(named_socket_path(kind.name())) {
-        Ok(mut s) => {
-            writeln!(s, "{}", control.as_ref()).map_err(Error::Send)?;
-            Ok(())
-        }
-        Err(_) if quit => Ok(()),
-        Err(_) => Ok(app::run_app(kind)?),
+    match send(&named_socket_path(kind.name()), control.as_ref()) {
+        Err(Error::NotRunning(_)) if quit => Ok(()),
+        Err(Error::NotRunning(_)) => Ok(app::run_app(kind)?),
+        sent => sent,
     }
 }
 
-fn client(cmd: Command) -> Result<()> {
-    let control = match cmd {
-        Command::Toggle => Control::Toggle,
-        Command::Show => Control::Show,
-        Command::Hide => Control::Hide,
-        Command::Edit => Control::Edit,
-        Command::Quit => Control::Quit,
-        Command::Inhibit => Control::Inhibit,
-        Command::Dnd => Control::Dnd,
-        Command::Daemon { .. }
-        | Command::Snapshot { .. }
-        | Command::App { .. }
-        | Command::Say { .. }
-        | Command::DesktopEntries { .. }
-        | Command::WindowRules { .. } => unreachable!("handled by the caller"),
-    };
-    match UnixStream::connect(socket_path()) {
-        Ok(mut s) => {
-            writeln!(s, "{}", control.as_ref()).map_err(Error::Send)?;
-            Ok(())
-        }
-        Err(_) if matches!(control, Control::Toggle | Control::Show | Control::Edit) => {
-            // Not running yet: become the daemon, showing right away.
-            Ok(app::run(Some(if control == Control::Edit {
-                Control::Edit
-            } else {
+/// Send `control` to the dashboard.
+fn client(control: Control) -> Result<()> {
+    match send(&socket_path(), control.as_ref()) {
+        Err(Error::NotRunning(_))
+            if matches!(control, Control::Toggle | Control::Show | Control::Edit) =>
+        {
+            // Not running yet: become the daemon, showing (or editing) right away.
+            let first = if control == Control::Toggle {
                 Control::Show
-            }))?)
+            } else {
+                control
+            };
+            Ok(app::run(Some(first))?)
         }
-        Err(_) if matches!(control, Control::Hide | Control::Quit) => Ok(()),
-        Err(e) => Err(Error::NotRunning(e)),
+        Err(Error::NotRunning(_)) if matches!(control, Control::Hide | Control::Quit) => Ok(()),
+        sent => sent,
     }
 }
 
@@ -255,19 +238,15 @@ fn say(
         return Err(Error::NothingToSay);
     }
     say.target().map_err(Error::BadTarget)?;
-    let send = |path: PathBuf, line: &str| -> bool {
-        UnixStream::connect(path)
-            .and_then(|mut s| writeln!(s, "{line}"))
-            .is_ok()
-    };
     let wire = say.to_wire();
-    let dash = send(socket_path(), &wire);
-    let app = send(named_socket_path(layout::Kind::Mascot.name()), &wire);
+    let dash = send(&socket_path(), &wire).is_ok();
+    let app = send(&named_socket_path(layout::Kind::Mascot.name()), &wire).is_ok();
     if !dash && !app {
         return Err(Error::NobodyListening);
     }
     if show && dash {
-        send(socket_path(), Control::Show.as_ref());
+        // The line is delivered either way.
+        let _ = send(&socket_path(), Control::Show.as_ref());
     }
     Ok(())
 }
@@ -305,12 +284,9 @@ fn run() -> Result<()> {
         Command::DesktopEntries { remove } => Ok(desktop::entries(remove)?),
         Command::WindowRules { output } => Ok(desktop::window_rules(output.as_deref())?),
         Command::Snapshot(args) => {
-            let solo = match &args.app {
-                Some(w) => Some(layout::Kind::from_str_opt(w).ok_or_else(|| unknown_widget(w))?),
-                None => None,
-            };
+            let solo = args.app.as_deref().map(parse_widget).transpose()?;
             Ok(app::snapshot::run(&args, solo)?)
         }
-        cmd => client(cmd),
+        Command::Control(control) => client(control),
     }
 }
