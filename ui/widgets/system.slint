@@ -1,6 +1,6 @@
 import { Theme, Icons } from "../theme.slint";
-import { Perf, Power, PowerProfile, DeviceKind, Audio, Brightness, Session, WidgetOpts } from "../data.slint";
-import { Icon, Ring, Graph, RingKnob, Row, Muted, Switch, ScrollList, RoundGauge, SliderRow } from "../common.slint";
+import { Perf, Power, PowerProfile, DeviceKind, Audio, Brightness, NightLight, Session, WidgetOpts } from "../data.slint";
+import { Icon, Ring, Graph, RingKnob, Row, Muted, Switch, ScrollList, RoundGauge, SliderRow, Slider, Header, TextButton } from "../common.slint";
 
 export component SystemMonitorWidget inherits Rectangle {
     in property <bool> round;
@@ -431,6 +431,57 @@ export component BrightnessWidget inherits Rectangle {
         tint: Theme.warn;
         enabled: Brightness.available;
         changed(v) => { Brightness.set(v); }
+    }
+}
+
+// Night light: a switch and a warmth slider; two rows add presets.
+export component NightLightWidget inherits Rectangle {
+    in property <bool> round;
+    property <string> temp: NightLight.kelvin + " K";
+    if root.round: RingKnob {
+        value <=> NightLight.warmth;
+        tint: Theme.warn;
+        icon: Icons.moon;
+        label: NightLight.on ? root.temp : "Off";
+        dimmed: !NightLight.on;
+        changed(v) => { NightLight.set-warmth(v); }
+        clicked => { NightLight.toggle(); }
+    }
+    if !root.round: VerticalLayout {
+        padding: Theme.pad;
+        spacing: 8px;
+        alignment: center;
+        Header {
+            icon: Icons.moon;
+            icon-color: NightLight.on ? Theme.warn : Theme.dim;
+            title: "Night light";
+            if NightLight.available && root.width >= 260px: Muted {
+                text: NightLight.on ? root.temp : "Off";
+            }
+            Switch {
+                y: (parent.height - self.height) / 2;
+                checked: NightLight.on;
+                enabled: NightLight.available;
+                toggled => { NightLight.toggle(); }
+            }
+        }
+        if NightLight.available: Slider {
+            value <=> NightLight.warmth;
+            tint: NightLight.on ? Theme.warn : Theme.faint;
+            changed(v) => { NightLight.set-warmth(v); }
+        }
+        if !NightLight.available: Muted {
+            text: "The compositor offers no gamma control";
+        }
+        if NightLight.available && root.height >= 170px: HorizontalLayout {
+            spacing: 6px;
+            for p in [3400, 4500, 5500]: TextButton {
+                horizontal-stretch: 1;
+                text: p + " K";
+                primary: NightLight.on && NightLight.kelvin == p;
+                clicked => { NightLight.set-kelvin(p); }
+            }
+        }
     }
 }
 

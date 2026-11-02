@@ -1,5 +1,5 @@
-//! Runtime state the daemon keeps across restarts: do not disturb, the timer and the picked
-//! colors. It lives in `~/.local/state/niri-dash/state.json`; config.kdl stays the
+//! Runtime state the daemon keeps across restarts: do not disturb, the timer, the picked
+//! colors and night light. It lives in `~/.local/state/niri-dash/state.json`; config.kdl stays the
 //! user's hand-written file and isn't touched for these.
 
 use serde::{Deserialize, Serialize};
@@ -16,6 +16,24 @@ pub struct State {
     pub timer_secs: u32,
     /// Picked colors as "#rrggbb", newest first.
     pub colors: Vec<String>,
+    pub night_light: NightLight,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct NightLight {
+    pub on: bool,
+    /// The temperature when on, in kelvin.
+    pub kelvin: u32,
+}
+
+impl Default for NightLight {
+    fn default() -> Self {
+        Self {
+            on: false,
+            kelvin: 4500,
+        }
+    }
 }
 
 pub fn path() -> PathBuf {
@@ -61,5 +79,6 @@ mod tests {
         let s: State = serde_json::from_str(r#"{"timer_secs":60,"other":1}"#).unwrap();
         assert_eq!(s.timer_secs, 60);
         assert_eq!(s.dnd_until, None);
+        assert_eq!(s.night_light.kelvin, 4500);
     }
 }

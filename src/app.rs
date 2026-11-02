@@ -5,8 +5,8 @@ use crate::layout::{Kind, Layout, Loaded, RendererChoice};
 use crate::shell::{Mode, Shell};
 use crate::sources::{
     self, Ctx, IconSrc, Msg, audio::Audio, bluetooth::Bluetooth, brightness::Brightness,
-    inhibit::Inhibit, media::Media, niri, notifications::Notifications, tray, weather::Weather,
-    wifi::Wifi,
+    inhibit::Inhibit, kdeconnect::KdeConnect, media::Media, niri, notifications::Notifications,
+    tray, udisks::Drives, weather::Weather, wifi::Wifi,
 };
 use crate::{
     Clipboard as UiClipboard, Control, Dash, Power as UiPower, Shell as UiShell, Tray as UiTray,
@@ -36,11 +36,13 @@ mod clipboard;
 mod clock;
 mod color_picker;
 mod config;
+mod devices;
 mod edit;
 mod enums;
 mod feeds;
 mod look;
 mod mascots;
+mod night_light;
 mod notes;
 mod notifications;
 mod power;
@@ -203,6 +205,8 @@ struct App {
     tray: tray::Tray,
     media: Media,
     inhibit: Inhibit,
+    drives: Drives,
+    phones: KdeConnect,
     /// What the daemon keeps across restarts (do not disturb, the timer, picked colors).
     state: RefCell<crate::state::State>,
     clock: clock::ClockState,
@@ -210,6 +214,7 @@ struct App {
     notes: notes::Notes,
     picker: color_picker::Picker,
     privacy: privacy::Privacy,
+    night: night_light::NightLight,
     mascots: mascots::Mascots,
     clipboard: clipboard::History,
     mixer: audio::Mixer,
@@ -303,6 +308,7 @@ impl App {
         }
         self.push_pending_clip(shell);
         self.tick_pick(shell);
+        self.tick_night_light(shell);
     }
 
     fn prepare_for_output(&self, shell: &mut Shell) {
@@ -426,6 +432,9 @@ impl App {
             Msg::Clipboard(clip) => self.add_clip(clip),
             Msg::Casts(casts) => self.set_casts(casts),
             Msg::Privacy(usage) => self.set_privacy_usage(usage),
+            Msg::NightLight(cmd) => self.night_light(cmd, true),
+            Msg::Drives(s) => self.show_drives(s),
+            Msg::Phones(s) => self.show_phones(s),
             Msg::ColorPicked(rgb) => return self.color_picked(rgb),
             Msg::MascotSay(say) => self.mascot_say(say),
             Msg::MascotAnswer(id, out) => self.mascot_answer(id, out),
@@ -452,6 +461,8 @@ fn wire(app: &Rc<App>, ui: &Dash) {
     timer::wire(app, ui);
     notes::wire(app, ui);
     privacy::wire(app, ui);
+    night_light::wire(app, ui);
+    devices::wire(app, ui);
     mascots::wire(app, ui);
 }
 
@@ -463,6 +474,10 @@ fn control_server(listener: UnixListener, tx: channel::Sender<Msg>) {
                 let mut line = String::new();
                 let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
                 if BufReader::new(&stream).read_line(&mut line).is_err() {
+                    continue;
+                }
+                if let Some(cmd) = crate::gamma::Cmd::parse_wire(line.trim()) {
+                    let _ = tx.send(Msg::NightLight(cmd));
                     continue;
                 }
                 if let Some(say) = crate::mascots::Say::parse_wire(line.trim()) {
@@ -502,6 +517,8 @@ enum Feed {
     Media,
     Inhibit,
     Privacy,
+    Drives,
+    Phone,
 }
 
 /// The sources a standalone app of `kind` has to run. Clock and calendar tick on their own, the
@@ -530,6 +547,10 @@ fn feeds(kind: Kind) -> &'static [Feed] {
         Kind::Timer => &[Feed::Notifications],
         Kind::ColorPicker => &[],
         Kind::KeyboardLayout => &[Feed::Niri],
+        // A standalone night-light app asks the daemon, which holds the gamma control.
+        Kind::NightLight => &[],
+        Kind::RemovableDrives => &[Feed::Drives],
+        Kind::Phone => &[Feed::Phone],
     }
 }
 
@@ -593,12 +614,15 @@ fn build(ui: &Dash, ctx: Ctx, solo: Option<Kind>, config: Loaded) -> Rc<App> {
         tray: tray::Tray::start(feed_ctx(Feed::Tray)),
         media: Media::start(feed_ctx(Feed::Media)),
         inhibit: Inhibit::start(feed_ctx(Feed::Inhibit)),
+        drives: Drives::start(feed_ctx(Feed::Drives)),
+        phones: KdeConnect::start(feed_ctx(Feed::Phone)),
         mixer: Default::default(),
         clock: Default::default(),
         timers: timer::Timers::restored(&state),
         notes: Default::default(),
         picker: Default::default(),
         privacy: Default::default(),
+        night: Default::default(),
         mascots: Default::default(),
         clipboard: Default::default(),
         state: RefCell::new(state),

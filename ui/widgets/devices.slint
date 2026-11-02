@@ -1,7 +1,8 @@
-// Privacy indicator: who uses the microphone, camera or screen.
+// Devices: the privacy indicator (who uses the microphone, camera or screen), removable drives
+// and phones paired through KDE Connect.
 import { Theme, Icons } from "../theme.slint";
-import { Privacy, PrivacyKind } from "../data.slint";
-import { Icon, TextButton, Header, Muted, Empty, ScrollList } from "../common.slint";
+import { Privacy, PrivacyKind, Drives, Phones, PhoneItem } from "../data.slint";
+import { Icon, IconButton, TextButton, Header, Muted, Empty, ScrollList, Row, Ring } from "../common.slint";
 
 component PrivacyDot inherits Rectangle {
     in property <image> icon;
@@ -113,6 +114,318 @@ export component PrivacyWidget inherits Rectangle {
                     danger: true;
                     clicked => { Privacy.stop(it.session); }
                 }
+            }
+        }
+    }
+}
+
+// USB drives and SD cards. One row: a summary and eject; two rows: each drive with its volumes.
+export component RemovableDrivesWidget inherits Rectangle {
+    property <bool> list: root.height >= 170px;
+    property <int> count: Drives.drives.length;
+    // One drive with one volume: the compact view mounts or opens it too.
+    property <bool> single: root.count == 1 && Drives.drives[0].volumes.length == 1 && !Drives.drives[0].volumes[0].locked;
+    property <string> empty-text: !Drives.available ? "UDisks isn't running" : "Plug in a USB drive or SD card";
+    if !root.list: HorizontalLayout {
+        padding: Theme.pad;
+        spacing: 10px;
+        Icon {
+            y: (parent.height - self.height) / 2;
+            source: Icons.usb;
+            size: 22px;
+            tint: root.count > 0 ? Theme.text : Theme.faint;
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            horizontal-stretch: 1;
+            Text {
+                text: root.count == 0 ? "No drives" : root.count == 1 ? Drives.drives[0].name : root.count + " drives";
+                font-size: Theme.font-body;
+                font-weight: 600;
+                color: Theme.text;
+                overflow: elide;
+            }
+            Muted {
+                text: root.count == 0 ? root.empty-text : root.count == 1 ? Drives.drives[0].detail : "Eject all to remove them";
+            }
+        }
+        if root.single && root.width >= 280px && Drives.drives[0].volumes[0].mounted: IconButton {
+            y: (parent.height - self.height) / 2;
+            icon: Icons.folder;
+            clicked => { Drives.open(Drives.drives[0].volumes[0].mount); }
+        }
+        if root.single && root.width >= 280px && !Drives.drives[0].volumes[0].mounted: TextButton {
+            y: (parent.height - self.height) / 2;
+            text: "Mount";
+            clicked => { Drives.mount(Drives.drives[0].volumes[0].path); }
+        }
+        if root.count > 0: IconButton {
+            y: (parent.height - self.height) / 2;
+            icon: Icons.eject;
+            clicked => {
+                if (root.count == 1) {
+                    Drives.eject(Drives.drives[0].path);
+                } else {
+                    Drives.eject-all();
+                }
+            }
+        }
+    }
+    if root.list: VerticalLayout {
+        padding: Theme.pad;
+        spacing: 6px;
+        Header {
+            icon: Icons.usb;
+            title: "Removable drives";
+            if root.count > 1: IconButton {
+                y: (parent.height - self.height) / 2;
+                size: 28px;
+                icon: Icons.eject;
+                clicked => { Drives.eject-all(); }
+            }
+        }
+        if root.count == 0: Empty {
+            vertical-stretch: 1;
+            text: root.empty-text;
+        }
+        if root.count > 0: ScrollList {
+            vertical-stretch: 1;
+            for d in Drives.drives: VerticalLayout {
+                padding-bottom: 6px;
+                HorizontalLayout {
+                    height: 30px;
+                    spacing: 6px;
+                    Text {
+                        text: d.name;
+                        font-size: Theme.font-body;
+                        font-weight: 600;
+                        color: Theme.text;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                    }
+                    IconButton {
+                        y: (parent.height - self.height) / 2;
+                        size: 28px;
+                        icon: Icons.eject;
+                        clicked => { Drives.eject(d.path); }
+                    }
+                }
+                for v in d.volumes: Row {
+                    height: 40px;
+                    enabled: !v.locked;
+                    clicked => {
+                        if (v.mounted) {
+                            Drives.open(v.mount);
+                        } else {
+                            Drives.mount(v.path);
+                        }
+                    }
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 4px;
+                        spacing: 8px;
+                        Icon {
+                            y: (parent.height - self.height) / 2;
+                            source: v.locked ? Icons.lock-small : Icons.folder;
+                            size: 16px;
+                            tint: v.mounted ? Theme.accent : Theme.dim;
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            horizontal-stretch: 1;
+                            Text {
+                                text: v.name;
+                                font-size: Theme.font-body;
+                                color: Theme.text;
+                                overflow: elide;
+                            }
+                            Muted {
+                                text: v.detail;
+                            }
+                        }
+                        if v.mounted && root.width >= 240px: TextButton {
+                            y: (parent.height - self.height) / 2;
+                            text: "Unmount";
+                            clicked => { Drives.unmount(v.path); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// One phone: name, battery and its buttons.
+component PhoneRow inherits Row {
+    in property <PhoneItem> phone;
+    in property <bool> buttons;
+    height: 44px;
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 4px;
+        spacing: 8px;
+        Icon {
+            y: (parent.height - self.height) / 2;
+            source: Icons.phone;
+            size: 18px;
+            tint: root.phone.reachable ? Theme.text : Theme.faint;
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: root.phone.name;
+                font-size: Theme.font-body;
+                color: root.phone.reachable ? Theme.text : Theme.dim;
+                overflow: elide;
+            }
+            Muted {
+                text: root.phone.status;
+                color: root.phone.charge >= 0 && root.phone.charge < 20 && !root.phone.charging ? Theme.bad : Theme.dim;
+            }
+        }
+        if root.buttons && root.phone.can-ring: IconButton {
+            y: (parent.height - self.height) / 2;
+            icon: Icons.ring;
+            clicked => { Phones.ring(root.phone.id); }
+        }
+        if root.buttons && root.phone.can-share: IconButton {
+            y: (parent.height - self.height) / 2;
+            icon: Icons.send;
+            clicked => { Phones.send(root.phone.id); }
+        }
+    }
+}
+
+// A phone through KDE Connect. Round: its battery as a ring. One row: name and battery; two rows:
+// Ring and Send buttons; three rows with several paired: all of them.
+export component PhoneWidget inherits Rectangle {
+    in property <bool> round;
+    property <int> count: Phones.phones.length;
+    // Out of range reads as an empty phone.
+    property <PhoneItem> main: Phones.phones[0];
+    property <string> empty-text: !Phones.available ? "KDE Connect isn't running" : "Pair a phone in KDE Connect";
+    property <bool> big: !root.round && root.height >= 170px;
+    property <bool> all: root.big && root.height >= 270px && root.count > 1;
+    property <color> charge-tint: root.main.charge >= 0 && root.main.charge < 20 && !root.main.charging ? Theme.bad : Theme.good;
+    if root.round: Rectangle {
+        Ring {
+            width: 100%;
+            height: 100%;
+            value: root.main.reachable && root.main.charge >= 0 ? root.main.charge / 100 : 0;
+            thickness: max(6px, root.width * 0.07);
+            tint: root.charge-tint;
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            HorizontalLayout {
+                alignment: center;
+                Icon {
+                    source: Icons.phone;
+                    size: min(root.width * 0.28, 40px);
+                    tint: root.main.reachable ? Theme.text : Theme.faint;
+                }
+            }
+            Text {
+                text: root.count == 0 ? "No phone" : root.main.reachable && root.main.charge >= 0 ? root.main.charge + "%" : root.main.reachable ? "connected" : "offline";
+                horizontal-alignment: center;
+                font-size: max(11px, min(root.width * 0.11, 18px));
+                color: Theme.dim;
+            }
+        }
+    }
+    if !root.round && !root.big: HorizontalLayout {
+        padding: Theme.pad;
+        if root.count == 0: Muted {
+            horizontal-stretch: 1;
+            text: root.empty-text;
+            horizontal-alignment: center;
+        }
+        if root.count > 0: PhoneRow {
+            y: (parent.height - self.height) / 2;
+            phone: root.main;
+            buttons: root.width >= 260px;
+        }
+    }
+    if root.big && !root.all: VerticalLayout {
+        padding: Theme.pad;
+        spacing: 10px;
+        Header {
+            icon: Icons.phone;
+            title: root.count == 0 ? "Phone" : root.main.name;
+        }
+        if root.count == 0: Empty {
+            vertical-stretch: 1;
+            text: root.empty-text;
+        }
+        if root.count > 0: HorizontalLayout {
+            spacing: 14px;
+            vertical-stretch: 1;
+            alignment: start;
+            Rectangle {
+                width: 64px;
+                height: 64px;
+                y: (parent.height - self.height) / 2;
+                Ring {
+                    width: 100%;
+                    height: 100%;
+                    value: root.main.reachable && root.main.charge >= 0 ? root.main.charge / 100 : 0;
+                    thickness: 6px;
+                    tint: root.charge-tint;
+                }
+                Text {
+                    text: root.main.reachable && root.main.charge >= 0 ? root.main.charge + "%" : "–";
+                    font-size: Theme.font-small;
+                    color: Theme.text;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 8px;
+                Muted {
+                    text: root.main.status;
+                }
+                HorizontalLayout {
+                    spacing: 6px;
+                    alignment: start;
+                    TextButton {
+                        text: "Ring";
+                        icon: Icons.ring;
+                        has-icon: true;
+                        enabled: root.main.can-ring;
+                        clicked => { Phones.ring(root.main.id); }
+                    }
+                    if root.width >= 300px: TextButton {
+                        text: "Send files";
+                        icon: Icons.send;
+                        has-icon: true;
+                        enabled: root.main.can-share;
+                        clicked => { Phones.send(root.main.id); }
+                    }
+                    if root.width < 300px: IconButton {
+                        icon: Icons.send;
+                        enabled: root.main.can-share;
+                        clicked => { Phones.send(root.main.id); }
+                    }
+                }
+            }
+        }
+    }
+    if root.all: VerticalLayout {
+        padding: Theme.pad;
+        spacing: 6px;
+        Header {
+            icon: Icons.phone;
+            title: "Phones";
+        }
+        ScrollList {
+            vertical-stretch: 1;
+            for p in Phones.phones: PhoneRow {
+                phone: p;
+                buttons: true;
             }
         }
     }

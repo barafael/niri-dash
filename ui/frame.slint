@@ -2,13 +2,13 @@ import { Theme, Icons } from "theme.slint";
 import { WidgetInst, WidgetKind, Shape, PointerShape } from "data.slint";
 import { Icon, IconButton } from "common.slint";
 import { ClockWidget, CalendarWidget, WeatherWidget } from "widgets/time.slint";
-import { SystemMonitorWidget, BatteryWidget, VolumeWidget, BrightnessWidget, SessionWidget } from "widgets/system.slint";
+import { SystemMonitorWidget, BatteryWidget, VolumeWidget, BrightnessWidget, NightLightWidget, SessionWidget } from "widgets/system.slint";
 import { MemoryWidget, DisksWidget, NetworkWidget, GpuWidget, ClaudeUsageWidget } from "widgets/monitor.slint";
 import { WifiWidget, BluetoothWidget } from "widgets/net.slint";
 import { WindowsWidget, ClaudeSessionsWidget, NotificationsWidget, TrayWidget, MediaWidget } from "widgets/desk.slint";
 import { MascotWidget } from "widgets/mascot.slint";
 import { KeyboardLayoutWidget, ColorPickerWidget, TimerWidget, NotesWidget, ClipboardWidget } from "widgets/tools.slint";
-import { PrivacyWidget } from "widgets/devices.slint";
+import { PrivacyWidget, RemovableDrivesWidget, PhoneWidget } from "widgets/devices.slint";
 
 // A widget's content, picked by kind; fills its parent.
 export component WidgetBody inherits Rectangle {
@@ -41,6 +41,9 @@ export component WidgetBody inherits Rectangle {
     if root.inst.kind == WidgetKind.timer: TimerWidget { round: root.round; opts: root.inst.opts; }
     if root.inst.kind == WidgetKind.notes: NotesWidget { id: root.inst.id; }
     if root.inst.kind == WidgetKind.privacy: PrivacyWidget { round: root.round; }
+    if root.inst.kind == WidgetKind.night-light: NightLightWidget { round: root.round; }
+    if root.inst.kind == WidgetKind.removable-drives: RemovableDrivesWidget { }
+    if root.inst.kind == WidgetKind.phone: PhoneWidget { round: root.round; }
 }
 
 // One placed widget. Positions are grid cells; while dragging, (dx, dy) / (dw, dh) hold the

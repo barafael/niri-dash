@@ -39,6 +39,9 @@ pub enum Kind {
     Timer,
     Notes,
     Privacy,
+    NightLight,
+    RemovableDrives,
+    Phone,
 }
 
 impl Kind {
@@ -298,6 +301,33 @@ impl Kind {
                 can_be_round: true,
                 settings: &[],
                 icon: "security-high",
+            },
+            Kind::NightLight => &KindInfo {
+                title: "Night light",
+                description: "Warmer screen colors for the evening",
+                default_size: (3, 1),
+                min_size: (2, 1),
+                can_be_round: true,
+                settings: &[],
+                icon: "weather-clear-night",
+            },
+            Kind::RemovableDrives => &KindInfo {
+                title: "Removable drives",
+                description: "USB drives and SD cards: mount, open, eject",
+                default_size: (3, 2),
+                min_size: (2, 1),
+                can_be_round: false,
+                settings: &[],
+                icon: "drive-removable-media",
+            },
+            Kind::Phone => &KindInfo {
+                title: "Phone",
+                description: "KDE Connect: battery, ring to find it, send files",
+                default_size: (3, 2),
+                min_size: (2, 1),
+                can_be_round: true,
+                settings: &[],
+                icon: "smartphone",
             },
         }
     }
@@ -1981,6 +2011,9 @@ mod tests {
                 "timer",
                 "notes",
                 "privacy",
+                "night-light",
+                "removable-drives",
+                "phone",
             ]
         );
         assert_eq!(Kind::from_str_opt("perf"), None);

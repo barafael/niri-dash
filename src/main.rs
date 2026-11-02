@@ -9,6 +9,7 @@ slint::include_modules!();
 mod app;
 mod desktop;
 mod files;
+mod gamma;
 mod gpu;
 mod layout;
 mod mascots;
@@ -42,6 +43,8 @@ enum Error {
     NothingToSay,
     #[error("{0}")]
     BadTarget(String),
+    #[error("night-light takes toggle, on, off or a temperature in kelvin, not {0:?}")]
+    BadNightLight(String),
     #[error(transparent)]
     App(#[from] app::Error),
     #[error(transparent)]
@@ -133,6 +136,12 @@ enum Command {
         /// Also open the dashboard.
         #[arg(long)]
         show: bool,
+    },
+    /// Make the screen warmer for the evening: `niri-dash night-light` toggles it, `on`/`off`
+    /// switch it, a temperature like `4000` (in kelvin, 1000–6500) turns it on at that warmth.
+    NightLight {
+        #[arg(default_value = "toggle")]
+        value: String,
     },
     /// Print niri window rules for the standalone apps (floating, focused, the center third of the
     /// screen), as a file to `include` from niri's config.
@@ -286,6 +295,10 @@ fn run() -> Result<()> {
         Command::Snapshot(args) => {
             let solo = args.app.as_deref().map(parse_widget).transpose()?;
             Ok(app::snapshot::run(&args, solo)?)
+        }
+        Command::NightLight { value } => {
+            let cmd = gamma::Cmd::parse(&value).ok_or(Error::BadNightLight(value))?;
+            send(&socket_path(), &cmd.to_wire())
         }
         Command::Control(control) => client(control),
     }

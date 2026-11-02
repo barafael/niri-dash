@@ -10,6 +10,7 @@ pub mod claude_usage;
 pub mod clipboard;
 pub mod icons;
 pub mod inhibit;
+pub mod kdeconnect;
 pub mod keyboard;
 pub mod media;
 pub mod niri;
@@ -21,6 +22,7 @@ pub mod power;
 pub mod privacy;
 pub mod session;
 pub mod tray;
+pub mod udisks;
 pub mod weather;
 pub mod wifi;
 
@@ -77,6 +79,12 @@ pub enum Msg {
     SleepBlockers(Vec<inhibit::Blocker>),
     /// Who uses the microphone and camera.
     Privacy(privacy::Usage),
+    /// USB drives and SD cards.
+    Drives(udisks::State),
+    /// Phones paired through KDE Connect.
+    Phones(kdeconnect::State),
+    /// `niri-dash night-light …`, or a standalone night-light app's change.
+    NightLight(crate::gamma::Cmd),
     Control(crate::Control),
     /// A line for the mascots, from `niri-dash say`.
     MascotSay(crate::mascots::Say),

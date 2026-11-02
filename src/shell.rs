@@ -203,6 +203,8 @@ pub struct Shell {
     own_source: Option<(ZwlrDataControlSourceV1, Clip)>,
     /// Where new clipboard contents are reported.
     pub clip_tx: Option<Sender<Msg>>,
+    /// Night light's gamma tables (the dashboard only; a standalone app leaves them alone).
+    pub gamma: crate::gamma::Gamma,
     registry_state: RegistryState,
     seat_state: SeatState,
     output_state: OutputState,
@@ -302,6 +304,10 @@ impl Shell {
         if data_control.is_none() {
             log::warn!("no wlr-data-control; clipboard history is unavailable");
         }
+        let gamma = match mode {
+            Mode::Dashboard => crate::gamma::Gamma::bind(globals, &qh),
+            Mode::App { .. } => Default::default(),
+        };
         if fractional_manager.is_none() || viewporter.is_none() {
             log::warn!("no fractional-scale/viewporter; rendering at integer scale");
         }
@@ -325,6 +331,7 @@ impl Shell {
             current_offer: None,
             own_source: None,
             clip_tx: None,
+            gamma,
             loop_handle,
             surface: None,
             pointer: None,
@@ -406,6 +413,12 @@ impl Shell {
     /// The surface exists and the compositor has told us its size.
     pub fn is_configured(&self) -> bool {
         self.surface.as_ref().is_some_and(|s| s.configured)
+    }
+
+    /// Turn night light on at `kelvin`, or off with `None`.
+    pub fn set_night_light(&mut self, want: Option<u32>) {
+        let qh = self.qh.clone();
+        self.gamma.set(want, &qh);
     }
 
     pub fn is_visible(&self) -> bool {
@@ -863,9 +876,18 @@ impl OutputHandler for Shell {
     fn output_state(&mut self) -> &mut OutputState {
         &mut self.output_state
     }
-    fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
+    fn new_output(&mut self, _: &Connection, qh: &QueueHandle<Self>, output: wl_output::WlOutput) {
+        self.gamma.add_output(output, qh);
+    }
     fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
-    fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
+    fn output_destroyed(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        output: wl_output::WlOutput,
+    ) {
+        self.gamma.remove_output(&output);
+    }
 }
 
 impl LayerShellHandler for Shell {
