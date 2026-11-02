@@ -523,7 +523,6 @@ pub struct View {
     pub seq: i32,
     /// Sent lines waiting behind this one.
     pub queued: usize,
-    pub sent: bool,
 }
 
 struct Sent {
@@ -785,14 +784,12 @@ impl Board {
                 outfit: s.outfit,
                 seq: m.seq,
                 queued: m.sent.len() - 1,
-                sent: true,
             },
             None => View {
                 text: m.own.0.clone(),
                 outfit: m.own.1,
                 seq: m.seq,
                 queued: 0,
-                sent: false,
             },
         })
     }
@@ -909,20 +906,17 @@ mod tests {
         let mut b = Board::default();
         b.sync(vec![spec(1, Character::Zolli)], t0);
         let own = b.view(1).unwrap();
-        assert!(!own.sent && !own.text.is_empty());
+        assert!(!own.text.is_empty());
         assert_eq!(b.say(&said("first", Some("zolli"), Some(0)), t0), Ok(1));
         assert_eq!(b.say(&said("second", None, Some(0)), t0), Ok(1));
         let v = b.view(1).unwrap();
-        assert_eq!((v.text.as_str(), v.queued, v.sent), ("first", 1, true));
+        assert_eq!((v.text.as_str(), v.queued), ("first", 1));
         assert_ne!(v.seq, own.seq, "a new line pops the mascot up");
         b.next(1, t0);
         assert_eq!(b.view(1).unwrap().text, "second");
         b.next(1, t0);
         let back = b.view(1).unwrap();
-        assert!(
-            !back.sent && back.text == own.text,
-            "its own line comes back"
-        );
+        assert!(back.text == own.text, "its own line comes back");
     }
 
     #[test]
@@ -935,7 +929,7 @@ mod tests {
         assert_eq!(b.view(1).unwrap().text, "brief");
         b.tick(t0 + Duration::from_secs(6));
         let own = b.view(1).unwrap();
-        assert!(!own.sent);
+        assert_ne!(own.text, "brief");
         // A full interval from when the sent line went.
         b.tick(t0 + Duration::from_secs(30));
         assert_eq!(b.view(1).unwrap().seq, own.seq);

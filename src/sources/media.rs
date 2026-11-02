@@ -31,7 +31,6 @@ pub struct State {
     pub playing: bool,
     pub art: Option<std::path::PathBuf>,
     pub progress: f32,
-    pub position_text: String,
 }
 
 async fn player_proxy<'a>(conn: &Connection, name: &'a str) -> Result<zbus::Proxy<'a>> {
@@ -49,11 +48,6 @@ fn meta_artist(m: &HashMap<String, OwnedValue>) -> String {
 
 fn meta_len(m: &HashMap<String, OwnedValue>) -> Option<i64> {
     prop::<i64>(m, "mpris:length").or_else(|| prop::<u64>(m, "mpris:length").map(|u| u as i64))
-}
-
-fn fmt_time(us: i64) -> String {
-    let s = us / 1_000_000;
-    format!("{}:{:02}", s / 60, s % 60)
 }
 
 async fn read_player(conn: &Connection, name: &str) -> Result<State> {
@@ -84,9 +78,6 @@ async fn read_player(conn: &Connection, name: &str) -> Result<State> {
             .filter(|l| *l > 0)
             .map(|l| position as f32 / l as f32)
             .unwrap_or(0.0),
-        position_text: len
-            .map(|l| format!("{} / {}", fmt_time(position), fmt_time(l)))
-            .unwrap_or_default(),
     })
 }
 

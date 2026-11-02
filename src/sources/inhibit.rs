@@ -174,8 +174,6 @@ async fn acquire(ctx: &Ctx) -> (Held, Option<String>) {
 pub struct Blocker {
     pub who: String,
     pub why: String,
-    /// "sleep", "idle", or both.
-    pub what: String,
 }
 
 async fn blockers(ctx: &Ctx) -> zbus::Result<Vec<Blocker>> {
@@ -201,15 +199,7 @@ fn filter_blockers(list: Vec<(String, String, String, String, u32, u32)>) -> Vec
         .filter(|(what, who, _, mode, _, _)| {
             mode == "block" && who != WHO && what.split(':').any(|w| w == "sleep" || w == "idle")
         })
-        .map(|(what, who, why, ..)| Blocker {
-            what: what
-                .split(':')
-                .filter(|w| *w == "sleep" || *w == "idle")
-                .collect::<Vec<_>>()
-                .join(" & "),
-            who,
-            why,
-        })
+        .map(|(_, who, why, ..)| Blocker { who, why })
         .collect();
     out.dedup();
     out
@@ -306,6 +296,5 @@ mod tests {
         ]);
         let who: Vec<&str> = b.iter().map(|b| b.who.as_str()).collect();
         assert_eq!(who, ["Steam", "Package manager"]);
-        assert_eq!(b[0].what, "sleep & idle");
     }
 }

@@ -123,8 +123,6 @@ export struct NameValue {
 
 export struct DiskRow {
     mount: string,
-    // /boot, /efi and the like.
-    system: bool,
     used: float,
     text: string,
 }
@@ -181,7 +179,6 @@ export struct ModelShare {
 }
 
 export global ClaudeUsage {
-    in property <bool> loaded;
     in property <string> plan;
     in property <bool> window-active;
     in property <string> window-tokens;
@@ -214,7 +211,6 @@ export global Windows {
     in property <int> count;
     in property <image> focused-icon;
     in property <bool> has-focused-icon;
-    in property <string> focused-app;
     in property <bool> available: true;
     callback focus(int);
     callback close(int);
@@ -245,9 +241,7 @@ export global Wifi {
 export struct BtDevice {
     address: string,
     name: string,
-    kind: string,
     connected: bool,
-    paired: bool,
     battery: int,
     busy: bool,
 }
@@ -257,7 +251,6 @@ export global Bluetooth {
     in property <bool> powered;
     in property <[BtDevice]> devices;
     in property <int> connected-count;
-    in property <string> status;
     callback toggle();
     callback connect(string);
     callback disconnect(string);
@@ -278,7 +271,6 @@ export struct Peripheral {
 export struct Blocker {
     who: string,
     why: string,
-    what: string,
 }
 
 export global Power {
@@ -287,7 +279,6 @@ export global Power {
     in property <bool> has-battery;
     in property <int> percent;
     in property <bool> charging;
-    in property <bool> plugged;
     in property <string> status-text;
     in property <PowerProfile> profile;
     in property <bool> has-profile;
@@ -321,7 +312,6 @@ export global Audio {
     callback set-stream-volume(int, float);
     callback toggle-stream-mute(int);
     callback set-default-sink(int);
-    in property <bool> available;
     in-out property <float> volume;
     in property <bool> muted;
     in-out property <float> mic-volume;
@@ -463,7 +453,6 @@ export global Media {
     in property <image> art;
     in property <bool> has-art;
     in property <float> progress;
-    in property <string> position-text;
     callback play-pause();
     callback next();
     callback previous();
@@ -485,8 +474,6 @@ export struct MascotLine {
     seq: int,
     // Lines sent with `niri-dash say` still waiting after this one.
     queued: int,
-    // A sent line (rather than a remark of its own).
-    sent: bool,
 }
 
 export global Mascots {

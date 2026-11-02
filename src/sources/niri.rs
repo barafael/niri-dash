@@ -21,7 +21,6 @@ pub struct WindowsState {
     pub connected: bool,
     pub rows: Vec<Row>,
     pub count: usize,
-    pub focused_app: String,
     pub focused_icon: Option<IconSrc>,
 }
 
@@ -117,7 +116,7 @@ fn build(state: &EventStreamState) -> WindowsState {
                 .map(IconSrc::Path)
                 .unwrap_or(IconSrc::None);
             if w.is_focused {
-                focused = Some((app.clone(), icon.clone()));
+                focused = Some(icon.clone());
             }
             rows.push(Row {
                 id: w.id,
@@ -136,16 +135,11 @@ fn build(state: &EventStreamState) -> WindowsState {
             });
         }
     }
-    let (focused_app, focused_icon) = match focused {
-        Some((a, i)) => (a, Some(i)),
-        None => (String::new(), None),
-    };
     WindowsState {
         connected: true,
         rows,
         count,
-        focused_app,
-        focused_icon,
+        focused_icon: focused,
     }
 }
 

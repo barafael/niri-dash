@@ -269,7 +269,6 @@ impl App {
                         .map(|b| crate::Blocker {
                             who: b.who.into(),
                             why: b.why.into(),
-                            what: b.what.into(),
                         })
                         .collect(),
                 ));

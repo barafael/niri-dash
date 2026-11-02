@@ -11,7 +11,6 @@ const SOURCE: &str = "@DEFAULT_AUDIO_SOURCE@";
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct State {
-    pub available: bool,
     pub volume: f32,
     pub muted: bool,
     pub mic: Option<(f32, bool)>,
@@ -112,7 +111,6 @@ async fn fetch() -> State {
         }
     };
     State {
-        available: true,
         volume,
         muted,
         mic,

@@ -21,7 +21,6 @@ pub struct State {
     pub has_battery: bool,
     pub percent: i32,
     pub charging: bool,
-    pub plugged: bool,
     pub status_text: String,
     pub power_text: String,
     pub profile: Option<Profile>,
@@ -148,9 +147,9 @@ fn fmt_duration(hours: f64) -> String {
 
 fn battery(state: &mut State) {
     let (bat, ac) = supplies();
-    state.plugged = ac.is_some_and(|a| sysfs::<String>(a.join("online")).as_deref() == Some("1"));
+    let plugged = ac.is_some_and(|a| sysfs::<String>(a.join("online")).as_deref() == Some("1"));
     let Some(b) = bat else {
-        state.status_text = if state.plugged {
+        state.status_text = if plugged {
             "On AC power".into()
         } else {
             String::new()
@@ -186,7 +185,7 @@ fn battery(state: &mut State) {
         ("Discharging", ..) => "On battery".into(),
         ("Full", ..) => "Fully charged".into(),
         ("Not charging", ..) => {
-            if state.plugged {
+            if plugged {
                 "Plugged in, not charging".into()
             } else {
                 "Not charging".into()

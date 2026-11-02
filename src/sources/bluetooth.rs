@@ -30,9 +30,7 @@ pub struct Device {
     pub path: String,
     pub address: String,
     pub name: String,
-    pub kind: String,
     pub connected: bool,
-    pub paired: bool,
     pub battery: i32,
     pub busy: bool,
 }
@@ -43,7 +41,6 @@ pub struct State {
     pub powered: bool,
     pub adapter: String,
     pub devices: Vec<Device>,
-    pub status: String,
 }
 
 async fn fetch(conn: &Connection) -> Result<State> {
@@ -76,9 +73,7 @@ async fn fetch(conn: &Connection) -> Result<State> {
                         name: prop_str(props, "Alias")
                             .or_else(|| prop_str(props, "Name"))
                             .unwrap_or_else(|| "Unknown".into()),
-                        kind: prop_str(props, "Icon").unwrap_or_default(),
                         connected,
-                        paired,
                         battery: -1,
                         busy: false,
                     });

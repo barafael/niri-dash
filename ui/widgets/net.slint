@@ -160,10 +160,6 @@ export component BluetoothWidget inherits Rectangle {
                 toggled => { Bluetooth.toggle(); }
             }
         }
-        Muted {
-            text: Bluetooth.status;
-            visible: Bluetooth.status != "";
-        }
         if !Bluetooth.available: Empty {
             vertical-stretch: 1;
             text: "No Bluetooth adapter";

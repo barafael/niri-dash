@@ -1249,7 +1249,6 @@ impl App {
                     outfit: outfit_to_ui(v.outfit),
                     seq: v.seq,
                     queued: v.queued as i32,
-                    sent: v.sent,
                 };
             }
         }
@@ -1468,18 +1467,15 @@ impl App {
                 p.set_net_addr(s.net_addr.into());
                 p.set_net_rx_frac(s.net_rx_frac);
                 p.set_net_tx_frac(s.net_tx_frac);
-                let disks: Vec<crate::DiskRow> = s
-                    .disks
-                    .into_iter()
-                    .map(|d| crate::DiskRow {
-                        system: d.system,
-                        mount: d.mount.into(),
-                        used: d.used,
-                        text: d.text.into(),
-                    })
-                    .collect();
-                p.set_user_disks(model(disks.iter().filter(|d| !d.system).cloned().collect()));
-                p.set_disks(model(disks));
+                let row = |d: &sources::perf::DiskRow| crate::DiskRow {
+                    mount: d.mount.as_str().into(),
+                    used: d.used,
+                    text: d.text.as_str().into(),
+                };
+                p.set_user_disks(model(
+                    s.disks.iter().filter(|d| !d.system).map(row).collect(),
+                ));
+                p.set_disks(model(s.disks.iter().map(row).collect()));
                 p.set_disk_history(model(s.disk_history));
                 p.set_disk_read_text(s.disk_read_text.into());
                 p.set_disk_write_text(s.disk_write_text.into());
@@ -1497,7 +1493,6 @@ impl App {
             }
             Msg::ClaudeUsage(u) => {
                 let c = ui.global::<crate::ClaudeUsage>();
-                c.set_loaded(true);
                 c.set_plan(u.plan.into());
                 c.set_window_active(u.window_active);
                 c.set_window_tokens(u.window_tokens.into());
@@ -1543,7 +1538,6 @@ impl App {
                 w.set_items(model(rows));
                 w.set_count(s.count as i32);
                 w.set_available(s.connected);
-                w.set_focused_app(s.focused_app.into());
                 let icon = s.focused_icon.as_ref().and_then(|i| self.image(i));
                 w.set_has_focused_icon(icon.is_some());
                 w.set_focused_icon(icon.unwrap_or_default());
@@ -1573,7 +1567,6 @@ impl App {
                 let b = ui.global::<UiBluetooth>();
                 b.set_available(s.available);
                 b.set_powered(s.powered);
-                b.set_status(s.status.into());
                 b.set_connected_count(s.devices.iter().filter(|d| d.connected).count() as i32);
                 b.set_devices(model(
                     s.devices
@@ -1581,9 +1574,7 @@ impl App {
                         .map(|d| BtDevice {
                             address: d.address.into(),
                             name: d.name.into(),
-                            kind: d.kind.into(),
                             connected: d.connected,
-                            paired: d.paired,
                             battery: d.battery,
                             busy: d.busy,
                         })
@@ -1596,7 +1587,6 @@ impl App {
                 p.set_has_battery(s.has_battery);
                 p.set_percent(s.percent);
                 p.set_charging(s.charging);
-                p.set_plugged(s.plugged);
                 p.set_status_text(s.status_text.into());
                 p.set_power_text(s.power_text.into());
                 p.set_has_profile(s.profile.is_some());
@@ -1619,7 +1609,6 @@ impl App {
             }
             Msg::Audio(s) => {
                 let a = ui.global::<UiAudio>();
-                a.set_available(s.available);
                 let touched = self
                     .audio_touched
                     .get()
@@ -1790,7 +1779,6 @@ impl App {
                 u.set_player(m.player.into());
                 u.set_playing(m.playing);
                 u.set_progress(m.progress);
-                u.set_position_text(m.position_text.into());
                 let art = m.art.map(IconSrc::Path).and_then(|a| self.image(&a));
                 u.set_has_art(art.is_some());
                 u.set_art(art.unwrap_or_default());
