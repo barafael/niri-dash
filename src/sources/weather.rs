@@ -284,7 +284,7 @@ impl Weather {
                         s
                     }
                     Ok(Err(e)) => State {
-                        error: format!("{e}"),
+                        error: e.to_string(),
                         ..Default::default()
                     },
                     Err(e) => State {

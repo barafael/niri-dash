@@ -5,7 +5,7 @@ use super::{Ctx, IconSrc, Msg, icons, osd::Osd, prop, unescape_entities};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use zbus::fdo::RequestNameFlags;
-use zbus::object_server::SignalEmitter;
+use zbus::object_server::{InterfaceRef, SignalEmitter};
 use zbus::zvariant::OwnedValue;
 
 const PATH: &str = "/org/freedesktop/Notifications";
@@ -119,6 +119,20 @@ impl Store {
         }
         false
     }
+
+    fn new_id(&mut self) -> u32 {
+        self.next_id += 1;
+        self.next_id
+    }
+
+    /// Put `n` in place of the notification with its id, or on top of the history.
+    fn push(&mut self, n: Notification) {
+        match self.items.iter_mut().find(|x| x.id == n.id) {
+            Some(slot) => *slot = n,
+            None => self.items.insert(0, n),
+        }
+        self.items.truncate(MAX);
+    }
 }
 
 struct Server {
@@ -214,7 +228,7 @@ fn resolve_icon(app_icon: &str, hints: &HashMap<String, OwnedValue>) -> IconSrc 
             return IconSrc::Path(p);
         }
     }
-    if let Some(p) = prop::<&str>(hints, "desktop-entry").and_then(icons::desktop_entry_icon) {
+    if let Some(p) = prop::<&str>(hints, "desktop-entry").and_then(icons::app_icon) {
         return IconSrc::Path(p);
     }
     IconSrc::None
@@ -249,8 +263,7 @@ impl Server {
             let id = if replacing {
                 replaces_id
             } else {
-                store.next_id += 1;
-                store.next_id
+                store.new_id()
             };
             // Updates of a notification (progress and the like) don't pop up again.
             let popup = if replacing {
@@ -265,7 +278,7 @@ impl Server {
                 store.missed += 1;
                 None
             };
-            let n = Notification {
+            store.push(Notification {
                 id,
                 app: app_name,
                 summary,
@@ -274,12 +287,7 @@ impl Server {
                 actions,
                 urgent,
                 time: chrono::Local::now(),
-            };
-            match store.items.iter_mut().find(|x| x.id == id) {
-                Some(slot) => *slot = n,
-                None => store.items.insert(0, n),
-            }
-            store.items.truncate(MAX);
+            });
             (id, popup)
         };
         if let Some(text) = popup {
@@ -403,12 +411,31 @@ impl Notifications {
         Ok(owned)
     }
 
-    async fn emit_closed(&self, id: u32, reason: u32) -> zbus::Result<()> {
+    /// The pop-ups, shared with the dashboard's own messages so a burst of both is folded into
+    /// one summary.
+    pub fn osd(&self) -> &Osd {
+        &self.osd
+    }
+
+    /// Our interface on the bus, to emit signals from; None unless we are serving.
+    async fn iface(&self) -> zbus::Result<Option<InterfaceRef<Server>>> {
         let Some(conn) = self.conn.get() else {
-            return Ok(());
+            return Ok(None);
         };
-        let iface = conn.object_server().interface::<_, Server>(PATH).await?;
-        Server::notification_closed(iface.signal_emitter(), id, reason).await?;
+        Ok(Some(conn.object_server().interface(PATH).await?))
+    }
+
+    async fn emit_closed(&self, id: u32, reason: u32) -> zbus::Result<()> {
+        if let Some(iface) = self.iface().await? {
+            Server::notification_closed(iface.signal_emitter(), id, reason).await?;
+        }
+        Ok(())
+    }
+
+    async fn emit_invoked(&self, id: u32, action: &str) -> zbus::Result<()> {
+        if let Some(iface) = self.iface().await? {
+            Server::action_invoked(iface.signal_emitter(), id, action).await?;
+        }
         Ok(())
     }
 
@@ -426,9 +453,9 @@ impl Notifications {
     /// Put one of our own messages (a timer going off) into the history.
     pub fn add_local(&self, app: &str, summary: &str, body: &str) {
         if let Ok(mut s) = self.store.lock() {
-            s.next_id += 1;
-            let n = Notification {
-                id: s.next_id,
+            let id = s.new_id();
+            s.push(Notification {
+                id,
                 app: app.into(),
                 summary: summary.into(),
                 body: body.into(),
@@ -436,9 +463,7 @@ impl Notifications {
                 actions: Vec::new(),
                 urgent: false,
                 time: chrono::Local::now(),
-            };
-            s.items.insert(0, n);
-            s.items.truncate(MAX);
+            });
         }
         publish(&self.ctx, &self.store);
     }
@@ -472,16 +497,7 @@ impl Notifications {
     pub fn invoke(&self, id: u32) {
         let me = self.clone();
         self.ctx.spawn(async move {
-            let r = async {
-                let Some(conn) = me.conn.get() else {
-                    return zbus::Result::Ok(());
-                };
-                let iface = conn.object_server().interface::<_, Server>(PATH).await?;
-                Server::action_invoked(iface.signal_emitter(), id, "default").await?;
-                zbus::Result::Ok(())
-            }
-            .await;
-            if let Err(e) = r {
+            if let Err(e) = me.emit_invoked(id, "default").await {
                 log::warn!("invoke: {e}");
             }
             me.dismiss(id);

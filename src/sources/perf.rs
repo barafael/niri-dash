@@ -159,10 +159,14 @@ fn push(q: &mut VecDeque<f32>, v: f32) {
     q.push_back(v);
 }
 
-/// Scale a rate history to 0..1 by its peak (at least `floor` bytes/s), returning the peak.
-fn scaled(q: &VecDeque<f32>, floor: f32) -> (Vec<f32>, f32) {
-    let peak = q.iter().copied().fold(floor, f32::max);
-    (q.iter().map(|v| v / peak).collect(), peak)
+/// The peak of a rate history, at least `floor` bytes/s.
+fn peak_of(q: &VecDeque<f32>, floor: f32) -> f32 {
+    q.iter().copied().fold(floor, f32::max)
+}
+
+/// A rate history as fractions of `peak`.
+fn scaled(q: &VecDeque<f32>, peak: f32) -> Vec<f32> {
+    q.iter().map(|v| v / peak).collect()
 }
 
 const VIRTUAL_FS: [&str; 8] = [
@@ -297,13 +301,10 @@ pub fn start(ctx: Ctx) {
                             .collect();
                     }
                     let load = System::load_average();
-                    let (rx_scaled, rx_peak) = scaled(&rx_hist, 64.0 * 1024.0);
-                    let (tx_scaled, tx_peak) = scaled(&tx_hist, 64.0 * 1024.0);
-                    let peak = rx_peak.max(tx_peak);
-                    let rescale = |v: Vec<f32>, own: f32| {
-                        v.into_iter().map(|x| x * own / peak).collect::<Vec<_>>()
-                    };
-                    let (io_scaled, _) = scaled(&io_hist, 1024.0 * 1024.0);
+                    // Down and up share one scale: the higher of their peaks.
+                    let net_floor = 64.0 * 1024.0;
+                    let peak = peak_of(&rx_hist, net_floor).max(peak_of(&tx_hist, net_floor));
+                    let io_scaled = scaled(&io_hist, peak_of(&io_hist, 1024.0 * 1024.0));
                     let iface = nets
                         .iter()
                         .filter(|(name, _)| physical(name))
@@ -418,8 +419,8 @@ pub fn start(ctx: Ctx) {
                             human_bytes(sys.total_swap())
                         ),
                         top_mem: top_mem.clone(),
-                        net_rx_history: rescale(rx_scaled, rx_peak),
-                        net_tx_history: rescale(tx_scaled, tx_peak),
+                        net_rx_history: scaled(&rx_hist, peak),
+                        net_tx_history: scaled(&tx_hist, peak),
                         net_rx_text: format!("{}/s", human_bytes(rx_rate as u64)),
                         net_tx_text: format!("{}/s", human_bytes(tx_rate as u64)),
                         net_peak_text: format!("peak {}/s", human_bytes(peak as u64)),
@@ -456,11 +457,10 @@ mod tests {
     #[test]
     fn scaling() {
         let q: VecDeque<f32> = [0.0, 50.0, 100.0].into_iter().collect();
-        let (v, peak) = scaled(&q, 10.0);
+        let peak = peak_of(&q, 10.0);
         assert_eq!(peak, 100.0);
-        assert_eq!(v, vec![0.0, 0.5, 1.0]);
-        let (_, floor) = scaled(&[1.0].into_iter().collect(), 10.0);
-        assert_eq!(floor, 10.0);
+        assert_eq!(scaled(&q, peak), vec![0.0, 0.5, 1.0]);
+        assert_eq!(peak_of(&[1.0].into_iter().collect(), 10.0), 10.0);
     }
 
     #[test]

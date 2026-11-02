@@ -113,9 +113,10 @@ async fn has_owner(conn: &Connection, name: &str) -> bool {
     dbus.name_has_owner(name).await.unwrap_or(false)
 }
 
-async fn logind_inhibit() -> Result<OwnedFd> {
-    let conn = Connection::system().await?;
-    let fd: OwnedFd = conn
+async fn logind_inhibit(ctx: &Ctx) -> Result<OwnedFd> {
+    let fd: OwnedFd = ctx
+        .bus(true)
+        .await?
         .call_method(
             Some("org.freedesktop.login1"),
             "/org/freedesktop/login1",
@@ -135,10 +136,10 @@ async fn logind_inhibit() -> Result<OwnedFd> {
 
 /// Take whatever inhibitors this session offers. Errors are only for the user when screen
 /// locking couldn't be blocked, since that's what the switch is mostly for.
-async fn acquire() -> (Held, Option<String>) {
+async fn acquire(ctx: &Ctx) -> (Held, Option<String>) {
     let mut held = Held::default();
     let mut problem = None;
-    match Connection::session().await {
+    match ctx.bus(false).await {
         Ok(conn) => {
             match Cookie::take(&conn, SCREENSAVER).await {
                 Ok(c) => held.screensaver = Some(c),
@@ -159,7 +160,7 @@ async fn acquire() -> (Held, Option<String>) {
         }
         Err(e) => problem = Some(format!("no session bus: {e}")),
     }
-    match logind_inhibit().await {
+    match logind_inhibit(ctx).await {
         Ok(fd) => held.logind = Some(fd),
         Err(e) => log::warn!("inhibit: {e}"),
     }
@@ -217,7 +218,7 @@ fn filter_blockers(list: Vec<(String, String, String, String, u32, u32)>) -> Vec
 /// The switch. Flipping it is asynchronous; the UI hears back through `Msg::Inhibited`.
 #[derive(Clone)]
 pub struct Inhibit {
-    want: Arc<watch::Sender<bool>>,
+    want: watch::Sender<bool>,
 }
 
 impl Inhibit {
@@ -237,7 +238,7 @@ impl Inhibit {
                 }
             }
         });
-        let want = Arc::new(watch::Sender::new(false));
+        let want = watch::Sender::new(false);
         let mut rx = want.subscribe();
         let w = want.clone();
         let c = ctx.clone();
@@ -247,7 +248,7 @@ impl Inhibit {
                 let on = *rx.borrow_and_update();
                 if on && !held.any() {
                     let problem;
-                    (held, problem) = acquire().await;
+                    (held, problem) = acquire(&ctx).await;
                     if let Some(p) = problem {
                         ctx.toast(format!("Block sleep: {p}"));
                     }

@@ -38,7 +38,7 @@ pub fn from_graph(g: &pipewire::Graph) -> Usage {
     }
     let mut camera = BTreeSet::new();
     let mut video_readers = Vec::new();
-    for src in g.nodes.iter().filter(|n| n.class == "Video/Source") {
+    for src in g.of_class("Video/Source") {
         for reader in g.outputs_of(src.id).filter_map(|i| g.node(i)) {
             let app = reader.app_label();
             video_readers.push((src.id, app.clone()));

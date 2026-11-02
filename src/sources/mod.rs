@@ -143,7 +143,7 @@ struct Buses {
 pub struct Ctx {
     tx: Sender<Msg>,
     /// Whether the dashboard is up; watchers and pollers wait on this rather than waking to check.
-    visible: Arc<watch::Sender<bool>>,
+    visible: watch::Sender<bool>,
     wake: Arc<Notify>,
     buses: Arc<Buses>,
     /// A dormant context starts nothing: a source built with it stays idle (standalone apps
@@ -156,7 +156,7 @@ impl Ctx {
     pub fn new(tx: Sender<Msg>, rt: tokio::runtime::Handle) -> Self {
         Self {
             tx,
-            visible: Arc::new(watch::Sender::new(false)),
+            visible: watch::Sender::new(false),
             wake: Arc::new(Notify::new()),
             buses: Default::default(),
             dormant: false,

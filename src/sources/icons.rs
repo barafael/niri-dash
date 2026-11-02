@@ -6,10 +6,13 @@ use std::sync::{LazyLock, Mutex};
 
 const THEMES: [&str; 3] = ["breeze-dark", "breeze", "Adwaita"];
 
-static THEME_CACHE: LazyLock<Mutex<HashMap<String, Option<PathBuf>>>> =
-    LazyLock::new(Default::default);
-static APP_CACHE: LazyLock<Mutex<HashMap<String, Option<PathBuf>>>> =
-    LazyLock::new(Default::default);
+/// Lookup results, misses included.
+type Cache<K> = LazyLock<Mutex<HashMap<K, Option<PathBuf>>>>;
+
+/// Theme lookups by icon name and size.
+static THEME_CACHE: Cache<(String, u16)> = LazyLock::new(Default::default);
+/// Desktop-file icons by app id.
+static APP_CACHE: Cache<String> = LazyLock::new(Default::default);
 
 fn user_theme() -> Option<String> {
     static THEME: LazyLock<Option<String>> = LazyLock::new(|| {
@@ -34,7 +37,8 @@ pub fn lookup(name: &str, size: u16) -> Option<PathBuf> {
     if name.starts_with('/') {
         return Path::new(name).is_file().then(|| PathBuf::from(name));
     }
-    if let Some(hit) = THEME_CACHE.lock().ok()?.get(name) {
+    let key = (name.to_string(), size);
+    if let Some(hit) = THEME_CACHE.lock().ok()?.get(&key) {
         return hit.clone();
     }
     let mut themes: Vec<String> = user_theme().into_iter().collect();
@@ -49,17 +53,15 @@ pub fn lookup(name: &str, size: u16) -> Option<PathBuf> {
         })
         .or_else(|| freedesktop_icons::lookup(name).with_size(size).find())
         .or_else(|| {
-            ["/usr/share/pixmaps"]
-                .iter()
-                .flat_map(|d| {
-                    ["png", "svg", "xpm"].map(|e| Path::new(d).join(format!("{name}.{e}")))
-                })
+            ["png", "svg", "xpm"]
+                .map(|e| Path::new("/usr/share/pixmaps").join(format!("{name}.{e}")))
+                .into_iter()
                 .find(|p| p.is_file())
         })
         // Slint can't decode xpm.
         .filter(|p| p.extension().is_some_and(|e| e != "xpm"));
     if let Ok(mut c) = THEME_CACHE.lock() {
-        c.insert(name.to_string(), found.clone());
+        c.insert(key, found.clone());
     }
     found
 }
@@ -126,7 +128,8 @@ fn wm_class_matches(path: &Path, app_id: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// The icon file for a Wayland app id, via its desktop file.
+/// The icon file for a Wayland app id (or a desktop file name, as notifications give it), via
+/// its desktop file.
 pub fn app_icon(app_id: &str) -> Option<PathBuf> {
     if app_id.is_empty() {
         return None;
@@ -187,9 +190,4 @@ pub fn app_icon(app_id: &str) -> Option<PathBuf> {
         c.insert(app_id.to_string(), icon.clone());
     }
     icon
-}
-
-/// Find the desktop file for a notification's `desktop-entry` hint and return its icon.
-pub fn desktop_entry_icon(entry: &str) -> Option<PathBuf> {
-    app_icon(entry)
 }

@@ -129,7 +129,7 @@ impl Media {
             .msg_type(zbus::message::Type::Signal)
             .interface("org.freedesktop.DBus.Properties")
             .and_then(|b| b.member("PropertiesChanged"))
-            .and_then(|b| b.path("/org/mpris/MediaPlayer2"))
+            .and_then(|b| b.path(OBJ))
             .map(|b| b.build());
         let names = zbus::MatchRule::builder()
             .msg_type(zbus::message::Type::Signal)
@@ -146,7 +146,7 @@ impl Media {
             async move {
                 let r = async { fetch(&m.conn().await?).await }.await;
                 let state = r.unwrap_or_else(|e| {
-                    log::debug!("media: {e:#}");
+                    log::debug!("media: {e}");
                     None
                 });
                 if let Ok(mut c) = m.current.lock() {

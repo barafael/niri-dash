@@ -189,7 +189,7 @@ impl Wifi {
                             m.ctx.send(Msg::Wifi(s));
                         }
                     }
-                    Err(e) => log::debug!("wifi: {e:#}"),
+                    Err(e) => log::debug!("wifi: {e}"),
                 }
             }
         });
@@ -268,13 +268,11 @@ impl Wifi {
             .lock()
             .map(|l| l.device.clone())
             .unwrap_or_default();
+        // Without a Wi-Fi device there is no connection to drop.
+        if dev.is_empty() {
+            return;
+        }
         self.ctx.act("Disconnect", async move {
-            if dev.is_empty() {
-                return Err(CmdError::Failed {
-                    program: "nmcli".into(),
-                    message: "no Wi-Fi device".into(),
-                });
-            }
             run("nmcli", &["device", "disconnect", &dev])
                 .await
                 .map(|_| ())
