@@ -1,0 +1,182 @@
+//! The timer and stopwatch widgets.
+
+use super::{App, model};
+use crate::Dash;
+use crate::timer::{Countdown, Run, Stopwatch};
+use slint::{ComponentHandle, Model, TimerMode};
+use std::rc::Rc;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+/// Played when the timer goes off, if it's there.
+const ALARM_SOUND: &str = "/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga";
+
+/// The countdown as it was saved: its length, and its end if it's still running.
+pub(super) fn restored_countdown(state: &crate::state::State) -> Countdown {
+    let mut countdown = Countdown::default();
+    if state.timer_secs > 0 {
+        countdown.length = Duration::from_secs(state.timer_secs as u64);
+    }
+    if let Some(end) = state.timer_end {
+        let end = UNIX_EPOCH + Duration::from_millis(end.max(0) as u64);
+        if end > SystemTime::now() {
+            countdown.state = Run::Running { end };
+        }
+    }
+    countdown
+}
+
+impl App {
+    fn countdown(&self, f: impl FnOnce(&mut Countdown, SystemTime)) {
+        f(&mut self.countdown.borrow_mut(), SystemTime::now());
+        self.timer_done.stop();
+        self.ui().global::<crate::Countdown>().set_done(false);
+        let c = self.countdown.borrow().clone();
+        self.update_state(|s| {
+            s.timer_secs = c.length.as_secs() as u32;
+            s.timer_end = match c.state {
+                Run::Running { end } => end
+                    .duration_since(UNIX_EPOCH)
+                    .ok()
+                    .map(|d| d.as_millis() as i64),
+                _ => None,
+            };
+        });
+        self.arm_timer_end();
+        self.timers_awake(self.ctx.visible());
+    }
+
+    fn stopwatch(&self, f: impl FnOnce(&mut Stopwatch, SystemTime)) {
+        f(&mut self.stopwatch.borrow_mut(), SystemTime::now());
+        self.timers_awake(self.ctx.visible());
+    }
+
+    /// Set the end timer for a running countdown.
+    fn arm_timer_end(&self) {
+        let c = self.countdown.borrow().clone();
+        match c.state {
+            Run::Running { .. } => {
+                let left = c.left(SystemTime::now());
+                self.timer_end
+                    .set_interval(left.max(Duration::from_millis(1)));
+                self.timer_end.restart();
+            }
+            _ => self.timer_end.stop(),
+        }
+    }
+
+    fn timer_went_off(&self) {
+        let now = SystemTime::now();
+        if !self.countdown.borrow().finished(now) {
+            // Woken early (the clock changed): wait for the rest.
+            self.arm_timer_end();
+            return;
+        }
+        let length = self.countdown.borrow().length;
+        self.countdown(|c, _| c.reset());
+        let ui = self.ui();
+        ui.global::<crate::Countdown>().set_done(true);
+        let text = format!("{} timer is done", crate::timer::format(length, false));
+        self.osd(&text, "alarm-symbolic");
+        self.notifications.add_local("Timer", &text, "");
+        if std::path::Path::new(ALARM_SOUND).exists() {
+            let _ = crate::sources::spawn_detached("pw-play", &[ALARM_SOUND]);
+        }
+        let w = self.ui.clone();
+        self.timer_done
+            .start(TimerMode::SingleShot, Duration::from_secs(60), move || {
+                if let Some(ui) = w.upgrade() {
+                    ui.global::<crate::Countdown>().set_done(false);
+                }
+            });
+    }
+
+    /// Run the ticker only while it shows anything.
+    pub(super) fn timers_awake(&self, visible: bool) {
+        // Notes: read them again on show (edited elsewhere?), save right away on hide.
+        if visible {
+            self.sync_notes(true);
+        } else if !self.notes_dirty.borrow().is_empty() {
+            self.notes_save.stop();
+            self.save_notes();
+        }
+        let running = matches!(self.countdown.borrow().state, Run::Running { .. })
+            || self.stopwatch.borrow().running();
+        if visible && running {
+            if !self.timer_ticker.running() {
+                self.timer_ticker.restart();
+            }
+        } else {
+            self.timer_ticker.stop();
+        }
+        self.push_timers();
+    }
+
+    fn push_timers(&self) {
+        let now = SystemTime::now();
+        let ui = self.ui();
+        let t = ui.global::<crate::Countdown>();
+        let c = self.countdown.borrow();
+        let text: slint::SharedString = crate::timer::format_left(c.left(now)).into();
+        if t.get_text() != text {
+            t.set_text(text);
+        }
+        t.set_fraction(c.fraction(now));
+        t.set_running(matches!(c.state, Run::Running { .. }));
+        t.set_paused(matches!(c.state, Run::Paused { .. }));
+        let s = self.stopwatch.borrow();
+        let elapsed = s.elapsed(now);
+        t.set_sw_text(crate::timer::format(elapsed, true).into());
+        t.set_sw_running(s.running());
+        t.set_sw_started(!elapsed.is_zero());
+        if t.get_laps().row_count() != s.laps.len() {
+            t.set_laps(model(
+                s.laps
+                    .iter()
+                    .map(|l| crate::timer::format(*l, true).into())
+                    .collect(),
+            ));
+        }
+    }
+}
+
+pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
+    let t = ui.global::<crate::Countdown>();
+    let a = app.clone();
+    t.on_toggle(move || a.countdown(|c, now| c.toggle(now)));
+    let a = app.clone();
+    t.on_reset(move || a.countdown(|c, _| c.reset()));
+    let a = app.clone();
+    t.on_adjust(move |m| a.countdown(|c, now| c.adjust(m as i64, now)));
+    let a = app.clone();
+    t.on_preset(move |m| {
+        a.countdown(|c, now| {
+            c.length = Duration::from_secs(m.max(1) as u64 * 60);
+            c.state = Run::Idle;
+            c.toggle(now);
+        })
+    });
+    let a = app.clone();
+    t.on_sw_toggle(move || a.stopwatch(|s, now| s.toggle(now)));
+    let a = app.clone();
+    t.on_sw_lap(move || a.stopwatch(|s, now| s.lap(now)));
+    let a = app.clone();
+    t.on_sw_reset(move || a.stopwatch(|s, _| s.reset()));
+    let w = Rc::downgrade(app);
+    app.timer_ticker
+        .start(TimerMode::Repeated, Duration::from_millis(100), move || {
+            if let Some(a) = w.upgrade() {
+                a.push_timers();
+            }
+        });
+    app.timer_ticker.stop();
+    let w = Rc::downgrade(app);
+    app.timer_end
+        .start(TimerMode::SingleShot, Duration::from_secs(1), move || {
+            if let Some(a) = w.upgrade() {
+                a.timer_went_off();
+            }
+        });
+    app.timer_end.stop();
+    app.arm_timer_end();
+    app.push_timers();
+}
