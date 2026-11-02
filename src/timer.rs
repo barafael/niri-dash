@@ -1,4 +1,5 @@
-//! The timer and stopwatch widgets' state, apart from the UI so it can be tested.
+//! The Timer widget's state, apart from the UI so it can be tested: a countdown or a stopwatch,
+//! as its `mode` setting picks.
 
 use std::time::{Duration, SystemTime};
 

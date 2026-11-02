@@ -11,11 +11,12 @@
 //! settings ([`for_kind`]); the edit sidebar shows them in that order.
 
 use kdl::KdlValue;
-use strum::{AsRefStr, EnumString};
+use strum::{AsRefStr, EnumIter, EnumString, VariantNames};
 
 use crate::layout::Kind;
+use crate::mascots::Character;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString, AsRefStr)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, EnumString, AsRefStr)]
 #[strum(serialize_all = "kebab-case")]
 pub enum Opt {
     // Clock.
@@ -67,6 +68,9 @@ pub enum Ty {
 
 const HISTORY: &[i64] = &[30, 60, 90, 120, 180];
 
+/// How each wildness (0 to 4) is shown.
+const WILDNESS: [&str; 5] = ["calm", "dry", "cheeky", "wild", "unhinged"];
+
 impl Opt {
     pub fn label(self) -> &'static str {
         match self {
@@ -100,47 +104,66 @@ impl Opt {
     pub fn ty(self) -> Ty {
         match self {
             Opt::Hours => Ty::Steps(&[12, 24]),
-            Opt::FirstDay => Ty::Choice(&["monday", "sunday"]),
-            Opt::Mode => Ty::Choice(&["timer", "stopwatch"]),
-            Opt::History => Ty::Steps(HISTORY),
-            Opt::TopApps => Ty::Steps(&[0, 1, 2, 3, 4, 5, 6, 8, 10]),
-            Opt::Units => Ty::Choice(&["celsius", "fahrenheit"]),
-            Opt::Note => Ty::Text {
-                placeholder: "notes (same name, same note)",
-            },
+            Opt::Seconds | Opt::Date => Ty::Toggle,
             Opt::Zones => Ty::Text {
                 placeholder: "e.g. Asia/Tokyo, New York",
             },
+            Opt::Mode => Ty::Choice(&["timer", "stopwatch"]),
+            Opt::Note => Ty::Text {
+                placeholder: "notes (same name, same note)",
+            },
+            Opt::FirstDay => Ty::Choice(&["monday", "sunday"]),
+            Opt::WeekNumbers => Ty::Toggle,
+            Opt::History => Ty::Steps(HISTORY),
+            Opt::Cores => Ty::Toggle,
+            Opt::TopApps => Ty::Steps(&[0, 1, 2, 3, 4, 5, 6, 8, 10]),
+            Opt::HideSystem => Ty::Toggle,
             Opt::Location => Ty::Text {
                 placeholder: "City of your time zone",
             },
-            Opt::Character => Ty::Choice(&["schraubi", "zolli", "verschnitti"]),
+            Opt::Units => Ty::Choice(&["celsius", "fahrenheit"]),
+            Opt::Lock
+            | Opt::Suspend
+            | Opt::Logout
+            | Opt::Restart
+            | Opt::PowerOff
+            | Opt::Confirm => Ty::Toggle,
+            Opt::Character => Ty::Choice(Character::VARIANTS),
             Opt::Wildness => Ty::Steps(&[0, 1, 2, 3, 4]),
             Opt::Interval => Ty::Steps(&[15, 30, 45, 60, 120, 300, 600]),
             Opt::Command => Ty::Text {
                 placeholder: "Built-in remarks",
             },
-            _ => Ty::Toggle,
         }
     }
 
     /// The default value. `us` is whether the locale is American (12-hour clock etc).
     pub fn default(self, us: bool) -> KdlValue {
+        let text = |s: &str| KdlValue::String(s.into());
         match self {
             Opt::Hours => KdlValue::Integer(if us { 12 } else { 24 }),
-            Opt::FirstDay => KdlValue::String(if us { "sunday" } else { "monday" }.into()),
+            Opt::Seconds | Opt::Date => KdlValue::Bool(true),
+            Opt::Zones => text(""),
+            Opt::Mode => text("timer"),
+            Opt::Note => text(""),
+            Opt::FirstDay => text(if us { "sunday" } else { "monday" }),
+            Opt::WeekNumbers => KdlValue::Bool(false),
             Opt::History => KdlValue::Integer(90),
+            Opt::Cores => KdlValue::Bool(true),
             Opt::TopApps => KdlValue::Integer(5),
-            Opt::Units => KdlValue::String(if us { "fahrenheit" } else { "celsius" }.into()),
-            Opt::Location | Opt::Command | Opt::Zones | Opt::Note => {
-                KdlValue::String(String::new())
-            }
-            Opt::Character => KdlValue::String("schraubi".into()),
-            Opt::Mode => KdlValue::String("timer".into()),
+            Opt::HideSystem => KdlValue::Bool(false),
+            Opt::Location => text(""),
+            Opt::Units => text(if us { "fahrenheit" } else { "celsius" }),
+            Opt::Lock
+            | Opt::Suspend
+            | Opt::Logout
+            | Opt::Restart
+            | Opt::PowerOff
+            | Opt::Confirm => KdlValue::Bool(true),
+            Opt::Character => text(Character::Schraubi.name()),
             Opt::Wildness => KdlValue::Integer(2),
             Opt::Interval => KdlValue::Integer(45),
-            Opt::WeekNumbers | Opt::HideSystem => KdlValue::Bool(false),
-            _ => KdlValue::Bool(true),
+            Opt::Command => text(""),
         }
     }
 
@@ -155,8 +178,10 @@ impl Opt {
                 format!("{:.1} min", *s as f32 / 60.0)
             }
             (Opt::History | Opt::Interval, KdlValue::Integer(s)) => format!("{s} s"),
-            (Opt::Wildness, KdlValue::Integer(w)) => {
-                ["calm", "dry", "cheeky", "wild", "unhinged"][(*w).clamp(0, 4) as usize].into()
+            (Opt::Wildness, KdlValue::Integer(w))
+                if let Some(word) = usize::try_from(*w).ok().and_then(|w| WILDNESS.get(w)) =>
+            {
+                (*word).into()
             }
             (Opt::TopApps, KdlValue::Integer(0)) => "none".into(),
             (_, KdlValue::Integer(i)) => i.to_string(),
@@ -228,7 +253,21 @@ pub fn for_kind(kind: Kind) -> &'static [Opt] {
         Kind::Weather => &[Location, Units],
         Kind::Session => &[Lock, Suspend, Logout, Restart, PowerOff, Confirm],
         Kind::Mascot => &[Character, Wildness, Interval, Command],
-        _ => &[],
+        Kind::Windows
+        | Kind::Claude
+        | Kind::Wifi
+        | Kind::Bluetooth
+        | Kind::Battery
+        | Kind::Audio
+        | Kind::Brightness
+        | Kind::Notifications
+        | Kind::Tray
+        | Kind::Media
+        | Kind::Clipboard
+        | Kind::ClaudeUsage
+        | Kind::KeyboardLayout
+        | Kind::ColorPicker
+        | Kind::Privacy => &[],
     }
 }
 
@@ -291,6 +330,7 @@ pub fn check(kind: Kind, values: &[(String, KdlValue)]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use strum::IntoEnumIterator;
 
     #[test]
     fn steps_clamp_and_choices_wrap() {
@@ -312,6 +352,16 @@ mod tests {
             Opt::FirstDay.step(&d, -1),
             KdlValue::String("sunday".into())
         );
+    }
+
+    #[test]
+    fn defaults_are_accepted() {
+        for opt in Opt::iter() {
+            for us in [false, true] {
+                assert!(opt.accepts(&opt.default(us)), "{opt:?}");
+            }
+        }
+        assert_eq!(Opt::Wildness.value_text(&KdlValue::Integer(4)), "unhinged");
     }
 
     #[test]

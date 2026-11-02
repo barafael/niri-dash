@@ -56,17 +56,35 @@ impl Kind {
 
     /// Whether a round version makes sense (lists don't fit in a circle).
     pub fn can_be_round(self) -> bool {
-        !matches!(
-            self,
+        match self {
+            Kind::Clock
+            | Kind::Calendar
+            | Kind::Perf
+            | Kind::Claude
+            | Kind::Wifi
+            | Kind::Bluetooth
+            | Kind::Battery
+            | Kind::Audio
+            | Kind::Brightness
+            | Kind::Weather
+            | Kind::Memory
+            | Kind::Disks
+            | Kind::Network
+            | Kind::Gpu
+            | Kind::ClaudeUsage
+            | Kind::KeyboardLayout
+            | Kind::ColorPicker
+            | Kind::Timer
+            | Kind::Privacy => true,
             Kind::Windows
-                | Kind::Notifications
-                | Kind::Clipboard
-                | Kind::Tray
-                | Kind::Media
-                | Kind::Session
-                | Kind::Mascot
-                | Kind::Notes
-        )
+            | Kind::Notifications
+            | Kind::Clipboard
+            | Kind::Tray
+            | Kind::Media
+            | Kind::Session
+            | Kind::Mascot
+            | Kind::Notes => false,
+        }
     }
 
     pub fn title(self) -> &'static str {

@@ -29,30 +29,22 @@ pub fn resolve(name: &str) -> Option<Tz> {
     })
 }
 
-/// The city part of a zone name: "America/New_York" → "New York".
+/// The city part of a zone name: "America/New_York" → "New York", "UTC" → "UTC".
 pub fn label(tz: Tz) -> String {
-    tz.name()
-        .rsplit('/')
-        .next()
-        .unwrap_or(tz.name())
+    let name = tz.name();
+    name.rsplit_once('/')
+        .map_or(name, |(_, city)| city)
         .replace('_', " ")
 }
 
-/// The zones in a comma-separated list, unknown names dropped.
+/// The zones in a comma- or semicolon-separated list, unknown names dropped.
+pub fn parse(list: &str) -> Vec<Tz> {
+    list.split([',', ';']).filter_map(resolve).collect()
+}
+
+/// [`parse`], paired with an empty list where the unknown names were.
 pub fn parse_list(list: &str) -> (Vec<Tz>, Vec<String>) {
-    let mut zones = Vec::new();
-    let mut unknown = Vec::new();
-    for part in list
-        .split([',', ';'])
-        .map(str::trim)
-        .filter(|p| !p.is_empty())
-    {
-        match resolve(part) {
-            Some(tz) => zones.push(tz),
-            None => unknown.push(part.to_string()),
-        }
-    }
-    (zones, unknown)
+    (parse(list), Vec::new())
 }
 
 /// The rows for `zones` at `now`, compared with the local zone `local`.
@@ -113,10 +105,12 @@ mod tests {
         assert_eq!(resolve("new york"), Some(chrono_tz::America::New_York));
         assert_eq!(resolve("Tokyo"), Some(chrono_tz::Asia::Tokyo));
         assert_eq!(resolve("Atlantis"), None);
-        let (z, bad) = parse_list("Tokyo, , Atlantis; UTC");
-        assert_eq!(z.len(), 2);
-        assert_eq!(bad, vec!["Atlantis"]);
+        assert_eq!(
+            parse("Tokyo, , Atlantis; UTC"),
+            vec![chrono_tz::Asia::Tokyo, chrono_tz::UTC]
+        );
         assert_eq!(label(chrono_tz::America::New_York), "New York");
+        assert_eq!(label(chrono_tz::UTC), "UTC");
     }
 
     #[test]

@@ -16,9 +16,12 @@ use chrono::{Datelike, Local, Timelike, Weekday};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
-use strum::{AsRefStr, EnumIter, EnumString, IntoEnumIterator, IntoStaticStr};
+use strum::{AsRefStr, EnumIter, EnumString, IntoStaticStr, VariantNames};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumIter, EnumString, IntoStaticStr)]
+/// A mascot. [`Character::VARIANTS`] lists their names.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, EnumIter, EnumString, IntoStaticStr, VariantNames,
+)]
 #[strum(serialize_all = "lowercase", ascii_case_insensitive)]
 pub enum Character {
     Schraubi,
@@ -27,18 +30,6 @@ pub enum Character {
 }
 
 impl Character {
-    pub fn title(self) -> &'static str {
-        match self {
-            Character::Schraubi => "Schraubi",
-            Character::Zolli => "Zolli",
-            Character::Verschnitti => "Verschnitti",
-        }
-    }
-
-    pub fn names() -> Vec<&'static str> {
-        Character::iter().map(Character::name).collect()
-    }
-
     /// The lowercase name `say --to` and config.kdl use.
     pub fn name(self) -> &'static str {
         self.into()
@@ -127,7 +118,7 @@ impl Say {
             name => name.parse().map(|c| Some(Some(c))).map_err(|_| {
                 format!(
                     "no mascot {name:?}; one of {}, {TO_ANY}, {TO_ALL}",
-                    Character::names().join(", ")
+                    Character::VARIANTS.join(", ")
                 )
             }),
         }
@@ -554,6 +545,15 @@ struct Mascot {
     seq: i32,
 }
 
+impl Mascot {
+    /// Drop sent lines whose time is up; whether any went.
+    fn expire(&mut self, now: Instant) -> bool {
+        let before = self.sent.len();
+        self.sent.retain(|s| s.until.is_none_or(|t| t > now));
+        self.sent.len() != before
+    }
+}
+
 /// What the app should do for a mascot: nothing, or run its command and hand the output to
 /// [`Board::answer`].
 #[derive(Debug, PartialEq)]
@@ -625,6 +625,30 @@ impl Board {
         self.mascots.iter().map(|m| m.spec.id)
     }
 
+    /// What mascot `i` shows changed: it pops up with it.
+    fn touch(&mut self, i: usize) {
+        let m = &mut self.mascots[i];
+        m.seq = m.seq.wrapping_add(1);
+        self.dirty = true;
+    }
+
+    /// Mascot `i` has a new line of its own, shown unless sent lines are in front of it.
+    fn own_changed(&mut self, i: usize) {
+        if self.mascots[i].sent.is_empty() {
+            self.touch(i);
+        }
+    }
+
+    /// Sent lines of mascot `i` went away. Once none are left, its own line is back and stays
+    /// up a full interval.
+    fn sent_dropped(&mut self, i: usize, now: Instant) {
+        self.touch(i);
+        let m = &mut self.mascots[i];
+        if m.sent.is_empty() {
+            m.own_since = now;
+        }
+    }
+
     /// A new line of its own for mascot `i`: from its command, or drawn from its remarks.
     fn refresh(&mut self, i: usize, now: Instant) -> Todo {
         let m = &mut self.mascots[i];
@@ -643,10 +667,7 @@ impl Board {
         m.own = m
             .deck
             .draw(m.spec.character, m.spec.wildness, &mut self.rng);
-        if m.sent.is_empty() {
-            m.seq = m.seq.wrapping_add(1);
-            self.dirty = true;
-        }
+        self.own_changed(i);
         Todo::Nothing
     }
 
@@ -667,10 +688,7 @@ impl Board {
                 .deck
                 .draw(m.spec.character, m.spec.wildness, &mut self.rng),
         };
-        if m.sent.is_empty() {
-            m.seq = m.seq.wrapping_add(1);
-            self.dirty = true;
-        }
+        self.own_changed(i);
     }
 
     /// A line sent from outside. Returns how many mascots got it, or why none did.
@@ -701,14 +719,14 @@ impl Board {
         };
         let until = say.duration().map(|d| now + d);
         for &i in &picked {
-            let m = &mut self.mascots[i];
-            m.sent.push_back(Sent {
+            let sent = &mut self.mascots[i].sent;
+            sent.push_back(Sent {
                 text: text.clone(),
                 outfit: say.outfit.unwrap_or_default(),
                 until,
             });
-            if m.sent.len() == 1 {
-                m.seq = m.seq.wrapping_add(1);
+            if sent.len() == 1 {
+                self.touch(i);
             }
         }
         self.dirty = true;
@@ -720,14 +738,8 @@ impl Board {
         let Some(i) = self.mascots.iter().position(|m| m.spec.id == id) else {
             return Todo::Nothing;
         };
-        let m = &mut self.mascots[i];
-        if m.sent.pop_front().is_some() {
-            m.seq = m.seq.wrapping_add(1);
-            self.dirty = true;
-            if m.sent.is_empty() {
-                // Back to its own line, which then stays up a full interval.
-                m.own_since = now;
-            }
+        if self.mascots[i].sent.pop_front().is_some() {
+            self.sent_dropped(i, now);
             return Todo::Nothing;
         }
         self.refresh(i, now)
@@ -738,16 +750,10 @@ impl Board {
     pub fn tick(&mut self, now: Instant) -> Vec<Todo> {
         let mut todo = Vec::new();
         for i in 0..self.mascots.len() {
-            let m = &mut self.mascots[i];
-            let before = m.sent.len();
-            m.sent.retain(|s| s.until.is_none_or(|t| t > now));
-            if m.sent.len() != before {
-                m.seq = m.seq.wrapping_add(1);
-                self.dirty = true;
-                if m.sent.is_empty() {
-                    m.own_since = now;
-                }
+            if self.mascots[i].expire(now) {
+                self.sent_dropped(i, now);
             }
+            let m = &self.mascots[i];
             if m.sent.is_empty() && !m.asking && now >= m.own_since + m.spec.interval {
                 todo.push(self.refresh(i, now));
             }
@@ -760,12 +766,11 @@ impl Board {
     pub fn wake(&mut self, now: Instant) -> Vec<Todo> {
         let mut todo = Vec::new();
         for i in 0..self.mascots.len() {
-            let m = &mut self.mascots[i];
-            m.sent.retain(|s| s.until.is_none_or(|t| t > now));
-            if m.sent.is_empty() {
+            self.mascots[i].expire(now);
+            if self.mascots[i].sent.is_empty() {
                 todo.push(self.refresh(i, now));
             } else {
-                m.seq = m.seq.wrapping_add(1);
+                self.touch(i);
             }
         }
         self.dirty = true;
@@ -801,6 +806,7 @@ impl Board {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use strum::IntoEnumIterator;
 
     #[test]
     fn everyone_has_something_to_say_even_when_calm() {
