@@ -1,7 +1,8 @@
-// Small tools: keyboard layout, color picker, timer and stopwatch, sticky notes.
+// Small tools: keyboard layout, color picker, timer and stopwatch, sticky notes, clipboard
+// history.
 import { Theme, Icons } from "../theme.slint";
-import { KeyboardLayouts, LayoutItem, ColorPicker, PickedColor, Countdown, Notes, Shell, WidgetOpts } from "../data.slint";
-import { Icon, IconButton, TextButton, Header, Row, Muted, ScrollList, Ring, Bar } from "../common.slint";
+import { KeyboardLayouts, LayoutItem, ColorPicker, PickedColor, Countdown, Notes, Clipboard, Shell, WidgetOpts } from "../data.slint";
+import { Icon, IconButton, TextButton, Header, Row, Muted, Empty, ScrollList, Ring, Bar, RoundFace } from "../common.slint";
 
 // Scrolls through a list of choices a notch at a time, also with touchpads' small steps.
 component NotchScroll inherits TouchArea {
@@ -458,6 +459,78 @@ export component NotesWidget inherits Rectangle {
                 text: root.text;
                 placeholder-text: "Write something…";
                 edited(t) => { Notes.edited(root.id, t); }
+            }
+        }
+    }
+}
+
+export component ClipboardWidget inherits Rectangle {
+    in property <bool> round;
+    if root.round: RoundFace {
+        icon: Icons.clipboard;
+        tint: Clipboard.items.length > 0 ? Theme.accent : Theme.faint;
+        caption: Clipboard.items.length + " items";
+    }
+    if !root.round: VerticalLayout {
+        padding: Theme.pad;
+        spacing: 6px;
+        Header {
+            icon: Icons.clipboard;
+            title: "Clipboard";
+            if Clipboard.items.length > 0: TextButton {
+                text: "Clear";
+                clicked => { Clipboard.clear(); }
+            }
+        }
+        if !Clipboard.available: Empty {
+            vertical-stretch: 1;
+            text: "The compositor doesn't offer clipboard access (wlr-data-control)";
+        }
+        if Clipboard.available && Clipboard.items.length == 0: Empty {
+            vertical-stretch: 1;
+            text: "Nothing copied yet";
+        }
+        if Clipboard.items.length > 0: ScrollList {
+            vertical-stretch: 1;
+            for c in Clipboard.items: Rectangle {
+                height: c.is-image ? 72px : 44px;
+                Row {
+                    height: parent.height - 3px;
+                    selected: c.index == 0;
+                    clicked => { Clipboard.copy(c.index); }
+                    HorizontalLayout {
+                        padding-left: 10px;
+                        padding-right: 4px;
+                        spacing: 10px;
+                        if c.is-image: Image {
+                            y: 4px;
+                            height: parent.height - 8px;
+                            width: self.height * 1.5;
+                            source: c.image;
+                            image-fit: contain;
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            horizontal-stretch: 1;
+                            Text {
+                                text: c.text;
+                                font-size: Theme.font-body;
+                                color: Theme.text;
+                                overflow: elide;
+                            }
+                            Muted {
+                                text: c.info;
+                            }
+                        }
+                        IconButton {
+                            y: (parent.height - self.height) / 2;
+                            icon: Icons.close;
+                            size: 26px;
+                            tint: Theme.faint;
+                            clicked => { Clipboard.remove(c.index); }
+                        }
+                    }
+                }
             }
         }
     }

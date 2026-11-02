@@ -1,5 +1,5 @@
 import { Theme, Icons } from "../theme.slint";
-import { Windows, Notifications, Tray, Media, Shell } from "../data.slint";
+import { Windows, Claude, Notifications, Tray, Media, Shell } from "../data.slint";
 import { Icon, IconButton, TextButton, Ring, Header, Row, Muted, Empty, ScrollList, RoundFace, SectionLabel, Bar } from "../common.slint";
 
 export component WindowsWidget inherits Rectangle {
@@ -399,6 +399,105 @@ export component MediaWidget inherits Rectangle {
                 size: 34px;
                 enabled: Media.available;
                 clicked => { Media.next(); }
+            }
+        }
+    }
+}
+
+// A session's status: accent with a halo while working. Deliberately still: any animation here
+// means a redraw several times a second, and every frame makes the compositor recomposite the
+// whole screen behind the translucent dashboard.
+component StatusDot inherits Rectangle {
+    in property <bool> busy;
+    width: 10px;
+    height: 10px;
+    border-radius: 5px;
+    background: busy ? Theme.accent : Theme.good;
+    Rectangle {
+        visible: root.busy;
+        width: parent.width * 1.9;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: Theme.accent.with-alpha(0.22);
+    }
+}
+
+export component ClaudeSessionsWidget inherits Rectangle {
+    in property <bool> round;
+    if root.round: Rectangle {
+        Ring {
+            width: 100%;
+            height: 100%;
+            value: Claude.sessions.length == 0 ? 0 : Claude.busy / Claude.sessions.length;
+            thickness: max(6px, root.width * 0.06);
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: Claude.sessions.length;
+                horizontal-alignment: center;
+                font-size: root.width * 0.26;
+                font-weight: Theme.font-weight-display;
+                color: Theme.text;
+            }
+            Text {
+                text: Claude.busy > 0 ? Claude.busy + " working" : "sessions";
+                horizontal-alignment: center;
+                font-size: max(10px, root.width * 0.07);
+                color: Claude.busy > 0 ? Theme.accent : Theme.dim;
+            }
+        }
+    }
+    if !root.round: VerticalLayout {
+        padding: Theme.pad;
+        spacing: 6px;
+        Header {
+            icon: Icons.sparkle;
+            icon-color: Claude.busy > 0 ? Theme.accent : Theme.dim;
+            title: "Claude sessions";
+            Muted {
+                text: Claude.busy > 0 ? Claude.busy + " working · " + Claude.sessions.length : Claude.sessions.length;
+            }
+        }
+        if Claude.sessions.length == 0: Empty {
+            vertical-stretch: 1;
+            text: "No Claude Code sessions running";
+        }
+        if Claude.sessions.length > 0: ScrollList {
+            vertical-stretch: 1;
+            for s in Claude.sessions: Rectangle {
+                height: 48px;
+                Row {
+                    height: parent.height - 2px;
+                    enabled: s.has-window;
+                    clicked => {
+                        Claude.focus(s.pid);
+                        Shell.hide();
+                    }
+                    HorizontalLayout {
+                        padding-left: 10px;
+                        padding-right: 10px;
+                        spacing: 10px;
+                        StatusDot {
+                            y: (parent.height - self.height) / 2;
+                            busy: s.busy;
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            horizontal-stretch: 1;
+                            Text {
+                                text: s.title;
+                                font-size: Theme.font-body;
+                                color: Theme.text;
+                                overflow: elide;
+                            }
+                            Muted {
+                                text: s.place + "  ·  " + s.status;
+                            }
+                        }
+                    }
+                }
             }
         }
     }
