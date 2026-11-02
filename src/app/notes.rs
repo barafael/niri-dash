@@ -112,15 +112,7 @@ impl App {
         for name in dirty {
             let path = note_path(&name);
             let text = notes.get(&name).map(String::as_str).unwrap_or("");
-            let result = (|| {
-                if let Some(dir) = path.parent() {
-                    std::fs::create_dir_all(dir)?;
-                }
-                let tmp = path.with_extension("md.tmp");
-                std::fs::write(&tmp, text)?;
-                std::fs::rename(&tmp, &path)
-            })();
-            if let Err(e) = result {
+            if let Err(e) = crate::files::write_atomic(&path, text) {
                 log::warn!("saving {}: {e}", path.display());
                 self.toast(&format!("Saving note {name}: {e}"));
             }
@@ -151,8 +143,7 @@ fn note_name(raw: &str) -> String {
 }
 
 fn note_path(name: &str) -> std::path::PathBuf {
-    dirs::data_dir()
-        .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".local/share"))
+    crate::files::data_home()
         .join("niri-dash/notes")
         .join(format!("{name}.md"))
 }

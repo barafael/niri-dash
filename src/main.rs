@@ -8,6 +8,7 @@ slint::include_modules!();
 
 mod app;
 mod desktop;
+mod files;
 mod gpu;
 mod layout;
 mod mascots;

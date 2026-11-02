@@ -77,9 +77,7 @@ fn listed(kind: Kind) -> bool {
 }
 
 fn dir() -> PathBuf {
-    dirs::data_dir()
-        .unwrap_or_else(|| PathBuf::from("~/.local/share"))
-        .join("applications")
+    crate::files::data_home().join("applications")
 }
 
 /// How the entries start us: plain `niri-dash` when that is this binary on $PATH, else the full

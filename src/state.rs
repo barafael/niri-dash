@@ -39,33 +39,24 @@ pub fn path() -> PathBuf {
     if let Some(p) = std::env::var_os("NIRI_DASH_STATE") {
         return PathBuf::from(p);
     }
-    dirs::state_dir()
-        .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".local/state"))
-        .join("niri-dash/state.json")
+    crate::files::state_home().join("niri-dash/state.json")
 }
 
 pub fn load() -> State {
-    match std::fs::read_to_string(path()) {
+    let path = path();
+    match std::fs::read_to_string(&path) {
         Ok(text) => serde_json::from_str(&text).unwrap_or_else(|e| {
-            log::warn!("{}: {e}; starting fresh", path().display());
+            log::warn!("{}: {e}; starting fresh", path.display());
             State::default()
         }),
         Err(_) => State::default(),
     }
 }
 
-/// Write atomically, so a crash mid-write doesn't leave half a file.
 pub fn save(state: &State) {
     let path = path();
-    let result = (|| -> std::io::Result<()> {
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)?;
-        }
-        let tmp = path.with_extension("json.tmp");
-        std::fs::write(&tmp, serde_json::to_vec_pretty(state)?)?;
-        std::fs::rename(&tmp, &path)
-    })();
-    if let Err(e) = result {
+    let json = serde_json::to_vec_pretty(state).expect("the state serializes");
+    if let Err(e) = crate::files::write_atomic(&path, json) {
         log::warn!("saving {}: {e}", path.display());
     }
 }

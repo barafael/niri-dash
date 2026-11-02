@@ -497,10 +497,7 @@ impl Layout {
         if let Some(p) = std::env::var_os("NIRI_DASH_CONFIG") {
             return PathBuf::from(p);
         }
-        dirs::config_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("niri-dash")
-            .join("config.kdl")
+        crate::files::config_home().join("niri-dash/config.kdl")
     }
 
     pub fn default_text() -> String {
@@ -641,13 +638,8 @@ impl Layout {
             Ok(t) => t,
             Err(_) => {
                 let t = Self::default_text();
-                if create {
-                    if let Some(dir) = path.parent() {
-                        let _ = std::fs::create_dir_all(dir);
-                    }
-                    if let Err(e) = std::fs::write(&path, &t) {
-                        log::warn!("writing {}: {e}", path.display());
-                    }
+                if create && let Err(e) = crate::files::write_atomic(&path, &t) {
+                    log::warn!("writing {}: {e}", path.display());
                 }
                 t
             }
@@ -740,14 +732,11 @@ impl Layout {
         text
     }
 
+    /// Write the config; returns what was written.
     pub fn save(&mut self) -> Option<String> {
         let path = Self::path();
-        if let Some(dir) = path.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
         let text = self.to_text();
-        let tmp = path.with_extension("kdl.tmp");
-        match std::fs::write(&tmp, &text).and_then(|_| std::fs::rename(&tmp, &path)) {
+        match crate::files::write_atomic(&path, &text) {
             Ok(()) => Some(text),
             Err(e) => {
                 log::warn!("saving {}: {e}", path.display());
