@@ -19,7 +19,6 @@ use slint::{
 use smithay_client_toolkit::reexports::calloop::{EventLoop, channel};
 use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
 use smithay_client_toolkit::reexports::client::{Connection, globals::registry_queue_init};
-use smithay_client_toolkit::seat::pointer::CursorIcon;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
@@ -798,11 +797,7 @@ fn serve(
             app.sync_grid();
             let ui = app.ui();
             shell.set_glass(ui.global::<crate::Theme>().get_glass());
-            shell.set_cursor(match ui.get_cursor() {
-                crate::PointerShape::Move => CursorIcon::Move,
-                crate::PointerShape::Resize => CursorIcon::NwseResize,
-                crate::PointerShape::Normal => CursorIcon::Default,
-            });
+            shell.set_cursor(enums::cursor_from_ui(ui.get_cursor()));
             if bench {
                 window.window().request_redraw();
             }

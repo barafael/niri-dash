@@ -1,7 +1,7 @@
 //! The widgets that show what their source reports and hand clicks back to it: system monitor,
 //! Claude, windows, keyboard layout, Wi-Fi, Bluetooth, brightness, tray, weather and media.
 
-use super::enums::weather_icon;
+use super::enums::{toggle_to_ui, weather_icon_to_ui};
 use super::{App, held, model};
 use crate::sources::{self, IconSrc, niri, tray};
 use crate::{
@@ -271,11 +271,7 @@ impl App {
                     depth: e.depth,
                     separator: e.separator,
                     enabled: e.enabled,
-                    toggle: match e.toggle {
-                        tray::Toggle::None => crate::MenuToggle::None,
-                        tray::Toggle::Check => crate::MenuToggle::Check,
-                        tray::Toggle::Radio => crate::MenuToggle::Radio,
-                    },
+                    toggle: toggle_to_ui(e.toggle),
                     checked: e.checked,
                     header: e.header,
                 })
@@ -297,14 +293,14 @@ impl App {
         u.set_temp(w.temp.into());
         u.set_feels(w.feels.into());
         u.set_description(w.description.into());
-        u.set_icon(weather_icon(w.icon));
+        u.set_icon(weather_icon_to_ui(w.icon));
         u.set_details(w.details.into());
         u.set_days(model(
             w.days
                 .into_iter()
                 .map(|d| WeatherDay {
                     name: d.name.into(),
-                    icon: weather_icon(d.icon),
+                    icon: weather_icon_to_ui(d.icon),
                     max: d.max.into(),
                     min: d.min.into(),
                 })

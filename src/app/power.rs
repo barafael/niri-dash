@@ -1,6 +1,6 @@
 //! The battery widget (charge, power profiles, peripherals, sleep blockers) and the session buttons.
 
-use super::enums::{device_kind, profile_from_ui, profile_to_ui};
+use super::enums::{device_kind_to_ui, profile_from_ui, profile_to_ui};
 use super::{App, model};
 use crate::sources::{self, power, session};
 use crate::{Control, Dash, Power as UiPower, Session as UiSession};
@@ -27,7 +27,7 @@ impl App {
             s.peripherals
                 .into_iter()
                 .map(|d| crate::Peripheral {
-                    kind: device_kind(d.kind),
+                    kind: device_kind_to_ui(d.kind),
                     name: d.name.into(),
                     percent: d.percent,
                 })

@@ -1,6 +1,6 @@
 //! The theme: applying the configured look, and the Colors and Style tabs.
 
-use super::enums::{style_key, style_var};
+use super::enums::{style_var_from_ui, style_var_to_ui};
 use super::{App, model};
 use crate::layout::Layout;
 use crate::{Dash, sources, theme};
@@ -77,7 +77,7 @@ impl App {
         let overridden = |var: theme::StyleVar| over.iter().any(|(k, _)| k == var.as_ref());
         let num = |var: theme::StyleVar| look.style.get(var).as_f32().unwrap_or(0.0);
         let mut rows: Vec<crate::StyleRow> = vec![crate::StyleRow {
-            key: style_key(theme::StyleVar::Glass),
+            key: style_var_to_ui(theme::StyleVar::Glass),
             kind: crate::RowKind::Toggle,
             label: "Frosted glass".into(),
             value: if look.style.glass { "on" } else { "off" }.into(),
@@ -89,7 +89,7 @@ impl App {
         rows.extend(theme::KNOBS.iter().map(|k| {
             let v = num(k.var);
             crate::StyleRow {
-                key: style_key(k.var),
+                key: style_var_to_ui(k.var),
                 kind: crate::RowKind::Stepper,
                 label: k.label.into(),
                 value: theme::knob_text(k.var, v).into(),
@@ -103,7 +103,7 @@ impl App {
         let fonts = self.fonts();
         let fi = fonts.iter().position(|f| *f == font);
         rows.push(crate::StyleRow {
-            key: style_key(theme::StyleVar::FontFamily),
+            key: style_var_to_ui(theme::StyleVar::FontFamily),
             kind: crate::RowKind::Stepper,
             label: "Font".into(),
             value: if font.is_empty() {
@@ -288,9 +288,9 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
         a.refresh_looks();
     });
     let a = app.clone();
-    ui.on_style_step(move |key, delta| a.style_step(style_var(key), delta));
+    ui.on_style_step(move |key, delta| a.style_step(style_var_from_ui(key), delta));
     let a = app.clone();
-    ui.on_style_reset(move |key| a.style_reset(Some(style_var(key))));
+    ui.on_style_reset(move |key| a.style_reset(Some(style_var_from_ui(key))));
     let a = app.clone();
     ui.on_style_reset_all(move || a.style_reset(None));
     ui.on_open_themes_folder(|| {

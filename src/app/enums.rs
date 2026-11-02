@@ -1,8 +1,10 @@
-//! Mapping the sources' and the layout's enums to the Slint ones.
+//! The sources', the layout's and the theme's enums as the Slint ones, and back: `x_to_ui` and
+//! `x_from_ui`.
 
-use crate::layout::Kind;
-use crate::sources::{self, power};
+use crate::layout::{self, Kind};
+use crate::sources::{self, power, tray};
 use crate::{WidgetKind, theme};
+use smithay_client_toolkit::seat::pointer::CursorIcon;
 use strum::IntoEnumIterator;
 
 pub(super) fn kind_to_ui(k: Kind) -> WidgetKind {
@@ -40,7 +42,31 @@ pub(super) fn kind_to_ui(k: Kind) -> WidgetKind {
 pub(super) fn kind_from_ui(k: WidgetKind) -> Kind {
     Kind::iter()
         .find(|&x| kind_to_ui(x) == k)
-        .unwrap_or(Kind::Clock)
+        .expect("every widget kind is a kind")
+}
+
+pub(super) fn shape_to_ui(s: layout::Shape) -> crate::Shape {
+    match s {
+        layout::Shape::Rect => crate::Shape::Rect,
+        layout::Shape::Round => crate::Shape::Round,
+    }
+}
+
+pub(super) fn toggle_to_ui(t: tray::Toggle) -> crate::MenuToggle {
+    match t {
+        tray::Toggle::None => crate::MenuToggle::None,
+        tray::Toggle::Check => crate::MenuToggle::Check,
+        tray::Toggle::Radio => crate::MenuToggle::Radio,
+    }
+}
+
+/// The pointer the UI asks for, as a cursor shape.
+pub(super) fn cursor_from_ui(p: crate::PointerShape) -> CursorIcon {
+    match p {
+        crate::PointerShape::Normal => CursorIcon::Default,
+        crate::PointerShape::Move => CursorIcon::Move,
+        crate::PointerShape::Resize => CursorIcon::NwseResize,
+    }
 }
 
 /// The Style tab's keys: the theme's style variables, mirrored as a Slint enum.
@@ -67,7 +93,7 @@ const STYLE_KEYS: [(theme::StyleVar, crate::StyleKey); 14] = [
     (theme::StyleVar::CardOpacity, crate::StyleKey::CardOpacity),
 ];
 
-pub(super) fn style_key(v: theme::StyleVar) -> crate::StyleKey {
+pub(super) fn style_var_to_ui(v: theme::StyleVar) -> crate::StyleKey {
     STYLE_KEYS
         .iter()
         .find(|(r, _)| *r == v)
@@ -75,7 +101,7 @@ pub(super) fn style_key(v: theme::StyleVar) -> crate::StyleKey {
         .expect("every style variable has a key")
 }
 
-pub(super) fn style_var(k: crate::StyleKey) -> theme::StyleVar {
+pub(super) fn style_var_from_ui(k: crate::StyleKey) -> theme::StyleVar {
     STYLE_KEYS
         .iter()
         .find(|(_, u)| *u == k)
@@ -99,7 +125,7 @@ pub(super) fn profile_from_ui(p: crate::PowerProfile) -> power::Profile {
     }
 }
 
-pub(super) fn weather_icon(i: sources::weather::Icon) -> crate::WeatherIcon {
+pub(super) fn weather_icon_to_ui(i: sources::weather::Icon) -> crate::WeatherIcon {
     use sources::weather::Icon;
     match i {
         Icon::Sun => crate::WeatherIcon::Sun,
@@ -136,7 +162,7 @@ pub(super) fn outfit_to_ui(o: crate::mascots::Outfit) -> crate::Outfit {
     }
 }
 
-pub(super) fn device_kind(k: crate::sources::power::DeviceKind) -> crate::DeviceKind {
+pub(super) fn device_kind_to_ui(k: crate::sources::power::DeviceKind) -> crate::DeviceKind {
     use crate::sources::power::DeviceKind as K;
     match k {
         K::Mouse => crate::DeviceKind::Mouse,

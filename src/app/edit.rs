@@ -1,9 +1,9 @@
 //! Edit mode: moving, resizing, adding and removing widgets, and the widget settings tab.
 
-use super::enums::{character_to_ui, kind_from_ui, kind_to_ui};
+use super::enums::{character_to_ui, kind_from_ui, kind_to_ui, shape_to_ui};
 use super::{App, model, set_if_changed};
-use crate::layout::{Kind, Placed, Shape as LShape};
-use crate::{Dash, PaletteItem, Shape, WidgetInst};
+use crate::layout::{Kind, Placed};
+use crate::{Dash, PaletteItem, WidgetInst};
 use slint::Model;
 use std::rc::Rc;
 use strum::IntoEnumIterator;
@@ -49,11 +49,7 @@ fn to_inst(p: &Placed, us: bool) -> WidgetInst {
         can_round: p.kind.can_be_round(),
         id: p.id as i32,
         kind: kind_to_ui(p.kind),
-        shape: if p.shape == LShape::Round {
-            Shape::Round
-        } else {
-            Shape::Rect
-        },
+        shape: shape_to_ui(p.shape),
         col: p.col,
         row: p.row,
         w: p.w,
