@@ -169,7 +169,7 @@ impl App {
             l.names
                 .iter()
                 .map(|n| crate::LayoutItem {
-                    short: crate::sources::keyboard::short_label(n).into(),
+                    short: sources::keyboard::short_label(n).into(),
                     name: n.into(),
                 })
                 .collect(),

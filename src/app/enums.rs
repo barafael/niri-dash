@@ -162,7 +162,7 @@ pub(super) fn outfit_to_ui(o: crate::mascots::Outfit) -> crate::Outfit {
     }
 }
 
-pub(super) fn device_kind_to_ui(k: crate::sources::power::DeviceKind) -> crate::DeviceKind {
+pub(super) fn device_kind_to_ui(k: sources::power::DeviceKind) -> crate::DeviceKind {
     use crate::sources::power::DeviceKind as K;
     match k {
         K::Mouse => crate::DeviceKind::Mouse,

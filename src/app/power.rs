@@ -37,7 +37,7 @@ impl App {
 
     pub(super) fn show_blockers(&self, list: Vec<sources::inhibit::Blocker>) {
         let ui = self.ui();
-        ui.global::<crate::Power>().set_blockers(model(
+        ui.global::<UiPower>().set_blockers(model(
             list.into_iter()
                 .map(|b| crate::Blocker {
                     who: b.who.into(),

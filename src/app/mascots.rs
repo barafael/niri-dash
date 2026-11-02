@@ -139,7 +139,7 @@ fn run_mascot_command(ctx: &Ctx, id: u32, command: String, name: &'static str) {
 pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     ui.global::<crate::Mascots>()
         .set_lines(ModelRc::from(app.mascots.lines.clone()));
-    let a = Rc::downgrade(&app);
+    let a = Rc::downgrade(app);
     app.mascots
         .timer
         .start(TimerMode::Repeated, Duration::from_secs(1), move || {
@@ -148,7 +148,7 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
             }
         });
     app.mascots.timer.stop();
-    let a = Rc::downgrade(&app);
+    let a = Rc::downgrade(app);
     ui.global::<crate::Mascots>().on_next(move |id| {
         if let Some(a) = a.upgrade() {
             let todo = a.mascots.board.borrow_mut().next(id as u32, Instant::now());

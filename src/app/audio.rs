@@ -33,9 +33,9 @@ impl App {
         self.sync_mixer(&s);
     }
 
-    fn sync_mixer(&self, s: &crate::sources::audio::State) {
+    fn sync_mixer(&self, s: &sources::audio::State) {
         let ui = self.ui();
-        let au = ui.global::<crate::Audio>();
+        let au = ui.global::<UiAudio>();
         au.set_sinks(model(
             s.sinks
                 .iter()

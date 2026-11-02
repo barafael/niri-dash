@@ -43,7 +43,7 @@ impl App {
     /// The notification server's do-not-disturb state: show it, and remember it for restarts.
     fn sync_dnd(&self, dnd: Dnd, missed: u32) {
         let ui = self.ui();
-        let n = ui.global::<crate::Notifications>();
+        let n = ui.global::<UiNotifications>();
         let now = chrono::Local::now();
         let us = self.locale.us;
         n.set_dnd(dnd.active(now));
@@ -90,7 +90,7 @@ impl App {
 }
 
 pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
-    let n = ui.global::<crate::Notifications>();
+    let n = ui.global::<UiNotifications>();
     n.set_morning(clock_text(next_hour(chrono::Local::now(), DND_MORNING), app.locale.us).into());
     let a = app.clone();
     n.on_set_dnd(move |choice| {

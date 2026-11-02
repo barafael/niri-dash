@@ -660,8 +660,9 @@ impl Layout {
     }
 
     /// The config text for the current layout: the original document with positions updated,
-    /// removed widgets dropped and new ones appended. Everything else is kept as written.
-    pub fn to_text(&mut self) -> String {
+    /// removed widgets dropped and new ones appended. Everything else is kept as written. The
+    /// layout then refers to this text, so the next save works against what is on disk.
+    pub fn render(&mut self) -> String {
         let mut doc = self.doc.clone();
         // The theme node is rewritten only where it changed; style overrides are its children,
         // keeping any the user formatted by hand.
@@ -735,7 +736,7 @@ impl Layout {
     /// Write the config; returns what was written.
     pub fn save(&mut self) -> Option<String> {
         let path = Self::path();
-        let text = self.to_text();
+        let text = self.render();
         match crate::files::write_atomic(&path, &text) {
             Ok(()) => Some(text),
             Err(e) => {
@@ -1815,7 +1816,7 @@ mod tests {
         let cal = id_of(&l, Kind::Calendar);
         assert!(l.toggle_shape(cal));
         l.add(Kind::Session).unwrap();
-        let out = l.to_text();
+        let out = l.render();
         assert!(out.contains("// my dash"), "{out}");
         assert!(out.contains("// the clock"), "{out}");
         assert!(
@@ -1836,7 +1837,7 @@ mod tests {
         assert_eq!(back.widgets.len(), 3);
         // A second save with no changes is byte-identical.
         let mut again = back.clone();
-        assert_eq!(again.to_text(), out);
+        assert_eq!(again.render(), out);
     }
 
     #[test]
@@ -1885,7 +1886,7 @@ mod tests {
     fn style_overrides_without_a_theme_node() {
         let (mut l, _) = Layout::parse("layout {\n}\n").unwrap();
         l.style_overrides = vec![("radius".into(), KdlValue::Integer(8))];
-        let out = l.to_text();
+        let out = l.render();
         let (back, w) = Layout::parse(&out).unwrap();
         assert!(w.is_empty(), "{w:?}\n{out}");
         assert_eq!(back.style_overrides, l.style_overrides, "{out}");
@@ -1975,7 +1976,7 @@ mod tests {
             ("light", "default")
         );
         l.style = "compact".into();
-        let out = l.to_text();
+        let out = l.render();
         assert!(
             out.contains("theme colorscheme=\"light\" style=\"compact\""),
             "{out}"
@@ -2127,21 +2128,21 @@ mod tests {
             ("radius".into(), KdlValue::Integer(12)),
             ("motion".into(), KdlValue::Float(0.6)),
         ];
-        let out = l.to_text();
+        let out = l.render();
         let (mut back, w) = Layout::parse(&out).unwrap();
         assert!(w.is_empty(), "{w:?}\n{out}");
         assert_eq!(back.style_overrides, l.style_overrides, "{out}");
         assert!(out.contains("radius 12"), "{out}");
         // Changing one keeps the other line untouched; clearing removes the block.
         back.style_overrides[0].1 = KdlValue::Integer(16);
-        let out2 = back.to_text();
+        let out2 = back.render();
         assert!(
             out2.contains("radius 16") && out2.contains("motion 0.6"),
             "{out2}"
         );
         let (mut back2, _) = Layout::parse(&out2).unwrap();
         back2.style_overrides.clear();
-        let out3 = back2.to_text();
+        let out3 = back2.render();
         assert!(!out3.contains('{') || !out3.contains("radius"), "{out3}");
         assert!(
             out3.contains("theme colorscheme=\"nord\" style=\"soft\""),
@@ -2163,7 +2164,7 @@ mod tests {
         let v = l.settings_mut(clock).unwrap();
         set(v, Opt::Hours, KdlValue::Integer(12), false);
         set(v, Opt::Seconds, KdlValue::Bool(false), false);
-        let out = l.to_text();
+        let out = l.render();
         assert!(
             out.contains("    clock col=0 row=0 width=4 height=2 {\n        hours 12\n        seconds #false\n    }\n"),
             "{out}"
@@ -2180,7 +2181,7 @@ mod tests {
         let v = back.settings_mut(back.widgets[0].id).unwrap();
         set(v, Opt::Hours, KdlValue::Integer(24), false);
         set(v, Opt::Seconds, KdlValue::Bool(true), false);
-        let out2 = back.to_text();
+        let out2 = back.render();
         assert!(
             out2.contains("    clock col=0 row=0 width=4 height=2\n"),
             "{out2}"
@@ -2195,7 +2196,7 @@ mod tests {
             KdlValue::Bool(true),
             false,
         );
-        let out3 = l.to_text();
+        let out3 = l.render();
         assert!(out3.contains(" {\n        date #false\n    }\n"), "{out3}");
         // Unknown settings warn but survive.
         let (_, w) =
@@ -2208,7 +2209,7 @@ mod tests {
         let text = "theme colorscheme=\"nord\" style=\"soft\"\nlayout {\n    clock col=0 row=0 width=4 height=2\n}\n";
         let (mut l, _) = Layout::parse(text).unwrap();
         l.reset();
-        let out = l.to_text();
+        let out = l.render();
         assert!(out.contains("layout {\n"), "{out}");
         for w in &l.widgets {
             assert!(
@@ -2229,7 +2230,7 @@ mod tests {
         let (mut l, _) = Layout::parse(text).unwrap();
         let clock = l.widgets.iter().find(|w| w.kind == Kind::Clock).unwrap().id;
         l.remove(clock);
-        let out = l.to_text();
+        let out = l.render();
         assert!(out.contains("layout {\n    calendar"), "{out}");
     }
 
@@ -2245,7 +2246,7 @@ mod tests {
             ("glass".into(), KdlValue::Bool(true)),
             ("card-opacity".into(), KdlValue::Float(0.85)),
         ];
-        let out = l.to_text();
+        let out = l.render();
         let (back, w) = Layout::parse(&out).unwrap();
         assert!(w.is_empty(), "{w:?}\n{out}");
         assert_eq!(back.style_overrides, l.style_overrides, "{out}");
