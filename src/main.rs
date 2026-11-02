@@ -152,22 +152,7 @@ enum Command {
     },
     /// Render the dashboard offscreen to a PNG (for development).
     #[command(hide = true)]
-    Snapshot {
-        out: PathBuf,
-        #[arg(long, default_value_t = 1706)]
-        width: u32,
-        #[arg(long, default_value_t = 1066)]
-        height: u32,
-        #[arg(long, default_value_t = 1.5)]
-        scale: f32,
-        #[arg(long, default_value_t = 3.0)]
-        wait: f32,
-        #[arg(long)]
-        edit: bool,
-        /// Render a standalone app (a widget name) instead of the dashboard.
-        #[arg(long)]
-        app: Option<String>,
-    },
+    Snapshot(app::snapshot::Args),
 }
 
 pub fn socket_path() -> PathBuf {
@@ -318,28 +303,12 @@ fn run() -> Result<()> {
         } => say(text, to, outfit, secs, show),
         Command::DesktopEntries { remove } => Ok(desktop::entries(remove)?),
         Command::WindowRules { output } => Ok(desktop::window_rules(output.as_deref())?),
-        Command::Snapshot {
-            out,
-            width,
-            height,
-            scale,
-            wait,
-            edit,
-            app,
-        } => {
-            let solo = match app {
-                Some(w) => Some(layout::Kind::from_str_opt(&w).ok_or_else(|| unknown_widget(&w))?),
+        Command::Snapshot(args) => {
+            let solo = match &args.app {
+                Some(w) => Some(layout::Kind::from_str_opt(w).ok_or_else(|| unknown_widget(w))?),
                 None => None,
             };
-            Ok(app::snapshot(
-                &out,
-                width,
-                height,
-                scale,
-                std::time::Duration::from_secs_f32(wait),
-                edit,
-                solo,
-            )?)
+            Ok(app::snapshot::run(&args, solo)?)
         }
         cmd => client(cmd),
     }
