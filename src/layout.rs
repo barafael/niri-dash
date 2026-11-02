@@ -289,6 +289,17 @@ pub enum RendererChoice {
     Software,
 }
 
+/// The config as loaded from disk.
+pub struct Loaded {
+    pub layout: Layout,
+    /// What is wrong with the file: unknown widgets, bad values, or why it doesn't parse.
+    pub warnings: Vec<String>,
+    /// The file doesn't parse. The default layout stands in, and the file is left alone.
+    pub broken: bool,
+    /// The file as it was read (or written).
+    pub text: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct Layout {
     pub widgets: Vec<Placed>,
@@ -614,29 +625,45 @@ impl Layout {
         Ok((layout, warnings))
     }
 
-    /// Load the config, writing the default one first if there is none. On a broken file the
-    /// error is returned alongside the default layout; the file is left alone.
-    pub fn load() -> (Self, Vec<String>) {
+    /// Load the config, writing the default one first if there is none.
+    pub fn load() -> Loaded {
+        Self::load_from_disk(true)
+    }
+
+    /// Load the config; without one, the default config, which isn't written.
+    pub fn read() -> Loaded {
+        Self::load_from_disk(false)
+    }
+
+    fn load_from_disk(create: bool) -> Loaded {
         let path = Self::path();
         let text = match std::fs::read_to_string(&path) {
             Ok(t) => t,
             Err(_) => {
                 let t = Self::default_text();
-                if let Some(dir) = path.parent() {
-                    let _ = std::fs::create_dir_all(dir);
-                }
-                if let Err(e) = std::fs::write(&path, &t) {
-                    log::warn!("writing {}: {e}", path.display());
+                if create {
+                    if let Some(dir) = path.parent() {
+                        let _ = std::fs::create_dir_all(dir);
+                    }
+                    if let Err(e) = std::fs::write(&path, &t) {
+                        log::warn!("writing {}: {e}", path.display());
+                    }
                 }
                 t
             }
         };
-        match Self::parse(&text) {
-            Ok(r) => r,
+        let (layout, warnings, broken) = match Self::parse(&text) {
+            Ok((l, w)) => (l, w, false),
             Err(e) => {
                 let (l, _) = Self::parse(&Self::default_text()).expect("default config parses");
-                (l, vec![format!("config.kdl: {e}")])
+                (l, vec![format!("config.kdl: {e}")], true)
             }
+        };
+        Loaded {
+            layout,
+            warnings,
+            broken,
+            text,
         }
     }
 

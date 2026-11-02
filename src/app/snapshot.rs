@@ -2,7 +2,7 @@
 //! touching the screen. A development tool.
 
 use super::{Error, Result, build, new_ui, renderer_override, runtime, set_platform};
-use crate::layout::Kind;
+use crate::layout::{Kind, Layout, RendererChoice};
 use crate::sources::{Ctx, Msg};
 use crate::theme;
 use slint::platform::software_renderer::{
@@ -70,7 +70,7 @@ pub fn run(args: &Args, solo: Option<Kind>) -> Result<()> {
     let rt = runtime()?;
     // NIRI_DASH_RENDERER=gpu: draw with FemtoVG/OpenGL ES into an offscreen texture instead.
     let gpu = match renderer_override() {
-        Some(crate::layout::RendererChoice::Gpu) => {
+        Some(RendererChoice::Gpu) => {
             let gl = crate::gpu::Gl::offscreen()?;
             Some((crate::gpu::GpuWindow::new(&gl)?, gl))
         }
@@ -123,7 +123,7 @@ pub fn run(args: &Args, solo: Option<Kind>) -> Result<()> {
     let (tx, rx) = channel::channel::<Msg>();
     let ctx = Ctx::new(tx, rt.handle().clone());
     ctx.set_visible(true);
-    let app = build(&ui, ctx.clone(), solo);
+    let app = build(&ui, ctx.clone(), solo, Layout::load());
     let a = app.clone();
     event_loop
         .handle()

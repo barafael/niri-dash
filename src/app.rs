@@ -1,7 +1,7 @@
 //! The daemon: Wayland event loop, Slint UI, data sources and the control socket, glued together.
 //! A standalone app (`niri-dash app <widget>`) is the same, with one widget in a normal window.
 
-use crate::layout::{Kind, Layout};
+use crate::layout::{Kind, Layout, Loaded, RendererChoice};
 use crate::shell::{Mode, Shell};
 use crate::sources::{
     self, Ctx, IconSrc, Msg, audio::Audio, bluetooth::Bluetooth, brightness::Brightness,
@@ -523,7 +523,7 @@ pub fn resident(kind: Kind) -> bool {
     kind == Kind::Clipboard
 }
 
-fn build(ui: &Dash, ctx: Ctx, solo: Option<Kind>) -> Rc<App> {
+fn build(ui: &Dash, ctx: Ctx, solo: Option<Kind>, config: Loaded) -> Rc<App> {
     let wants = |f: Feed| solo.is_none_or(|k| feeds(k).contains(&f));
     // Sources a standalone app doesn't show get a dormant context: they exist but stay idle.
     let feed_ctx = |f: Feed| ctx.live_if(wants(f));
@@ -536,11 +536,15 @@ fn build(ui: &Dash, ctx: Ctx, solo: Option<Kind>) -> Rc<App> {
     theme::install_bundled();
     ui.set_solo(solo.is_some());
 
-    let (layout, warnings) = Layout::load();
+    let Loaded {
+        layout,
+        warnings,
+        broken,
+        text,
+    } = config;
     let locale = sources::locale();
     let widgets = Rc::new(VecModel::<WidgetInst>::default());
     ui.set_widgets(ModelRc::from(widgets.clone()));
-    let config_broken = warnings.iter().any(|w| w.starts_with("config.kdl:"));
     let state = crate::state::load();
     let app = Rc::new(App {
         ui: ui.as_weak(),
@@ -562,8 +566,8 @@ fn build(ui: &Dash, ctx: Ctx, solo: Option<Kind>) -> Rc<App> {
         hide_at: Cell::new(None),
         preview: Default::default(),
         claude_windows: Default::default(),
-        last_written: RefCell::new(std::fs::read_to_string(Layout::path()).unwrap_or_default()),
-        config_broken: Cell::new(config_broken),
+        last_written: RefCell::new(text),
+        config_broken: Cell::new(broken),
         watched: Default::default(),
         weather: Weather::start(feed_ctx(Feed::Weather), locale.0),
         wifi: Wifi::start(feed_ctx(Feed::Wifi)),
@@ -616,7 +620,7 @@ pub fn run(initial: Option<Control>) -> Result<()> {
         source,
     })?;
     log::info!("niri-dash running; control socket {}", path.display());
-    serve(listener, Mode::Dashboard, None, initial)
+    serve(listener, Mode::Dashboard, None, initial, Layout::load())
 }
 
 /// Run one widget as a standalone app in a normal window, with a control socket of its own (so a
@@ -629,9 +633,9 @@ pub fn run_app(kind: Kind) -> Result<()> {
         source,
     })?;
     // Open at the size the widget has on the dashboard; niri may tile it to another one.
-    let layout = Layout::load().0;
-    let placed = layout.solo_widget(kind);
-    let px = |cells: i32| (cells.max(1) as f32 * layout.cell_size).round() as u32;
+    let config = Layout::load();
+    let placed = config.layout.solo_widget(kind);
+    let px = |cells: i32| (cells.max(1) as f32 * config.layout.cell_size).round() as u32;
     let (min_w, min_h) = kind.min_size();
     let mode = Mode::App {
         app_id: crate::desktop::app_id(kind),
@@ -640,7 +644,7 @@ pub fn run_app(kind: Kind) -> Result<()> {
         min_size: (px(min_w), px(min_h)),
     };
     log::info!("{} running; control socket {}", kind.name(), path.display());
-    let result = serve(listener, mode, Some(kind), Some(Control::Show));
+    let result = serve(listener, mode, Some(kind), Some(Control::Show), config);
     let _ = std::fs::remove_file(&path);
     result
 }
@@ -686,7 +690,7 @@ fn new_ui() -> Result<Dash> {
 }
 
 /// The renderer `NIRI_DASH_RENDERER` asks for, overriding the config (for development).
-fn renderer_override() -> Option<crate::layout::RendererChoice> {
+fn renderer_override() -> Option<RendererChoice> {
     std::env::var("NIRI_DASH_RENDERER")
         .ok()
         .and_then(|r| r.parse().ok())
@@ -699,12 +703,13 @@ fn serve(
     mode: Mode,
     solo: Option<Kind>,
     initial: Option<Control>,
+    config: Loaded,
 ) -> Result<()> {
     let rt = runtime()?;
     let conn = Connection::connect_to_env()?;
     let (globals, queue) = registry_queue_init::<Shell>(&conn)?;
     let mut event_loop: EventLoop<'static, Shell> = EventLoop::try_new()?;
-    let backend = choose_backend(&conn);
+    let backend = choose_backend(&conn, config.layout.renderer);
     let window = backend.adapter();
     set_platform(window.clone())?;
     let mut shell = Shell::new(
@@ -724,7 +729,7 @@ fn serve(
     let (tx, rx) = channel::channel::<Msg>();
     let ctx = Ctx::new(tx.clone(), rt.handle().clone());
     shell.clip_tx = Some(tx.clone());
-    let app = build(&ui, ctx, solo);
+    let app = build(&ui, ctx, solo, config);
     ui.global::<UiClipboard>()
         .set_available(shell.has_clipboard());
 
@@ -799,12 +804,11 @@ fn serve(
     }
 }
 
-/// The renderer from the config (`renderer`), or `NIRI_DASH_RENDERER`. `auto` prefers the GPU and
-/// falls back to software when EGL/OpenGL ES can't be set up.
-fn choose_backend(conn: &Connection) -> crate::shell::Backend {
-    use crate::layout::RendererChoice;
+/// The renderer from the config (`configured`), or `NIRI_DASH_RENDERER`. `auto` prefers the GPU
+/// and falls back to software when EGL/OpenGL ES can't be set up.
+fn choose_backend(conn: &Connection, configured: RendererChoice) -> crate::shell::Backend {
     use crate::shell::Backend;
-    let choice = renderer_override().unwrap_or_else(|| crate::layout::Layout::load().0.renderer);
+    let choice = renderer_override().unwrap_or(configured);
     let software =
         || Backend::Software(MinimalSoftwareWindow::new(RepaintBufferType::ReusedBuffer));
     if choice == RendererChoice::Software {

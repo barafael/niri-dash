@@ -174,7 +174,7 @@ pub fn entries(remove: bool) -> Result<()> {
 /// The corner radius of the configured theme (style plus config.kdl adjustments), so niri can
 /// round the app windows like the dashboard's cards.
 fn theme_radius() -> f32 {
-    let layout = crate::layout::Layout::load().0;
+    let layout = crate::layout::Layout::read().layout;
     let (look, _) =
         crate::theme::load_look(&layout.colorscheme, &layout.style, &layout.style_overrides);
     look.style.radius
