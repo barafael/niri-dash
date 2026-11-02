@@ -42,11 +42,6 @@ pub fn parse(list: &str) -> Vec<Tz> {
     list.split([',', ';']).filter_map(resolve).collect()
 }
 
-/// [`parse`], paired with an empty list where the unknown names were.
-pub fn parse_list(list: &str) -> (Vec<Tz>, Vec<String>) {
-    (parse(list), Vec::new())
-}
-
 /// The rows for `zones` at `now`, compared with the local zone `local`.
 pub fn rows<L: TimeZone>(
     zones: &[Tz],

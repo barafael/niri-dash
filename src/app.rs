@@ -2317,24 +2317,12 @@ fn build(ui: &Dash, ctx: Ctx, solo: Option<Kind>) -> Rc<App> {
     let wants = |f: Feed| solo.is_none_or(|k| feeds(k).contains(&f));
     // Sources a standalone app doesn't show get a dormant context: they exist but stay idle.
     let feed_ctx = |f: Feed| ctx.live_if(wants(f));
-    if wants(Feed::Perf) {
-        sources::perf::start(ctx.clone());
-    }
-    if wants(Feed::Niri) {
-        niri::start(ctx.clone());
-    }
-    if wants(Feed::Power) {
-        power::start(ctx.clone());
-    }
-    if wants(Feed::Claude) {
-        sources::claude::start(ctx.clone());
-    }
-    if wants(Feed::ClaudeUsage) {
-        sources::claude_usage::start(ctx.clone());
-    }
-    if wants(Feed::Privacy) {
-        sources::privacy::start(ctx.clone());
-    }
+    sources::perf::start(feed_ctx(Feed::Perf));
+    niri::start(feed_ctx(Feed::Niri));
+    power::start(feed_ctx(Feed::Power));
+    sources::claude::start(feed_ctx(Feed::Claude));
+    sources::claude_usage::start(feed_ctx(Feed::ClaudeUsage));
+    sources::privacy::start(feed_ctx(Feed::Privacy));
     theme::install_bundled();
     ui.set_solo(solo.is_some());
 

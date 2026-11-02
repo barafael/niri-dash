@@ -28,7 +28,6 @@ pub(super) struct Extra {
     /// The dashboard was open when the pick started, so it comes back afterwards.
     reshow_after_pick: Cell<bool>,
     zones: Rc<VecModel<crate::ZoneList>>,
-    osd: crate::sources::osd::Osd,
     countdown: RefCell<Countdown>,
     stopwatch: RefCell<Stopwatch>,
     /// Updates the timer widgets while the dashboard is up and something runs.
@@ -84,7 +83,6 @@ impl Extra {
             pending_pick: Cell::new(false),
             reshow_after_pick: Cell::new(false),
             zones: Rc::new(VecModel::default()),
-            osd: Default::default(),
         }
     }
 
@@ -348,7 +346,7 @@ impl App {
     }
 
     fn osd(&self, text: &str, icon: &str) {
-        self.extra.osd.show(&self.ctx, text, icon);
+        self.notifications.osd().show(&self.ctx, text, icon);
     }
 
     // ---- timer & stopwatch ----
@@ -747,7 +745,7 @@ impl App {
         let now = chrono::Utc::now();
         let mut rows: Vec<crate::ZoneList> = Vec::new();
         for p in clocks {
-            let (zones, _) = crate::zones::parse_list(&get_str(&p.settings, Opt::Zones, us));
+            let zones = crate::zones::parse(&get_str(&p.settings, Opt::Zones, us));
             if zones.is_empty() {
                 continue;
             }
