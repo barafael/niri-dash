@@ -1,123 +1,24 @@
-//! A NetworkManager secret agent: when NetworkManager needs a Wi-Fi password it has no (working)
-//! copy of, it asks its agents, and this one shows the widget's password prompt.
+//! A NetworkManager secret agent (nmrs serves and registers it): when NetworkManager needs a
+//! Wi-Fi password it has no (working) copy of, it asks its agents, and this one shows the
+//! widget's password prompt.
 //!
 //! It only asks while the dashboard is shown, or for a network joined from the widget; otherwise
 //! it says it has no secrets, so another agent (a desktop's own) can answer instead.
 
-use super::{Answer, Prompt, PromptKind, Wifi, nm};
+use super::{Error, Prompt, PromptKind, Wifi, nm};
+use futures_util::StreamExt;
+use nmrs::agent::{
+    SecretAgent, SecretAgentCapabilities, SecretAgentFlags, SecretRequest, SecretSetting,
+};
 use std::collections::HashMap;
 use std::time::Duration;
-use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
+use zbus::zvariant::{OwnedValue, Value};
 
-const PATH: &str = "/org/freedesktop/NetworkManager/SecretAgent";
 const IDENTIFIER: &str = "io.github.niri_dash";
-// NM_SECRET_AGENT_GET_SECRETS_FLAG_*.
-const ALLOW_INTERACTION: u32 = 0x1;
-const REQUEST_NEW: u32 = 0x2;
-/// NetworkManager gives up on an agent after two minutes; answer before that.
+/// nmrs gives NetworkManager an answer by itself after 120 s; close the prompt just before.
 const WAIT: Duration = Duration::from_secs(115);
 
-#[derive(Debug, zbus::DBusError)]
-#[zbus(prefix = "org.freedesktop.NetworkManager.SecretAgent")]
-enum AgentError {
-    #[zbus(error)]
-    ZBus(zbus::Error),
-    NoSecrets(String),
-    UserCanceled(String),
-}
-
-struct Agent {
-    wifi: Wifi,
-}
-
-fn str_of<'a>(s: &'a nm::Settings, setting: &str, key: &str) -> Option<&'a str> {
-    s.get(setting)
-        .and_then(|v| crate::sources::prop::<&str>(v, key))
-}
-
-fn owned(v: Value<'_>) -> OwnedValue {
-    v.try_to_owned().expect("plain values have no fds")
-}
-
-#[zbus::interface(name = "org.freedesktop.NetworkManager.SecretAgent")]
-impl Agent {
-    async fn get_secrets(
-        &self,
-        connection: nm::Settings,
-        connection_path: OwnedObjectPath,
-        setting_name: String,
-        _hints: Vec<String>,
-        flags: u32,
-    ) -> Result<nm::Settings, AgentError> {
-        let none = || AgentError::NoSecrets("niri-dash has none stored".into());
-        let ssid = connection
-            .get("802-11-wireless")
-            .and_then(|w| w.get("ssid"))
-            .and_then(|v| v.try_clone().ok())
-            .and_then(|v| Vec::<u8>::try_from(v).ok())
-            .map(|b| nm::ssid_text(&b))
-            .ok_or_else(none)?;
-        let wifi_setting = matches!(setting_name.as_str(), "802-11-wireless-security" | "802-1x");
-        if !wifi_setting || flags & ALLOW_INTERACTION == 0 || !self.wifi.may_ask(&ssid) {
-            return Err(none());
-        }
-        let key_mgmt = str_of(&connection, "802-11-wireless-security", "key-mgmt").unwrap_or("");
-        let kind = if setting_name == "802-1x" || key_mgmt.starts_with("wpa-eap") {
-            PromptKind::Enterprise
-        } else if key_mgmt == "none" {
-            PromptKind::Wep
-        } else {
-            PromptKind::Password
-        };
-        let prompt = Prompt {
-            ssid,
-            kind,
-            retry: flags & REQUEST_NEW != 0,
-            identity: str_of(&connection, "802-1x", "identity")
-                .unwrap_or_default()
-                .into(),
-            ..Default::default()
-        };
-        let path = connection_path.to_string();
-        let rx = self.wifi.ask_agent(prompt, path.clone());
-        let answer: Answer = match tokio::time::timeout(WAIT, rx).await {
-            Ok(Ok(Some(a))) => a,
-            Ok(_) => return Err(AgentError::UserCanceled("cancelled".into())),
-            Err(_) => {
-                self.wifi.drop_agent_request(&path);
-                return Err(AgentError::UserCanceled("nobody answered".into()));
-            }
-        };
-        let mut values: HashMap<String, OwnedValue> = HashMap::new();
-        match kind {
-            PromptKind::Password => {
-                values.insert("psk".into(), owned(Value::from(answer.password)));
-            }
-            PromptKind::Wep => {
-                values.insert("wep-key0".into(), owned(Value::from(answer.password)));
-            }
-            PromptKind::Enterprise => {
-                if !answer.identity.is_empty() {
-                    values.insert("identity".into(), owned(Value::from(answer.identity)));
-                }
-                values.insert("password".into(), owned(Value::from(answer.password)));
-            }
-        }
-        Ok(HashMap::from([(setting_name, values)]))
-    }
-
-    async fn cancel_get_secrets(&self, connection_path: OwnedObjectPath, _setting_name: String) {
-        self.wifi.drop_agent_request(connection_path.as_str());
-    }
-
-    /// NetworkManager stores the secrets it got (they are system-owned), so there is nothing
-    /// to keep here.
-    async fn save_secrets(&self, _connection: nm::Settings, _connection_path: OwnedObjectPath) {}
-
-    async fn delete_secrets(&self, _connection: nm::Settings, _connection_path: OwnedObjectPath) {}
-}
-
-/// Serve the agent and register it with NetworkManager, again whenever NetworkManager restarts.
+/// Register the agent, and again whenever NetworkManager restarts.
 pub fn start(wifi: Wifi) {
     let ctx = wifi.ctx.clone();
     ctx.spawn(async move {
@@ -130,40 +31,117 @@ pub fn start(wifi: Wifi) {
     });
 }
 
-async fn register(conn: &zbus::Connection) {
-    let r = conn
-        .call_method(
-            Some(nm::NM),
-            nm::AGENT_MANAGER_PATH,
-            Some(nm::AGENT_MANAGER),
-            "RegisterWithCapabilities",
-            &(IDENTIFIER, 0u32),
-        )
-        .await;
-    match r {
-        Ok(_) => log::debug!("wifi agent registered"),
-        Err(e) => log::debug!("wifi agent: registering: {e}"),
-    }
-}
-
-async fn serve(wifi: &Wifi) -> zbus::Result<()> {
-    use futures_util::StreamExt;
-    // A connection of its own: the shared one is dropped and remade when it fails, which
-    // would take the agent object with it.
-    let conn = zbus::Connection::system().await?;
-    conn.object_server()
-        .at(PATH, Agent { wifi: wifi.clone() })
+async fn serve(wifi: &Wifi) -> Result<(), Error> {
+    let (mut handle, mut requests) = SecretAgent::builder()
+        .with_identifier(IDENTIFIER)
+        // Only Wi-Fi: no VPN hints wanted.
+        .with_capabilities(SecretAgentCapabilities::empty())
+        .register()
         .await?;
+    log::debug!("wifi agent registered");
+    // NetworkManager forgets its agents when it restarts.
+    let conn = zbus::Connection::system().await?;
     let dbus = zbus::fdo::DBusProxy::new(&conn).await?;
     let mut owners = dbus
         .receive_name_owner_changed_with_args(&[(0, nm::NM)])
         .await?;
-    register(&conn).await;
-    while let Some(change) = owners.next().await {
-        if change.args().is_ok_and(|a| a.new_owner().is_some()) {
-            tokio::time::sleep(Duration::from_secs(1)).await;
-            register(&conn).await;
+    loop {
+        tokio::select! {
+            request = requests.next() => match request {
+                Some(r) => answer(wifi, r),
+                None => return Ok(()),
+            },
+            Some(cancel) = handle.cancellations().next() => {
+                wifi.drop_agent_request(cancel.connection_path.as_str());
+            }
+            change = owners.next() => match change {
+                Some(c) if c.args().is_ok_and(|a| a.new_owner().is_some()) => {
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    handle.reregister().await?;
+                    log::debug!("wifi agent registered again");
+                }
+                Some(_) => {}
+                None => return Ok(()),
+            },
         }
     }
-    Ok(())
+}
+
+/// Answer one request: ask in the widget, or say there are no secrets here.
+fn answer(wifi: &Wifi, req: SecretRequest) {
+    let wifi = wifi.clone();
+    wifi.ctx.clone().spawn(async move {
+        let path = req.connection_path.to_string();
+        let profile = wifi.profile_at(&path);
+        let ssid_of_profile = || {
+            profile
+                .as_ref()
+                .map(|p| p.ssid.clone())
+                .unwrap_or_else(|| req.connection_id.clone())
+        };
+        let (ssid, kind, identity) = match &req.setting {
+            SecretSetting::WifiPsk { ssid } => {
+                let wep = profile.as_ref().is_some_and(|p| p.key_mgmt == "none");
+                let ssid = if ssid.is_empty() {
+                    ssid_of_profile()
+                } else {
+                    ssid.clone()
+                };
+                let kind = if wep {
+                    PromptKind::Wep
+                } else {
+                    PromptKind::Password
+                };
+                (ssid, kind, String::new())
+            }
+            SecretSetting::WifiEap { identity, .. } => (
+                ssid_of_profile(),
+                PromptKind::Enterprise,
+                identity.clone().unwrap_or_default(),
+            ),
+            _ => {
+                let _ = req.responder.no_secrets().await;
+                return;
+            }
+        };
+        if !req.flags.contains(SecretAgentFlags::ALLOW_INTERACTION) || !wifi.may_ask(&ssid) {
+            let _ = req.responder.no_secrets().await;
+            return;
+        }
+        let prompt = Prompt {
+            ssid,
+            kind,
+            retry: req.flags.contains(SecretAgentFlags::REQUEST_NEW),
+            identity,
+            ..Default::default()
+        };
+        let rx = wifi.ask_agent(prompt, path.clone());
+        let replied = match tokio::time::timeout(WAIT, rx).await {
+            Ok(Ok(Some(a))) => match kind {
+                PromptKind::Password => req.responder.wifi_psk(a.password).await,
+                PromptKind::Wep => {
+                    let key =
+                        OwnedValue::try_from(Value::from(a.password)).expect("a string has no fds");
+                    req.responder
+                        .raw(
+                            "802-11-wireless-security",
+                            HashMap::from([("wep-key0".to_string(), key)]),
+                        )
+                        .await
+                }
+                PromptKind::Enterprise => {
+                    let identity = Some(a.identity).filter(|i| !i.is_empty());
+                    req.responder.wifi_eap(identity, a.password).await
+                }
+            },
+            Ok(_) => req.responder.cancel().await,
+            Err(_) => {
+                wifi.drop_agent_request(&path);
+                req.responder.cancel().await
+            }
+        };
+        if let Err(e) = replied {
+            log::debug!("wifi agent: answering: {e}");
+        }
+    });
 }

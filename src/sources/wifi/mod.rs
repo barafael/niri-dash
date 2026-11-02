@@ -4,7 +4,7 @@
 mod agent;
 pub mod nm;
 
-use super::{CmdError, Ctx, Dedup, IconSrc, Msg, Trigger, run_with, signals_from};
+use super::{Ctx, Dedup, IconSrc, Msg, Trigger, signals_from};
 use futures_util::StreamExt;
 pub use nm::{Connectivity, Link, Network, Profile};
 use std::collections::HashMap;
@@ -22,8 +22,8 @@ const PROFILES_FOR: Duration = Duration::from_secs(30);
 pub enum Error {
     #[error("{}", dbus_message(.0))]
     Dbus(Box<zbus::Error>),
-    #[error(transparent)]
-    Cmd(#[from] CmdError),
+    #[error("{0}")]
+    Nm(Box<nmrs::ConnectionError>),
     #[error("{0}")]
     Other(String),
 }
@@ -31,6 +31,12 @@ pub enum Error {
 impl From<zbus::Error> for Error {
     fn from(e: zbus::Error) -> Self {
         Self::Dbus(Box::new(e))
+    }
+}
+
+impl From<nmrs::ConnectionError> for Error {
+    fn from(e: nmrs::ConnectionError) -> Self {
+        Self::Nm(Box::new(e))
     }
 }
 
@@ -138,7 +144,7 @@ pub struct Prompt {
     ap: String,
     hidden: bool,
     /// The saved profile to put the answer in when no agent request is waiting for it.
-    profile: Option<String>,
+    profile: Option<Profile>,
 }
 
 /// A saved network's password, shown on request, with a QR code to join it from a phone.
@@ -254,10 +260,8 @@ pub struct Wifi {
     last: Arc<Mutex<State>>,
     local: Arc<Mutex<Local>>,
     profiles: Arc<Mutex<ProfileCache>>,
-}
-
-async fn nmcli(args: &[&str]) -> Result<String, CmdError> {
-    run_with("nmcli", args, &[("LC_ALL", "C")], None).await
+    /// nmrs's client, for changing saved profiles and the radio; made on first use.
+    nmrs: Arc<tokio::sync::OnceCell<nmrs::NetworkManager>>,
 }
 
 impl Wifi {
@@ -267,6 +271,7 @@ impl Wifi {
             last: Default::default(),
             local: Default::default(),
             profiles: Default::default(),
+            nmrs: Default::default(),
         };
         let trigger = Trigger::default();
         ctx.on_dbus_signals(
@@ -424,6 +429,16 @@ impl Wifi {
         c.map.values().flatten().cloned().collect()
     }
 
+    async fn nmrs(&self) -> Result<&nmrs::NetworkManager, Error> {
+        Ok(self.nmrs.get_or_try_init(nmrs::NetworkManager::new).await?)
+    }
+
+    /// The saved Wi-Fi profile at a settings path, if it has been read.
+    fn profile_at(&self, path: &str) -> Option<Profile> {
+        let c = self.profiles.lock().unwrap_or_else(|e| e.into_inner());
+        c.map.get(path).cloned().flatten()
+    }
+
     fn forget_profiles(&self) {
         if let Ok(mut c) = self.profiles.lock() {
             c.since = None;
@@ -488,18 +503,10 @@ impl Wifi {
 
     pub fn toggle(&self) {
         let on = !self.last().enabled;
-        let ctx = self.ctx.clone();
+        let me = self.clone();
         self.ctx.act("Wi-Fi", async move {
-            let conn = ctx.bus(true).await?;
-            nm::call(
-                &conn,
-                nm::NM_PATH,
-                "org.freedesktop.DBus.Properties",
-                "Set",
-                &(nm::NM, "WirelessEnabled", zbus::zvariant::Value::from(on)),
-            )
-            .await
-            .map(|_| ())
+            me.nmrs().await?.set_wireless_enabled(on).await?;
+            Ok::<_, Error>(())
         });
     }
 
@@ -609,14 +616,14 @@ impl Wifi {
         }
         drop(local);
         match prompt.profile {
-            Some(path) => {
+            Some(profile) => {
                 let me = self.clone();
                 let ssid = prompt.ssid.clone();
                 self.ctx.spawn(async move {
-                    match store_secret(&path, prompt.kind, &answer).await {
+                    match me.store_secret(&profile.uuid, prompt.kind, &answer).await {
                         Ok(()) => {
                             me.forget_profiles();
-                            me.activate(ssid, Activation::Profile(path));
+                            me.activate(ssid, Activation::Profile(profile.path));
                         }
                         Err(e) => me.fail(e.to_string()),
                     }
@@ -769,7 +776,7 @@ impl Wifi {
             if security.needs_secret() {
                 let profile = match &created {
                     Some(_) => None,
-                    None => last.profile(ssid).map(|p| p.path.clone()),
+                    None => last.profile(ssid).cloned(),
                 };
                 let (key_mgmt, ap, hidden) = retry_with.unwrap_or_default();
                 self.local().activity = Activity::Idle;
@@ -804,43 +811,42 @@ impl Wifi {
         });
     }
 
-    fn saved_path(&self, uuid: &str) -> Option<String> {
-        self.last()
-            .saved
-            .iter()
-            .find(|p| p.uuid == uuid)
-            .map(|p| p.path.clone())
-    }
-
     /// Delete a saved network.
     pub fn forget(&self, uuid: String) {
-        let Some(path) = self.saved_path(&uuid) else {
-            return;
-        };
         let me = self.clone();
         self.ctx.act("Forget network", async move {
-            let conn = me.ctx.bus(true).await?;
-            let r = nm::call(&conn, &path, nm::CONNECTION, "Delete", &()).await;
+            let r = me.nmrs().await?.delete_saved_connection(&uuid).await;
             me.forget_profiles();
-            r.map(|_| ())
+            Ok::<_, Error>(r?)
         });
     }
 
     pub fn set_autoconnect(&self, uuid: String, on: bool) {
         let me = self.clone();
         self.ctx.act("Auto-connect", async move {
-            let r = nmcli(&[
-                "connection",
-                "modify",
-                "uuid",
-                &uuid,
-                "connection.autoconnect",
-                if on { "yes" } else { "no" },
-            ])
-            .await;
+            let mut patch = nmrs::SettingsPatch::default();
+            patch.autoconnect = Some(on);
+            let r = me.nmrs().await?.update_saved_connection(&uuid, patch).await;
             me.forget_profiles();
-            r.map(|_| ()).map_err(Error::from)
+            Ok::<_, Error>(r?)
         });
+    }
+
+    /// Put a password into a saved profile, stored by NetworkManager itself (not an agent).
+    /// NetworkManager keeps the profile's other secrets.
+    async fn store_secret(
+        &self,
+        uuid: &str,
+        kind: PromptKind,
+        answer: &Answer,
+    ) -> Result<(), Error> {
+        let mut patch = nmrs::SettingsPatch::default();
+        patch.raw_overlay = Some(secret_overlay(kind, answer));
+        self.nmrs()
+            .await?
+            .update_saved_connection(uuid, patch)
+            .await?;
+        Ok(())
     }
 
     /// Show the details page of `ssid` ("" to leave it).
@@ -1053,36 +1059,42 @@ fn check_answer(key_mgmt: &str, answer: &Answer) -> Option<String> {
     }
 }
 
-/// Put a password into a saved profile, stored by NetworkManager itself (not an agent).
-async fn store_secret(path: &str, kind: PromptKind, answer: &Answer) -> Result<(), Error> {
-    let uuid = path.to_string();
-    let args: Vec<&str> = match kind {
-        PromptKind::Password => vec![
-            "802-11-wireless-security.psk",
-            &answer.password,
-            "802-11-wireless-security.psk-flags",
-            "0",
-        ],
-        PromptKind::Wep => vec![
-            "802-11-wireless-security.wep-key0",
-            &answer.password,
-            "802-11-wireless-security.wep-key-flags",
-            "0",
-        ],
-        PromptKind::Enterprise => vec![
-            "802-1x.identity",
-            &answer.identity,
-            "802-1x.password",
-            &answer.password,
-            "802-1x.password-flags",
-            "0",
-        ],
+/// The settings that put `answer` into a profile, as system-owned secrets.
+fn secret_overlay(kind: PromptKind, answer: &Answer) -> nm::Settings {
+    let v = |v: zbus::zvariant::Value<'_>| {
+        zbus::zvariant::OwnedValue::try_from(v).expect("plain values have no fds")
     };
-    // nmcli takes a D-Bus path as the connection's id.
-    let mut cmd = vec!["connection", "modify", "path", uuid.as_str()];
-    cmd.extend(args);
-    nmcli(&cmd).await?;
-    Ok(())
+    let (setting, values) = match kind {
+        PromptKind::Password => (
+            "802-11-wireless-security",
+            vec![
+                ("psk", v(answer.password.as_str().into())),
+                ("psk-flags", v(0u32.into())),
+            ],
+        ),
+        PromptKind::Wep => (
+            "802-11-wireless-security",
+            vec![
+                ("wep-key0", v(answer.password.as_str().into())),
+                ("wep-key-flags", v(0u32.into())),
+            ],
+        ),
+        PromptKind::Enterprise => (
+            "802-1x",
+            vec![
+                ("identity", v(answer.identity.as_str().into())),
+                ("password", v(answer.password.as_str().into())),
+                ("password-flags", v(0u32.into())),
+            ],
+        ),
+    };
+    HashMap::from([(
+        setting.to_string(),
+        values
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect(),
+    )])
 }
 
 /// A QR code as an image, one pixel per module (the UI scales it up without smoothing), with a

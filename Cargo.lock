@@ -1391,6 +1391,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cd417de3d1d015fc3bfd2b1ea46dfc7bab72ef86f1cc7cc9c78e728b34a6d1fd"
 
 [[package]]
+name = "futures-timer"
+version = "3.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af43fadb8a98512d547e37b4e92e0ced13e205c061b87b4623eff01d918d6968"
+
+[[package]]
 name = "futures-util"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2838,6 +2844,7 @@ dependencies = [
  "khronos-egl",
  "log",
  "niri-ipc",
+ "nmrs",
  "notify",
  "png 0.17.16",
  "qrcode",
@@ -2880,6 +2887,25 @@ dependencies = [
  "cfg-if",
  "cfg_aliases",
  "libc",
+]
+
+[[package]]
+name = "nmrs"
+version = "3.5.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dad6d55d9b3eaa211e75ef740a95756807c2cb23d679a8e4454815c0bebe9b14"
+dependencies = [
+ "base64 0.23.1",
+ "bitflags 2.13.2",
+ "futures",
+ "futures-timer",
+ "log",
+ "serde",
+ "thiserror 2.0.21",
+ "tokio",
+ "uuid",
+ "zbus",
+ "zvariant",
 ]
 
 [[package]]
@@ -4084,6 +4110,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha1_smol"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbfa15b3dddfee50a0fff136974b3e1bde555604ba463834a7eb7deb6417705d"
+
+[[package]]
 name = "shlex"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4942,8 +4974,10 @@ version = "1.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a0e2d11620c50695fe12bbbfde96b3477fe606e7284c22d505c12ce51214514"
 dependencies = [
+ "getrandom 0.4.3",
  "js-sys",
  "serde_core",
+ "sha1_smol",
  "wasm-bindgen",
 ]
 

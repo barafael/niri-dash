@@ -55,6 +55,7 @@ system-tray = "0.8"
 freedesktop-icons = "0.4"
 ureq = { version = "2", features = ["json"] }
 qrcode = { version = "0.14.1", default-features = false }
+nmrs = "3.5.7"
 
 [build-dependencies]
 slint-build = "1.18"

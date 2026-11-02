@@ -16,8 +16,6 @@ pub const ACTIVE: &str = "org.freedesktop.NetworkManager.Connection.Active";
 pub const IP4: &str = "org.freedesktop.NetworkManager.IP4Config";
 pub const IP6: &str = "org.freedesktop.NetworkManager.IP6Config";
 pub const CONNECTION: &str = "org.freedesktop.NetworkManager.Settings.Connection";
-pub const AGENT_MANAGER: &str = "org.freedesktop.NetworkManager.AgentManager";
-pub const AGENT_MANAGER_PATH: &str = "/org/freedesktop/NetworkManager/AgentManager";
 
 /// A connection's settings as NetworkManager passes them around: setting name → key → value.
 pub type Settings = HashMap<String, HashMap<String, OwnedValue>>;
