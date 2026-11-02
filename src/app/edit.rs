@@ -44,9 +44,9 @@ pub(super) fn character(p: &Placed, us: bool) -> crate::mascots::Character {
 
 fn to_inst(p: &Placed, us: bool) -> WidgetInst {
     WidgetInst {
-        has_settings: !crate::widget_settings::for_kind(p.kind).is_empty(),
+        has_settings: !p.kind.info().settings.is_empty(),
         opts: to_opts(p, us),
-        can_round: p.kind.can_be_round(),
+        can_round: p.kind.info().can_be_round,
         id: p.id as i32,
         kind: kind_to_ui(p.kind),
         shape: shape_to_ui(p.shape),
@@ -187,7 +187,7 @@ impl App {
     }
 
     fn preview_add(&self, kind: Kind, col: i32, row: i32) -> bool {
-        let (w, h) = kind.default_size();
+        let (w, h) = kind.info().default_size;
         let result = self
             .layout
             .borrow()
@@ -239,7 +239,7 @@ impl App {
 
     /// Rebuild the sidebar rows for the widget whose settings are open.
     pub(super) fn refresh_settings(&self) {
-        use crate::widget_settings::{Ty, for_kind, get};
+        use crate::widget_settings::{Ty, get};
         let ui = self.ui();
         let id = ui.get_settings_id();
         let us = self.locale.us;
@@ -253,8 +253,11 @@ impl App {
             }
             return;
         };
-        ui.set_settings_title(p.kind.title().into());
-        let rows: Vec<crate::SettingRow> = for_kind(p.kind)
+        ui.set_settings_title(p.kind.info().title.into());
+        let rows: Vec<crate::SettingRow> = p
+            .kind
+            .info()
+            .settings
             .iter()
             .enumerate()
             .map(|(i, &opt)| {
@@ -290,7 +293,7 @@ impl App {
         index: i32,
         f: impl FnOnce(crate::widget_settings::Opt, &kdl::KdlValue) -> Option<kdl::KdlValue>,
     ) {
-        use crate::widget_settings::{for_kind, get, set};
+        use crate::widget_settings::{get, set};
         let id = self.ui().get_settings_id() as u32;
         let us = self.locale.us;
         let kind = {
@@ -298,7 +301,7 @@ impl App {
             let Some(kind) = layout.get(id).map(|p| p.kind) else {
                 return;
             };
-            let Some(&opt) = for_kind(kind).get(index as usize) else {
+            let Some(&opt) = kind.info().settings.get(index as usize) else {
                 return;
             };
             let Some(values) = layout.settings_mut(id) else {
@@ -396,7 +399,7 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
         let kind = kind_from_ui(k);
         if a.layout.borrow_mut().add(kind).is_some() {
             a.layout_changed();
-            a.toast(&format!("Added {}", kind.title()));
+            a.toast(&format!("Added {}", kind.info().title));
         } else {
             a.toast("No free space. Remove or shrink a widget first.");
         }
@@ -408,12 +411,15 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     });
     ui.set_palette(model(
         Kind::iter()
-            .map(|k| PaletteItem {
-                kind: kind_to_ui(k),
-                title: k.title().into(),
-                description: k.description().into(),
-                w: k.default_size().0,
-                h: k.default_size().1,
+            .map(|k| {
+                let info = k.info();
+                PaletteItem {
+                    kind: kind_to_ui(k),
+                    title: info.title.into(),
+                    description: info.description.into(),
+                    w: info.default_size.0,
+                    h: info.default_size.1,
+                }
             })
             .collect(),
     ));

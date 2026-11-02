@@ -37,37 +37,7 @@ pub fn app_id(kind: Kind) -> String {
 
 /// The window title and the launcher name.
 pub fn name(kind: Kind) -> String {
-    format!("{} (niri-dash)", kind.title())
-}
-
-/// A themed icon name from the freedesktop icon naming spec (or one most themes have).
-fn icon(kind: Kind) -> &'static str {
-    match kind {
-        Kind::Clock => "preferences-system-time",
-        Kind::Calendar => "x-office-calendar",
-        Kind::SystemMonitor | Kind::ClaudeUsage | Kind::Memory => "utilities-system-monitor",
-        Kind::Windows => "preferences-system-windows",
-        Kind::ClaudeSessions => "utilities-terminal",
-        Kind::Wifi => "network-wireless",
-        Kind::Bluetooth => "bluetooth",
-        Kind::Battery => "battery",
-        Kind::Volume => "audio-volume-high",
-        Kind::Brightness | Kind::Gpu => "video-display",
-        Kind::Notifications => "preferences-system-notifications",
-        Kind::Tray => "preferences-desktop",
-        Kind::Media => "multimedia-player",
-        Kind::Session => "system-shutdown",
-        Kind::Clipboard => "edit-paste",
-        Kind::Weather => "weather-few-clouds",
-        Kind::Mascot => "face-smile",
-        Kind::Privacy => "security-high",
-        Kind::Notes => "accessories-text-editor",
-        Kind::Timer => "alarm-symbolic",
-        Kind::ColorPicker => "color-select",
-        Kind::KeyboardLayout => "input-keyboard",
-        Kind::Disks => "drive-harddisk",
-        Kind::Network => "network-transmit-receive",
-    }
+    format!("{} (niri-dash)", kind.info().title)
 }
 
 /// Whether a kind gets an entry. Notifications don't: while the dashboard runs it owns the
@@ -117,10 +87,10 @@ fn entry(kind: Kind, exec: &str) -> String {
          SingleMainWindow=true\n\
          {MARKER}=true\n",
         name = name(kind),
-        title = kind.title(),
-        comment = kind.description(),
+        title = kind.info().title,
+        comment = kind.info().description,
         widget = kind.name(),
-        icon = icon(kind),
+        icon = kind.info().icon,
         id = app_id(kind),
     )
 }

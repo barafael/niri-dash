@@ -650,7 +650,7 @@ pub fn run_app(kind: Kind) -> Result<()> {
     let config = Layout::load();
     let placed = config.layout.solo_widget(kind);
     let px = |cells: i32| (cells.max(1) as f32 * config.layout.cell_size).round() as u32;
-    let (min_w, min_h) = kind.min_size();
+    let (min_w, min_h) = kind.info().min_size;
     let mode = Mode::App {
         app_id: crate::desktop::app_id(kind),
         title: crate::desktop::name(kind),

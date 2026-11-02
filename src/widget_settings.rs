@@ -8,7 +8,8 @@
 //! ```
 //!
 //! Only values that differ from the default are written. Each kind of widget has a fixed list of
-//! settings ([`for_kind`]); the edit sidebar shows them in that order.
+//! settings ([`KindInfo::settings`](crate::layout::KindInfo::settings)); the edit sidebar shows
+//! them in that order.
 
 use kdl::KdlValue;
 use strum::{AsRefStr, EnumIter, EnumString, VariantNames};
@@ -238,39 +239,6 @@ impl Opt {
     }
 }
 
-/// The settings each kind of widget has, in display order.
-pub fn for_kind(kind: Kind) -> &'static [Opt] {
-    use Opt::*;
-    match kind {
-        Kind::Clock => &[Hours, Seconds, Date, Zones],
-        Kind::Timer => &[Mode],
-        Kind::Notes => &[Note],
-        Kind::Calendar => &[FirstDay, WeekNumbers],
-        Kind::SystemMonitor => &[History, Cores],
-        Kind::Memory => &[History, TopApps],
-        Kind::Network | Kind::Gpu => &[History],
-        Kind::Disks => &[HideSystem],
-        Kind::Weather => &[Location, Units],
-        Kind::Session => &[Lock, Suspend, Logout, Restart, PowerOff, Confirm],
-        Kind::Mascot => &[Character, Wildness, Interval, Command],
-        Kind::Windows
-        | Kind::ClaudeSessions
-        | Kind::Wifi
-        | Kind::Bluetooth
-        | Kind::Battery
-        | Kind::Volume
-        | Kind::Brightness
-        | Kind::Notifications
-        | Kind::Tray
-        | Kind::Media
-        | Kind::Clipboard
-        | Kind::ClaudeUsage
-        | Kind::KeyboardLayout
-        | Kind::ColorPicker
-        | Kind::Privacy => &[],
-    }
-}
-
 /// A widget's settings as written in the file: `(name, value)` pairs, unknown ones included so
 /// they survive saving.
 pub type Values = Vec<(String, KdlValue)>;
@@ -319,7 +287,7 @@ pub fn check(kind: Kind, values: &[(String, KdlValue)]) -> Vec<String> {
     values
         .iter()
         .filter_map(|(k, v)| match k.parse::<Opt>() {
-            Ok(opt) if for_kind(kind).contains(&opt) => {
+            Ok(opt) if kind.info().settings.contains(&opt) => {
                 (!opt.accepts(v)).then(|| format!("{name} {{ {k} }}: unexpected value {v}"))
             }
             _ => Some(format!("{name} has no setting `{k}`")),

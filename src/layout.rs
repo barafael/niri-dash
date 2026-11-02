@@ -51,169 +51,276 @@ impl Kind {
         Kind::from_str(name).ok()
     }
 
+    /// What this kind of widget is: one entry per kind, so a new kind doesn't build until it is
+    /// described here.
+    pub fn info(self) -> &'static KindInfo {
+        use crate::widget_settings::Opt::*;
+        match self {
+            Kind::Clock => &KindInfo {
+                title: "Clock",
+                description: "Digital, or analog when round",
+                default_size: (4, 2),
+                min_size: (2, 1),
+                can_be_round: true,
+                settings: &[Hours, Seconds, Date, Zones],
+                icon: "preferences-system-time",
+            },
+            Kind::Calendar => &KindInfo {
+                title: "Calendar",
+                description: "Month view",
+                default_size: (4, 4),
+                min_size: (3, 3),
+                can_be_round: true,
+                settings: &[FirstDay, WeekNumbers],
+                icon: "x-office-calendar",
+            },
+            Kind::SystemMonitor => &KindInfo {
+                title: "System monitor",
+                description: "CPU, memory, network, temperature",
+                default_size: (4, 3),
+                min_size: (2, 2),
+                can_be_round: true,
+                settings: &[History, Cores],
+                icon: "utilities-system-monitor",
+            },
+            Kind::Windows => &KindInfo {
+                title: "Windows",
+                description: "Open windows by workspace; click to focus",
+                default_size: (5, 5),
+                min_size: (3, 2),
+                can_be_round: false,
+                settings: &[],
+                icon: "preferences-system-windows",
+            },
+            Kind::ClaudeSessions => &KindInfo {
+                title: "Claude sessions",
+                description: "Running Claude Code sessions; click to focus",
+                default_size: (4, 3),
+                min_size: (3, 2),
+                can_be_round: true,
+                settings: &[],
+                icon: "utilities-terminal",
+            },
+            Kind::Wifi => &KindInfo {
+                title: "Wi-Fi",
+                description: "Networks, connect, radio on/off",
+                default_size: (3, 4),
+                min_size: (2, 2),
+                can_be_round: true,
+                settings: &[],
+                icon: "network-wireless",
+            },
+            Kind::Bluetooth => &KindInfo {
+                title: "Bluetooth",
+                description: "Devices, connect, adapter on/off",
+                default_size: (3, 3),
+                min_size: (2, 2),
+                can_be_round: true,
+                settings: &[],
+                icon: "bluetooth",
+            },
+            Kind::Battery => &KindInfo {
+                title: "Battery & power",
+                description: "Charge, power profile; device batteries and sleep blockers when bigger",
+                default_size: (3, 2),
+                min_size: (2, 1),
+                can_be_round: true,
+                settings: &[],
+                icon: "battery",
+            },
+            Kind::Volume => &KindInfo {
+                title: "Volume",
+                description: "Speaker and microphone; outputs and apps when bigger",
+                default_size: (3, 3),
+                min_size: (2, 1),
+                can_be_round: true,
+                settings: &[],
+                icon: "audio-volume-high",
+            },
+            Kind::Brightness => &KindInfo {
+                title: "Brightness",
+                description: "Screen backlight",
+                default_size: (3, 1),
+                min_size: (2, 1),
+                can_be_round: true,
+                settings: &[],
+                icon: "video-display",
+            },
+            Kind::Notifications => &KindInfo {
+                title: "Notifications",
+                description: "Notification history",
+                default_size: (4, 5),
+                min_size: (3, 2),
+                can_be_round: false,
+                settings: &[],
+                icon: "preferences-system-notifications",
+            },
+            Kind::Tray => &KindInfo {
+                title: "Tray",
+                description: "Status icons and their menus",
+                default_size: (4, 1),
+                min_size: (1, 1),
+                can_be_round: false,
+                settings: &[],
+                icon: "preferences-desktop",
+            },
+            Kind::Media => &KindInfo {
+                title: "Media player",
+                description: "Now playing (MPRIS)",
+                default_size: (5, 2),
+                min_size: (3, 1),
+                can_be_round: false,
+                settings: &[],
+                icon: "multimedia-player",
+            },
+            Kind::Session => &KindInfo {
+                title: "Session",
+                description: "Lock, suspend, log out, power off",
+                default_size: (4, 1),
+                min_size: (3, 1),
+                can_be_round: false,
+                settings: &[Lock, Suspend, Logout, Restart, PowerOff, Confirm],
+                icon: "system-shutdown",
+            },
+            Kind::Clipboard => &KindInfo {
+                title: "Clipboard history",
+                description: "Recent copies; click to copy again",
+                default_size: (4, 4),
+                min_size: (3, 2),
+                can_be_round: false,
+                settings: &[],
+                icon: "edit-paste",
+            },
+            Kind::Weather => &KindInfo {
+                title: "Weather",
+                description: "Now and the next days (Open-Meteo)",
+                default_size: (4, 2),
+                min_size: (2, 1),
+                can_be_round: true,
+                settings: &[Location, Units],
+                icon: "weather-few-clouds",
+            },
+            Kind::Memory => &KindInfo {
+                title: "Memory",
+                description: "RAM and swap, history, biggest apps",
+                default_size: (4, 3),
+                min_size: (2, 2),
+                can_be_round: true,
+                settings: &[History, TopApps],
+                icon: "utilities-system-monitor",
+            },
+            Kind::Disks => &KindInfo {
+                title: "Disks",
+                description: "Space per filesystem, read and write",
+                default_size: (4, 2),
+                min_size: (3, 1),
+                can_be_round: true,
+                settings: &[HideSystem],
+                icon: "drive-harddisk",
+            },
+            Kind::Network => &KindInfo {
+                title: "Network",
+                description: "Download and upload, history",
+                default_size: (4, 2),
+                min_size: (2, 1),
+                can_be_round: true,
+                settings: &[History],
+                icon: "network-transmit-receive",
+            },
+            Kind::Gpu => &KindInfo {
+                title: "GPU",
+                description: "GPU load, video memory, temperature",
+                default_size: (4, 2),
+                min_size: (2, 1),
+                can_be_round: true,
+                settings: &[History],
+                icon: "video-display",
+            },
+            Kind::ClaudeUsage => &KindInfo {
+                title: "Claude usage",
+                description: "Plan, 5-hour window, tokens today",
+                default_size: (4, 3),
+                min_size: (3, 2),
+                can_be_round: true,
+                settings: &[],
+                icon: "utilities-system-monitor",
+            },
+            Kind::Mascot => &KindInfo {
+                title: "Mascot",
+                description: "Schraubi, Zolli or Verschnitti; says what you tell it",
+                default_size: (4, 2),
+                min_size: (3, 2),
+                can_be_round: false,
+                settings: &[Character, Wildness, Interval, Command],
+                icon: "face-smile",
+            },
+            Kind::KeyboardLayout => &KindInfo {
+                title: "Keyboard layout",
+                description: "Current layout; click to switch, bigger shows all",
+                default_size: (2, 1),
+                min_size: (1, 1),
+                can_be_round: true,
+                settings: &[],
+                icon: "input-keyboard",
+            },
+            Kind::ColorPicker => &KindInfo {
+                title: "Color picker",
+                description: "Pick a pixel anywhere; hex copied, recent colors",
+                default_size: (3, 2),
+                min_size: (2, 1),
+                can_be_round: true,
+                settings: &[],
+                icon: "color-select",
+            },
+            Kind::Timer => &KindInfo {
+                title: "Timer",
+                description: "Countdown or stopwatch (setting); presets and laps when bigger",
+                default_size: (3, 2),
+                min_size: (2, 1),
+                can_be_round: true,
+                settings: &[Mode],
+                icon: "alarm-symbolic",
+            },
+            Kind::Notes => &KindInfo {
+                title: "Sticky note",
+                description: "A note that keeps what you type; name it to have several",
+                default_size: (3, 3),
+                min_size: (2, 1),
+                can_be_round: false,
+                settings: &[Note],
+                icon: "accessories-text-editor",
+            },
+            Kind::Privacy => &KindInfo {
+                title: "Privacy",
+                description: "Who uses the microphone, camera or screen; stop screen sharing",
+                default_size: (3, 2),
+                min_size: (2, 1),
+                can_be_round: true,
+                settings: &[],
+                icon: "security-high",
+            },
+        }
+    }
+}
+
+/// The fixed facts about a kind of widget.
+#[derive(Debug)]
+pub struct KindInfo {
+    /// The name in the widget picker, the settings sidebar and the desktop entry.
+    pub title: &'static str,
+    /// The line under the title in the widget picker, and the desktop entry's comment.
+    pub description: &'static str,
+    /// (w, h) in cells of a new rectangular instance.
+    pub default_size: (i32, i32),
+    /// The smallest (w, h) a rectangular instance can be resized to.
+    pub min_size: (i32, i32),
     /// Whether a round version makes sense (lists don't fit in a circle).
-    pub fn can_be_round(self) -> bool {
-        match self {
-            Kind::Clock
-            | Kind::Calendar
-            | Kind::SystemMonitor
-            | Kind::ClaudeSessions
-            | Kind::Wifi
-            | Kind::Bluetooth
-            | Kind::Battery
-            | Kind::Volume
-            | Kind::Brightness
-            | Kind::Weather
-            | Kind::Memory
-            | Kind::Disks
-            | Kind::Network
-            | Kind::Gpu
-            | Kind::ClaudeUsage
-            | Kind::KeyboardLayout
-            | Kind::ColorPicker
-            | Kind::Timer
-            | Kind::Privacy => true,
-            Kind::Windows
-            | Kind::Notifications
-            | Kind::Clipboard
-            | Kind::Tray
-            | Kind::Media
-            | Kind::Session
-            | Kind::Mascot
-            | Kind::Notes => false,
-        }
-    }
-
-    pub fn title(self) -> &'static str {
-        match self {
-            Kind::Clock => "Clock",
-            Kind::Calendar => "Calendar",
-            Kind::SystemMonitor => "System monitor",
-            Kind::Windows => "Windows",
-            Kind::ClaudeSessions => "Claude sessions",
-            Kind::Wifi => "Wi-Fi",
-            Kind::Bluetooth => "Bluetooth",
-            Kind::Battery => "Battery & power",
-            Kind::Volume => "Volume",
-            Kind::Brightness => "Brightness",
-            Kind::Notifications => "Notifications",
-            Kind::Tray => "Tray",
-            Kind::Media => "Media player",
-            Kind::Session => "Session",
-            Kind::Clipboard => "Clipboard history",
-            Kind::Weather => "Weather",
-            Kind::Memory => "Memory",
-            Kind::Disks => "Disks",
-            Kind::Network => "Network",
-            Kind::Gpu => "GPU",
-            Kind::ClaudeUsage => "Claude usage",
-            Kind::Mascot => "Mascot",
-            Kind::KeyboardLayout => "Keyboard layout",
-            Kind::ColorPicker => "Color picker",
-            Kind::Timer => "Timer",
-            Kind::Notes => "Sticky note",
-            Kind::Privacy => "Privacy",
-        }
-    }
-
-    pub fn description(self) -> &'static str {
-        match self {
-            Kind::Clock => "Digital, or analog when round",
-            Kind::Calendar => "Month view",
-            Kind::SystemMonitor => "CPU, memory, network, temperature",
-            Kind::Windows => "Open windows by workspace; click to focus",
-            Kind::ClaudeSessions => "Running Claude Code sessions; click to focus",
-            Kind::Wifi => "Networks, connect, radio on/off",
-            Kind::Bluetooth => "Devices, connect, adapter on/off",
-            Kind::Battery => {
-                "Charge, power profile; device batteries and sleep blockers when bigger"
-            }
-            Kind::Volume => "Speaker and microphone; outputs and apps when bigger",
-            Kind::Brightness => "Screen backlight",
-            Kind::Notifications => "Notification history",
-            Kind::Tray => "Status icons and their menus",
-            Kind::Media => "Now playing (MPRIS)",
-            Kind::Session => "Lock, suspend, log out, power off",
-            Kind::Clipboard => "Recent copies; click to copy again",
-            Kind::Weather => "Now and the next days (Open-Meteo)",
-            Kind::Memory => "RAM and swap, history, biggest apps",
-            Kind::Disks => "Space per filesystem, read and write",
-            Kind::Network => "Download and upload, history",
-            Kind::Gpu => "GPU load, video memory, temperature",
-            Kind::ClaudeUsage => "Plan, 5-hour window, tokens today",
-            Kind::Mascot => "Schraubi, Zolli or Verschnitti; says what you tell it",
-            Kind::KeyboardLayout => "Current layout; click to switch, bigger shows all",
-            Kind::ColorPicker => "Pick a pixel anywhere; hex copied, recent colors",
-            Kind::Timer => "Countdown or stopwatch (setting); presets and laps when bigger",
-            Kind::Notes => "A note that keeps what you type; name it to have several",
-            Kind::Privacy => "Who uses the microphone, camera or screen; stop screen sharing",
-        }
-    }
-
-    /// Default (w, h) for a rectangular instance.
-    pub fn default_size(self) -> (i32, i32) {
-        match self {
-            Kind::Clock => (4, 2),
-            Kind::Calendar => (4, 4),
-            Kind::SystemMonitor => (4, 3),
-            Kind::Windows => (5, 5),
-            Kind::ClaudeSessions => (4, 3),
-            Kind::Wifi => (3, 4),
-            Kind::Bluetooth => (3, 3),
-            Kind::Battery => (3, 2),
-            Kind::Volume => (3, 3),
-            Kind::Brightness => (3, 1),
-            Kind::Notifications => (4, 5),
-            Kind::Tray => (4, 1),
-            Kind::Media => (5, 2),
-            Kind::Session => (4, 1),
-            Kind::Clipboard => (4, 4),
-            Kind::Weather => (4, 2),
-            Kind::Memory => (4, 3),
-            Kind::Disks => (4, 2),
-            Kind::Network => (4, 2),
-            Kind::Gpu => (4, 2),
-            Kind::ClaudeUsage => (4, 3),
-            Kind::Mascot => (4, 2),
-            Kind::KeyboardLayout => (2, 1),
-            Kind::ColorPicker => (3, 2),
-            Kind::Timer => (3, 2),
-            Kind::Notes => (3, 3),
-            Kind::Privacy => (3, 2),
-        }
-    }
-
-    pub fn min_size(self) -> (i32, i32) {
-        match self {
-            Kind::Clock => (2, 1),
-            Kind::Calendar => (3, 3),
-            Kind::SystemMonitor => (2, 2),
-            Kind::Windows => (3, 2),
-            Kind::ClaudeSessions => (3, 2),
-            Kind::Wifi => (2, 2),
-            Kind::Bluetooth => (2, 2),
-            Kind::Battery => (2, 1),
-            Kind::Volume => (2, 1),
-            Kind::Brightness => (2, 1),
-            Kind::Notifications => (3, 2),
-            Kind::Tray => (1, 1),
-            Kind::Media => (3, 1),
-            Kind::Session => (3, 1),
-            Kind::Clipboard => (3, 2),
-            Kind::Weather => (2, 1),
-            Kind::Memory => (2, 2),
-            Kind::Disks => (3, 1),
-            Kind::Network => (2, 1),
-            Kind::Gpu => (2, 1),
-            Kind::ClaudeUsage => (3, 2),
-            Kind::Mascot => (3, 2),
-            Kind::KeyboardLayout => (1, 1),
-            Kind::ColorPicker => (2, 1),
-            Kind::Timer => (2, 1),
-            Kind::Notes => (2, 1),
-            Kind::Privacy => (2, 1),
-        }
-    }
+    pub can_be_round: bool,
+    /// Its settings ([`crate::widget_settings`]), in the order the sidebar shows them.
+    pub settings: &'static [crate::widget_settings::Opt],
+    /// A themed icon name from the freedesktop icon naming spec (or one most themes have), for
+    /// the desktop entry.
+    pub icon: &'static str,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, EnumString, AsRefStr)]
@@ -262,7 +369,7 @@ impl Placed {
     /// The smallest size it may be resized to; round widgets go down to a single cell.
     fn min_size(&self) -> (i32, i32) {
         match self.shape {
-            Shape::Rect => self.kind.min_size(),
+            Shape::Rect => self.kind.info().min_size,
             Shape::Round => (1, 1),
         }
     }
@@ -549,7 +656,7 @@ impl Layout {
                     .map(Shape::from_str)
                 {
                     None => Shape::Rect,
-                    Some(Ok(Shape::Round)) if !kind.can_be_round() => {
+                    Some(Ok(Shape::Round)) if !kind.info().can_be_round => {
                         warnings.push(format!("{name} can't be round"));
                         Shape::Rect
                     }
@@ -559,7 +666,7 @@ impl Layout {
                         Shape::Rect
                     }
                 };
-                let (dw, dh) = kind.default_size();
+                let (dw, dh) = kind.info().default_size;
                 let size = int(node, "size");
                 let w = int(node, "width")
                     .or(size)
@@ -821,7 +928,7 @@ impl Layout {
             .find(|p| p.kind == kind)
             .cloned()
             .unwrap_or_else(|| {
-                let (w, h) = kind.default_size();
+                let (w, h) = kind.info().default_size;
                 Placed {
                     id: 0,
                     kind,
@@ -869,7 +976,7 @@ impl Layout {
             return false;
         };
         match p.shape {
-            Shape::Rect if !p.kind.can_be_round() => false,
+            Shape::Rect if !p.kind.info().can_be_round => false,
             Shape::Rect => {
                 for d in (1..=p.w.max(p.h)).rev() {
                     if self.can_place(id, p.col, p.row, d, d) {
@@ -881,7 +988,7 @@ impl Layout {
                 false
             }
             Shape::Round => {
-                let (dw, dh) = p.kind.default_size();
+                let (dw, dh) = p.kind.info().default_size;
                 let (w, h) = (dw.max(p.w).min(self.cols), dh.min(self.rows));
                 let fits = self.can_place(id, p.col, p.row, w, h);
                 let q = self.get_mut(id).expect("checked");
@@ -924,8 +1031,8 @@ impl Layout {
     /// Add a widget at the first free spot, shrinking towards its minimum size if needed.
     pub fn add(&mut self, kind: Kind) -> Option<u32> {
         let id = self.next_id;
-        let (dw, dh) = kind.default_size();
-        let (mw, mh) = kind.min_size();
+        let (dw, dh) = kind.info().default_size;
+        let (mw, mh) = kind.info().min_size;
         let mut sizes = vec![(dw, dh)];
         let (mut w, mut h) = (dw, dh);
         while w > mw || h > mh {
@@ -1683,7 +1790,7 @@ impl Layout {
 
     /// Add a widget of its default size at a spot, pushing others aside.
     pub fn add_at(&mut self, kind: Kind, col: i32, row: i32) -> Option<u32> {
-        let (w, h) = kind.default_size();
+        let (w, h) = kind.info().default_size;
         let target = Rect { col, row, w, h };
         let moves = self.reflow(0, target, (0, 1))?;
         self.apply_reflow(&moves);
