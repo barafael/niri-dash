@@ -2,8 +2,8 @@ import { Theme, Icons } from "theme.slint";
 import { WidgetInst, WidgetKind, Shape, PointerShape } from "data.slint";
 import { Icon, IconButton } from "common.slint";
 import { ClockWidget, CalendarWidget } from "widgets/time.slint";
-import { PerfWidget, BatteryWidget, AudioWidget, BrightnessWidget, SessionWidget } from "widgets/system.slint";
-import { ClaudeWidget, ClipboardWidget, WeatherWidget } from "widgets/extra.slint";
+import { SystemMonitorWidget, BatteryWidget, VolumeWidget, BrightnessWidget, SessionWidget } from "widgets/system.slint";
+import { ClaudeSessionsWidget, ClipboardWidget, WeatherWidget } from "widgets/extra.slint";
 import { MemoryWidget, DisksWidget, NetworkWidget, GpuWidget, ClaudeUsageWidget } from "widgets/monitor.slint";
 import { WifiWidget, BluetoothWidget } from "widgets/net.slint";
 import { WindowsWidget, NotificationsWidget, TrayWidget, MediaWidget } from "widgets/desk.slint";
@@ -17,16 +17,16 @@ export component WidgetBody inherits Rectangle {
     in property <bool> round;
     if root.inst.kind == WidgetKind.clock: ClockWidget { round: root.round; opts: root.inst.opts; id: root.inst.id; }
     if root.inst.kind == WidgetKind.calendar: CalendarWidget { round: root.round; opts: root.inst.opts; }
-    if root.inst.kind == WidgetKind.perf: PerfWidget { round: root.round; opts: root.inst.opts; }
+    if root.inst.kind == WidgetKind.system-monitor: SystemMonitorWidget { round: root.round; opts: root.inst.opts; }
     if root.inst.kind == WidgetKind.windows: WindowsWidget { round: root.round; }
     if root.inst.kind == WidgetKind.wifi: WifiWidget { round: root.round; }
     if root.inst.kind == WidgetKind.bluetooth: BluetoothWidget { round: root.round; }
     if root.inst.kind == WidgetKind.battery: BatteryWidget { round: root.round; }
-    if root.inst.kind == WidgetKind.audio: AudioWidget { round: root.round; }
+    if root.inst.kind == WidgetKind.volume: VolumeWidget { round: root.round; }
     if root.inst.kind == WidgetKind.brightness: BrightnessWidget { round: root.round; }
     if root.inst.kind == WidgetKind.notifications: NotificationsWidget { round: root.round; }
     if root.inst.kind == WidgetKind.tray: TrayWidget { round: root.round; }
-    if root.inst.kind == WidgetKind.claude: ClaudeWidget { round: root.round; }
+    if root.inst.kind == WidgetKind.claude-sessions: ClaudeSessionsWidget { round: root.round; }
     if root.inst.kind == WidgetKind.clipboard: ClipboardWidget { round: root.round; }
     if root.inst.kind == WidgetKind.weather: WeatherWidget { round: root.round; }
     if root.inst.kind == WidgetKind.memory: MemoryWidget { round: root.round; opts: root.inst.opts; }

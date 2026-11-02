@@ -509,14 +509,16 @@ enum Feed {
 fn feeds(kind: Kind) -> &'static [Feed] {
     match kind {
         Kind::Clock | Kind::Calendar | Kind::Clipboard | Kind::Session => &[],
-        Kind::Perf | Kind::Memory | Kind::Disks | Kind::Network | Kind::Gpu => &[Feed::Perf],
+        Kind::SystemMonitor | Kind::Memory | Kind::Disks | Kind::Network | Kind::Gpu => {
+            &[Feed::Perf]
+        }
         Kind::Windows => &[Feed::Niri],
-        Kind::Claude => &[Feed::Claude],
+        Kind::ClaudeSessions => &[Feed::Claude],
         Kind::ClaudeUsage => &[Feed::ClaudeUsage],
         Kind::Wifi => &[Feed::Wifi],
         Kind::Bluetooth => &[Feed::Bluetooth],
         Kind::Battery => &[Feed::Power, Feed::Inhibit],
-        Kind::Audio => &[Feed::Audio],
+        Kind::Volume => &[Feed::Audio],
         Kind::Brightness => &[Feed::Brightness],
         Kind::Notifications => &[Feed::Notifications],
         Kind::Tray => &[Feed::Tray],

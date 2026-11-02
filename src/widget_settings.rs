@@ -246,7 +246,7 @@ pub fn for_kind(kind: Kind) -> &'static [Opt] {
         Kind::Timer => &[Mode],
         Kind::Notes => &[Note],
         Kind::Calendar => &[FirstDay, WeekNumbers],
-        Kind::Perf => &[History, Cores],
+        Kind::SystemMonitor => &[History, Cores],
         Kind::Memory => &[History, TopApps],
         Kind::Network | Kind::Gpu => &[History],
         Kind::Disks => &[HideSystem],
@@ -254,11 +254,11 @@ pub fn for_kind(kind: Kind) -> &'static [Opt] {
         Kind::Session => &[Lock, Suspend, Logout, Restart, PowerOff, Confirm],
         Kind::Mascot => &[Character, Wildness, Interval, Command],
         Kind::Windows
-        | Kind::Claude
+        | Kind::ClaudeSessions
         | Kind::Wifi
         | Kind::Bluetooth
         | Kind::Battery
-        | Kind::Audio
+        | Kind::Volume
         | Kind::Brightness
         | Kind::Notifications
         | Kind::Tray

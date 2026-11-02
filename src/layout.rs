@@ -14,16 +14,13 @@ use strum::{AsRefStr, EnumIter, EnumString, IntoEnumIterator, IntoStaticStr};
 pub enum Kind {
     Clock,
     Calendar,
-    #[strum(to_string = "system-monitor")]
-    Perf,
+    SystemMonitor,
     Windows,
-    #[strum(to_string = "claude-sessions")]
-    Claude,
+    ClaudeSessions,
     Wifi,
     Bluetooth,
     Battery,
-    #[strum(to_string = "volume")]
-    Audio,
+    Volume,
     Brightness,
     Notifications,
     Tray,
@@ -59,12 +56,12 @@ impl Kind {
         match self {
             Kind::Clock
             | Kind::Calendar
-            | Kind::Perf
-            | Kind::Claude
+            | Kind::SystemMonitor
+            | Kind::ClaudeSessions
             | Kind::Wifi
             | Kind::Bluetooth
             | Kind::Battery
-            | Kind::Audio
+            | Kind::Volume
             | Kind::Brightness
             | Kind::Weather
             | Kind::Memory
@@ -91,13 +88,13 @@ impl Kind {
         match self {
             Kind::Clock => "Clock",
             Kind::Calendar => "Calendar",
-            Kind::Perf => "System monitor",
+            Kind::SystemMonitor => "System monitor",
             Kind::Windows => "Windows",
-            Kind::Claude => "Claude sessions",
+            Kind::ClaudeSessions => "Claude sessions",
             Kind::Wifi => "Wi-Fi",
             Kind::Bluetooth => "Bluetooth",
             Kind::Battery => "Battery & power",
-            Kind::Audio => "Volume",
+            Kind::Volume => "Volume",
             Kind::Brightness => "Brightness",
             Kind::Notifications => "Notifications",
             Kind::Tray => "Tray",
@@ -123,15 +120,15 @@ impl Kind {
         match self {
             Kind::Clock => "Digital, or analog when round",
             Kind::Calendar => "Month view",
-            Kind::Perf => "CPU, memory, network, temperature",
+            Kind::SystemMonitor => "CPU, memory, network, temperature",
             Kind::Windows => "Open windows by workspace; click to focus",
-            Kind::Claude => "Running Claude Code sessions; click to focus",
+            Kind::ClaudeSessions => "Running Claude Code sessions; click to focus",
             Kind::Wifi => "Networks, connect, radio on/off",
             Kind::Bluetooth => "Devices, connect, adapter on/off",
             Kind::Battery => {
                 "Charge, power profile; device batteries and sleep blockers when bigger"
             }
-            Kind::Audio => "Speaker and microphone; outputs and apps when bigger",
+            Kind::Volume => "Speaker and microphone; outputs and apps when bigger",
             Kind::Brightness => "Screen backlight",
             Kind::Notifications => "Notification history",
             Kind::Tray => "Status icons and their menus",
@@ -158,13 +155,13 @@ impl Kind {
         match self {
             Kind::Clock => (4, 2),
             Kind::Calendar => (4, 4),
-            Kind::Perf => (4, 3),
+            Kind::SystemMonitor => (4, 3),
             Kind::Windows => (5, 5),
-            Kind::Claude => (4, 3),
+            Kind::ClaudeSessions => (4, 3),
             Kind::Wifi => (3, 4),
             Kind::Bluetooth => (3, 3),
             Kind::Battery => (3, 2),
-            Kind::Audio => (3, 3),
+            Kind::Volume => (3, 3),
             Kind::Brightness => (3, 1),
             Kind::Notifications => (4, 5),
             Kind::Tray => (4, 1),
@@ -190,13 +187,13 @@ impl Kind {
         match self {
             Kind::Clock => (2, 1),
             Kind::Calendar => (3, 3),
-            Kind::Perf => (2, 2),
+            Kind::SystemMonitor => (2, 2),
             Kind::Windows => (3, 2),
-            Kind::Claude => (3, 2),
+            Kind::ClaudeSessions => (3, 2),
             Kind::Wifi => (2, 2),
             Kind::Bluetooth => (2, 2),
             Kind::Battery => (2, 1),
-            Kind::Audio => (2, 1),
+            Kind::Volume => (2, 1),
             Kind::Brightness => (2, 1),
             Kind::Notifications => (3, 2),
             Kind::Tray => (1, 1),
@@ -1845,11 +1842,44 @@ mod tests {
         for kind in Kind::iter() {
             assert_eq!(Kind::from_str_opt(kind.name()), Some(kind));
         }
-        assert_eq!(Kind::Perf.name(), "system-monitor");
+        // The names are what users' config.kdl files say: renaming a variant must not change one.
+        let names: Vec<&str> = Kind::iter().map(Kind::name).collect();
+        assert_eq!(
+            names,
+            [
+                "clock",
+                "calendar",
+                "system-monitor",
+                "windows",
+                "claude-sessions",
+                "wifi",
+                "bluetooth",
+                "battery",
+                "volume",
+                "brightness",
+                "notifications",
+                "tray",
+                "media",
+                "session",
+                "clipboard",
+                "weather",
+                "memory",
+                "disks",
+                "network",
+                "gpu",
+                "claude-usage",
+                "mascot",
+                "keyboard-layout",
+                "color-picker",
+                "timer",
+                "notes",
+                "privacy",
+            ]
+        );
         assert_eq!(Kind::from_str_opt("perf"), None);
         let (l, warnings) = Layout::parse("layout {\n  system-monitor col=0 row=0 width=4 height=3\n  volume col=4 row=0 size=2 shape=\"round\"\n}").unwrap();
         assert!(warnings.is_empty(), "{warnings:?}");
-        assert_eq!(l.widgets[0].kind, Kind::Perf);
+        assert_eq!(l.widgets[0].kind, Kind::SystemMonitor);
         assert_eq!(
             (
                 l.widgets[1].kind,
@@ -1857,7 +1887,7 @@ mod tests {
                 l.widgets[1].w,
                 l.widgets[1].h
             ),
-            (Kind::Audio, Shape::Round, 2, 2)
+            (Kind::Volume, Shape::Round, 2, 2)
         );
     }
 
@@ -1999,7 +2029,7 @@ mod tests {
             (Kind::Windows, 0, 0),
             (Kind::Wifi, 0, 6),
             (Kind::Calendar, 9, 3),
-            (Kind::Audio, 0, 0),
+            (Kind::Volume, 0, 0),
         ];
         for (kind, col, row) in cases {
             let id = id_of(&l, kind);

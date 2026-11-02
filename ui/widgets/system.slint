@@ -2,7 +2,7 @@ import { Theme, Icons } from "../theme.slint";
 import { Perf, Power, PowerProfile, DeviceKind, Audio, Brightness, Session, WidgetOpts } from "../data.slint";
 import { Icon, Ring, Graph, RingKnob, Row, Muted, Switch, ScrollList, RoundGauge, SliderRow } from "../common.slint";
 
-export component PerfWidget inherits Rectangle {
+export component SystemMonitorWidget inherits Rectangle {
     in property <bool> round;
     in property <WidgetOpts> opts;
     if root.round: RoundGauge {
@@ -288,7 +288,7 @@ export component BatteryWidget inherits Rectangle {
     }
 }
 
-export component AudioWidget inherits Rectangle {
+export component VolumeWidget inherits Rectangle {
     in property <bool> round;
     if root.round: RingKnob {
         value <=> Audio.volume;
