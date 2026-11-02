@@ -6,11 +6,34 @@ use super::enums::outfit_to_ui;
 use crate::Dash;
 use crate::layout::{Kind, Placed};
 use crate::sources::{Ctx, Msg};
-use slint::{ComponentHandle, Model, ModelRc, TimerMode};
+use slint::{ComponentHandle, Model, ModelRc, Timer, TimerMode, VecModel};
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+#[derive(Default)]
+pub(super) struct Mascots {
+    /// The mascot widgets and what each says, mirrored into `lines` by widget id.
+    board: RefCell<crate::mascots::Board>,
+    lines: Rc<VecModel<crate::MascotLine>>,
+    /// Their once-a-second tick, while the dashboard is up.
+    timer: Timer,
+}
+
 impl App {
+    /// The dashboard came up or went away: the mascots pop up with something new, and their
+    /// tick only runs while they can be seen.
+    pub(super) fn mascots_awake(&self, on: bool) {
+        self.ui().global::<crate::Mascots>().set_awake(on);
+        if on {
+            let todo = self.mascots.board.borrow_mut().wake(Instant::now());
+            self.mascot_todo(todo);
+            self.mascots.timer.restart();
+        } else {
+            self.mascots.timer.stop();
+        }
+    }
+
     /// Match the mascots to the mascot widgets on the dashboard (or the standalone app's).
     pub(super) fn sync_mascots(&self) {
         use crate::mascots::Spec;
@@ -37,7 +60,7 @@ impl App {
             })
             .collect();
         drop(layout);
-        let todo = self.mascots.borrow_mut().sync(specs, Instant::now());
+        let todo = self.mascots.board.borrow_mut().sync(specs, Instant::now());
         self.mascot_todo(todo);
     }
 
@@ -53,7 +76,7 @@ impl App {
 
     /// Mirror the board into `Mascots.lines`, indexed by widget id.
     fn push_mascots(&self) {
-        let mut board = self.mascots.borrow_mut();
+        let mut board = self.mascots.board.borrow_mut();
         if !board.take_dirty() {
             return;
         }
@@ -70,7 +93,7 @@ impl App {
             }
         }
         drop(board);
-        let model = &self.mascot_lines;
+        let model = &self.mascots.lines;
         if model.row_count() == rows.len() {
             for (i, row) in rows.into_iter().enumerate() {
                 if model.row_data(i).as_ref() != Some(&row) {
@@ -83,12 +106,12 @@ impl App {
     }
 
     fn mascot_tick(&self) {
-        let todo = self.mascots.borrow_mut().tick(Instant::now());
+        let todo = self.mascots.board.borrow_mut().tick(Instant::now());
         self.mascot_todo(todo);
     }
 
     pub(super) fn mascot_say(&self, say: crate::mascots::Say) {
-        let result = self.mascots.borrow_mut().say(&say, Instant::now());
+        let result = self.mascots.board.borrow_mut().say(&say, Instant::now());
         match result {
             Ok(_) => self.push_mascots(),
             Err(e) => {
@@ -103,7 +126,10 @@ impl App {
         id: u32,
         out: Option<(String, Option<crate::mascots::Outfit>)>,
     ) {
-        self.mascots.borrow_mut().answer(id, out, Instant::now());
+        self.mascots
+            .board
+            .borrow_mut()
+            .answer(id, out, Instant::now());
         self.push_mascots();
     }
 }
@@ -143,19 +169,20 @@ fn run_mascot_command(ctx: &Ctx, id: u32, command: String, name: &'static str) {
 
 pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     ui.global::<crate::Mascots>()
-        .set_lines(ModelRc::from(app.mascot_lines.clone()));
+        .set_lines(ModelRc::from(app.mascots.lines.clone()));
     let a = Rc::downgrade(&app);
-    app.mascot_timer
+    app.mascots
+        .timer
         .start(TimerMode::Repeated, Duration::from_secs(1), move || {
             if let Some(a) = a.upgrade() {
                 a.mascot_tick();
             }
         });
-    app.mascot_timer.stop();
+    app.mascots.timer.stop();
     let a = Rc::downgrade(&app);
     ui.global::<crate::Mascots>().on_next(move |id| {
         if let Some(a) = a.upgrade() {
-            let todo = a.mascots.borrow_mut().next(id as u32, Instant::now());
+            let todo = a.mascots.board.borrow_mut().next(id as u32, Instant::now());
             a.mascot_todo(vec![todo]);
         }
     });

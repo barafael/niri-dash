@@ -4,9 +4,22 @@ use super::{App, model, set_if_changed};
 use crate::layout::Kind;
 use crate::{CalDay, Calendar, Clock, Dash};
 use chrono::{Datelike, Local, Timelike};
-use slint::{ComponentHandle, Model, ModelRc, SharedString};
+use slint::{ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, VecModel};
+use std::cell::Cell;
 use std::rc::Rc;
 use std::time::Duration;
+
+#[derive(Default)]
+pub(super) struct ClockState {
+    /// Ticks the clock while the dashboard is up.
+    timer: Timer,
+    /// The month the calendar shows, from this one.
+    month_offset: Cell<i32>,
+    /// The day the calendar was last built for.
+    last_day: Cell<u32>,
+    /// `Clock.zones`, by widget id.
+    zones: Rc<VecModel<crate::ZoneList>>,
+}
 
 pub(super) fn clock_text(t: chrono::DateTime<chrono::Local>, us: bool) -> String {
     if us {
@@ -17,13 +30,20 @@ pub(super) fn clock_text(t: chrono::DateTime<chrono::Local>, us: bool) -> String
 }
 
 impl App {
+    /// The dashboard opens: back to the current month and time, ticking every second.
+    pub(super) fn start_clock(&self) {
+        self.clock.month_offset.set(0);
+        self.tick_clock(true);
+        self.arm_clock();
+    }
+
     /// Arm the clock's single-shot timer for just after the next full second. It re-arms itself
     /// while the dashboard is up and lapses when hidden: nothing reads the clock then, and `show`
     /// ticks it right away.
     pub(super) fn arm_clock(&self) {
         let next = 1_005 - Local::now().timestamp_subsec_millis().min(999) as u64;
-        self.clock_timer.set_interval(Duration::from_millis(next));
-        self.clock_timer.restart();
+        self.clock.timer.set_interval(Duration::from_millis(next));
+        self.clock.timer.restart();
     }
 
     pub(super) fn tick_clock(&self, force_calendar: bool) {
@@ -49,15 +69,15 @@ impl App {
         c.set_minute(m + s / 60.0);
         c.set_second(s);
         self.tick_zones();
-        if force_calendar || self.last_day.get() != now.day() {
-            self.last_day.set(now.day());
+        if force_calendar || self.clock.last_day.get() != now.day() {
+            self.clock.last_day.set(now.day());
             self.build_calendar();
         }
     }
 
     fn build_calendar(&self) {
         let today = Local::now().date_naive();
-        let off = self.month_offset.get();
+        let off = self.clock.month_offset.get();
         let months = today.year() * 12 + today.month0() as i32 + off;
         let (y, m) = (months.div_euclid(12), months.rem_euclid(12) as u32 + 1);
         let first = chrono::NaiveDate::from_ymd_opt(y, m, 1).expect("valid month");
@@ -151,7 +171,7 @@ impl App {
                 items: model(items),
             };
         }
-        set_if_changed(&self.zones, rows, |a, b| {
+        set_if_changed(&self.clock.zones, rows, |a, b| {
             a.items.row_count() == b.items.row_count()
                 && a.items.iter().zip(b.items.iter()).all(|(x, y)| x == y)
         });
@@ -160,12 +180,26 @@ impl App {
 
 pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     ui.global::<crate::Clock>()
-        .set_zones(ModelRc::from(app.zones.clone()));
+        .set_zones(ModelRc::from(app.clock.zones.clone()));
     // Calendar.
     let a = app.clone();
     ui.global::<Calendar>().on_shift(move |d| {
-        a.month_offset
-            .set(if d == 0 { 0 } else { a.month_offset.get() + d });
+        a.clock.month_offset.set(if d == 0 {
+            0
+        } else {
+            a.clock.month_offset.get() + d
+        });
         a.build_calendar();
     });
+    let a = Rc::downgrade(app);
+    app.clock
+        .timer
+        .start(TimerMode::SingleShot, Duration::from_secs(1), move || {
+            if let Some(a) = a.upgrade()
+                && a.ctx.visible()
+            {
+                a.tick_clock(false);
+                a.arm_clock();
+            }
+        });
 }

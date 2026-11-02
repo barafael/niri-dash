@@ -5,8 +5,8 @@ use crate::layout::{Kind, Layout};
 use crate::shell::{Mode, Shell};
 use crate::sources::{
     self, Ctx, IconSrc, Msg, audio::Audio, bluetooth::Bluetooth, brightness::Brightness,
-    clipboard::Clip, inhibit::Inhibit, media::Media, niri, notifications::Notifications, tray,
-    weather::Weather, wifi::Wifi,
+    inhibit::Inhibit, media::Media, niri, notifications::Notifications, tray, weather::Weather,
+    wifi::Wifi,
 };
 use crate::theme;
 use crate::{Control, named_socket_path, socket_path};
@@ -29,11 +29,9 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::timer::{Countdown, Stopwatch};
 use crate::{
     Clipboard as UiClipboard, Dash, Power as UiPower, Shell as UiShell, Tray as UiTray, WidgetInst,
 };
-use clipboard::ClipEntry;
 use config::watch_config;
 
 mod audio;
@@ -158,15 +156,12 @@ struct App {
     images: RefCell<HashMap<PathBuf, (Option<Image>, u64)>>,
     image_uses: Cell<u64>,
     pending: RefCell<Vec<Control>>,
-    month_offset: Cell<i32>,
-    last_day: Cell<u32>,
     locale: (chrono::Locale, bool),
     audio_touched: Cell<Option<Instant>>,
     brightness_touched: Cell<Option<Instant>>,
     tray_items: RefCell<Vec<tray::Item>>,
     menu_address: RefCell<String>,
     toast_timer: Timer,
-    clock_timer: Timer,
     /// Drives the blend between two themes.
     look_timer: Rc<Timer>,
     /// Installed font families for the Style tab (looked up on first use).
@@ -175,11 +170,8 @@ struct App {
     reveal_pending: Cell<bool>,
     /// When the exit animation ends and the surface goes away.
     hide_at: Cell<Option<Instant>>,
-    clips: RefCell<Vec<ClipEntry>>,
     /// While dragging: the widget being dragged (0 for a new one) and where others would go.
     preview: RefCell<Option<(u32, crate::layout::Reflow)>>,
-    /// A clipboard entry to put back on the clipboard (needs the Wayland side).
-    pending_clip: RefCell<Option<Clip>>,
     claude_windows: RefCell<HashMap<i32, u64>>,
     /// config.kdl as we last wrote it, to ignore our own writes when watching the file.
     last_written: RefCell<String>,
@@ -195,36 +187,18 @@ struct App {
     tray: tray::Tray,
     media: Media,
     inhibit: Inhibit,
-    /// The mascot widgets and what each says, mirrored into `Mascots.lines` by widget id.
-    mascots: RefCell<crate::mascots::Board>,
-    mascot_lines: Rc<VecModel<crate::MascotLine>>,
-    mascot_timer: Timer,
+    /// What the daemon keeps across restarts (do not disturb, the timer, picked colors).
     state: RefCell<crate::state::State>,
-    /// Waiting for the dashboard to get out of the way before picking a color.
-    pending_pick: Cell<bool>,
-    /// The dashboard was open when the pick started, so it comes back afterwards.
-    reshow_after_pick: Cell<bool>,
-    zones: Rc<VecModel<crate::ZoneList>>,
-    countdown: RefCell<Countdown>,
-    stopwatch: RefCell<Stopwatch>,
-    /// Updates the timer widgets while the dashboard is up and something runs.
-    timer_ticker: Rc<Timer>,
-    /// Goes off when the countdown ends, shown or not.
-    timer_end: Rc<Timer>,
-    /// Clears the "Done" a while after the countdown went off.
-    timer_done: Rc<Timer>,
-    /// Note texts by note name, and the names with unsaved changes.
-    notes: RefCell<std::collections::HashMap<String, String>>,
-    notes_dirty: RefCell<std::collections::HashSet<String>>,
-    note_texts: Rc<VecModel<slint::SharedString>>,
-    note_names: Rc<VecModel<slint::SharedString>>,
-    notes_save: Rc<Timer>,
+    clock: clock::ClockState,
+    timers: timer::Timers,
+    notes: notes::Notes,
+    picker: color_picker::Picker,
+    privacy: privacy::Privacy,
+    mascots: mascots::Mascots,
+    clipboard: clipboard::History,
     /// Per-app volume rows, and the slider being dragged (its value isn't overwritten).
     streams: Rc<VecModel<crate::AudioStream>>,
     stream_touched: Cell<Option<(u32, std::time::Instant)>>,
-    /// Screencasts (from niri) and mic/camera use (from PipeWire), for the privacy widget.
-    casts: RefCell<Vec<niri::ScreenCast>>,
-    usage: RefCell<crate::sources::privacy::Usage>,
 }
 
 impl App {
@@ -313,9 +287,7 @@ impl App {
             self.ctx.set_visible(false);
             self.set_awake(false);
         }
-        if let Some(clip) = self.pending_clip.borrow_mut().take() {
-            shell.set_clipboard(clip);
-        }
+        self.push_pending_clip(shell);
         self.tick_pick(shell);
     }
 
@@ -338,8 +310,7 @@ impl App {
             // Shown again during the exit animation: just turn around.
             self.ui().set_shown(true);
         } else if !shell.is_visible() {
-            self.month_offset.set(0);
-            self.tick_clock(true);
+            self.start_clock();
             let ui = self.ui();
             ui.invoke_reset();
             ui.set_shown(false);
@@ -352,7 +323,6 @@ impl App {
             self.reveal_pending.set(true);
             self.ctx.set_visible(true);
             self.set_awake(true);
-            self.arm_clock();
         } else if self.solo.is_some() {
             // Already open: bring the window to the front.
             focus_own_window(&self.ctx);
@@ -386,18 +356,11 @@ impl App {
         ));
     }
 
-    /// The dashboard came up or went away: the mascots pop up with something new, and their
-    /// once-a-second tick only runs while they can be seen.
+    /// The dashboard came up or went away: notes, timers and mascots only run while seen.
     fn set_awake(&self, on: bool) {
+        self.notes_awake(on);
         self.timers_awake(on);
-        self.ui().global::<crate::Mascots>().set_awake(on);
-        if on {
-            let todo = self.mascots.borrow_mut().wake(Instant::now());
-            self.mascot_todo(todo);
-            self.mascot_timer.restart();
-        } else {
-            self.mascot_timer.stop();
-        }
+        self.mascots_awake(on);
     }
 
     fn control(&self, shell: &mut Shell, c: Control) {
@@ -586,22 +549,17 @@ fn build(ui: &Dash, ctx: Ctx, solo: Option<Kind>) -> Rc<App> {
         images: Default::default(),
         image_uses: Cell::new(0),
         pending: Default::default(),
-        month_offset: Cell::new(0),
-        last_day: Cell::new(0),
         locale,
         audio_touched: Cell::new(None),
         brightness_touched: Cell::new(None),
         tray_items: Default::default(),
         menu_address: Default::default(),
         toast_timer: Timer::default(),
-        clock_timer: Timer::default(),
         look_timer: Default::default(),
         fonts: Default::default(),
         reveal_pending: Cell::new(false),
         hide_at: Cell::new(None),
-        clips: Default::default(),
         preview: Default::default(),
-        pending_clip: Default::default(),
         claude_windows: Default::default(),
         last_written: RefCell::new(std::fs::read_to_string(Layout::path()).unwrap_or_default()),
         config_broken: Cell::new(config_broken),
@@ -615,27 +573,16 @@ fn build(ui: &Dash, ctx: Ctx, solo: Option<Kind>) -> Rc<App> {
         tray: tray::Tray::start(feed_ctx(Feed::Tray)),
         media: Media::start(feed_ctx(Feed::Media)),
         inhibit: Inhibit::start(feed_ctx(Feed::Inhibit)),
-        mascots: Default::default(),
-        mascot_lines: Rc::new(VecModel::default()),
-        mascot_timer: Timer::default(),
-        countdown: RefCell::new(timer::restored_countdown(&state)),
-        stopwatch: Default::default(),
-        timer_ticker: Default::default(),
-        timer_end: Default::default(),
-        timer_done: Default::default(),
-        notes: Default::default(),
-        notes_dirty: Default::default(),
-        note_texts: Rc::new(VecModel::default()),
-        note_names: Rc::new(VecModel::default()),
-        notes_save: Default::default(),
         streams: Rc::new(VecModel::default()),
         stream_touched: Cell::new(None),
-        casts: Default::default(),
-        usage: Default::default(),
+        clock: Default::default(),
+        timers: timer::Timers::restored(&state),
+        notes: Default::default(),
+        picker: Default::default(),
+        privacy: Default::default(),
+        mascots: Default::default(),
+        clipboard: Default::default(),
         state: RefCell::new(state),
-        pending_pick: Cell::new(false),
-        reshow_after_pick: Cell::new(false),
-        zones: Rc::new(VecModel::default()),
         ctx: ctx.clone(),
     });
     wire(&app, ui);
@@ -654,16 +601,6 @@ fn build(ui: &Dash, ctx: Ctx, solo: Option<Kind>) -> Rc<App> {
     app.sync_grid();
     app.sync_widgets();
     app.tick_clock(true);
-    let a = Rc::downgrade(&app);
-    app.clock_timer
-        .start(TimerMode::SingleShot, Duration::from_secs(1), move || {
-            if let Some(a) = a.upgrade()
-                && a.ctx.visible()
-            {
-                a.tick_clock(false);
-                a.arm_clock();
-            }
-        });
     app
 }
 

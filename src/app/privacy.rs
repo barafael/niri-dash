@@ -4,12 +4,23 @@ use super::{App, model};
 use crate::Dash;
 use crate::sources::{self, niri};
 use slint::ComponentHandle;
+use std::cell::RefCell;
 use std::rc::Rc;
+
+/// What the privacy widget shows.
+#[derive(Default)]
+pub(super) struct Privacy {
+    /// Screencasts, from niri.
+    casts: RefCell<Vec<niri::ScreenCast>>,
+    /// Microphone and camera use, from PipeWire.
+    usage: RefCell<sources::privacy::Usage>,
+}
 
 impl App {
     pub(super) fn set_casts(&self, casts: Vec<niri::ScreenCast>) {
         let started = casts.iter().any(|c| {
             !self
+                .privacy
                 .casts
                 .borrow()
                 .iter()
@@ -18,19 +29,19 @@ impl App {
         if started {
             self.osd("Screen sharing started", "video-display");
         }
-        *self.casts.borrow_mut() = casts;
+        *self.privacy.casts.borrow_mut() = casts;
         self.push_privacy();
     }
 
     pub(super) fn set_privacy_usage(&self, usage: sources::privacy::Usage) {
-        *self.usage.borrow_mut() = usage;
+        *self.privacy.usage.borrow_mut() = usage;
         self.push_privacy();
     }
 
     fn push_privacy(&self) {
         use crate::{PrivacyItem, PrivacyKind};
-        let usage = self.usage.borrow();
-        let casts = self.casts.borrow();
+        let usage = self.privacy.usage.borrow();
+        let casts = self.privacy.casts.borrow();
         let mut items = Vec::new();
         for app in &usage.mic {
             items.push(PrivacyItem {

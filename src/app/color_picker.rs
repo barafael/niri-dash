@@ -5,10 +5,19 @@ use crate::shell::Shell;
 use crate::sources::{Msg, niri};
 use crate::{Control, Dash};
 use slint::ComponentHandle;
+use std::cell::Cell;
 use std::rc::Rc;
 
 /// How many picked colors are kept.
 const COLORS: usize = 8;
+
+#[derive(Default)]
+pub(super) struct Picker {
+    /// Waiting for the dashboard to get out of the way before picking a color.
+    pending: Cell<bool>,
+    /// The dashboard was open when the pick started, so it comes back afterwards.
+    reshow: Cell<bool>,
+}
 
 impl App {
     pub(super) fn color_picked(&self, rgb: Option<[f64; 3]>) -> Option<Control> {
@@ -22,7 +31,7 @@ impl App {
             self.push_colors();
             self.copy_text(&hex);
         }
-        if self.reshow_after_pick.take() {
+        if self.picker.reshow.take() {
             return Some(Control::Show);
         }
 
@@ -31,8 +40,8 @@ impl App {
 
     /// Called every loop iteration: pick once the dashboard is out of the way.
     pub(super) fn tick_pick(&self, shell: &mut Shell) {
-        if self.pending_pick.get() && !shell.is_visible() {
-            self.pending_pick.set(false);
+        if self.picker.pending.get() && !shell.is_visible() {
+            self.picker.pending.set(false);
             self.run_pick();
         }
     }
@@ -44,8 +53,8 @@ impl App {
             return;
         }
         // The dashboard covers everything: hide it, pick once it's gone, then come back.
-        self.reshow_after_pick.set(true);
-        self.pending_pick.set(true);
+        self.picker.reshow.set(true);
+        self.picker.pending.set(true);
         self.pending.borrow_mut().push(Control::Hide);
     }
 

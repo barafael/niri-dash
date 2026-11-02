@@ -1,13 +1,39 @@
-//! Sticky notes: each a Markdown file in the data directory, shared by widgets with the same note name.
+//! Sticky notes: each a Markdown file in the data directory, shared by widgets with the same note
+//! name.
 
 use super::{App, set_if_changed};
 use crate::Dash;
 use crate::layout::Kind;
-use slint::{ComponentHandle, Model, ModelRc, TimerMode};
+use slint::{ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, VecModel};
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::time::Duration;
 
+#[derive(Default)]
+pub(super) struct Notes {
+    /// Note texts by note name, and the names with unsaved changes.
+    texts_by_name: RefCell<HashMap<String, String>>,
+    dirty: RefCell<HashSet<String>>,
+    /// `Notes.texts` and `Notes.names`, by widget id.
+    texts: Rc<VecModel<SharedString>>,
+    names: Rc<VecModel<SharedString>>,
+    /// Saves once typing pauses.
+    save: Timer,
+}
+
 impl App {
+    /// The dashboard came up or went away: read the notes again on show (they may have been
+    /// edited elsewhere), save right away on hide.
+    pub(super) fn notes_awake(&self, visible: bool) {
+        if visible {
+            self.sync_notes(true);
+        } else if !self.notes.dirty.borrow().is_empty() {
+            self.notes.save.stop();
+            self.save_notes();
+        }
+    }
+
     /// The notes widgets and their note names, by widget id.
     fn note_widgets(&self) -> Vec<(u32, String)> {
         use crate::widget_settings::{Opt, get_str};
@@ -33,12 +59,12 @@ impl App {
     /// (they may have been edited elsewhere).
     pub(super) fn sync_notes(&self, reload: bool) {
         let widgets = self.note_widgets();
-        if widgets.is_empty() && self.note_texts.row_count() == 0 {
+        if widgets.is_empty() && self.notes.texts.row_count() == 0 {
             return;
         }
         {
-            let mut notes = self.notes.borrow_mut();
-            let dirty = self.notes_dirty.borrow();
+            let mut notes = self.notes.texts_by_name.borrow_mut();
+            let dirty = self.notes.dirty.borrow();
             for (_, name) in &widgets {
                 if dirty.contains(name) {
                     continue;
@@ -54,15 +80,15 @@ impl App {
             .map(|(id, _)| *id as usize + 1)
             .max()
             .unwrap_or(0);
-        let notes = self.notes.borrow();
+        let notes = self.notes.texts_by_name.borrow();
         let mut texts = vec![slint::SharedString::new(); len];
         let mut names = vec![slint::SharedString::new(); len];
         for (id, name) in widgets {
             texts[id as usize] = notes.get(&name).cloned().unwrap_or_default().into();
             names[id as usize] = title_case(&name).into();
         }
-        set_if_changed(&self.note_texts, texts, |a, b| a == b);
-        set_if_changed(&self.note_names, names, |a, b| a == b);
+        set_if_changed(&self.notes.texts, texts, |a, b| a == b);
+        set_if_changed(&self.notes.names, names, |a, b| a == b);
     }
 
     fn note_edited(&self, id: u32, text: String) {
@@ -74,22 +100,26 @@ impl App {
         else {
             return;
         };
-        self.notes.borrow_mut().insert(name.clone(), text.clone());
-        self.notes_dirty.borrow_mut().insert(name.clone());
+        self.notes
+            .texts_by_name
+            .borrow_mut()
+            .insert(name.clone(), text.clone());
+        self.notes.dirty.borrow_mut().insert(name.clone());
         // Other widgets showing the same note follow; the one being typed in keeps its text.
         for (other, n) in self.note_widgets() {
             if other != id && n == name {
-                self.note_texts
+                self.notes
+                    .texts
                     .set_row_data(other as usize, text.as_str().into());
             }
         }
         // Single-shot, restarted by every keystroke: saves once typing pauses.
-        self.notes_save.restart();
+        self.notes.save.restart();
     }
 
     pub(super) fn save_notes(&self) {
-        let dirty: Vec<String> = self.notes_dirty.borrow_mut().drain().collect();
-        let notes = self.notes.borrow();
+        let dirty: Vec<String> = self.notes.dirty.borrow_mut().drain().collect();
+        let notes = self.notes.texts_by_name.borrow();
         for name in dirty {
             let path = note_path(&name);
             let text = notes.get(&name).map(String::as_str).unwrap_or("");
@@ -152,18 +182,19 @@ fn title_case(name: &str) -> String {
 
 pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     let nt = ui.global::<crate::Notes>();
-    nt.set_texts(ModelRc::from(app.note_texts.clone()));
-    nt.set_names(ModelRc::from(app.note_names.clone()));
+    nt.set_texts(ModelRc::from(app.notes.texts.clone()));
+    nt.set_names(ModelRc::from(app.notes.names.clone()));
     let a = app.clone();
     nt.on_edited(move |id, text| a.note_edited(id as u32, text.into()));
     let w = Rc::downgrade(app);
-    app.notes_save
+    app.notes
+        .save
         .start(TimerMode::SingleShot, Duration::from_secs(1), move || {
             if let Some(a) = w.upgrade() {
                 a.save_notes();
             }
         });
-    app.notes_save.stop();
+    app.notes.save.stop();
 }
 
 #[cfg(test)]

@@ -1,18 +1,27 @@
 //! The clipboard history: what the shell reports, and putting an entry back.
 
 use super::{App, model};
+use crate::shell::Shell;
 use crate::sources::clipboard::{self, Clip};
 use crate::{ClipItem, Clipboard as UiClipboard, Dash};
 use chrono::Local;
 use slint::{ComponentHandle, Image, Rgba8Pixel, SharedPixelBuffer};
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
+
+#[derive(Default)]
+pub(super) struct History {
+    entries: RefCell<Vec<ClipEntry>>,
+    /// An entry to put back on the clipboard (needs the Wayland side).
+    pending: RefCell<Option<Clip>>,
+}
 
 /// Largest side of a clipboard thumbnail in pixels; the list shows them at most ~100 px (logical)
 /// wide, so this covers scale 2.
 const CLIP_THUMB: u32 = 240;
 
-pub(super) struct ClipEntry {
+struct ClipEntry {
     clip: Clip,
     text: String,
     /// The image's full size, and a thumbnail: a screenshot decoded at full size is 16 MB, and
@@ -22,10 +31,18 @@ pub(super) struct ClipEntry {
 }
 
 impl App {
+    /// Called every loop iteration: hand a copied entry to the shell.
+    pub(super) fn push_pending_clip(&self, shell: &mut Shell) {
+        if let Some(clip) = self.clipboard.pending.borrow_mut().take() {
+            shell.set_clipboard(clip);
+        }
+    }
+
     fn clip_items(&self) {
         let today = Local::now().date_naive();
         let items: Vec<ClipItem> = self
-            .clips
+            .clipboard
+            .entries
             .borrow()
             .iter()
             .enumerate()
@@ -60,7 +77,7 @@ impl App {
     }
 
     pub(super) fn add_clip(&self, clip: Clip) {
-        let mut clips = self.clips.borrow_mut();
+        let mut clips = self.clipboard.entries.borrow_mut();
         if let Some(pos) = clips.iter().position(|c| c.clip.data == clip.data) {
             let mut e = clips.remove(pos);
             e.time = Local::now();
@@ -96,7 +113,7 @@ impl App {
     }
 
     pub(super) fn copy_text(&self, text: &str) {
-        *self.pending_clip.borrow_mut() = Some(clipboard::Clip {
+        *self.clipboard.pending.borrow_mut() = Some(clipboard::Clip {
             kind: clipboard::ClipKind::Text,
             data: Arc::new(text.as_bytes().to_vec()),
         });
@@ -108,15 +125,20 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     let cb = ui.global::<UiClipboard>();
     let a = app.clone();
     cb.on_copy(move |i| {
-        let clip = a.clips.borrow().get(i as usize).map(|c| c.clip.clone());
+        let clip = a
+            .clipboard
+            .entries
+            .borrow()
+            .get(i as usize)
+            .map(|c| c.clip.clone());
         if let Some(clip) = clip {
-            *a.pending_clip.borrow_mut() = Some(clip);
+            *a.clipboard.pending.borrow_mut() = Some(clip);
             a.toast("Copied");
         }
     });
     let a = app.clone();
     cb.on_remove(move |i| {
-        let mut clips = a.clips.borrow_mut();
+        let mut clips = a.clipboard.entries.borrow_mut();
         if (i as usize) < clips.len() {
             clips.remove(i as usize);
         }
@@ -125,7 +147,7 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     });
     let a = app.clone();
     cb.on_clear(move || {
-        a.clips.borrow_mut().clear();
+        a.clipboard.entries.borrow_mut().clear();
         a.clip_items();
     });
 }
