@@ -1,8 +1,11 @@
 //! The Wayland side: a fullscreen wlr-layer-shell surface on the overlay layer that hosts the Slint
-//! UI (or, for a standalone app, an ordinary xdg-shell window). Slint renders with its software renderer into a pixel buffer that is already in wl_shm's
-//! ARGB8888 byte order, so presenting a frame is one memcpy. Pointer and keyboard input are
-//! translated into Slint window events. The surface only exists while the dashboard is shown; the
-//! Slint component stays alive so state and history survive hiding.
+//! UI (or, for a standalone app, an ordinary xdg-shell window), plus the clipboard through
+//! wlr-data-control. Frames come from one of two renderers: FemtoVG draws with OpenGL ES straight
+//! onto the surface and eglSwapBuffers commits it (`gpu`), or Slint's software renderer draws into
+//! a pixel buffer that is already in wl_shm's ARGB8888 byte order, so presenting a frame is one
+//! memcpy into a shm buffer. Pointer and keyboard input are translated into Slint window events.
+//! The surface only exists while the dashboard is shown; the Slint component stays alive so state
+//! and history survive hiding.
 
 use crate::sources::Msg;
 use crate::sources::clipboard::{self, Clip};
@@ -139,6 +142,7 @@ impl Role {
 
 struct Surface {
     role: Role,
+    /// Absent without fractional-scale support; the buffer then has an integer scale.
     fractional: Option<WpFractionalScaleV1>,
     viewport: Option<WpViewport>,
     /// Background blur (frosted glass) for this surface, when the compositor offers it.
@@ -150,6 +154,38 @@ struct Surface {
     height: u32,
     configured: bool,
     frame_pending: bool,
+}
+
+impl Surface {
+    /// Map the next buffer (`scale` times the logical size) onto the surface and ask for a frame
+    /// callback; both apply with the next commit.
+    fn prepare_frame(&self, qh: &QueueHandle<Shell>, scale: f64) {
+        let wl = self.role.wl_surface();
+        if let Some(v) = &self.viewport {
+            v.set_destination(self.width as i32, self.height as i32);
+        } else {
+            wl.set_buffer_scale(scale as i32);
+        }
+        wl.frame(qh, FrameCallbackData(wl.clone()));
+    }
+}
+
+/// Where the software renderer's frames go: rendered into `pixels`, then copied into whichever
+/// shm buffer the compositor isn't reading.
+struct ShmTarget {
+    window: Rc<MinimalSoftwareWindow>,
+    pool: SlotPool,
+    buffers: Vec<Buffer>,
+    pixels: Vec<Bgra>,
+    /// Changed area (x0, y0, x1, y1) not yet presented to the compositor.
+    damage: Option<(i32, i32, i32, i32)>,
+}
+
+/// How frames reach the surface.
+enum Output {
+    Shm(ShmTarget),
+    /// FemtoVG draws, eglSwapBuffers attaches and commits.
+    Egl(Rc<crate::gpu::GpuWindow>, Rc<crate::gpu::Gl>),
 }
 
 /// Mime types announced by a clipboard offer.
@@ -175,8 +211,6 @@ pub struct Shell {
     xdg_shell: Option<XdgShell>,
     mode: Mode,
     shm: Shm,
-    pool: SlotPool,
-    buffers: Vec<Buffer>,
     fractional_manager: Option<WpFractionalScaleManagerV1>,
     background_effect: Option<ExtBackgroundEffectManagerV1>,
     glass: bool,
@@ -192,17 +226,13 @@ pub struct Shell {
     scale: f64,
     /// The Slint window, whichever renderer draws it.
     window: Rc<dyn WindowAdapter>,
-    backend: Backend,
-    pixels: Vec<Bgra>,
-    /// Physical size `pixels` was allocated for.
-    pixel_size: (u32, u32),
-    /// `pixels` holds no valid frame (fresh after show/resize): render everything next time.
-    needs_full: bool,
-    /// Changed area (x0, y0, x1, y1) not yet presented to the compositor.
-    pending_damage: Option<(i32, i32, i32, i32)>,
-    /// Frames presented since the surface was created.
+    output: Output,
+    /// Physical size the window was last laid out (and the software frame allocated) for; (0, 0)
+    /// after hiding, so the next frame starts afresh.
+    frame_size: (u32, u32),
     /// When the last GPU frame was drawn, for `MIN_FRAME_GAP`.
     last_frame: Option<std::time::Instant>,
+    /// Frames presented since the surface was created.
     pub presented: u32,
     /// Set when the compositor closed our surface (output went away etc).
     pub closed_by_compositor: bool,
@@ -248,7 +278,17 @@ impl Shell {
                 ),
             };
         let shm = Shm::bind(globals, &qh).map_err(|e| ShellError::Bind("wl_shm", e))?;
-        let pool = SlotPool::new(2560 * 1600 * 4, &shm)?;
+        let window = backend.adapter();
+        let output = match backend {
+            Backend::Software(window) => Output::Shm(ShmTarget {
+                window,
+                pool: SlotPool::new(2560 * 1600 * 4, &shm)?,
+                buffers: Vec::new(),
+                pixels: Vec::new(),
+                damage: None,
+            }),
+            Backend::Gpu(window, gl) => Output::Egl(window, gl),
+        };
         let fractional_manager = globals
             .bind::<WpFractionalScaleManagerV1, _, _>(&qh, 1..=1, ())
             .ok();
@@ -276,8 +316,6 @@ impl Shell {
             xdg_shell,
             mode,
             shm,
-            pool,
-            buffers: Vec::new(),
             fractional_manager,
             background_effect,
             glass: false,
@@ -294,12 +332,9 @@ impl Shell {
             cursor: CursorIcon::Default,
             scroll_gesture: false,
             scale: 1.0,
-            window: backend.adapter(),
-            backend,
-            pixels: Vec::new(),
-            pixel_size: (0, 0),
-            needs_full: true,
-            pending_damage: None,
+            window,
+            output,
+            frame_size: (0, 0),
             presented: 0,
             last_frame: None,
             closed_by_compositor: false,
@@ -352,6 +387,20 @@ impl Shell {
         s.blurred = self.glass;
         // Applied on the next commit.
         self.window.window().request_redraw();
+    }
+
+    /// The compositor gave the surface its (logical) size: draw for it.
+    fn configured(&mut self, width: u32, height: u32) {
+        if let Some(s) = self.surface.as_mut() {
+            s.width = width;
+            s.height = height;
+            s.configured = true;
+            s.frame_pending = false;
+            // The size may have changed: the blur region has to follow.
+            s.blurred = false;
+            self.window.window().request_redraw();
+        }
+        self.apply_glass();
     }
 
     /// The surface exists and the compositor has told us its size.
@@ -436,8 +485,10 @@ impl Shell {
     }
 
     pub fn hide(&mut self) {
-        if let Backend::Gpu(_, gl) = &self.backend {
-            gl.detach();
+        match &mut self.output {
+            Output::Egl(_, gl) => gl.detach(),
+            // The buffers belonged to the old surface; the pool is reused.
+            Output::Shm(t) => t.buffers.clear(),
         }
         if let Some(s) = self.surface.take() {
             if let Some(f) = s.fractional {
@@ -454,10 +505,8 @@ impl Shell {
         self.window
             .window()
             .dispatch_event(WindowEvent::PointerExited);
-        // Buffers belonged to the old surface; the pool is reused. Forget the frame so the next
-        // show repaints everything.
-        self.buffers.clear();
-        self.pixel_size = (0, 0);
+        // Forget the frame so the next show repaints everything.
+        self.frame_size = (0, 0);
         let _ = self.conn.flush();
     }
 
@@ -474,10 +523,15 @@ impl Shell {
     /// How long a pending GPU redraw is held back by `MIN_FRAME_GAP`, if it is. The event loop
     /// sleeps at most this long so the frame isn't late.
     pub fn frame_wait(&self) -> Option<std::time::Duration> {
-        let Backend::Gpu(window, _) = &self.backend else {
-            return None;
-        };
-        if !window.needs_redraw() || self.window.window().has_active_animations() {
+        match &self.output {
+            Output::Egl(window, _) if window.needs_redraw() => self.frame_gap(),
+            _ => None,
+        }
+    }
+
+    /// What is left of `MIN_FRAME_GAP` since the last GPU frame, unless something animates.
+    fn frame_gap(&self) -> Option<std::time::Duration> {
+        if self.window.window().has_active_animations() {
             return None;
         }
         let since = self.last_frame?.elapsed();
@@ -486,7 +540,7 @@ impl Shell {
 
     /// Render and present a frame if the surface is ready and Slint has something new.
     pub fn render_if_needed(&mut self) {
-        let Some(s) = self.surface.as_ref() else {
+        let Some(s) = &self.surface else {
             return;
         };
         if !s.configured || s.frame_pending {
@@ -502,150 +556,145 @@ impl Shell {
         if pw == 0 || ph == 0 {
             return;
         }
-        let window = match &self.backend {
-            Backend::Software(w) => w.clone(),
-            Backend::Gpu(..) => return self.render_gpu(pw, ph, scale),
+        let committed = match self.output {
+            Output::Shm(_) => self.render_software(pw, ph, scale),
+            Output::Egl(..) => self.render_gpu(pw, ph, scale),
         };
-        if self.pixel_size != (pw, ph) {
-            self.pixel_size = (pw, ph);
-            self.pixels = vec![Bgra::default(); (pw * ph) as usize];
-            self.buffers.clear();
-            self.needs_full = true;
-            self.pending_damage = Some((0, 0, pw as i32, ph as i32));
-            self.resize_window(pw, ph, scale);
+        if committed && let Some(s) = &mut self.surface {
+            s.frame_pending = true;
+            self.presented += 1;
         }
-        let full = self.needs_full;
-        let Some((origin, size)) = render_into(&window, &mut self.pixels, pw as usize, full) else {
-            return;
-        };
-        self.needs_full = false;
-        log::debug!("frame {pw}x{ph} @ {scale}, full {full}, dirty {origin:?} {size:?}");
-        // A frame that could not be presented still changed `pixels`; its damage carries over.
-        let (x0, y0) = (origin.x.max(0), origin.y.max(0));
-        let (x1, y1) = (x0 + size.width as i32, y0 + size.height as i32);
-        let d = match self.pending_damage {
-            Some((a, b, c, e)) => (a.min(x0), b.min(y0), c.max(x1), e.max(y1)),
-            None => (x0, y0, x1, y1),
-        };
-        self.pending_damage = Some(d);
-        self.present(pw, ph, scale);
     }
 
-    fn resize_window(&self, pw: u32, ph: u32, scale: f64) {
+    /// Lay the Slint window out for a new buffer size or scale, if it changed. Returns whether it
+    /// did.
+    fn resize_window(&mut self, pw: u32, ph: u32, scale: f64) -> bool {
+        if self.frame_size == (pw, ph) {
+            return false;
+        }
+        self.frame_size = (pw, ph);
         let w = self.window.window();
         w.dispatch_event(WindowEvent::ScaleFactorChanged {
             scale_factor: scale as f32,
         });
         w.set_size(PhysicalSize::new(pw, ph));
         w.request_redraw();
+        true
     }
 
-    /// GPU path: FemtoVG draws the whole frame and eglSwapBuffers attaches and commits it.
-    fn render_gpu(&mut self, pw: u32, ph: u32, scale: f64) {
-        let Backend::Gpu(window, gl) = &self.backend else {
-            return;
+    /// Software path: Slint repaints what changed into `pixels`, which are copied into a free shm
+    /// buffer and committed with the damage. Returns whether a frame was committed.
+    fn render_software(&mut self, pw: u32, ph: u32, scale: f64) -> bool {
+        let resized = self.resize_window(pw, ph, scale);
+        let (Output::Shm(t), Some(s)) = (&mut self.output, &self.surface) else {
+            return false;
         };
-        let (window, gl) = (window.clone(), gl.clone());
-        let s = self.surface.as_mut().expect("render without surface");
-        let wl = s.role.wl_surface().clone();
-        if !gl.is_attached() {
-            if let Err(e) = gl.attach(&wl, pw, ph) {
-                log::error!("GPU rendering unavailable: {e}");
-                return;
-            }
-            log::debug!("EGL surface attached, {pw}x{ph} @ {scale}");
-            self.pixel_size = (0, 0);
+        if resized {
+            t.pixels = vec![Bgra::default(); (pw * ph) as usize];
+            t.buffers.clear();
+            t.damage = None;
         }
-        if self.pixel_size != (pw, ph) {
-            self.pixel_size = (pw, ph);
-            // Resizes the EGL window too (through the renderer).
-            self.resize_window(pw, ph, scale);
-        }
-        if !window.needs_redraw() {
-            return;
-        }
-        // Without an animation running, a redraw is a data update or input like a volume scroll,
-        // which arrives faster than it's worth drawing at the display's refresh rate.
-        if self.frame_wait().is_some() {
-            return;
-        }
-        let s = self.surface.as_mut().expect("render without surface");
-        if let Some(v) = &s.viewport {
-            v.set_destination(s.width as i32, s.height as i32);
-        } else {
-            wl.set_buffer_scale(scale as i32);
-        }
-        // Part of the commit eglSwapBuffers makes.
-        wl.frame(&self.qh, FrameCallbackData(wl.clone()));
-        let t = std::time::Instant::now();
-        if window.draw_if_needed() {
-            s.frame_pending = true;
-            self.presented += 1;
-            self.last_frame = Some(t);
-            log::trace!(
-                "GPU frame {pw}x{ph} in {:?}, animating {}",
-                t.elapsed(),
-                self.window.window().has_active_animations()
-            );
-        }
-    }
+        // After a resize `pixels` holds no frame yet: render all of it.
+        let Some((origin, size)) = render_into(&t.window, &mut t.pixels, pw as usize, resized)
+        else {
+            return false;
+        };
+        log::debug!("frame {pw}x{ph} @ {scale}, full {resized}, dirty {origin:?} {size:?}");
+        // A frame that could not be presented still changed `pixels`; its damage carries over.
+        let (x0, y0) = (origin.x.max(0), origin.y.max(0));
+        let (x1, y1) = (x0 + size.width as i32, y0 + size.height as i32);
+        t.damage = Some(match t.damage {
+            Some((a, b, c, d)) => (a.min(x0), b.min(y0), c.max(x1), d.max(y1)),
+            None => (x0, y0, x1, y1),
+        });
 
-    fn present(&mut self, pw: u32, ph: u32, scale: f64) {
         let stride = pw as i32 * 4;
         // Find a buffer the compositor is not reading from, or make one.
-        let free = self.buffers.iter_mut().position(|b| {
-            b.height() == ph as i32 && b.stride() == stride && b.canvas(&mut self.pool).is_some()
+        let free = t.buffers.iter_mut().position(|b| {
+            b.height() == ph as i32 && b.stride() == stride && b.canvas(&mut t.pool).is_some()
         });
         let idx = match free {
             Some(i) => i,
+            None if t.buffers.len() >= 3 => {
+                // All busy; wait for a release.
+                self.window.window().request_redraw();
+                return false;
+            }
             None => {
-                if self.buffers.len() >= 3 {
-                    // All busy; wait for a release.
-                    self.window.window().request_redraw();
-                    return;
-                }
                 let Ok((buffer, _)) =
-                    self.pool
+                    t.pool
                         .create_buffer(pw as i32, ph as i32, stride, wl_shm::Format::Argb8888)
                 else {
                     log::warn!("could not allocate shm buffer");
-                    return;
+                    return false;
                 };
-                self.buffers.push(buffer);
-                self.buffers.len() - 1
+                t.buffers.push(buffer);
+                t.buffers.len() - 1
             }
         };
-        let buffer = &mut self.buffers[idx];
-        let Some(canvas) = buffer.canvas(&mut self.pool) else {
+        let buffer = &mut t.buffers[idx];
+        let Some(canvas) = buffer.canvas(&mut t.pool) else {
             self.window.window().request_redraw();
-            return;
+            return false;
         };
         // SAFETY: Bgra is repr(C) of four u8s.
         let src = unsafe {
-            std::slice::from_raw_parts(self.pixels.as_ptr() as *const u8, self.pixels.len() * 4)
+            std::slice::from_raw_parts(t.pixels.as_ptr() as *const u8, t.pixels.len() * 4)
         };
         canvas[..src.len()].copy_from_slice(src);
-        let buffer = &self.buffers[idx];
-        let s = self.surface.as_mut().expect("present without surface");
         let wl = s.role.wl_surface();
-        if let Some(v) = &s.viewport {
-            v.set_destination(s.width as i32, s.height as i32);
-        } else {
-            wl.set_buffer_scale(scale as i32);
-        }
-        match self.pending_damage.take() {
+        s.prepare_frame(&self.qh, scale);
+        match t.damage.take() {
             Some((x0, y0, x1, y1)) if x1 > x0 && y1 > y0 => {
                 wl.damage_buffer(x0, y0, x1 - x0, y1 - y0)
             }
             _ => wl.damage_buffer(0, 0, pw as i32, ph as i32),
         }
-        wl.frame(&self.qh, FrameCallbackData(wl.clone()));
-        if buffer.attach_to(wl).is_err() {
+        if t.buffers[idx].attach_to(wl).is_err() {
             log::warn!("buffer attach failed");
         }
         s.role.commit();
-        s.frame_pending = true;
-        self.presented += 1;
+        true
+    }
+
+    /// GPU path: FemtoVG draws the whole frame and eglSwapBuffers attaches and commits it.
+    /// Returns whether a frame was committed.
+    fn render_gpu(&mut self, pw: u32, ph: u32, scale: f64) -> bool {
+        let (Output::Egl(window, gl), Some(s)) = (&self.output, &self.surface) else {
+            return false;
+        };
+        let (window, gl) = (window.clone(), gl.clone());
+        if !gl.is_attached() {
+            if let Err(e) = gl.attach(s.role.wl_surface(), pw, ph) {
+                log::error!("GPU rendering unavailable: {e}");
+                return false;
+            }
+            log::debug!("EGL surface attached, {pw}x{ph} @ {scale}");
+            self.frame_size = (0, 0);
+        }
+        // Resizes the EGL window too (through the renderer).
+        self.resize_window(pw, ph, scale);
+        // Without an animation running, a redraw is a data update or input like a volume scroll,
+        // which arrives faster than it's worth drawing at the display's refresh rate.
+        if !window.needs_redraw() || self.frame_gap().is_some() {
+            return false;
+        }
+        let Some(s) = &self.surface else {
+            return false;
+        };
+        // Part of the commit eglSwapBuffers makes.
+        s.prepare_frame(&self.qh, scale);
+        let t = std::time::Instant::now();
+        if !window.draw_if_needed() {
+            return false;
+        }
+        self.last_frame = Some(t);
+        log::trace!(
+            "GPU frame {pw}x{ph} in {:?}, animating {}",
+            t.elapsed(),
+            self.window.window().has_active_animations()
+        );
+        true
     }
 }
 
@@ -771,6 +820,7 @@ impl CompositorHandler for Shell {
             .is_some_and(|s| s.fractional.is_none())
         {
             self.scale = factor as f64;
+            self.window.window().request_redraw();
         }
     }
     fn transform_changed(
@@ -826,16 +876,7 @@ impl LayerShellHandler for Shell {
         configure: LayerSurfaceConfigure,
         _: u32,
     ) {
-        if let Some(s) = self.surface.as_mut() {
-            s.width = configure.new_size.0.max(1);
-            s.height = configure.new_size.1.max(1);
-            s.configured = true;
-            s.frame_pending = false;
-            // The surface size may have changed: the blur region has to follow.
-            s.blurred = false;
-            self.window.window().request_redraw();
-        }
-        self.apply_glass();
+        self.configured(configure.new_size.0.max(1), configure.new_size.1.max(1));
     }
 }
 
@@ -852,24 +893,18 @@ impl WindowHandler for Shell {
         configure: WindowConfigure,
         _: u32,
     ) {
-        let Mode::App { size, .. } = self.mode else {
+        let (Mode::App { size, .. }, Some(s)) = (&self.mode, &self.surface) else {
             return;
         };
-        if let Some(s) = self.surface.as_mut() {
-            // A dimension the compositor leaves open keeps its current value (or our default).
-            let pick = |new: Option<std::num::NonZeroU32>, cur: u32, default: u32| match new {
-                Some(v) => v.get(),
-                None if cur > 0 => cur,
-                None => default,
-            };
-            s.width = pick(configure.new_size.0, s.width, size.0);
-            s.height = pick(configure.new_size.1, s.height, size.1);
-            s.configured = true;
-            s.frame_pending = false;
-            s.blurred = false;
-            self.window.window().request_redraw();
-        }
-        self.apply_glass();
+        // A dimension the compositor leaves open keeps its current value (or our default).
+        let pick = |new: Option<std::num::NonZeroU32>, cur: u32, default: u32| match new {
+            Some(v) => v.get(),
+            None if cur > 0 => cur,
+            None => default,
+        };
+        let width = pick(configure.new_size.0, s.width, size.0);
+        let height = pick(configure.new_size.1, s.height, size.1);
+        self.configured(width, height);
     }
 }
 
@@ -1265,14 +1300,12 @@ impl Shell {
             .data::<OfferMimes>()
             .and_then(|m| m.0.lock().ok().map(|v| v.clone()))
             .unwrap_or_default();
-        let Some((kind, mime)) = clipboard::pick(&mimes) else {
+        let (Some((kind, mime)), Some(tx)) = (clipboard::pick(&mimes), self.clip_tx.clone()) else {
             offer.destroy();
             return;
         };
-        let Some(tx) = self.clip_tx.clone() else {
-            return;
-        };
         let Ok((mut reader, writer)) = std::io::pipe() else {
+            offer.destroy();
             return;
         };
         offer.receive(mime.to_string(), std::os::fd::AsFd::as_fd(&writer));

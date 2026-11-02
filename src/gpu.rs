@@ -1,7 +1,8 @@
-//! Hardware rendering: Slint's FemtoVG renderer drawing with OpenGL ES through EGL straight onto
-//! the layer surface. The EGL context outlives the surface (which only exists while the dashboard
-//! is shown); without a surface it is made current surfaceless, so Slint's GPU resources survive
-//! hiding and showing.
+//! Hardware rendering: Slint's FemtoVG renderer drawing with OpenGL ES through EGL, straight onto
+//! the shell's surface (the dashboard's layer surface or an app's window), or offscreen without
+//! any display server for snapshots. The EGL context outlives the surface (which only exists while
+//! the dashboard is shown); without a surface it is made current surfaceless, so Slint's GPU
+//! resources survive hiding and showing.
 
 use std::cell::{Cell, RefCell};
 use std::ffi::{CStr, c_void};
