@@ -1,5 +1,5 @@
-//! Clipboard history. The Wayland side (wlr-data-control) lives in `shell.rs`; this holds the
-//! entries. History stays in memory only and skips anything a password manager marks secret.
+//! Clipboard history. The Wayland side (ext- or wlr-data-control) lives in `shell.rs`; this holds
+//! the entries. History stays in memory only and skips anything a password manager marks secret.
 
 use std::sync::Arc;
 

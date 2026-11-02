@@ -1,11 +1,11 @@
 //! The Wayland side: a fullscreen wlr-layer-shell surface on the overlay layer that hosts the Slint
 //! UI (or, for a standalone app, an ordinary xdg-shell window), plus the clipboard through
-//! wlr-data-control. Frames come from one of two renderers: FemtoVG draws with OpenGL ES straight
-//! onto the surface and eglSwapBuffers commits it (`gpu`), or Slint's software renderer draws into
-//! a pixel buffer that is already in wl_shm's ARGB8888 byte order, so presenting a frame is one
-//! memcpy into a shm buffer. Pointer and keyboard input are translated into Slint window events.
-//! The surface only exists while the dashboard is shown; the Slint component stays alive so state
-//! and history survive hiding.
+//! ext-data-control (or wlr-data-control). Frames come from one of two renderers: FemtoVG draws
+//! with OpenGL ES straight onto the surface and eglSwapBuffers commits it (`gpu`), or Slint's
+//! software renderer draws into a pixel buffer that is already in wl_shm's ARGB8888 byte order, so
+//! presenting a frame is one memcpy into a shm buffer. Pointer and keyboard input are translated
+//! into Slint window events. The surface only exists while the dashboard is shown; the Slint
+//! component stays alive so state and history survive hiding.
 
 use crate::sources::Msg;
 use crate::sources::clipboard::{self, Clip};
@@ -63,6 +63,12 @@ use std::sync::{Arc, Mutex};
 use wayland_protocols::ext::background_effect::v1::client::{
     ext_background_effect_manager_v1::ExtBackgroundEffectManagerV1,
     ext_background_effect_surface_v1::ExtBackgroundEffectSurfaceV1,
+};
+use wayland_protocols::ext::data_control::v1::client::{
+    ext_data_control_device_v1::{self, ExtDataControlDeviceV1},
+    ext_data_control_manager_v1::ExtDataControlManagerV1,
+    ext_data_control_offer_v1::{self, ExtDataControlOfferV1},
+    ext_data_control_source_v1::{self, ExtDataControlSourceV1},
 };
 use wayland_protocols::wp::fractional_scale::v1::client::{
     wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1,
@@ -195,12 +201,12 @@ pub struct OfferMimes(Mutex<Vec<String>>);
 pub struct Shell {
     pub conn: Connection,
     qh: QueueHandle<Shell>,
-    data_control: Option<ZwlrDataControlManagerV1>,
-    data_device: Option<ZwlrDataControlDeviceV1>,
+    data_control: Option<DataControl>,
+    data_device: Option<DataDevice>,
     /// The offer behind the current selection; destroyed when the next one arrives.
-    current_offer: Option<ZwlrDataControlOfferV1>,
+    current_offer: Option<DataOffer>,
     /// Our own clipboard contents while we own the selection.
-    own_source: Option<(ZwlrDataControlSourceV1, Clip)>,
+    own_source: Option<(DataSource, Clip)>,
     /// Where new clipboard contents are reported.
     pub clip_tx: Option<Sender<Msg>>,
     /// Night light's gamma tables (the dashboard only; a standalone app leaves them alone).
@@ -298,12 +304,7 @@ impl Shell {
         let background_effect = globals
             .bind::<ExtBackgroundEffectManagerV1, _, _>(&qh, 1..=1, ())
             .ok();
-        let data_control = globals
-            .bind::<ZwlrDataControlManagerV1, _, _>(&qh, 1..=2, ())
-            .ok();
-        if data_control.is_none() {
-            log::warn!("no wlr-data-control; clipboard history is unavailable");
-        }
+        let data_control = DataControl::bind(globals, &qh);
         let gamma = match mode {
             Mode::Dashboard => crate::gamma::Gamma::bind(globals, &qh),
             Mode::App { .. } => Default::default(),
@@ -425,7 +426,7 @@ impl Shell {
         self.surface.is_some()
     }
 
-    /// Whether the compositor offers clipboard access (wlr-data-control).
+    /// Whether the compositor offers clipboard access (ext- or wlr-data-control).
     pub fn has_clipboard(&self) -> bool {
         self.data_control.is_some()
     }
@@ -950,7 +951,7 @@ impl SeatHandler for Shell {
         if self.data_device.is_none()
             && let Some(m) = &self.data_control
         {
-            self.data_device = Some(m.get_data_device(&seat, qh, ()));
+            self.data_device = Some(m.get_data_device(&seat, qh));
         }
         if cap == Capability::Keyboard && self.keyboard.is_none() {
             let kb = self.seat_state.get_keyboard_with_repeat(
@@ -1305,28 +1306,194 @@ impl Dispatch<WpViewport, ()> for Shell {
     }
 }
 
+// Clipboard access goes through ext-data-control (the standardised protocol; KWin, recent niri)
+// or, failing that, its predecessor wlr-data-control. The two are request-for-request and
+// event-for-event the same, so each object is a two-variant wrapper with the few requests used,
+// and both protocols' Dispatch impls forward into the same handlers on `Shell`.
+
+/// The data control manager, of whichever protocol the compositor offers.
+enum DataControl {
+    Ext(ExtDataControlManagerV1),
+    Wlr(ZwlrDataControlManagerV1),
+}
+
+/// A seat's data control device.
+enum DataDevice {
+    Ext(ExtDataControlDeviceV1),
+    Wlr(ZwlrDataControlDeviceV1),
+}
+
+/// An offer of another client's selection; its mime types are in its `OfferMimes` user data.
+enum DataOffer {
+    Ext(ExtDataControlOfferV1),
+    Wlr(ZwlrDataControlOfferV1),
+}
+
+/// A selection we offer ourselves.
+#[derive(PartialEq)]
+enum DataSource {
+    Ext(ExtDataControlSourceV1),
+    Wlr(ZwlrDataControlSourceV1),
+}
+
+impl DataControl {
+    /// Bind ext-data-control if the compositor offers it, else wlr-data-control.
+    fn bind(globals: &GlobalList, qh: &QueueHandle<Shell>) -> Option<Self> {
+        let ext = globals.bind::<ExtDataControlManagerV1, _, _>(qh, 1..=1, ());
+        let control = match ext {
+            Ok(m) => Some(Self::Ext(m)),
+            Err(_) => globals
+                .bind::<ZwlrDataControlManagerV1, _, _>(qh, 1..=2, ())
+                .ok()
+                .map(Self::Wlr),
+        };
+        match &control {
+            Some(c) => log::info!("clipboard through {}", c.protocol()),
+            None => log::warn!(
+                "the compositor offers neither ext- nor wlr-data-control; \
+                 clipboard history is unavailable"
+            ),
+        }
+        control
+    }
+
+    fn protocol(&self) -> &'static str {
+        match self {
+            Self::Ext(_) => "ext-data-control",
+            Self::Wlr(_) => "wlr-data-control",
+        }
+    }
+
+    fn get_data_device(&self, seat: &wl_seat::WlSeat, qh: &QueueHandle<Shell>) -> DataDevice {
+        match self {
+            Self::Ext(m) => DataDevice::Ext(m.get_data_device(seat, qh, ())),
+            Self::Wlr(m) => DataDevice::Wlr(m.get_data_device(seat, qh, ())),
+        }
+    }
+
+    fn create_data_source(&self, qh: &QueueHandle<Shell>) -> DataSource {
+        match self {
+            Self::Ext(m) => DataSource::Ext(m.create_data_source(qh, ())),
+            Self::Wlr(m) => DataSource::Wlr(m.create_data_source(qh, ())),
+        }
+    }
+}
+
+impl DataDevice {
+    /// Make `source` the selection. A source always comes from the same manager as the device.
+    fn set_selection(&self, source: &DataSource) {
+        match (self, source) {
+            (Self::Ext(d), DataSource::Ext(s)) => d.set_selection(Some(s)),
+            (Self::Wlr(d), DataSource::Wlr(s)) => d.set_selection(Some(s)),
+            _ => log::warn!("clipboard source and device are of different protocols"),
+        }
+    }
+}
+
+impl DataOffer {
+    fn mimes(&self) -> Vec<String> {
+        let data = match self {
+            Self::Ext(o) => o.data::<OfferMimes>(),
+            Self::Wlr(o) => o.data::<OfferMimes>(),
+        };
+        data.and_then(|m| m.0.lock().ok().map(|v| v.clone()))
+            .unwrap_or_default()
+    }
+
+    fn receive(&self, mime: String, fd: std::os::fd::BorrowedFd) {
+        match self {
+            Self::Ext(o) => o.receive(mime, fd),
+            Self::Wlr(o) => o.receive(mime, fd),
+        }
+    }
+
+    fn destroy(&self) {
+        match self {
+            Self::Ext(o) => o.destroy(),
+            Self::Wlr(o) => o.destroy(),
+        }
+    }
+}
+
+impl DataSource {
+    fn offer(&self, mime: String) {
+        match self {
+            Self::Ext(s) => s.offer(mime),
+            Self::Wlr(s) => s.offer(mime),
+        }
+    }
+
+    fn destroy(&self) {
+        match self {
+            Self::Ext(s) => s.destroy(),
+            Self::Wlr(s) => s.destroy(),
+        }
+    }
+}
+
+impl OfferMimes {
+    fn push(&self, mime: String) {
+        if let Ok(mut m) = self.0.lock() {
+            m.push(mime);
+        }
+    }
+}
+
 impl Shell {
     /// Put a clipboard history entry back on the clipboard.
     pub fn set_clipboard(&mut self, clip: Clip) {
         let (Some(m), Some(dev)) = (&self.data_control, &self.data_device) else {
             return;
         };
-        let source = m.create_data_source(&self.qh, ());
+        let source = m.create_data_source(&self.qh);
         for mime in clip.kind.mimes() {
             source.offer(mime.to_string());
         }
-        dev.set_selection(Some(&source));
+        dev.set_selection(&source);
         if let Some((old, _)) = self.own_source.replace((source, clip)) {
             old.destroy();
         }
         let _ = self.conn.flush();
     }
 
-    fn receive(&mut self, offer: ZwlrDataControlOfferV1) {
-        let mimes = offer
-            .data::<OfferMimes>()
-            .and_then(|m| m.0.lock().ok().map(|v| v.clone()))
-            .unwrap_or_default();
+    /// The device's `selection` event: `None` when the clipboard was cleared.
+    fn selection(&mut self, offer: Option<DataOffer>) {
+        match offer {
+            Some(offer) => self.receive(offer),
+            None => {
+                if let Some(old) = self.current_offer.take() {
+                    old.destroy();
+                }
+            }
+        }
+    }
+
+    /// The device's `finished` event: it's gone (e.g. its seat was removed).
+    fn data_device_finished(&mut self) {
+        self.data_device = None;
+    }
+
+    /// A paste from our own selection: write `source`'s contents into `fd`.
+    fn source_send(&self, source: &DataSource, fd: std::os::fd::OwnedFd) {
+        if let Some((_, clip)) = self.own_source.as_ref().filter(|(s, _)| s == source) {
+            let data = clip.data.clone();
+            std::thread::spawn(move || {
+                let mut f = std::fs::File::from(fd);
+                let _ = f.write_all(&data);
+            });
+        }
+    }
+
+    /// Someone else took the selection from `source`.
+    fn source_cancelled(&mut self, source: DataSource) {
+        if self.own_source.as_ref().is_some_and(|(s, _)| *s == source) {
+            self.own_source = None;
+        }
+        source.destroy();
+    }
+
+    fn receive(&mut self, offer: DataOffer) {
+        let mimes = offer.mimes();
         let (Some((kind, mime)), Some(tx)) = (clipboard::pick(&mimes), self.clip_tx.clone()) else {
             offer.destroy();
             return;
@@ -1355,6 +1522,7 @@ impl Shell {
                     Err(_) => return,
                 }
             }
+            log::debug!("clipboard: received {} bytes of {mime}", data.len());
             if !data.is_empty() {
                 let _ = tx.send(Msg::Clipboard(Clip {
                     kind,
@@ -1362,6 +1530,18 @@ impl Shell {
                 }));
             }
         });
+    }
+}
+
+impl Dispatch<ExtDataControlManagerV1, ()> for Shell {
+    fn event(
+        _: &mut Self,
+        _: &ExtDataControlManagerV1,
+        _: <ExtDataControlManagerV1 as Proxy>::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
     }
 }
 
@@ -1377,6 +1557,30 @@ impl Dispatch<ZwlrDataControlManagerV1, ()> for Shell {
     }
 }
 
+impl Dispatch<ExtDataControlDeviceV1, ()> for Shell {
+    fn event(
+        shell: &mut Self,
+        _: &ExtDataControlDeviceV1,
+        event: ext_data_control_device_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        use ext_data_control_device_v1::Event;
+        match event {
+            Event::Selection { id } => shell.selection(id.map(DataOffer::Ext)),
+            // Only the clipboard is kept, not the primary selection.
+            Event::PrimarySelection { id: Some(offer) } => offer.destroy(),
+            Event::Finished => shell.data_device_finished(),
+            _ => {}
+        }
+    }
+
+    smithay_client_toolkit::reexports::client::event_created_child!(Shell, ExtDataControlDeviceV1, [
+        ext_data_control_device_v1::EVT_DATA_OFFER_OPCODE => (ExtDataControlOfferV1, OfferMimes::default()),
+    ]);
+}
+
 impl Dispatch<ZwlrDataControlDeviceV1, ()> for Shell {
     fn event(
         shell: &mut Self,
@@ -1386,21 +1590,11 @@ impl Dispatch<ZwlrDataControlDeviceV1, ()> for Shell {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
+        use zwlr_data_control_device_v1::Event;
         match event {
-            zwlr_data_control_device_v1::Event::Selection { id: Some(offer) } => {
-                shell.receive(offer)
-            }
-            zwlr_data_control_device_v1::Event::Selection { id: None } => {
-                if let Some(old) = shell.current_offer.take() {
-                    old.destroy();
-                }
-            }
-            zwlr_data_control_device_v1::Event::PrimarySelection { id: Some(offer) } => {
-                offer.destroy()
-            }
-            zwlr_data_control_device_v1::Event::Finished => {
-                shell.data_device = None;
-            }
+            Event::Selection { id } => shell.selection(id.map(DataOffer::Wlr)),
+            Event::PrimarySelection { id: Some(offer) } => offer.destroy(),
+            Event::Finished => shell.data_device_finished(),
             _ => {}
         }
     }
@@ -1408,6 +1602,21 @@ impl Dispatch<ZwlrDataControlDeviceV1, ()> for Shell {
     smithay_client_toolkit::reexports::client::event_created_child!(Shell, ZwlrDataControlDeviceV1, [
         zwlr_data_control_device_v1::EVT_DATA_OFFER_OPCODE => (ZwlrDataControlOfferV1, OfferMimes::default()),
     ]);
+}
+
+impl Dispatch<ExtDataControlOfferV1, OfferMimes> for Shell {
+    fn event(
+        _: &mut Self,
+        _: &ExtDataControlOfferV1,
+        event: ext_data_control_offer_v1::Event,
+        mimes: &OfferMimes,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let ext_data_control_offer_v1::Event::Offer { mime_type } = event {
+            mimes.push(mime_type);
+        }
+    }
 }
 
 impl Dispatch<ZwlrDataControlOfferV1, OfferMimes> for Shell {
@@ -1419,10 +1628,27 @@ impl Dispatch<ZwlrDataControlOfferV1, OfferMimes> for Shell {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let zwlr_data_control_offer_v1::Event::Offer { mime_type } = event
-            && let Ok(mut m) = mimes.0.lock()
-        {
-            m.push(mime_type);
+        if let zwlr_data_control_offer_v1::Event::Offer { mime_type } = event {
+            mimes.push(mime_type);
+        }
+    }
+}
+
+impl Dispatch<ExtDataControlSourceV1, ()> for Shell {
+    fn event(
+        shell: &mut Self,
+        source: &ExtDataControlSourceV1,
+        event: ext_data_control_source_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        use ext_data_control_source_v1::Event;
+        let source = DataSource::Ext(source.clone());
+        match event {
+            Event::Send { fd, .. } => shell.source_send(&source, fd),
+            Event::Cancelled => shell.source_cancelled(source),
+            _ => {}
         }
     }
 }
@@ -1436,22 +1662,11 @@ impl Dispatch<ZwlrDataControlSourceV1, ()> for Shell {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
+        use zwlr_data_control_source_v1::Event;
+        let source = DataSource::Wlr(source.clone());
         match event {
-            zwlr_data_control_source_v1::Event::Send { fd, .. } => {
-                if let Some((_, clip)) = shell.own_source.as_ref().filter(|(s, _)| s == source) {
-                    let data = clip.data.clone();
-                    std::thread::spawn(move || {
-                        let mut f = std::fs::File::from(fd);
-                        let _ = f.write_all(&data);
-                    });
-                }
-            }
-            zwlr_data_control_source_v1::Event::Cancelled => {
-                if shell.own_source.as_ref().is_some_and(|(s, _)| s == source) {
-                    shell.own_source = None;
-                }
-                source.destroy();
-            }
+            Event::Send { fd, .. } => shell.source_send(&source, fd),
+            Event::Cancelled => shell.source_cancelled(source),
             _ => {}
         }
     }

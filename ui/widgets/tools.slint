@@ -547,7 +547,7 @@ export component ClipboardWidget inherits Rectangle {
         }
         if !Clipboard.available: Empty {
             vertical-stretch: 1;
-            text: "The compositor doesn't offer clipboard access (wlr-data-control)";
+            text: "The compositor doesn't offer clipboard access";
         }
         if Clipboard.available && Clipboard.items.length == 0: Empty {
             vertical-stretch: 1;
