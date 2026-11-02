@@ -173,3 +173,48 @@ pub(super) fn device_kind_to_ui(k: sources::power::DeviceKind) -> crate::DeviceK
         K::Other => crate::DeviceKind::Other,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The values of `export enum <name> { ... }` in a Slint file.
+    fn slint_enum<'a>(src: &'a str, name: &str) -> Vec<&'a str> {
+        let head = format!("export enum {name} {{");
+        let start = src.find(&head).expect("the enum is declared") + head.len();
+        let end = start + src[start..].find('}').expect("the enum is closed");
+        src[start..end]
+            .split(',')
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .collect()
+    }
+
+    /// Every kind has a Slint `WidgetKind` value spelled like its config name, Rust maps it to
+    /// that value, and frame.slint shows a widget for it.
+    #[test]
+    fn every_kind_has_a_slint_widget() {
+        let data = include_str!("../../ui/data.slint");
+        let frame = include_str!("../../ui/frame.slint");
+        let values = slint_enum(data, "WidgetKind");
+        for kind in Kind::iter() {
+            let name = kind.name();
+            assert!(
+                values.contains(&name),
+                "ui/data.slint: WidgetKind has no `{name}`"
+            );
+            assert_eq!(
+                format!("{:?}", kind_to_ui(kind)),
+                format!("{kind:?}"),
+                "kind_to_ui maps {kind:?} to the wrong WidgetKind"
+            );
+            let arm = format!("if root.inst.kind == WidgetKind.{name}:");
+            assert!(frame.contains(&arm), "ui/frame.slint has no `{arm}` arm");
+        }
+        assert_eq!(
+            values.len(),
+            Kind::iter().count(),
+            "WidgetKind has values that are no Kind: {values:?}"
+        );
+    }
+}
