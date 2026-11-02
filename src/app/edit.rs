@@ -210,6 +210,7 @@ impl App {
         if changed {
             self.layout.borrow_mut().set_screen_grid(cols, rows);
             self.sync_widgets();
+            self.refresh_grid_controls();
         }
     }
 
@@ -220,6 +221,43 @@ impl App {
         ui.set_grid_cols(cols);
         ui.set_grid_rows(rows);
         self.sync_grid();
+        self.refresh_grid_controls();
+    }
+
+    /// The Columns and Rows steppers in the Widgets tab.
+    fn refresh_grid_controls(&self) {
+        use crate::layout::{COLUMNS, ROWS};
+        let l = self.layout.borrow();
+        let row =
+            |index, label: &str, n: i32, range: &std::ops::RangeInclusive<i32>| crate::SettingRow {
+                index,
+                kind: crate::RowKind::Stepper,
+                label: label.into(),
+                value: n.to_string().into(),
+                on: false,
+                changed: l.grid.is_some(),
+                can_dec: n > *range.start(),
+                can_inc: n < *range.end(),
+                placeholder: Default::default(),
+            };
+        let rows = vec![
+            row(0, "Columns", l.cols, &COLUMNS),
+            row(1, "Rows", l.rows, &ROWS),
+        ];
+        drop(l);
+        set_if_changed(&self.grid_controls, rows, |a, b| a == b);
+    }
+
+    /// Change the grid from edit mode: `Some` makes it explicit, fitting the widgets into it;
+    /// `None` goes back to the automatic one.
+    fn change_grid(&self, grid: Option<(i32, i32)>) {
+        let refit = self.layout.borrow_mut().set_grid(grid);
+        self.apply_grid();
+        self.layout_changed();
+        self.refresh_settings();
+        if let Some(m) = refit.message() {
+            self.toast(&m);
+        }
     }
 
     pub(super) fn set_editing(&self, on: bool) {
@@ -423,6 +461,20 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
         }
     });
     // The grid steppers: index 0 is the columns, 1 the rows. The first step makes the grid
+    // explicit, starting from what fits the screen.
+    let a = app.clone();
+    ui.on_grid_step(move |index, delta| {
+        let (cols, rows) = {
+            let l = a.layout.borrow();
+            (l.cols, l.rows)
+        };
+        a.change_grid(Some(match index {
+            0 => (cols + delta, rows),
+            _ => (cols, rows + delta),
+        }));
+    });
+    let a = app.clone();
+    ui.on_grid_auto(move || a.change_grid(None));
     ui.set_palette(model(
         Kind::iter()
             .map(|k| {

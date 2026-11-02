@@ -314,6 +314,8 @@ export component Dash inherits Window {
     // The grid config.kdl sets (`grid columns=… rows=…`); 0 x 0 for the automatic one.
     in property <int> grid-cols;
     in property <int> grid-rows;
+    // The Columns and Rows steppers in the Widgets tab.
+    in property <[SettingRow]> grid-controls;
     // The cell size of the automatic grid (layout::AUTO_CELL).
     property <length> auto-cell: 100px;
     // Set by Rust once the surface is on screen, cleared just before it is hidden.
@@ -434,6 +436,9 @@ export component Dash inherits Window {
     callback add-widget(WidgetKind);
     callback add-widget-at(WidgetKind, int, int);
     callback reset-layout();
+    // Step the grid's columns (index 0) or rows (1) by +1/-1; back to the automatic grid.
+    callback grid-step(int, int);
+    callback grid-auto();
     callback move-widget(int, int, int);
     callback resize-widget(int, int, int);
     callback toggle-shape(int);
@@ -721,6 +726,37 @@ export component Dash inherits Window {
                 content-height: palette-list.preferred-height;
                 palette-list := VerticalLayout {
                     width: parent.width;
+                    // How many cells across and down. Changing them fits the widgets in; the
+                    // reset buttons go back to as many cells as fit the screen.
+                    VerticalLayout {
+                        spacing: 6px;
+                        padding-bottom: 4px;
+                        HorizontalLayout {
+                            height: 22px;
+                            SectionLabel {
+                                text: "Grid";
+                                horizontal-stretch: 1;
+                            }
+                            SectionLabel {
+                                text: root.grid-cols > 0 ? "" : "fits the screen";
+                                font-weight: 400;
+                            }
+                        }
+                        for v in root.grid-controls: SettingControl {
+                            kind: v.kind;
+                            label: v.label;
+                            value: v.value;
+                            modified: v.changed;
+                            can-dec: v.can-dec;
+                            can-inc: v.can-inc;
+                            step(d) => { root.grid-step(v.index, d); }
+                            reset => { root.grid-auto(); }
+                        }
+                        SectionLabel {
+                            text: "Add";
+                            height: 28px;
+                        }
+                    }
                     for p in root.palette: entry := Rectangle {
                         height: 62px;
                         property <bool> dragged-out;

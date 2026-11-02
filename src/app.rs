@@ -164,6 +164,8 @@ struct App {
     ctx: Ctx,
     layout: RefCell<Layout>,
     widgets: Rc<VecModel<WidgetInst>>,
+    /// The Columns and Rows steppers of edit mode.
+    grid_controls: Rc<VecModel<crate::SettingRow>>,
     /// Icons, album art and notification images by path, with when each was last used: art and
     /// notification images come and go with every track and screenshot, so the least recently
     /// used are dropped past `IMAGE_CACHE`.
@@ -582,12 +584,15 @@ fn build(ui: &Dash, ctx: Ctx, solo: Option<Kind>, config: Loaded) -> Rc<App> {
     let locale = sources::locale();
     let widgets = Rc::new(VecModel::<WidgetInst>::default());
     ui.set_widgets(ModelRc::from(widgets.clone()));
+    let grid_controls = Rc::new(VecModel::<crate::SettingRow>::default());
+    ui.set_grid_controls(ModelRc::from(grid_controls.clone()));
     let state = crate::state::load();
     let app = Rc::new(App {
         ui: ui.as_weak(),
         solo,
         layout: RefCell::new(layout),
         widgets,
+        grid_controls,
         images: Default::default(),
         image_uses: Cell::new(0),
         pending: Default::default(),
