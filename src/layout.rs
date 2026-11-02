@@ -1887,7 +1887,7 @@ mod tests {
         // The default layout fills 16x9 exactly; leave room to push into.
         l.set_grid(16, 12);
         let clock = id_of(&l, Kind::Clock);
-        // Onto the windows widget: allowed now, the others make room.
+        // Onto the windows widget: the others make room.
         assert!(l.move_reflow(clock, 4, 0, (1, 0)));
         assert_eq!(
             l.visible().len(),
@@ -1942,7 +1942,7 @@ mod tests {
         let mut l = grid();
         l.remove(id_of(&l, Kind::Media));
         l.remove(id_of(&l, Kind::Tray));
-        // 5x3 free now at (4,6); adding a 4x2 weather at (4,5) has to push claude-sessions up/down.
+        // Without media and tray, 5x3 cells are free at (4,6): room for a 4x2 weather.
         let id = l.add_at(Kind::Weather, 4, 6).unwrap();
         assert!(l.get(id).is_some());
         for a in l.visible() {
