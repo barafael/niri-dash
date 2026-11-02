@@ -184,6 +184,10 @@ impl App {
         w.set_ssid(s.ssid.into());
         w.set_signal(s.signal);
         w.set_status(s.activity.to_string().into());
+        w.set_needs_password(match &s.activity {
+            sources::wifi::Activity::NeedsPassword(ssid) => ssid.as_str().into(),
+            _ => Default::default(),
+        });
         w.set_busy(s.activity.busy());
         w.set_networks(model(
             s.networks
@@ -193,7 +197,7 @@ impl App {
                     signal: n.signal,
                     secure: n.secure,
                     active: n.active,
-                    known: n.known,
+                    known: n.profile.is_some(),
                 })
                 .collect(),
         ));

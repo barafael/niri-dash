@@ -8,6 +8,13 @@ export component WifiWidget inherits Rectangle {
     // SSID waiting for a password, if any.
     property <string> asking;
     property <bool> asking-open: self.asking != "";
+    // A join that failed for want of a password asks for one, also for a saved network.
+    property <string> refused: Wifi.needs-password;
+    changed refused => {
+        if (root.refused != "") {
+            root.asking = root.refused;
+        }
+    }
     if root.round: RoundFace {
         icon: Wifi.enabled ? Icons.wifi : Icons.wifi-off;
         on: Wifi.enabled && Wifi.ssid != "";

@@ -1,6 +1,6 @@
 //! Wi-Fi through NetworkManager's `nmcli`.
 
-use super::{CmdError, Ctx, Dedup, Msg, Trigger, run, signals_from};
+use super::{CmdError, Ctx, Dedup, Msg, Trigger, run_with, signals_from};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -10,7 +10,14 @@ pub struct Network {
     pub signal: i32,
     pub secure: bool,
     pub active: bool,
-    pub known: bool,
+    /// UUID of the saved profile for this SSID, if there is one.
+    pub profile: Option<String>,
+}
+
+impl Network {
+    pub fn known(&self) -> bool {
+        self.profile.is_some()
+    }
 }
 
 /// What the Wi-Fi widget is doing right now, beyond the network state.
@@ -71,12 +78,81 @@ pub fn split_terse(line: &str) -> Vec<String> {
     fields
 }
 
+/// Run `nmcli` with untranslated output: its messages are matched below, and a translated
+/// "Secrets were required" would not be.
+async fn nmcli(args: &[&str]) -> Result<String, CmdError> {
+    run_with("nmcli", args, &[("LC_ALL", "C")], None).await
+}
+
+/// Whether joining a network with this `nmcli` SECURITY value takes a password. OWE ("enhanced
+/// open") is encrypted but asks for none, like an open network ("" or "--").
+fn needs_password(security: &str) -> bool {
+    security
+        .split_whitespace()
+        .any(|t| t != "--" && !t.starts_with("OWE"))
+}
+
+/// The saved Wi-Fi profiles as (UUID, SSID), from `nmcli -t -f
+/// connection.uuid,802-11-wireless.ssid connection show <uuids>`: one `field:value` line each.
+fn parse_profiles(out: &str) -> Vec<(String, String)> {
+    let mut profiles = Vec::new();
+    let mut uuid = None;
+    for line in out.lines() {
+        let f = split_terse(line);
+        // An SSID with a ':' may or may not come escaped; joining the rest covers both.
+        let value = f[1..].join(":");
+        match f[0].as_str() {
+            "connection.uuid" => uuid = Some(value),
+            "802-11-wireless.ssid" => {
+                if let Some(u) = uuid.take() {
+                    profiles.push((u, value));
+                }
+            }
+            _ => {}
+        }
+    }
+    profiles
+}
+
+/// One entry per SSID from `nmcli -t -f IN-USE,SSID,SIGNAL,SECURITY device wifi list`, which
+/// has a line per access point. A network takes a password only if every access point of it
+/// does, so a name with an open or OWE access point among WPA ones is joined without asking.
+fn parse_networks(list: &str, profiles: &[(String, String)]) -> Vec<Network> {
+    let mut nets: Vec<Network> = Vec::new();
+    for f in list.lines().map(split_terse) {
+        if f.len() < 4 || f[1].is_empty() {
+            continue;
+        }
+        let n = Network {
+            active: f[0] == "*",
+            ssid: f[1].clone(),
+            signal: f[2].parse().unwrap_or(0),
+            secure: needs_password(&f[3]),
+            profile: profiles
+                .iter()
+                .find(|(_, ssid)| ssid == &f[1])
+                .map(|(uuid, _)| uuid.clone()),
+        };
+        match nets.iter_mut().find(|e| e.ssid == n.ssid) {
+            Some(e) => {
+                e.active |= n.active;
+                e.secure &= n.secure;
+                e.signal = e.signal.max(n.signal);
+            }
+            None => nets.push(n),
+        }
+    }
+    nets.sort_by(|a, b| {
+        b.active
+            .cmp(&a.active)
+            .then(b.known().cmp(&a.known()))
+            .then(b.signal.cmp(&a.signal))
+    });
+    nets
+}
+
 async fn fetch(activity: &Mutex<Activity>) -> Result<State, CmdError> {
-    let devices = run(
-        "nmcli",
-        &["-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device"],
-    )
-    .await?;
+    let devices = nmcli(&["-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device"]).await?;
     let dev = devices
         .lines()
         .map(split_terse)
@@ -85,7 +161,7 @@ async fn fetch(activity: &Mutex<Activity>) -> Result<State, CmdError> {
         return Ok(State::default());
     };
     let device = dev[0].clone();
-    let radio = run("nmcli", &["radio", "wifi"]).await?;
+    let radio = nmcli(&["radio", "wifi"]).await?;
     let enabled = radio.trim() == "enabled";
     let mut state = State {
         available: true,
@@ -97,61 +173,69 @@ async fn fetch(activity: &Mutex<Activity>) -> Result<State, CmdError> {
     if !enabled {
         return Ok(state);
     }
-    let known: Vec<String> = run("nmcli", &["-t", "-f", "NAME,TYPE", "connection", "show"])
+    // Profiles are matched to networks by SSID: a profile's name is often the SSID, but needn't be.
+    let uuids: Vec<String> = nmcli(&["-t", "-f", "UUID,TYPE", "connection", "show"])
         .await?
         .lines()
         .map(split_terse)
-        .filter(|f| f.get(1).is_some_and(|t| t.contains("wireless")))
+        .filter(|f| f.get(1).is_some_and(|t| t == "802-11-wireless"))
         .map(|f| f[0].clone())
         .collect();
-    let list = run(
-        "nmcli",
-        &[
+    let profiles = if uuids.is_empty() {
+        Vec::new()
+    } else {
+        let mut args = vec![
             "-t",
             "-f",
-            "IN-USE,SSID,SIGNAL,SECURITY",
-            "device",
-            "wifi",
-            "list",
-            "--rescan",
-            "no",
-        ],
-    )
+            "connection.uuid,802-11-wireless.ssid",
+            "connection",
+            "show",
+        ];
+        args.extend(uuids.iter().map(String::as_str));
+        parse_profiles(&nmcli(&args).await?)
+    };
+    let list = nmcli(&[
+        "-t",
+        "-f",
+        "IN-USE,SSID,SIGNAL,SECURITY",
+        "device",
+        "wifi",
+        "list",
+        "--rescan",
+        "no",
+    ])
     .await?;
-    let mut nets: Vec<Network> = Vec::new();
-    for f in list.lines().map(split_terse) {
-        if f.len() < 4 || f[1].is_empty() {
-            continue;
-        }
-        let n = Network {
-            active: f[0] == "*",
-            ssid: f[1].clone(),
-            signal: f[2].parse().unwrap_or(0),
-            secure: !f[3].is_empty() && f[3] != "--",
-            known: known.iter().any(|k| k == &f[1]),
-        };
-        match nets.iter_mut().find(|e| e.ssid == n.ssid) {
-            Some(e) => {
-                e.active |= n.active;
-                if n.signal > e.signal {
-                    e.signal = n.signal;
-                }
-            }
-            None => nets.push(n),
-        }
-    }
-    nets.sort_by(|a, b| {
-        b.active
-            .cmp(&a.active)
-            .then(b.known.cmp(&a.known))
-            .then(b.signal.cmp(&a.signal))
-    });
-    if let Some(a) = nets.iter().find(|n| n.active) {
+    state.networks = parse_networks(&list, &profiles);
+    if let Some(a) = state.networks.iter().find(|n| n.active) {
         state.ssid = a.ssid.clone();
         state.signal = a.signal;
     }
-    state.networks = nets;
     Ok(state)
+}
+
+/// Store `password` in a saved profile, so that NetworkManager has it on the next activation
+/// rather than asking a secret agent (there may be none). A profile saved as open gets WPA-PSK.
+async fn set_password(uuid: &str, password: &str) -> Result<String, CmdError> {
+    let key_mgmt = nmcli(&[
+        "-g",
+        "802-11-wireless-security.key-mgmt",
+        "connection",
+        "show",
+        "uuid",
+        uuid,
+    ])
+    .await?;
+    let mut args = vec!["connection", "modify", "uuid", uuid];
+    if key_mgmt.trim().is_empty() {
+        args.extend(["802-11-wireless-security.key-mgmt", "wpa-psk"]);
+    }
+    args.extend([
+        "802-11-wireless-security.psk",
+        password,
+        "802-11-wireless-security.psk-flags",
+        "0",
+    ]);
+    nmcli(&args).await
 }
 
 #[derive(Clone)]
@@ -206,7 +290,7 @@ impl Wifi {
     pub fn toggle(&self) {
         let on = self.last.lock().map(|l| !l.enabled).unwrap_or(true);
         self.ctx.act("Wi-Fi", async move {
-            run("nmcli", &["radio", "wifi", if on { "on" } else { "off" }])
+            nmcli(&["radio", "wifi", if on { "on" } else { "off" }])
                 .await
                 .map(|_| ())
         });
@@ -216,7 +300,7 @@ impl Wifi {
         let me = self.clone();
         self.set_activity(Activity::Scanning);
         self.ctx.spawn(async move {
-            let _ = run("nmcli", &["device", "wifi", "rescan"]).await;
+            let _ = nmcli(&["device", "wifi", "rescan"]).await;
             tokio::time::sleep(Duration::from_secs(3)).await;
             me.set_activity(Activity::Idle);
         });
@@ -224,23 +308,28 @@ impl Wifi {
 
     pub fn connect(&self, ssid: String, password: String) {
         let me = self.clone();
-        let known = self
-            .last
-            .lock()
-            .map(|l| l.networks.iter().any(|n| n.ssid == ssid && n.known))
-            .unwrap_or(false);
+        let profile = self.last.lock().ok().and_then(|l| {
+            l.networks
+                .iter()
+                .find(|n| n.ssid == ssid)
+                .and_then(|n| n.profile.clone())
+        });
         self.set_activity(Activity::Connecting(ssid.clone()));
         self.ctx.spawn(async move {
-            let result = if known && password.is_empty() {
-                run("nmcli", &["connection", "up", "id", &ssid]).await
-            } else if password.is_empty() {
-                run("nmcli", &["device", "wifi", "connect", &ssid]).await
-            } else {
-                run(
-                    "nmcli",
-                    &["device", "wifi", "connect", &ssid, "password", &password],
-                )
-                .await
+            let result = match profile {
+                Some(uuid) => {
+                    let stored = if password.is_empty() {
+                        Ok(String::new())
+                    } else {
+                        set_password(&uuid, &password).await
+                    };
+                    match stored {
+                        Ok(_) => nmcli(&["connection", "up", "uuid", &uuid]).await,
+                        Err(e) => Err(e),
+                    }
+                }
+                None if password.is_empty() => nmcli(&["device", "wifi", "connect", &ssid]).await,
+                None => nmcli(&["device", "wifi", "connect", &ssid, "password", &password]).await,
             };
             match result {
                 Ok(_) => me.set_activity(Activity::Idle),
@@ -273,16 +362,73 @@ impl Wifi {
             return;
         }
         self.ctx.act("Disconnect", async move {
-            run("nmcli", &["device", "disconnect", &dev])
-                .await
-                .map(|_| ())
+            nmcli(&["device", "disconnect", &dev]).await.map(|_| ())
         });
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::split_terse;
+    use super::{needs_password, parse_networks, parse_profiles, split_terse};
+
+    /// Part of a real scan at a conference: one SSID per several access points.
+    const LIST: &str = "*:Pixel_2058:86:WPA2 WPA3
+ :pyconIT-SPONSOR:84:WPA3
+ :Centro_Congressi:84:OWE
+ :Taimo's S23:74:WPA2
+ :pyconIT-SPONSOR:67:WPA2 WPA3
+ :Centro_Congressi:65:
+ :Centro_Congressi:60:OWE
+ :Can I has wireless? :40:WPA2
+ ::30:WPA2
+";
+
+    #[test]
+    fn security() {
+        assert!(needs_password("WPA2 WPA3"));
+        assert!(needs_password("WPA2 802.1X"));
+        assert!(!needs_password(""));
+        assert!(!needs_password("--"));
+        assert!(!needs_password("OWE"));
+    }
+
+    #[test]
+    fn profiles() {
+        let out = "connection.uuid:4ebb\n802-11-wireless.ssid:Pixel_2058\n\n\
+                   connection.uuid:5301\n802-11-wireless.ssid:My:Net\n\n\
+                   connection.uuid:43b2\n802-11-wireless.ssid:Esc\\:aped\n";
+        assert_eq!(
+            parse_profiles(out),
+            [
+                ("4ebb", "Pixel_2058"),
+                ("5301", "My:Net"),
+                ("43b2", "Esc:aped")
+            ]
+            .map(|(u, s)| (u.to_string(), s.to_string()))
+        );
+    }
+
+    #[test]
+    fn networks() {
+        let profiles = [("uuid-hotspot".to_string(), "Pixel_2058".to_string())];
+        let nets = parse_networks(LIST, &profiles);
+        let summary: Vec<_> = nets
+            .iter()
+            .map(|n| (n.ssid.as_str(), n.signal, n.secure, n.active, n.known()))
+            .collect();
+        assert_eq!(
+            summary,
+            [
+                ("Pixel_2058", 86, true, true, true),
+                ("pyconIT-SPONSOR", 84, true, false, false),
+                // OWE and open access points: no password.
+                ("Centro_Congressi", 84, false, false, false),
+                ("Taimo's S23", 74, true, false, false),
+                ("Can I has wireless? ", 40, true, false, false),
+            ]
+        );
+        assert_eq!(nets[0].profile.as_deref(), Some("uuid-hotspot"));
+    }
 
     #[test]
     fn terse_escapes() {

@@ -231,6 +231,8 @@ export global Wifi {
     in property <int> signal;
     in property <[WifiNet]> networks;
     in property <string> status;
+    // SSID whose join failed for a missing or wrong password, if any.
+    in property <string> needs-password;
     in property <bool> busy;
     callback toggle();
     callback rescan();
