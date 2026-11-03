@@ -60,13 +60,6 @@ nmrs = "3.5.7"
 [build-dependencies]
 slint-build = "1.18"
 
-[profile.dev]
-opt-level = 1
-[profile.dev.package."*"]
-opt-level = 3
-[profile.release]
-debug = 1
-
 # Slint 1.18's software renderer doesn't clip paths to the repainted region, so partial repaints
 # draw arcs over overlays (tray menus, a widget dragged in from the drawer). Patched copy; see its
 # README.md.
