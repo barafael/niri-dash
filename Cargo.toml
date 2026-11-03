@@ -162,12 +162,6 @@ harness = false
 [build-dependencies]
 slint-build = "1.18"
 
-[profile.dev]
-opt-level = 1
-[profile.dev.package."*"]
-opt-level = 3
-[profile.release]
-debug = 1
 # The web version: as small as it gets, since every visitor downloads it.
 [profile.web]
 inherits = "release"
