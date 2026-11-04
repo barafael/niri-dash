@@ -10,14 +10,14 @@ colors {
     card        "#161a22f2"   // widget background
     card-raised "#1f2430"     // buttons, list cards inside widgets
     panel       "#12151c"     // drawer, menus, toasts, edit toolbars
-    hover       "#ffffff12"
-    pressed     "#ffffff20"
+    hover       "#ffffff18"
+    pressed     "#ffffff2a"
     border      "#ffffff14"
     subtle      "#ffffff08"   // graph and grid backgrounds
     shadow      "#00000090"
     text        "#e6e9f0"
     dim         "#9aa3b5"     // secondary text
-    faint       "#5b6375"     // tertiary text, inactive icons
+    faint       "#646c80"     // tertiary text, inactive icons
     accent      "#7aa2f7"
     accent-soft "#7aa2f733"   // selected rows, active buttons
     on-accent   "#10131a"     // text on accent fills

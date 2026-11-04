@@ -22,6 +22,14 @@ pub const COLORSCHEMES: &[(&str, &str)] = &[
     ),
     ("light", include_str!("../assets/colorschemes/light.kdl")),
     (
+        "high-contrast-dark",
+        include_str!("../assets/colorschemes/high-contrast-dark.kdl"),
+    ),
+    (
+        "high-contrast-light",
+        include_str!("../assets/colorschemes/high-contrast-light.kdl"),
+    ),
+    (
         "gruvbox-dark",
         include_str!("../assets/colorschemes/gruvbox-dark.kdl"),
     ),
@@ -43,6 +51,14 @@ pub const COLORSCHEMES: &[(&str, &str)] = &[
         include_str!("../assets/colorschemes/rose-pine.kdl"),
     ),
     (
+        "rose-pine-moon",
+        include_str!("../assets/colorschemes/rose-pine-moon.kdl"),
+    ),
+    (
+        "rose-pine-dawn",
+        include_str!("../assets/colorschemes/rose-pine-dawn.kdl"),
+    ),
+    (
         "dracula",
         include_str!("../assets/colorschemes/dracula.kdl"),
     ),
@@ -51,8 +67,32 @@ pub const COLORSCHEMES: &[(&str, &str)] = &[
         include_str!("../assets/colorschemes/solarized-dark.kdl"),
     ),
     (
+        "solarized-light",
+        include_str!("../assets/colorschemes/solarized-light.kdl"),
+    ),
+    (
         "everforest",
         include_str!("../assets/colorschemes/everforest.kdl"),
+    ),
+    (
+        "everforest-light",
+        include_str!("../assets/colorschemes/everforest-light.kdl"),
+    ),
+    (
+        "kanagawa",
+        include_str!("../assets/colorschemes/kanagawa.kdl"),
+    ),
+    (
+        "one-dark",
+        include_str!("../assets/colorschemes/one-dark.kdl"),
+    ),
+    (
+        "ayu-dark",
+        include_str!("../assets/colorschemes/ayu-dark.kdl"),
+    ),
+    (
+        "monokai",
+        include_str!("../assets/colorschemes/monokai.kdl"),
     ),
 ];
 
@@ -843,6 +883,100 @@ mod tests {
                 *name == "default" || !description(text).is_empty(),
                 "{name} has a description"
             );
+        }
+    }
+
+    /// WCAG relative luminance.
+    fn luminance(c: Color) -> f32 {
+        let lin = |v: u8| {
+            let v = v as f32 / 255.0;
+            if v <= 0.04045 {
+                v / 12.92
+            } else {
+                ((v + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * lin(c.red()) + 0.7152 * lin(c.green()) + 0.0722 * lin(c.blue())
+    }
+
+    /// Roughly how light a color looks, 0..1.
+    fn lightness(c: Color) -> f32 {
+        luminance(c).cbrt()
+    }
+
+    /// WCAG contrast ratio, 1..21.
+    fn contrast(a: Color, b: Color) -> f32 {
+        let (a, b) = (luminance(a), luminance(b));
+        (a.max(b) + 0.05) / (a.min(b) + 0.05)
+    }
+
+    /// `top` drawn over the opaque `under`.
+    fn over(top: Color, under: Color) -> Color {
+        let a = top.alpha() as f32 / 255.0;
+        let ch = |t: u8, u: u8| (t as f32 * a + u as f32 * (1.0 - a)).round() as u8;
+        Color::from_rgb_u8(
+            ch(top.red(), under.red()),
+            ch(top.green(), under.green()),
+            ch(top.blue(), under.blue()),
+        )
+    }
+
+    #[test]
+    fn bundled_schemes_are_legible() {
+        use ColorRole::*;
+        for (name, text) in COLORSCHEMES {
+            let (look, _) = resolve(text, DEFAULT_STYLE);
+            let c = |role| look.color(role);
+            // The screen behind varies; judge by the backdrop's own color.
+            let b = c(Backdrop);
+            let backdrop = Color::from_rgb_u8(b.red(), b.green(), b.blue());
+            let card = over(c(Card), backdrop);
+            let raised = over(c(CardRaised), card);
+            let panel = over(c(Panel), backdrop);
+            // Minimum contrast on the card and the panel, then on raised controls.
+            for (role, floor, on_raised) in [
+                (Text, 6.5, 6.0),
+                (Dim, 4.5, 4.0),
+                (Faint, 3.0, 2.5),
+                (Accent, 3.0, 3.0),
+                (Good, 3.0, 3.0),
+                (Warn, 3.0, 3.0),
+                (Bad, 3.0, 3.0),
+            ] {
+                for (surface, under, min) in [
+                    ("card", card, floor),
+                    ("panel", panel, floor),
+                    ("raised", raised, on_raised),
+                ] {
+                    let got = contrast(c(role), under);
+                    assert!(
+                        got >= min,
+                        "{name}: {role:?} on {surface} is {got:.2}, under {min}"
+                    );
+                }
+            }
+            let on_accent = contrast(c(OnAccent), c(Accent));
+            assert!(on_accent >= 4.5, "{name}: on-accent is {on_accent:.2}");
+            // The knob has no outline: it has to stand out from the card by itself.
+            let knob = contrast(c(Knob), card);
+            assert!(knob >= 3.0, "{name}: knob on card is {knob:.2}");
+            // Hover and pressed replace a raised button's fill rather than sit on it, so each has
+            // to move further from what's under the button than the last, or hovering dims it.
+            // Buttons sit on cards; the sidebar's rows sit on the panel.
+            for (surface, under) in [("card", card), ("panel", panel)] {
+                let lift = |top: Color| (lightness(over(top, under)) - lightness(under)).abs();
+                let (rest, hover, pressed) =
+                    (lift(c(CardRaised)), lift(c(Hover)), lift(c(Pressed)));
+                // A hair of difference doesn't read as a response to the pointer.
+                assert!(
+                    hover > rest + 0.01,
+                    "{name}: on {surface}, hover {hover:.3} is under raised {rest:.3}"
+                );
+                assert!(
+                    pressed > hover,
+                    "{name}: on {surface}, pressed {pressed:.3} is under hover {hover:.3}"
+                );
+            }
         }
     }
 

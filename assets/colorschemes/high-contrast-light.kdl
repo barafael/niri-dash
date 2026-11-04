@@ -1,0 +1,24 @@
+// niri-dash color scheme: "high-contrast-light" (light, maximum contrast). See default.kdl for what each color is for.
+
+colors {
+    backdrop    "#ffffffe6"
+    card        "#ffffffff"
+    card-raised "#ededed"
+    panel       "#f7f7f7"
+    hover       "#00000029"
+    pressed     "#00000052"
+    border      "#00000080"
+    subtle      "#0000000f"
+    shadow      "#00000060"
+    text        "#000000"
+    dim         "#333333"
+    faint       "#666666"
+    accent      "#0b57d0"
+    accent-soft "#0b57d029"
+    on-accent   "#ffffff"
+    good        "#146c2e"
+    warn        "#8a5a00"
+    bad         "#b3261e"
+    track       "#00000059"
+    knob        "#1a1a1a"
+}
