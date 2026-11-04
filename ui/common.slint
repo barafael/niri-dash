@@ -766,6 +766,11 @@ export component NavScope inherits FocusScope {
             self.go(self.cursor, 1);
         }
     }
+    // The stop's parts changed under the cursor (a network came up, and its details button is now
+    // Disconnect): back to the stop itself, not onto something else.
+    changed subs => {
+        self.sub = 0;
+    }
     function fit(c: int) -> int {
         clamp(c, 0, max(0, self.count - 1))
     }

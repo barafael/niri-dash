@@ -414,6 +414,53 @@ fn cursor_stays_in_sight_as_a_list_grows() {
     );
 }
 
+/// What a frame would show: laid out, and what that sets off (see `cursor_stays_in_sight…`).
+fn shown(h: &mut Harness) {
+    for _ in 0..2 {
+        h.render();
+        h.settle(5);
+    }
+}
+
+/// What a screen reader says now; the check's complaint fails the test.
+fn said(h: &mut Harness) -> String {
+    shown(h);
+    h.spoken()
+        .expect("a cursor that adds up")
+        .unwrap_or_default()
+}
+
+/// A network dropping off while the cursor is on its details button leaves the cursor on its row.
+fn sub_part_gone_goes_back_to_the_row() {
+    let mut h = dashboard();
+    let mut state = Demo::new().wifi;
+    h.send(wifi::Event::State(Box::new(state.clone())));
+    enter(&mut h, "Wi-Fi");
+    h.press("l");
+    h.press("l");
+    assert!(said(&mut h).contains("Details of Lighthouse"));
+    state.networks[0].active = false;
+    h.send(wifi::Event::State(Box::new(state)));
+    let now = said(&mut h);
+    assert!(now.starts_with("listitem \"Lighthouse\""), "on: {now}");
+}
+
+/// A network coming up while the cursor is on its details button must not turn that into
+/// Disconnect, under a key press meant for something else.
+fn sub_part_changing_meaning_goes_back_to_the_row() {
+    let mut h = dashboard();
+    let mut state = Demo::new().wifi;
+    state.networks[0].active = false;
+    h.send(wifi::Event::State(Box::new(state.clone())));
+    enter(&mut h, "Wi-Fi");
+    h.press("l");
+    assert!(said(&mut h).contains("Details of Lighthouse"));
+    state.networks[0].active = true;
+    h.send(wifi::Event::State(Box::new(state)));
+    let now = said(&mut h);
+    assert!(now.starts_with("listitem \"Lighthouse\""), "on: {now}");
+}
+
 fn main() {
     // The dashboard's config, state and notes go somewhere disposable; dates in a fixed locale.
     let dir = std::env::temp_dir().join(format!("niri-dash-ui-{}", std::process::id()));
@@ -458,6 +505,14 @@ fn main() {
         (
             "cursor stays in sight as a list grows",
             cursor_stays_in_sight_as_a_list_grows,
+        ),
+        (
+            "sub_part_gone_goes_back_to_the_row",
+            sub_part_gone_goes_back_to_the_row,
+        ),
+        (
+            "sub_part_changing_meaning_goes_back_to_the_row",
+            sub_part_changing_meaning_goes_back_to_the_row,
         ),
         (
             "keyboard survives its field going away",
