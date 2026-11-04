@@ -5,20 +5,38 @@ edition = "2024"
 description = "A fullscreen widget dashboard for niri: clock, calendar, windows, wifi, bluetooth, power, tray and more, with a Plasma-style edit mode"
 license = "MIT OR Apache-2.0"
 
-[dependencies]
-clap = { version = "4", features = ["derive"] }
+[workspace]
+members = [".", "crates/system"]
+
+[workspace.dependencies]
 log = "0.4"
-env_logger = "0.11"
 thiserror = "2"
 dirs = "6"
 notify = "8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-kdl = "6"
 strum = { version = "0.28", features = ["derive"] }
 chrono = { version = "0.4", features = ["unstable-locales", "serde"] }
-chrono-tz = "0.10"
 png = "0.17"
+smithay-client-toolkit = { version = "0.21", features = ["calloop", "xkbcommon"] }
+wayland-protocols = { version = "0.32", features = ["client", "staging"] }
+
+[dependencies]
+# What the dashboard runs on: it sends this crate's commands and gets its events, nothing else.
+niri-dash-system = { path = "crates/system" }
+clap = { version = "4", features = ["derive"] }
+log.workspace = true
+env_logger = "0.11"
+thiserror.workspace = true
+dirs.workspace = true
+notify.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+kdl = "6"
+strum.workspace = true
+chrono.workspace = true
+chrono-tz = "0.10"
+png.workspace = true
 
 # ui: no windowing backend, the platform is our own (app.rs) on top of the Wayland crates below.
 slint = { version = "1.18", default-features = false, features = [
@@ -36,26 +54,30 @@ i-slint-core = { version = "=1.18.1", features = ["image-decoders", "svg"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "ico"] }
 
 # wayland
-smithay-client-toolkit = { version = "0.21", features = ["calloop", "xkbcommon"] }
+smithay-client-toolkit.workspace = true
 wayland-client = "0.31"
 # client_system: the libwayland connection whose wl_display pointer EGL needs (gpu.rs).
 wayland-backend = { version = "0.3", features = ["client_system"] }
-wayland-protocols = { version = "0.32", features = ["client", "staging"] }
-wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+wayland-protocols.workspace = true
 wayland-egl = "0.32"
 khronos-egl = { version = "6", features = ["dynamic"] }
 
-# data sources
-niri-ipc = "26.4"
-sysinfo = "0.37"
-tokio = { version = "1", features = ["rt-multi-thread", "process", "time", "sync", "macros", "io-util"] }
-futures-util = "0.3"
-zbus = { version = "5", default-features = false, features = ["tokio"] }
-system-tray = "0.8"
-freedesktop-icons = "0.4"
-ureq = { version = "2", features = ["json"] }
-qrcode = { version = "0.14.1", default-features = false }
-nmrs = "3.5.7"
+# Slint wants one thread and one platform per process: the UI tests are one plain program.
+[[test]]
+name = "ui"
+harness = false
+
+[[test]]
+name = "stress"
+harness = false
+
+[[test]]
+name = "a11y"
+harness = false
+
+[[test]]
+name = "edit"
+harness = false
 
 [build-dependencies]
 slint-build = "1.18"

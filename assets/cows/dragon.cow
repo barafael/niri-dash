@@ -1,0 +1,11 @@
+##
+## A dragon, drawn for niri-dash (MIT OR Apache-2.0), used when cowsay has no cow of this name.
+##
+$the_cow = <<EOC;
+    $thoughts                 /\\  /\\  /\\
+     $thoughts       ___,----'  \\/  \\/  \\___
+      $thoughts   __/ $eyes  \\                 \\
+     ~<__/ $tongue  ,__/    ___   ___     \\__/\\/\\_
+         `---'   |   /   /  /   \\   ______   >
+                 |__/   /__/    |__/      \\_/
+EOC

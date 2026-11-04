@@ -1,9 +1,10 @@
 import { Theme, Icons } from "../theme.slint";
 import { Windows, Claude, Notifications, Tray, Media, Shell, Desktop } from "../data.slint";
-import { Icon, IconButton, TextButton, Ring, Header, Row, Muted, Empty, ScrollList, RoundFace, SectionLabel, Bar } from "../common.slint";
+import { Icon, IconButton, TextButton, Ring, Header, Row, Muted, Empty, ScrollList, RoundFace, SectionLabel, Bar, NavScope } from "../common.slint";
 
 export component WindowsWidget inherits Rectangle {
     in property <bool> round;
+    in property <bool> nav;
     if root.round: RoundFace {
         icon: Windows.has-focused-icon ? Windows.focused-icon : Icons.window;
         tint: Windows.has-focused-icon ? transparent : Theme.dim;
@@ -23,9 +24,9 @@ export component WindowsWidget inherits Rectangle {
             vertical-stretch: 1;
             text: Desktop.niri ? "Not connected to niri" : "Window list needs niri";
         }
-        ScrollList {
+        window-list := ScrollList {
             vertical-stretch: 1;
-            for w in Windows.items: Rectangle {
+            for w[i] in Windows.items: Rectangle {
                 height: w.header ? 26px : 38px;
                 if w.header: SectionLabel {
                     x: 6px;
@@ -33,9 +34,13 @@ export component WindowsWidget inherits Rectangle {
                     text: w.title;
                 }
                 if !w.header: Row {
+                    accessible-label: w.title != "" ? w.title : w.app != "" ? w.app : "Window";
+                    accessible-value: w.focused ? "focused" : w.urgent ? "urgent" : "";
                     height: parent.height - 2px;
                     width: parent.width;
                     selected: w.focused;
+                    kfocus: keys.on && keys.cursor == i && keys.sub == 0;
+                    revealed(y, h) => { window-list.reveal(y, h); }
                     clicked => {
                         Windows.focus(w.id);
                         Shell.hide();
@@ -72,10 +77,12 @@ export component WindowsWidget inherits Rectangle {
                             text: w.app;
                         }
                         IconButton {
+                            accessible-label: "Close " + (w.title != "" ? w.title : "window");
                             y: (parent.height - self.height) / 2;
                             icon: Icons.close;
                             size: 26px;
                             tint: Theme.faint;
+                            kfocus: keys.on && keys.cursor == i && keys.sub == 1;
                             clicked => { Windows.close(w.id); }
                         }
                     }
@@ -83,10 +90,38 @@ export component WindowsWidget inherits Rectangle {
             }
         }
     }
+    // j/k over the windows (past the workspace headings), Enter focuses one (l: its close
+    // button), d or x closes it.
+    keys := NavScope {
+        accessible-label: "Windows";
+        active: root.nav;
+        count: root.round ? 0 : Windows.items.length;
+        subs: 2;
+        skip(i) => { return i < Windows.items.length && Windows.items[i].header; }
+        activate(i, sub) => {
+            if (root.round || i >= Windows.items.length || Windows.items[i].header) {
+                return;
+            }
+            if (sub == 1) {
+                Windows.close(Windows.items[i].id);
+            } else {
+                Windows.focus(Windows.items[i].id);
+                Shell.hide();
+            }
+        }
+        letter(t, i) => {
+            if ((t == "d" || t == "x") && i < Windows.items.length && !Windows.items[i].header) {
+                Windows.close(Windows.items[i].id);
+                return true;
+            }
+            false
+        }
+    }
 }
 
 export component NotificationsWidget inherits Rectangle {
     in property <bool> round;
+    in property <bool> nav;
     if root.round: RoundFace {
         icon: Notifications.dnd ? Icons.bell-off : Icons.bell;
         tint: Notifications.dnd ? Theme.warn : Notifications.items.length > 0 ? Theme.accent : Theme.faint;
@@ -96,6 +131,13 @@ export component NotificationsWidget inherits Rectangle {
     }
     // The do-not-disturb choices are showing.
     property <bool> choosing;
+    // While they are, they are the first keyboard stops: 1 hour, until morning, always (where
+    // shown), off (while paused).
+    property <bool> third: root.width > 330px || !Notifications.dnd;
+    property <int> choices: root.choosing ? 2 + (root.third ? 1 : 0) + (Notifications.dnd ? 1 : 0) : 0;
+    function choice(i: int) -> int {
+        i < 2 ? i + 1 : i == 2 && root.third ? 3 : 0
+    }
     if !root.round: VerticalLayout {
         padding: Theme.pad;
         spacing: 6px;
@@ -104,10 +146,12 @@ export component NotificationsWidget inherits Rectangle {
             icon-color: Notifications.dnd ? Theme.warn : Theme.dim;
             title: "Notifications";
             if Notifications.items.length > 0 && !root.choosing: TextButton {
+                accessible-label: "Clear notifications";
                 text: "Clear";
                 clicked => { Notifications.clear(); }
             }
             if Notifications.server || Notifications.can-pause: IconButton {
+                accessible-label: root.choosing ? "Hide pause choices" : Notifications.dnd ? "Change notification pause" : "Pause notifications";
                 y: (parent.height - self.height) / 2;
                 size: 28px;
                 icon: Notifications.dnd ? Icons.bell-off : Icons.bell;
@@ -119,20 +163,28 @@ export component NotificationsWidget inherits Rectangle {
             spacing: 6px;
             alignment: start;
             TextButton {
+                accessible-label: "Pause notifications for 1 hour";
                 text: "1 hour";
+                kfocus: keys.on && keys.cursor == 0;
                 clicked => { Notifications.set-dnd(1); root.choosing = false; }
             }
             TextButton {
+                accessible-label: "Pause notifications until " + Notifications.morning;
                 text: "Until " + Notifications.morning;
+                kfocus: keys.on && keys.cursor == 1;
                 clicked => { Notifications.set-dnd(2); root.choosing = false; }
             }
-            if root.width > 330px || !Notifications.dnd: TextButton {
+            if root.third: TextButton {
+                accessible-label: "Pause notifications until turned off";
                 text: root.width > 330px ? "Until turned off" : "Always";
+                kfocus: keys.on && keys.cursor == 2;
                 clicked => { Notifications.set-dnd(3); root.choosing = false; }
             }
             if Notifications.dnd: TextButton {
+                accessible-label: "Stop pausing notifications";
                 text: "Off";
                 primary: true;
+                kfocus: keys.on && keys.cursor == root.choices - 1;
                 clicked => { Notifications.set-dnd(0); root.choosing = false; }
             }
         }
@@ -152,17 +204,33 @@ export component NotificationsWidget inherits Rectangle {
             vertical-stretch: 1;
             text: "No notifications";
         }
-        if Notifications.items.length > 0: ScrollList {
+        if Notifications.items.length > 0: notif-list := ScrollList {
             vertical-stretch: 1;
-            for n in Notifications.items: Rectangle {
+            for n[i] in Notifications.items: Rectangle {
                 height: card.preferred-height + 6px;
                 card := Rectangle {
+                    accessible-role: list-item;
+                    accessible-label: n.app == "" ? (n.summary == "" ? "Notification" : n.summary) : n.summary == "" ? n.app : n.app + ": " + n.summary;
+                    accessible-value: n.urgent ? "urgent" : "";
+                    accessible-item-selected: self.kfocus;
+                    accessible-action-default => {
+                        if (n.has-default) {
+                            Notifications.invoke(n.id);
+                            Shell.hide();
+                        }
+                    }
+                    property <bool> kfocus: keys.on && keys.cursor == root.choices + i && keys.sub == 0;
+                    changed kfocus => {
+                        if (self.kfocus) {
+                            notif-list.reveal(self.absolute-position.y, self.height);
+                        }
+                    }
                     y: 0;
                     height: self.preferred-height;
                     border-radius: Theme.radius-small;
-                    background: ta.has-hover ? Theme.card-raised.brighter(0.15) : Theme.card-raised;
-                    border-width: n.urgent ? 1px : 0;
-                    border-color: Theme.bad;
+                    background: ta.has-hover || self.kfocus ? Theme.card-raised.brighter(0.15) : Theme.card-raised;
+                    border-width: self.kfocus ? 2px : n.urgent ? 1px : 0;
+                    border-color: self.kfocus ? Theme.accent : Theme.bad;
                     ta := TouchArea {
                         clicked => {
                             if (n.has-default) {
@@ -209,9 +277,11 @@ export component NotificationsWidget inherits Rectangle {
                             }
                         }
                         IconButton {
+                            accessible-label: "Dismiss " + (n.summary != "" ? n.summary : "notification");
                             icon: Icons.close;
                             size: 24px;
                             tint: Theme.faint;
+                            kfocus: keys.on && keys.cursor == root.choices + i && keys.sub == 1;
                             clicked => { Notifications.dismiss(n.id); }
                         }
                     }
@@ -219,23 +289,113 @@ export component NotificationsWidget inherits Rectangle {
             }
         }
     }
+    // j/k over the notifications, Enter opens one (l: its dismiss button), d dismisses, D clears
+    // all; z shows the do-not-disturb choices, which then come first.
+    keys := NavScope {
+        accessible-label: "Notifications";
+        active: root.nav;
+        count: root.round ? 0 : root.choices + Notifications.items.length;
+        subs: self.cursor >= root.choices ? 2 : 1;
+        activate(i, sub) => {
+            if (root.round) {
+                return;
+            }
+            if (i < root.choices) {
+                Notifications.set-dnd(root.choice(i));
+                root.choosing = false;
+                return;
+            }
+            let k = i - root.choices;
+            if (k >= Notifications.items.length) {
+                return;
+            }
+            if (sub == 1) {
+                Notifications.dismiss(Notifications.items[k].id);
+            } else if (Notifications.items[k].has-default) {
+                Notifications.invoke(Notifications.items[k].id);
+                Shell.hide();
+            }
+        }
+        letter(t, i) => {
+            let k = i - root.choices;
+            if (t == "d" && k >= 0 && k < Notifications.items.length) {
+                Notifications.dismiss(Notifications.items[k].id);
+                return true;
+            }
+            if (t == "D" && Notifications.items.length > 0) {
+                Notifications.clear();
+                return true;
+            }
+            if (t == "z" && !root.round && (Notifications.server || Notifications.can-pause)) {
+                root.choosing = !root.choosing;
+                self.cursor = 0;
+                self.sub = 0;
+                return true;
+            }
+            false
+        }
+        back => {
+            if (root.choosing) {
+                root.choosing = false;
+                return true;
+            }
+            false
+        }
+    }
 }
 
 export component TrayWidget inherits Rectangle {
     in property <bool> round;
+    in property <bool> nav;
     property <length> inset: root.round ? root.width * 0.17 : Theme.pad-tight;
     property <length> slot: root.round ? max(28px, (root.width - 2 * self.inset) / 3) : min(44px, root.height - 2 * self.inset);
     property <int> per-row: max(1, floor((root.width - 2 * self.inset) / self.slot));
+    // The icons that fit (the rest are hidden).
+    property <int> shown: min(Tray.items.length, root.per-row * max(0, floor((root.height + 1px - root.inset) / root.slot)));
+    // The keyboard opened the menu: j/k and Enter work in it.
+    property <bool> kbd-menu;
+    property <bool> menu: Tray.menu-open;
+    changed menu => {
+        if (!self.menu) {
+            root.kbd-menu = false;
+            Tray.menu-cursor = -1;
+        }
+    }
+    // The centre of icon i, in window coordinates (for the menu's position).
+    function cx(i: int) -> length {
+        root.absolute-position.x + root.inset + (mod(i, root.per-row) + 0.5) * root.slot
+    }
+    function cy(i: int) -> length {
+        root.absolute-position.y + root.inset + (floor(i / root.per-row) + 0.5) * root.slot
+    }
+    function entry-ok(i: int) -> bool {
+        i >= 0 && i < Tray.menu.length && !Tray.menu[i].separator && Tray.menu[i].enabled && !Tray.menu[i].header
+    }
+    function entry-past(i: int, d: int) -> int {
+        i >= 0 && i < Tray.menu.length && !root.entry-ok(i) ? i + d : i
+    }
+    // The next entry the cursor can stop on in direction d, or where it is.
+    function entry-step(d: int) -> int {
+        let n = root.entry-past(root.entry-past(root.entry-past(root.entry-past(Tray.menu-cursor + d, d), d), d), d);
+        root.entry-ok(n) ? n : Tray.menu-cursor
+    }
     if Tray.items.length == 0: Empty {
         text: root.round ? "" : "No tray icons";
     }
     for t[i] in Tray.items: Rectangle {
+        accessible-role: button;
+        accessible-label: t.title != "" ? t.title : "Tray icon";
+        accessible-item-selected: self.kfocus;
+        accessible-action-default => { Tray.activate(t.id, root.cx(i), root.cy(i)); }
         x: root.inset + mod(i, root.per-row) * root.slot;
         y: root.inset + floor(i / root.per-row) * root.slot;
         width: root.slot;
         height: root.slot;
         border-radius: Theme.radius-small;
-        background: ta.pressed ? Theme.pressed : ta.has-hover ? Theme.hover : transparent;
+        property <bool> kfocus: keys.on && keys.cursor == i;
+        background: ta.pressed ? Theme.pressed : ta.has-hover || self.kfocus ? Theme.hover : transparent;
+        border-width: self.kfocus ? 2px : 0px;
+        border-color: Theme.accent;
         visible: self.y + self.height <= root.height + 1px;
         if t.has-icon: Image {
             source: t.icon;
@@ -261,12 +421,56 @@ export component TrayWidget inherits Rectangle {
             }
         }
     }
+    // h/j/k/l over the icons, Enter activates one, m opens its menu; in the menu j/k and Enter.
+    keys := NavScope {
+        accessible-label: "Tray";
+        active: root.nav;
+        count: root.shown;
+        stride: root.per-row;
+        adjust(i, d) => {
+            self.move-to(clamp(i + d, 0, max(0, root.shown - 1)));
+            true
+        }
+        activate(i) => {
+            if (i < root.shown) {
+                Tray.activate(Tray.items[i].id, root.cx(i), root.cy(i));
+            }
+        }
+        letter(t, i) => {
+            if (t == "m" && i < root.shown && Tray.items[i].has-menu) {
+                root.kbd-menu = true;
+                Tray.menu-cursor = -1;
+                Tray.open-menu(Tray.items[i].id, root.cx(i), root.cy(i));
+                return true;
+            }
+            false
+        }
+        filter(t) => {
+            if (!Tray.menu-open || !root.kbd-menu) {
+                return false;
+            }
+            if (t == "j" || t == Key.DownArrow) {
+                Tray.menu-cursor = root.entry-step(1);
+            } else if (t == "k" || t == Key.UpArrow) {
+                Tray.menu-cursor = root.entry-step(-1);
+            } else if (t == Key.Return || t == " ") {
+                if (root.entry-ok(Tray.menu-cursor)) {
+                    Tray.menu-activate(Tray.menu[Tray.menu-cursor].id);
+                }
+            } else if (t == "q" || t == Key.Backspace) {
+                Tray.menu-close();
+            }
+            true
+        }
+    }
 }
 
 export component MediaWidget inherits Rectangle {
     in property <bool> round;
+    in property <bool> nav;
     if root.round: Rectangle {
         Ring {
+            accessible-label: "Track progress";
             width: 100%;
             height: 100%;
             value: Media.progress;
@@ -274,11 +478,13 @@ export component MediaWidget inherits Rectangle {
             tint: Theme.accent;
         }
         IconButton {
+            accessible-label: Media.playing ? "Pause" : "Play";
             size: root.width * 0.42;
             icon-size: self.size * 0.4;
             fill: Theme.card-raised;
             icon: Media.playing ? Icons.pause : Icons.play;
             enabled: Media.available;
+            kfocus: keys.on;
             clicked => { Media.play-pause(); }
         }
         Text {
@@ -323,6 +529,7 @@ export component MediaWidget inherits Rectangle {
             spacing: 2px;
             alignment: center;
             IconButton {
+                accessible-label: "Previous track";
                 y: (parent.height - self.height) / 2;
                 icon: Icons.prev;
                 size: 30px;
@@ -330,14 +537,17 @@ export component MediaWidget inherits Rectangle {
                 clicked => { Media.previous(); }
             }
             IconButton {
+                accessible-label: Media.playing ? "Pause" : "Play";
                 y: (parent.height - self.height) / 2;
                 icon: Media.playing ? Icons.pause : Icons.play;
                 size: 36px;
                 fill: Theme.card-raised;
                 enabled: Media.available;
+                kfocus: keys.on;
                 clicked => { Media.play-pause(); }
             }
             IconButton {
+                accessible-label: "Next track";
                 y: (parent.height - self.height) / 2;
                 icon: Icons.next;
                 size: 30px;
@@ -377,6 +587,7 @@ export component MediaWidget inherits Rectangle {
                     horizontal-alignment: Media.has-art ? left : center;
                 }
                 if Media.available: Bar {
+                    accessible-label: "Track progress";
                     value: Media.progress;
                     thickness: 4px;
                     high-is-bad: false;
@@ -387,24 +598,38 @@ export component MediaWidget inherits Rectangle {
             spacing: 6px;
             alignment: center;
             IconButton {
+                accessible-label: "Previous track";
                 icon: Icons.prev;
                 size: 34px;
                 enabled: Media.available;
                 clicked => { Media.previous(); }
             }
             IconButton {
+                accessible-label: Media.playing ? "Pause" : "Play";
                 icon: Media.playing ? Icons.pause : Icons.play;
                 size: 40px;
                 fill: Theme.card-raised;
                 enabled: Media.available;
+                kfocus: keys.on;
                 clicked => { Media.play-pause(); }
             }
             IconButton {
+                accessible-label: "Next track";
                 icon: Icons.next;
                 size: 34px;
                 enabled: Media.available;
                 clicked => { Media.next(); }
             }
+        }
+    }
+    // Enter or Space plays and pauses, h/l skip back and forward.
+    keys := NavScope {
+        accessible-label: "Media";
+        active: root.nav;
+        activate => { Media.play-pause(); }
+        adjust(i, d) => {
+            if (d > 0) { Media.next(); } else { Media.previous(); }
+            true
         }
     }
 }
@@ -429,8 +654,10 @@ component StatusDot inherits Rectangle {
 
 export component ClaudeSessionsWidget inherits Rectangle {
     in property <bool> round;
+    in property <bool> nav;
     if root.round: Rectangle {
         Ring {
+            accessible-label: "Claude sessions working";
             width: 100%;
             height: 100%;
             value: Claude.sessions.length == 0 ? 0 : Claude.busy / Claude.sessions.length;
@@ -469,13 +696,17 @@ export component ClaudeSessionsWidget inherits Rectangle {
             vertical-stretch: 1;
             text: "No Claude Code sessions running";
         }
-        if Claude.sessions.length > 0: ScrollList {
+        if Claude.sessions.length > 0: session-list := ScrollList {
             vertical-stretch: 1;
-            for s in Claude.sessions: Rectangle {
+            for s[i] in Claude.sessions: Rectangle {
                 height: 48px;
                 Row {
+                    accessible-label: s.title != "" ? s.title : "Claude session";
+                    accessible-value: s.place + " · " + s.status;
                     height: parent.height - 2px;
                     enabled: s.has-window;
+                    kfocus: keys.on && keys.cursor == i;
+                    revealed(y, h) => { session-list.reveal(y, h); }
                     clicked => {
                         Claude.focus(s.pid);
                         Shell.hide();
@@ -503,6 +734,19 @@ export component ClaudeSessionsWidget inherits Rectangle {
                         }
                     }
                 }
+            }
+        }
+    }
+    // j/k over the sessions that have a window, Enter focuses one.
+    keys := NavScope {
+        accessible-label: "Claude sessions";
+        active: root.nav;
+        count: root.round ? 0 : Claude.sessions.length;
+        skip(i) => { return i < Claude.sessions.length && !Claude.sessions[i].has-window; }
+        activate(i) => {
+            if (!root.round && i < Claude.sessions.length && Claude.sessions[i].has-window) {
+                Claude.focus(Claude.sessions[i].pid);
+                Shell.hide();
             }
         }
     }

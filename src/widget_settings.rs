@@ -50,6 +50,7 @@ pub enum Opt {
     Wildness,
     Interval,
     Command,
+    Cowfile,
 }
 
 /// What kind of value a setting takes, and how it is edited.
@@ -96,6 +97,7 @@ impl Opt {
             Opt::Wildness => "Wildness",
             Opt::Interval => "New remark every",
             Opt::Command => "Lines from command",
+            Opt::Cowfile => "Cow file",
         }
     }
 
@@ -131,6 +133,9 @@ impl Opt {
             Opt::Command => Ty::Text {
                 placeholder: "Built-in remarks",
             },
+            Opt::Cowfile => Ty::Text {
+                placeholder: "e.g. tux, or a path (the cow only)",
+            },
         }
     }
 
@@ -160,6 +165,7 @@ impl Opt {
             Opt::Wildness => KdlValue::Integer(2),
             Opt::Interval => KdlValue::Integer(45),
             Opt::Command => text(""),
+            Opt::Cowfile => text(""),
         }
     }
 
@@ -282,9 +288,18 @@ pub fn check(kind: Kind, values: &[(String, KdlValue)]) -> Vec<String> {
     values
         .iter()
         .filter_map(|(k, v)| match k.parse::<Opt>() {
-            Ok(opt) if kind.info().settings.contains(&opt) => {
-                (!opt.accepts(v)).then(|| format!("{name} {{ {k} }}: unexpected value {v}"))
-            }
+            Ok(opt) if kind.info().settings.contains(&opt) => match (opt, v) {
+                (_, v) if !opt.accepts(v) => {
+                    Some(format!("{name} {{ {k} }}: unexpected value {v}"))
+                }
+                (Opt::Zones, KdlValue::String(list)) => {
+                    crate::zones::complaint(list).map(|c| format!("{name} {{ {k} }}: {c}"))
+                }
+                (Opt::Cowfile, KdlValue::String(cow)) => {
+                    crate::cowfile::complaint(cow).map(|c| format!("{name} {{ {k} }}: {c}"))
+                }
+                _ => None,
+            },
             _ => Some(format!("{name} has no setting `{k}`")),
         })
         .collect()

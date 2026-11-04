@@ -1,21 +1,22 @@
-//! The clipboard history: what the shell reports, and putting an entry back.
+//! The clipboard history: what the system reports, and putting an entry back.
 
 use super::clock::when_text;
 use super::{App, model, rgba_image};
-use crate::shell::Shell;
-use crate::sources::clipboard::{self, Clip};
+use crate::layout::Kind;
 use crate::{ClipItem, Clipboard as UiClipboard, Dash};
 use chrono::Local;
+use niri_dash_system::Tell;
+use niri_dash_system::clipboard::{self, Clip, Command};
 use slint::{ComponentHandle, Image};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::Arc;
 
 #[derive(Default)]
 pub(super) struct History {
     entries: RefCell<Vec<ClipEntry>>,
-    /// An entry to put back on the clipboard (needs the Wayland side).
-    pending: RefCell<Option<Clip>>,
+    /// Whether what gets copied is being kept; see [`App::sync_history`].
+    recording: Cell<bool>,
 }
 
 /// Largest side of a clipboard thumbnail in pixels; the list shows them at most ~100 px (logical)
@@ -33,13 +34,6 @@ struct ClipEntry {
 }
 
 impl App {
-    /// Called every loop iteration: hand a copied entry to the shell.
-    pub(super) fn push_pending_clip(&self, shell: &mut Shell) {
-        if let Some(clip) = self.clipboard.pending.borrow_mut().take() {
-            shell.set_clipboard(clip);
-        }
-    }
-
     fn clip_items(&self) {
         let us = self.locale.us;
         let items: Vec<ClipItem> = self
@@ -74,7 +68,34 @@ impl App {
         self.ui().global::<UiClipboard>().set_items(model(items));
     }
 
+    /// Clipboard history is opt-in: it records only with a clipboard widget in the layout (a
+    /// hidden one counts, so that a smaller screen doesn't wipe it), or as the standalone
+    /// clipboard app. Without one, nothing copied is read, and what was kept is forgotten.
+    pub(super) fn sync_history(&self) {
+        let want = match self.solo {
+            Some(kind) => kind == Kind::Clipboard,
+            None => self
+                .layout
+                .borrow()
+                .widgets
+                .iter()
+                .any(|w| w.kind == Kind::Clipboard),
+        };
+        if self.clipboard.recording.replace(want) == want {
+            return;
+        }
+        self.tx.clipboard.tell(Command::Record(want));
+        if !want {
+            self.clipboard.entries.borrow_mut().clear();
+            self.clip_items();
+        }
+    }
+
     pub(super) fn add_clip(&self, clip: Clip) {
+        // A copy still being read when recording stopped.
+        if !self.clipboard.recording.get() {
+            return;
+        }
         let mut clips = self.clipboard.entries.borrow_mut();
         if let Some(pos) = clips.iter().position(|c| c.clip.data == clip.data) {
             let mut e = clips.remove(pos);
@@ -118,9 +139,9 @@ impl App {
         self.copy(clip, &format!("Copied {text}"));
     }
 
-    /// Put `clip` on the clipboard (once the event loop gets to it) and say so in a toast.
+    /// Put `clip` on the clipboard and say so in a toast.
     fn copy(&self, clip: Clip, toast: &str) {
-        *self.clipboard.pending.borrow_mut() = Some(clip);
+        self.tx.clipboard.tell(Command::Set(clip));
         self.toast(toast);
     }
 }

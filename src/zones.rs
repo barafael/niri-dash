@@ -42,6 +42,29 @@ pub fn parse(list: &str) -> Vec<Tz> {
     list.split([',', ';']).filter_map(resolve).collect()
 }
 
+/// The names in such a list that aren't a zone (or a zone's city), as typed.
+pub fn unknown(list: &str) -> Vec<String> {
+    list.split([',', ';'])
+        .map(str::trim)
+        .filter(|n| !n.is_empty() && resolve(n).is_none())
+        .map(String::from)
+        .collect()
+}
+
+/// What to say about the unknown names in `list`, if any.
+pub fn complaint(list: &str) -> Option<String> {
+    let bad = unknown(list);
+    let quoted: Vec<String> = bad.iter().map(|n| format!("\u{201c}{n}\u{201d}")).collect();
+    match quoted.len() {
+        0 => None,
+        1 => Some(format!("No time zone or city called {}", quoted[0])),
+        _ => Some(format!(
+            "No time zones or cities called {}",
+            quoted.join(", ")
+        )),
+    }
+}
+
 /// The rows for `zones` at `now`, compared with the local zone `local`.
 pub fn rows<L: TimeZone>(
     zones: &[Tz],
@@ -93,6 +116,19 @@ pub fn rows<L: TimeZone>(
 mod tests {
     use super::*;
     use chrono::TimeZone;
+
+    #[test]
+    fn unknown_names_are_named() {
+        assert_eq!(complaint("Asia/Tokyo, new york"), None);
+        assert_eq!(
+            unknown("Tokyo, Nowhere/Atlantis; ; Gotham"),
+            ["Nowhere/Atlantis", "Gotham"]
+        );
+        assert_eq!(
+            complaint("Atlantis").as_deref(),
+            Some("No time zone or city called \u{201c}Atlantis\u{201d}")
+        );
+    }
 
     #[test]
     fn resolves_names_and_cities() {

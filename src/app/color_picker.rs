@@ -3,8 +3,8 @@
 
 use super::{App, model};
 use crate::shell::Shell;
-use crate::sources::Msg;
 use crate::{Control, Dash};
+use niri_dash_system::{Tell, color};
 use slint::ComponentHandle;
 use std::cell::Cell;
 use std::rc::Rc;
@@ -40,8 +40,14 @@ impl App {
 
     /// Called every loop iteration: pick once the dashboard is out of the way.
     pub(super) fn tick_pick(&self, shell: &mut Shell) {
-        if self.picker.pending.get() && !shell.is_visible() {
-            self.picker.pending.set(false);
+        if !shell.is_visible() {
+            self.pick_if_pending();
+        }
+    }
+
+    /// The dashboard is out of the way: pick if a pick waits for that.
+    pub(super) fn pick_if_pending(&self) {
+        if self.picker.pending.take() {
             self.run_pick();
         }
     }
@@ -59,18 +65,7 @@ impl App {
     }
 
     fn run_pick(&self) {
-        let ctx = self.ctx.clone();
-        self.ctx.spawn(async move {
-            let rgb = match crate::compositor::pick_color(&ctx).await {
-                Ok(rgb) => rgb,
-                Err(e) => {
-                    log::warn!("pick color: {e}");
-                    ctx.toast(format!("Pick color: {e}"));
-                    None
-                }
-            };
-            ctx.send(Msg::ColorPicked(rgb));
-        });
+        self.tx.color.tell(color::Command::Pick);
     }
 
     fn push_colors(&self) {

@@ -3,6 +3,7 @@
 use super::{App, model};
 use crate::Dash;
 use crate::timer::{Countdown, Run, Stopwatch};
+use niri_dash_system::{Tell, host, notifications};
 use slint::{ComponentHandle, Model, Timer, TimerMode};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -63,12 +64,12 @@ impl App {
             };
         });
         self.arm_timer_end();
-        self.timers_awake(self.ctx.visible());
+        self.timers_awake(self.visible.get());
     }
 
     fn stopwatch(&self, f: impl FnOnce(&mut Stopwatch, SystemTime)) {
         f(&mut self.timers.stopwatch.borrow_mut(), SystemTime::now());
-        self.timers_awake(self.ctx.visible());
+        self.timers_awake(self.visible.get());
     }
 
     /// Set the end timer for a running countdown.
@@ -99,13 +100,19 @@ impl App {
         ui.global::<crate::Countdown>().set_done(true);
         let text = format!("{} timer is done", crate::timer::format(length, false));
         // On Plasma the notification pops up by itself.
-        if !self.notifications.elsewhere() {
+        if !self.caps.notifications_elsewhere() {
             self.osd(&text, "alarm-symbolic");
         }
-        self.notifications.add_local("Timer", &text, "");
-        if std::path::Path::new(ALARM_SOUND).exists() {
-            let _ = crate::sources::spawn_detached("pw-play", &[ALARM_SOUND]);
-        }
+        self.tx
+            .notifications
+            .tell(notifications::Command::AddLocal {
+                app: "Timer".into(),
+                summary: text,
+                body: String::new(),
+            });
+        self.tx
+            .host
+            .tell(host::Command::PlaySound(ALARM_SOUND.into()));
         let w = self.ui.clone();
         self.timers
             .done

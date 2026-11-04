@@ -4,10 +4,12 @@
 //
 // The art is the original SVG split into aligned layers (ui/mascots/<name>-<layer>.svg, all with
 // the same viewBox), so outfits can be put on and off, the eyes can blink and the pupils can move.
-// Their own colours in every theme: they are characters, not the dashboard.
+// Their own colours in every theme: they are characters, not the dashboard. The cow is the
+// exception: text in a monospace font, as it has always been.
 
+import { NavScope } from "../common.slint";
 import { Theme } from "../theme.slint";
-import { WidgetOpts, Mascots, MascotLine, Character, Outfit } from "../data.slint";
+import { WidgetOpts, Mascots, MascotLine, Character, Outfit, CowSize } from "../data.slint";
 
 struct Art {
     body: image,
@@ -139,9 +141,10 @@ component Figure inherits Rectangle {
     Layer { width: root.width; height: root.height; source: root.art.mouth; }
 }
 
-export component MascotWidget inherits Rectangle {
+component FigureMascot inherits Rectangle {
     in property <WidgetOpts> opts;
     in property <int> id;
+    in property <bool> nav;
     property <MascotLine> line: Mascots.lines[root.id];
     property <Art> art: MascotArt.of(root.opts.character);
     // The bubble's own colours, the tooltip yellow of the assistant they parody.
@@ -266,6 +269,138 @@ export component MascotWidget inherits Rectangle {
 
     // A click anywhere: the next line. The pointer is what the pupils follow.
     touch := TouchArea {
+        accessible-role: button;
+        accessible-label: "Next line";
+        accessible-action-default => { Mascots.next(root.id); }
         clicked => { Mascots.next(root.id); }
+    }
+    // Enter or Space: the next line.
+    NavScope {
+        accessible-label: "Mascot";
+        active: root.nav;
+        activate => { Mascots.next(root.id); }
+    }
+}
+
+// The cow, in the manner of `cowsay`: all of it text, the bubble wrapped to the widget's width.
+// The drawing comes from Rust (src/cowfile.rs): our own, or a cow file the `cowfile` setting names.
+// What it wears shows in its eyes, the only part of it that changes.
+component CowSay inherits Rectangle {
+    in property <int> id;
+    in property <bool> nav;
+    in property <string> cowfile;
+    property <MascotLine> line: Mascots.lines[root.id];
+    property <CowSize> size: Mascots.cow-size(root.cowfile);
+    property <length> edge: Theme.pad-tight;
+    // Letters that fit the drawing and about four lines of bubble; a big cow gets small ones.
+    property <length> font: clamp(min(
+        (root.height - 2 * root.edge) / (root.size.lines + 6) / 1.4,
+        (root.width - 2 * root.edge) / max(root.size.width, 24) / 0.62), 6px, 14px);
+    // From the font size, not measured: this feeds the text being drawn, and measuring text while
+    // the renderer draws it panics (the font context is already borrowed). Monospace fonts are
+    // about 0.6 em wide; both are on the roomy side, and what still doesn't fit is clipped.
+    property <length> char-w: root.font * 0.62;
+    property <length> line-h: root.font * 1.4;
+    property <int> cols: floor((root.width - 2 * root.edge) / root.char-w);
+    // What is left after the cow and the bubble's top and bottom.
+    property <int> rows: max(1, floor((root.height - 2 * root.edge) / root.line-h) - root.size.lines - 2);
+    property <string> bubble: Mascots.cow-bubble(root.line.text == "" ? "..." : root.line.text, root.cols, root.rows);
+
+    // Blinks, like the others.
+    property <bool> blink;
+    Timer {
+        interval: 5.9s;
+        running: Mascots.awake && Theme.motion > 0;
+        triggered => {
+            root.blink = true;
+            unblink.running = true;
+        }
+    }
+    unblink := Timer {
+        interval: 130ms;
+        running: false;
+        triggered => {
+            root.blink = false;
+            self.running = false;
+        }
+    }
+    property <string> eyes: root.blink ? "--"
+        : root.line.outfit == Outfit.helmet ? "OO"
+        : root.line.outfit == Outfit.vest ? "=="
+        : root.line.outfit == Outfit.beard ? "--"
+        : root.line.outfit == Outfit.shades ? "$$"
+        : root.line.outfit == Outfit.tophat ? "@@"
+        : root.line.outfit == Outfit.party ? "**"
+        : "oo";
+    property <string> tongue: root.line.outfit == Outfit.party ? "U " : "  ";
+
+    // Ducks for a moment on every new line.
+    property <bool> up: true;
+    property <int> seq: root.line.seq;
+    changed seq => {
+        if (Theme.motion > 0) {
+            root.up = false;
+            pop.running = true;
+        }
+    }
+    pop := Timer {
+        interval: 160ms * Theme.motion;
+        running: false;
+        triggered => {
+            root.up = true;
+            self.running = false;
+        }
+    }
+    Text {
+        x: root.edge;
+        y: root.edge + (root.up ? 0px : 10px);
+        animate y { duration: (root.up ? 300ms : 90ms) * Theme.motion; easing: ease-out-back; }
+        opacity: root.up ? 1 : 0;
+        animate opacity { duration: (root.up ? 200ms : 90ms) * Theme.motion; }
+        width: root.width - 2 * root.edge;
+        height: root.height - 2 * root.edge;
+        vertical-alignment: bottom;
+        wrap: no-wrap;
+        overflow: clip;
+        font-family: Mascots.cow-font();
+        font-size: root.font;
+        color: Theme.text;
+        text: root.bubble + "\n" + Mascots.cow-art(root.cowfile, root.eyes, root.tongue);
+    }
+    if root.line.queued > 0: Text {
+        x: root.width - self.width - root.edge;
+        y: root.edge;
+        text: "+" + root.line.queued + " more";
+        font-size: Theme.font-small;
+        color: Theme.dim;
+    }
+    // A click anywhere: the next line.
+    TouchArea {
+        accessible-role: button;
+        accessible-label: "Next line";
+        accessible-action-default => { Mascots.next(root.id); }
+        clicked => { Mascots.next(root.id); }
+    }
+    // Enter or Space: the next line.
+    NavScope {
+        accessible-label: "Cow";
+        active: root.nav;
+        activate => { Mascots.next(root.id); }
+    }
+}
+
+export component MascotWidget inherits Rectangle {
+    in property <WidgetOpts> opts;
+    in property <int> id;
+    in property <bool> nav;
+    if root.opts.character == Character.cow: CowSay {
+        id: root.id;
+        nav: root.nav;
+        cowfile: root.opts.cowfile;
+    }
+    if root.opts.character != Character.cow: FigureMascot {
+        opts: root.opts;
+        id: root.id;
+        nav: root.nav;
     }
 }

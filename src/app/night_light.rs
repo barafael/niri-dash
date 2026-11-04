@@ -1,4 +1,4 @@
-//! The night-light widget and `niri-dash night-light`: warmer screen colors through the shell's
+//! The night-light widget and `niri-dash night-light`: warmer screen colors through the system's
 //! gamma control. Only the daemon drives the gamma tables (two clients can't both hold them); a
 //! standalone night-light app hands its changes to the daemon over the control socket.
 //!
@@ -6,22 +6,16 @@
 //! KWin's, and turning it off pauses KWin's schedule for as long as the daemon runs.
 
 use super::App;
-use crate::gamma::{self, Cmd};
-use crate::shell::Shell;
-use crate::sources::kde::NightLightState;
 use crate::{Dash, NightLight as UiNightLight};
+use niri_dash_system::Tell;
+use niri_dash_system::night_light::{self as gamma, Cmd, NightLightState};
 use slint::{ComponentHandle, Timer, TimerMode};
-use std::cell::Cell;
 use std::io::Write;
 use std::rc::Rc;
 use std::time::Duration;
 
 #[derive(Default)]
 pub(super) struct NightLight {
-    /// A change for the shell to make on the next loop iteration; `Some(None)` turns it off.
-    pending: Cell<Option<Option<u32>>>,
-    /// Whether the compositor has gamma control, as last shown.
-    shown_available: Cell<Option<bool>>,
     /// Writes the state file once a slider drag settles.
     save: Timer,
 }
@@ -42,7 +36,7 @@ fn kelvin(warmth: f32) -> u32 {
 impl App {
     /// On start: bring back what was on before the restart.
     pub(super) fn restore_night_light(&self) {
-        if self.kwin_night.is_some() {
+        if self.caps.kwin_night_light() {
             // KWin keeps its own state; a pause ended with the daemon.
             let ui = self.ui();
             let g = ui.global::<UiNightLight>();
@@ -52,7 +46,9 @@ impl App {
         }
         let nl = self.state.borrow().night_light;
         if self.solo.is_none() {
-            self.night.pending.set(Some(nl.on.then_some(nl.kelvin)));
+            let ui = self.ui();
+            ui.global::<UiNightLight>().set_available(self.caps.gamma);
+            self.set_gamma(nl.on.then_some(nl.kelvin));
         } else {
             // The daemon has the gamma control; trust that it is running.
             self.ui().global::<UiNightLight>().set_available(true);
@@ -60,28 +56,21 @@ impl App {
         self.push_night_light();
     }
 
-    /// Called every loop iteration: hands a pending change to the shell.
-    pub(super) fn tick_night_light(&self, shell: &mut Shell) {
-        if self.solo.is_some() || self.kwin_night.is_some() {
-            return;
-        }
-        let available = shell.gamma.available();
-        if self.night.shown_available.replace(Some(available)) != Some(available) {
-            self.ui().global::<UiNightLight>().set_available(available);
-        }
-        if let Some(want) = self.night.pending.take() {
-            shell.set_night_light(want);
-        }
+    /// Warm the screen to `want` through the gamma tables (None: neutral).
+    fn set_gamma(&self, want: Option<u32>) {
+        self.tx.night_light.tell(gamma::Command::Gamma(want));
     }
 
     /// Apply a request from the widget, a standalone app or the command line; `announce` shows
     /// the result as an on-screen message (a keybinding has no other feedback).
     pub(super) fn night_light(&self, cmd: Cmd, announce: bool) {
-        if let Some(kwin) = &self.kwin_night {
+        if self.caps.kwin_night_light() {
             if self.solo.is_some() {
                 self.forward_night_light(cmd);
             } else {
-                kwin.apply(cmd, announce);
+                self.tx
+                    .night_light
+                    .tell(gamma::Command::Kwin { cmd, announce });
             }
             return;
         }
@@ -95,7 +84,7 @@ impl App {
             self.forward_night_light(cmd);
             return;
         }
-        self.night.pending.set(Some(on.then_some(kelvin)));
+        self.set_gamma(on.then_some(kelvin));
         self.night.save.restart();
         if announce {
             let text = if on {
@@ -157,7 +146,7 @@ impl App {
 
     /// A temperature from the widget: KWin sets its own, so only show it again.
     fn night_light_kelvin(&self, kelvin: u32) {
-        if self.kwin_night.is_some() {
+        if self.caps.kwin_night_light() {
             let ui = self.ui();
             let g = ui.global::<UiNightLight>();
             g.set_warmth(warmth(g.get_kelvin().max(0) as u32));

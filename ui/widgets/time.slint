@@ -1,6 +1,6 @@
 import { Theme, Icons } from "../theme.slint";
 import { Clock, Calendar, CalDay, WidgetOpts, ZoneTime, Weather } from "../data.slint";
-import { Icon, IconButton, Header, Muted, Empty, RoundFace } from "../common.slint";
+import { Icon, IconButton, Header, Muted, Empty, RoundFace, NavScope } from "../common.slint";
 
 component Hand inherits Path {
     in property <angle> angle;
@@ -118,6 +118,10 @@ export component ClockWidget inherits Rectangle {
     }
     if root.round: Rectangle {
         Path {
+            // The hands show the time with no text beside them.
+            accessible-role: image;
+            accessible-label: "Clock";
+            accessible-value: root.opts.hours12 ? Clock.time12 + " " + Clock.ampm : Clock.time;
             width: 100%;
             height: 100%;
             viewbox-x: 0;
@@ -168,6 +172,7 @@ export component ClockWidget inherits Rectangle {
 export component CalendarWidget inherits Rectangle {
     in property <bool> round;
     in property <WidgetOpts> opts;
+    in property <bool> nav;
     property <[string]> weekdays: root.opts.sunday-first ? Calendar.weekdays-sun : Calendar.weekdays;
     property <[CalDay]> days: root.opts.sunday-first ? Calendar.days-sun : Calendar.days;
     property <[int]> weeks: root.opts.sunday-first ? Calendar.weeks-sun : Calendar.weeks;
@@ -206,11 +211,13 @@ export component CalendarWidget inherits Rectangle {
             spacing: 0px;
             IconButton {
                 icon: Icons.chevron-left;
+                accessible-label: "Previous month";
                 size: 28px;
                 clicked => { Calendar.shift(-1); }
             }
             IconButton {
                 icon: Icons.circle;
+                accessible-label: "This month";
                 size: 28px;
                 icon-size: 10px;
                 enabled: !Calendar.showing-current;
@@ -218,6 +225,7 @@ export component CalendarWidget inherits Rectangle {
             }
             IconButton {
                 icon: Icons.chevron-right;
+                accessible-label: "Next month";
                 size: 28px;
                 clicked => { Calendar.shift(1); }
             }
@@ -264,10 +272,17 @@ export component CalendarWidget inherits Rectangle {
                 width: grid.cw;
                 height: grid.ch;
                 Rectangle {
+                    // The keyboard cursor is the selected day, which is always in the month shown.
+                    accessible-role: list-item;
+                    accessible-label: d.day + (d.in-month ? " " + Calendar.title : "");
+                    accessible-value: d.today ? "today" : "";
+                    accessible-item-selected: d.selected && keys.on;
                     width: min(parent.width, parent.height) - 4px;
                     height: self.width;
                     border-radius: self.width / 2;
-                    background: d.today ? Theme.accent : transparent;
+                    background: d.today ? Theme.accent : d.selected && keys.on ? Theme.hover : transparent;
+                    border-width: d.selected && keys.on ? 2px : 0px;
+                    border-color: d.today ? Theme.text : Theme.accent;
                 }
                 Text {
                     text: d.day;
@@ -276,6 +291,43 @@ export component CalendarWidget inherits Rectangle {
                     font-weight: d.today ? 700 : 400;
                 }
             }
+        }
+    }
+    // A cursor over the days: h/l a day back and on, j/k a week, n/p (or Page Down/Up) a month;
+    // t (or Enter) goes back to today. The month turns as the cursor leaves it.
+    keys := NavScope {
+        accessible-label: "Calendar";
+        active: root.nav;
+        activate => { Calendar.shift(0); }
+        filter(t) => {
+            if (root.round) {
+                return false;
+            }
+            if (t == "h" || t == Key.LeftArrow || t == "l" || t == Key.RightArrow) {
+                Calendar.move-day(t == "h" || t == Key.LeftArrow ? -1 : 1);
+                return true;
+            }
+            if (t == "j" || t == Key.DownArrow || t == "k" || t == Key.UpArrow) {
+                Calendar.move-day(t == "k" || t == Key.UpArrow ? -7 : 7);
+                return true;
+            }
+            if (t == "n" || t == Key.PageDown || t == "p" || t == Key.PageUp) {
+                Calendar.shift(t == "p" || t == Key.PageUp ? -1 : 1);
+                return true;
+            }
+            false
+        }
+        // Round, there's only the month to turn.
+        adjust(i, d) => {
+            Calendar.shift(d);
+            true
+        }
+        letter(t) => {
+            if (t == "t") {
+                Calendar.shift(0);
+                return true;
+            }
+            false
         }
     }
 }
@@ -290,6 +342,10 @@ export component WeatherWidget inherits Rectangle {
         }
     }
     if Weather.loaded && root.round: RoundFace {
+        // Round, only the icon says what the weather is like.
+        accessible-role: image;
+        accessible-label: "Weather";
+        accessible-value: Weather.description;
         icon: Icons.weather(Weather.icon);
         tint: Theme.warn;
         title: Weather.temp;

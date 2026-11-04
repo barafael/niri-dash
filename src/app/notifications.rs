@@ -2,11 +2,9 @@
 
 use super::clock::{clock_text, when_text};
 use super::{App, model};
-use crate::sources::{
-    self,
-    notifications::{Dnd, next_hour},
-};
 use crate::{Dash, Notif, Notifications as UiNotifications};
+use niri_dash_system::Tell;
+use niri_dash_system::notifications::{Command, Dnd, State, next_hour};
 use slint::ComponentHandle;
 use std::rc::Rc;
 
@@ -14,7 +12,7 @@ use std::rc::Rc;
 const DND_MORNING: u32 = 7;
 
 impl App {
-    pub(super) fn show_notifications(&self, s: sources::notifications::State) {
+    pub(super) fn show_notifications(&self, s: State) {
         let ui = self.ui();
         let n = ui.global::<UiNotifications>();
         n.set_server(s.server);
@@ -69,8 +67,9 @@ impl App {
 
     pub(super) fn toggle_dnd(&self) {
         let on = Dnd::from_saved(self.state.borrow().dnd_until).active(chrono::Local::now());
-        self.notifications
-            .set_dnd(if on { Dnd::Off } else { Dnd::Forever });
+        self.tx
+            .notifications
+            .tell(Command::SetDnd(if on { Dnd::Off } else { Dnd::Forever }));
         self.osd(
             if on {
                 "Notifications back on"
@@ -86,7 +85,10 @@ impl App {
     }
 
     pub(super) fn osd(&self, text: &str, icon: &str) {
-        self.notifications.osd().show(&self.ctx, text, icon);
+        self.tx.notifications.tell(Command::Osd {
+            text: text.into(),
+            icon: icon.into(),
+        });
     }
 }
 
@@ -102,19 +104,19 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
             3 => Dnd::Forever,
             _ => Dnd::Off,
         };
-        a.notifications.set_dnd(dnd);
+        a.tx.notifications.tell(Command::SetDnd(dnd));
     });
     // Notifications.
     let n = ui.global::<UiNotifications>();
     let a = app.clone();
-    n.on_dismiss(move |id| a.notifications.dismiss(id as u32));
+    n.on_dismiss(move |id| a.tx.notifications.tell(Command::Dismiss(id as u32)));
     let a = app.clone();
-    n.on_clear(move || a.notifications.clear());
+    n.on_clear(move || a.tx.notifications.tell(Command::Clear));
     let a = app.clone();
-    n.on_invoke(move |id| a.notifications.invoke(id as u32));
+    n.on_invoke(move |id| a.tx.notifications.tell(Command::Invoke(id as u32)));
     // Do not disturb survives a restart.
     let saved = Dnd::from_saved(app.state.borrow().dnd_until);
     if saved != Dnd::Off {
-        app.notifications.set_dnd(saved);
+        app.tx.notifications.tell(Command::SetDnd(saved));
     }
 }

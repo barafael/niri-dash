@@ -3,7 +3,8 @@
 use super::enums::{style_var_from_ui, style_var_to_ui};
 use super::{App, model};
 use crate::layout::Layout;
-use crate::{Dash, sources, theme};
+use crate::{Dash, theme};
+use niri_dash_system::{Tell, host};
 use slint::TimerMode;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -293,11 +294,10 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     ui.on_style_reset(move |key| a.style_reset(Some(style_var_from_ui(key))));
     let a = app.clone();
     ui.on_style_reset_all(move || a.style_reset(None));
-    ui.on_open_themes_folder(|| {
+    let a = app.clone();
+    ui.on_open_themes_folder(move || {
         let dir = theme::colorschemes_dir();
-        let dir = dir.parent().unwrap_or(&dir);
-        if let Err(e) = sources::spawn_detached("xdg-open", &[&dir.to_string_lossy()]) {
-            log::warn!("{e}");
-        }
+        let dir = dir.parent().map_or(dir.clone(), |d| d.to_path_buf());
+        a.tx.host.tell(host::Command::Open(dir));
     });
 }

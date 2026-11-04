@@ -1,4 +1,5 @@
 import { Theme } from "theme.slint";
+import { Nav, NavMode } from "data.slint";
 
 export component Icon inherits Image {
     in property <color> tint: Theme.text;
@@ -17,12 +18,21 @@ export component IconButton inherits Rectangle {
     in property <color> fill: transparent;
     in property <bool> enabled: true;
     in property <bool> active;
+    // Under the keyboard cursor.
+    in property <bool> kfocus;
     callback clicked();
+    // An icon says nothing: each use names the button with `accessible-label`.
+    accessible-role: button;
+    accessible-enabled: root.enabled;
+    accessible-item-selected: root.kfocus;
+    accessible-action-default => { root.clicked(); }
     width: size;
     height: size;
     // Buttons follow the style's corners (round at the default, square with "sharp").
     border-radius: min(self.height / 2, Theme.radius-small);
-    background: active ? Theme.accent-soft : touch.pressed ? Theme.pressed : touch.has-hover ? Theme.hover : fill;
+    background: active ? Theme.accent-soft : touch.pressed ? Theme.pressed : touch.has-hover || kfocus ? Theme.hover : fill;
+    border-width: kfocus ? 2px : 0px;
+    border-color: Theme.accent;
     opacity: enabled ? 1 : 0.4;
     animate background { duration: 100ms * Theme.motion; }
     Icon {
@@ -43,8 +53,16 @@ export component TextButton inherits Rectangle {
     in property <bool> primary;
     in property <bool> danger;
     in property <bool> enabled: true;
+    in property <bool> kfocus;
     callback clicked();
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-enabled: root.enabled;
+    accessible-item-selected: root.kfocus;
+    accessible-action-default => { root.clicked(); }
     height: 30px;
+    border-width: kfocus ? 2px : 0px;
+    border-color: primary ? Theme.text : Theme.accent;
     min-width: label.preferred-width + (has-icon ? 44px : 24px);
     border-radius: min(self.height / 2, Theme.radius-small);
     background: danger ? (touch.has-hover ? Theme.bad.with-alpha(0.33) : Theme.bad.with-alpha(0.2))
@@ -78,10 +96,29 @@ export component TextButton inherits Rectangle {
 export component Switch inherits Rectangle {
     in property <bool> checked;
     in property <bool> enabled: true;
+    in property <bool> kfocus;
     callback toggled();
+    // Each use names the switch with `accessible-label`.
+    accessible-role: switch;
+    accessible-checkable: true;
+    accessible-checked: root.checked;
+    accessible-enabled: root.enabled;
+    accessible-item-selected: root.kfocus;
+    accessible-action-default => { root.toggled(); }
     width: 40px;
     height: 22px;
     border-radius: min(self.height / 2, Theme.radius-small);
+    // Outside the track, so it shows on the accent color of a switch that is on.
+    Rectangle {
+        visible: root.kfocus;
+        x: -3px;
+        y: -3px;
+        width: parent.width + 6px;
+        height: parent.height + 6px;
+        border-radius: min(self.height / 2, Theme.radius-small + 3px);
+        border-width: 2px;
+        border-color: Theme.accent;
+    }
     background: checked ? Theme.accent : Theme.track;
     opacity: enabled ? 1 : 0.4;
     animate background { duration: 120ms * Theme.motion; }
@@ -106,6 +143,11 @@ export component Ring inherits Rectangle {
     in property <length> thickness: 8px;
     in property <color> tint: Theme.accent;
     in property <color> track: Theme.track;
+    // A gauge: each use says what it measures with `accessible-label`.
+    accessible-role: progress-indicator;
+    accessible-value: Math.round(clamp(root.value, 0, 1) * 100) + "%";
+    accessible-value-minimum: 0;
+    accessible-value-maximum: 100;
     property <float> v: clamp(value, 0, 0.9999);
     property <float> r: 50 - (thickness / self.width) * 50 - 0.5;
     Path {
@@ -141,6 +183,11 @@ export component Bar inherits Rectangle {
     in property <length> thickness: 6px;
     // Usage rather than progress: nearly full shows in the bad color.
     in property <bool> high-is-bad: true;
+    // A gauge: each use says what it measures with `accessible-label`.
+    accessible-role: progress-indicator;
+    accessible-value: Math.round(clamp(root.value, 0, 1) * 100) + "%";
+    accessible-value-minimum: 0;
+    accessible-value-maximum: 100;
     height: root.thickness;
     border-radius: root.thickness / 2;
     background: Theme.track;
@@ -163,7 +210,11 @@ export component RoundGauge inherits Rectangle {
     in property <bool> high-is-bad: true;
     in property <string> big;
     in property <string> caption;
+    // What the outer and the inner ring measure (the caption, unless said otherwise).
+    in property <string> label: root.caption;
+    in property <string> inner-label;
     Ring {
+        accessible-label: root.label;
         width: 100%;
         height: 100%;
         value: root.value;
@@ -171,6 +222,7 @@ export component RoundGauge inherits Rectangle {
         tint: root.high-is-bad && root.value > 0.9 ? Theme.bad : root.tint;
     }
     if root.inner >= 0: Ring {
+        accessible-label: root.inner-label;
         width: 76%;
         height: 76%;
         value: root.inner;
@@ -301,7 +353,22 @@ export component Slider inherits Rectangle {
     in-out property <float> value;
     in property <color> tint: Theme.accent;
     in property <bool> enabled: true;
+    in property <bool> kfocus;
     callback changed(float);
+    // Each use names the slider with `accessible-label`.
+    accessible-role: slider;
+    accessible-value: Math.round(clamp(root.value, 0, 1) * 100) + "%";
+    accessible-value-minimum: 0;
+    accessible-value-maximum: 100;
+    accessible-value-step: 5;
+    accessible-enabled: root.enabled;
+    accessible-item-selected: root.kfocus;
+    accessible-action-increment => { root.step(0.05); }
+    accessible-action-decrement => { root.step(-0.05); }
+    function step(d: float) {
+        root.value = clamp(root.value + d, 0, 1);
+        root.changed(root.value);
+    }
     height: 24px;
     property <length> knob: 16px;
     opacity: enabled ? 1 : 0.4;
@@ -326,6 +393,8 @@ export component Slider inherits Rectangle {
         height: root.knob;
         border-radius: root.knob / 2;
         background: touch.pressed || touch.has-hover ? Theme.knob.brighter(0.2) : Theme.knob;
+        border-width: root.kfocus ? 3px : 0px;
+        border-color: Theme.accent;
     }
     function set-from(x: length) {
         root.value = clamp((x - root.knob / 2) / (root.width - root.knob), 0, 1);
@@ -360,6 +429,12 @@ export component SliderRow inherits HorizontalLayout {
     in property <length> icon-box: 32px;
     in property <color> tint: Theme.accent;
     in property <bool> enabled: true;
+    // The keyboard cursor is on the icon (`kfocus-icon`) or on the slider (`kfocus`).
+    in property <bool> kfocus;
+    in property <bool> kfocus-icon;
+    // What the slider sets ("Volume"), and what the icon button does ("Mute").
+    in property <string> label;
+    in property <string> icon-label;
     callback changed(float);
     callback icon-clicked();
     spacing: 8px;
@@ -368,6 +443,8 @@ export component SliderRow inherits HorizontalLayout {
         size: root.icon-box;
         icon: root.icon;
         tint: root.icon-tint;
+        kfocus: root.kfocus-icon;
+        accessible-label: root.icon-label;
         clicked => { root.icon-clicked(); }
     }
     if !root.icon-clickable: Rectangle {
@@ -385,10 +462,14 @@ export component SliderRow inherits HorizontalLayout {
         value <=> root.value;
         tint: root.tint;
         enabled: root.enabled;
+        kfocus: root.kfocus;
+        accessible-label: root.label;
         changed(v) => { root.changed(v); }
     }
     Text {
         width: 38px;
+        // The slider says it.
+        accessible-role: none;
         text: Math.round(root.value * 100) + "%";
         color: Theme.dim;
         font-size: Theme.font-small;
@@ -404,8 +485,27 @@ export component RingKnob inherits Rectangle {
     in property <image> icon;
     in property <string> label;
     in property <bool> dimmed;
+    in property <bool> kfocus;
+    // What it sets ("Volume"); `label` is what it shows.
+    in property <string> name;
     callback changed(float);
     callback clicked();
+    accessible-role: slider;
+    accessible-label: root.name;
+    accessible-value: Math.round(clamp(root.value, 0, 1) * 100) + "%";
+    accessible-value-minimum: 0;
+    accessible-value-maximum: 100;
+    accessible-value-step: 5;
+    accessible-item-selected: root.kfocus;
+    accessible-action-default => { root.clicked(); }
+    accessible-action-increment => { root.step(0.05); }
+    accessible-action-decrement => { root.step(-0.05); }
+    function step(d: float) {
+        root.value = clamp(root.value + d, 0, 1);
+        root.changed(root.value);
+    }
+    border-radius: self.width / 2;
+    background: root.kfocus ? Theme.hover : transparent;
     Ring {
         width: 100%;
         height: 100%;
@@ -425,6 +525,8 @@ export component RingKnob inherits Rectangle {
             }
         }
         Text {
+            // The knob says it.
+            accessible-role: none;
             text: root.label;
             horizontal-alignment: center;
             font-size: max(11px, min(root.width * 0.11, 18px));
@@ -469,13 +571,36 @@ export component Header inherits HorizontalLayout {
 export component Row inherits Rectangle {
     in property <bool> selected;
     in property <bool> enabled: true;
+    // Under the keyboard cursor. A Row in a ScrollList scrolls into view through `revealed`.
+    in property <bool> kfocus;
     out property <bool> hovered: touch.has-hover;
     callback clicked();
     callback middle-clicked();
     callback right-clicked(length, length);
+    // The keyboard cursor came here: its position in the window and height.
+    callback revealed(length, length);
+    // Each use says what the row is with `accessible-label` (and how it stands with
+    // `accessible-value`: "connected"). `selected` is for the eye; say it in the value.
+    accessible-role: list-item;
+    accessible-enabled: root.enabled;
+    accessible-item-selected: root.kfocus;
+    accessible-action-default => { root.clicked(); }
+    changed kfocus => {
+        if (self.kfocus) {
+            self.revealed(self.absolute-position.y, self.height);
+        }
+    }
+    // The list changed around it (a section appeared above): the cursor stays in sight.
+    changed y => {
+        if (self.kfocus) {
+            self.revealed(self.absolute-position.y, self.height);
+        }
+    }
     height: 36px;
     border-radius: min(self.height / 2, Theme.radius-small);
-    background: selected ? Theme.accent-soft : touch.pressed ? Theme.pressed : touch.has-hover ? Theme.hover : transparent;
+    background: selected ? Theme.accent-soft : touch.pressed ? Theme.pressed : touch.has-hover || kfocus ? Theme.hover : transparent;
+    border-width: kfocus ? 2px : 0px;
+    border-color: Theme.accent;
     touch := TouchArea {
         enabled: root.enabled;
         clicked => { root.clicked(); }
@@ -540,6 +665,17 @@ export component ScrollList inherits Rectangle {
     // header above them and line up with its buttons. Only a tight padding needs a gutter.
     property <bool> in-padding: Theme.pad >= 8px;
     property <length> gutter: self.in-padding ? 0px : 10px;
+    // Scroll just enough to show what sits at window position `y`, `h` high (a row the
+    // keyboard cursor moved to).
+    public function reveal(y: length, h: length) {
+        let top = y - flick.absolute-position.y;
+        let lowest = min(0px, flick.height - flick.content-height);
+        if (top < 0px) {
+            flick.content-y = clamp(flick.content-y - top, lowest, 0px);
+        } else if (top + h > flick.height) {
+            flick.content-y = clamp(flick.content-y - (top + h - flick.height), lowest, 0px);
+        }
+    }
     flick := Flickable {
         x: 0;
         width: root.width - root.gutter;
@@ -563,4 +699,162 @@ export component ScrollList inherits Rectangle {
             background: Theme.faint;
         }
     }
+}
+
+// Keyboard navigation inside a widget entered with its hint label (or a standalone app's widget).
+// It takes the keyboard when the widget is entered and moves a cursor over `count` stops: j/k (and
+// the arrows, Tab and Shift+Tab) step, g/G jump to the ends, h/l move between the `subs` parts of
+// the stop (a row and its buttons) or else go to `adjust`. With no stops to step between (a knob,
+// one slider), j/k go to `adjust` too: k (up) as +1, j (down) as -1. Enter goes to `activate`;
+// other keys go to `letter`, Space too, and to `activate` if the widget doesn't take it; `e` is
+// the dashboard's (it expands the widget), so it never gets to `letter`. Escape coming up from a text field inside
+// takes the keyboard back; otherwise `back` gets a chance (close a prompt, leave a page) before
+// the dashboard leaves the widget.
+//
+// For screen readers and the tests: a NavScope is an accessible list of its `count` stops, named
+// by each use with `accessible-label` (the widget's name). The element under the cursor says so
+// with `accessible-item-selected: true` (the shared buttons, rows and sliders do it from their
+// `kfocus`), so what the keyboard is on can be found and read out: exactly one visible element in
+// the widget's tile (the controls are often beside the scope, not inside it), while the widget is
+// entered and has stops. A widget's own `selected` look is said in its label or value instead.
+export component NavScope inherits FocusScope {
+    in property <bool> active;
+    in property <int> count;
+    accessible-role: list;
+    accessible-item-count: root.count;
+    // How many parts the stop under the cursor has (1: just itself).
+    in property <int> subs: 1;
+    // How far j/k move (a grid's row length).
+    in property <int> stride: 1;
+    in-out property <int> cursor;
+    in-out property <int> sub;
+    // h/l (-1/+1) on a stop without parts; true if it did something.
+    callback adjust(int, int) -> bool;
+    callback activate(int, int);
+    // Any other key: the event's text, the cursor. True if the widget took it.
+    callback letter(string, int) -> bool;
+    callback back() -> bool;
+    // A stop the cursor passes over (a section heading); up to four in a row are skipped.
+    callback skip(int) -> bool;
+    // Sees every key first (while the widget shows a menu, say); true if it took it.
+    callback filter(string) -> bool;
+    // The cursor shows only while the widget is entered.
+    out property <bool> on: self.active && Nav.mode == NavMode.widget;
+    focus-on-click: false;
+    // Not a stop for Tab: Tab goes from text field to text field, as before.
+    focus-on-tab-navigation: false;
+    property <int> want: self.active ? Nav.tick : -1;
+    changed want => {
+        if (self.active) {
+            self.focus();
+        }
+    }
+    init => {
+        if (self.active) {
+            self.focus();
+        }
+    }
+    changed count => {
+        if (self.cursor >= self.count) {
+            self.cursor = max(0, self.count - 1);
+            self.sub = 0;
+        }
+        self.go(self.cursor, 1);
+    }
+    changed on => {
+        if (self.on) {
+            self.go(self.cursor, 1);
+        }
+    }
+    function fit(c: int) -> int {
+        clamp(c, 0, max(0, self.count - 1))
+    }
+    // Past a skipped stop, in direction d.
+    function past(c: int, d: int) -> int {
+        self.skip(c) ? self.fit(c + d) : c
+    }
+    // Moves to c, or on past skipped stops in direction d (staying put if all are skipped).
+    function go(c: int, d: int) {
+        let n = self.past(self.past(self.past(self.past(self.fit(c), d), d), d), d);
+        if (!self.skip(n) && n != self.cursor) {
+            self.cursor = n;
+            self.sub = 0;
+        }
+    }
+    // Put the cursor on c (or past skipped stops after it).
+    public function move-to(c: int) {
+        self.go(c, 1);
+    }
+    key-pressed(e) => {
+        if (!self.on) {
+            return reject;
+        }
+        if (e.text == Key.Escape) {
+            if (!self.has-focus) {
+                self.focus();
+                return accept;
+            }
+            return self.back() ? accept : reject;
+        }
+        if (!self.has-focus) {
+            // Something inside (a text field) has the keyboard and passed this key on.
+            return reject;
+        }
+        if (e.modifiers.control || e.modifiers.alt || e.modifiers.meta) {
+            return reject;
+        }
+        if (self.filter(e.text)) {
+            return accept;
+        }
+        if (e.text == Key.Tab || e.text == Key.Backtab) {
+            let d = e.text == Key.Tab ? 1 : -1;
+            if (self.count > 1) {
+                self.go(self.fit(self.cursor + d), d);
+            }
+            return accept;
+        }
+        if (e.text == "j" || e.text == Key.DownArrow || e.text == "k" || e.text == Key.UpArrow) {
+            let down = e.text == "j" || e.text == Key.DownArrow;
+            if (self.count <= 1) {
+                self.adjust(self.cursor, down ? -1 : 1);
+            } else if (down && self.cursor + self.stride < self.count) {
+                self.go(self.cursor + self.stride, 1);
+            } else if (!down && self.cursor - self.stride >= 0) {
+                self.go(self.cursor - self.stride, -1);
+            }
+            return accept;
+        }
+        if (e.text == "g" || e.text == Key.Home) {
+            self.go(0, 1);
+            return accept;
+        }
+        if (e.text == "G" || e.text == Key.End) {
+            self.go(self.count - 1, -1);
+            return accept;
+        }
+        if (e.text == "h" || e.text == Key.LeftArrow || e.text == "l" || e.text == Key.RightArrow) {
+            let d = e.text == "h" || e.text == Key.LeftArrow ? -1 : 1;
+            if (self.subs > 1) {
+                self.sub = clamp(self.sub + d, 0, self.subs - 1);
+                return accept;
+            }
+            return self.adjust(self.cursor, d) ? accept : reject;
+        }
+        // Space is the widget's own first (play / pause, say), else the same as Enter.
+        if (e.text == Key.Return || (e.text == " " && !self.letter(e.text, self.cursor))) {
+            self.activate(self.cursor, min(self.sub, self.subs - 1));
+            return accept;
+        }
+        if (e.text == " ") {
+            return accept;
+        }
+        if (e.text == Key.Backspace) {
+            return self.back() ? accept : reject;
+        }
+        if (e.text == "e") {
+            return reject;
+        }
+        self.letter(e.text, self.cursor) ? accept : reject
+    }
+    @children
 }

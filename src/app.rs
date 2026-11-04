@@ -1,18 +1,15 @@
-//! The daemon: Wayland event loop, Slint UI, data sources and the control socket, glued together.
-//! A standalone app (`niri-dash app <widget>`) is the same, with one widget in a normal window.
+//! The daemon: Wayland event loop, Slint UI, the system's senders and the control socket, glued
+//! together. A standalone app (`niri-dash app <widget>`) is the same, with one widget in a normal
+//! window.
 
 use crate::layout::{Kind, Layout, Loaded, RendererChoice};
 use crate::shell::{Mode, Shell};
-use crate::sources::{
-    self, Ctx, IconSrc, Msg, audio::Audio, bluetooth::Bluetooth, brightness::Brightness,
-    inhibit::Inhibit, kdeconnect::KdeConnect, media::Media, notifications::Notifications, tray,
-    udisks::Drives, weather::Weather, wifi::Wifi,
-};
 use crate::{
     Clipboard as UiClipboard, Control, Dash, Power as UiPower, Shell as UiShell, Tray as UiTray,
     WidgetInst, named_socket_path, socket_path, theme,
 };
 use config::watch_config;
+use niri_dash_system::{self as sys, Capabilities, Event, Feed, IconSrc, Senders, Started, Tell};
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
 use slint::platform::{Platform, WindowAdapter};
 use slint::{
@@ -31,6 +28,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+mod a11y;
 mod audio;
 mod clipboard;
 mod clock;
@@ -40,6 +38,9 @@ mod devices;
 mod edit;
 mod enums;
 mod feeds;
+mod hold;
+mod nav;
+mod probe;
 
 /// The sources a standalone app of `kind` has to run. Clock and calendar tick on their own, the
 /// clipboard comes from the Wayland side.
@@ -83,6 +84,9 @@ mod notifications;
 mod power;
 mod privacy;
 pub mod snapshot;
+pub mod stress;
+#[doc(hidden)]
+pub mod testing;
 mod timer;
 
 /// Starting the dashboard (or a snapshot) failed.
@@ -117,6 +121,15 @@ pub enum Error {
     },
     #[error("writing the PNG: {0}")]
     Png(#[from] png::EncodingError),
+    #[error("reading {}: {source}", path.display())]
+    Read {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    /// The stress run found the dashboard in a state it shouldn't be in.
+    #[error("stress run failed {0}")]
+    Stress(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -188,7 +201,7 @@ fn small_image(img: Image) -> Image {
 
 /// An image of RGBA pixels, scaled down to fit `max` on its longer side.
 fn rgba_image(width: u32, height: u32, rgba: Vec<u8>, max: u32) -> Image {
-    let (w, h, px) = sources::clipboard::shrink(width, height, rgba, max);
+    let (w, h, px) = sys::clipboard::shrink(width, height, rgba, max);
     Image::from_rgba8(SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(&px, w, h))
 }
 
@@ -196,7 +209,12 @@ struct App {
     ui: slint::Weak<Dash>,
     /// Set in a standalone app: the one widget it shows.
     solo: Option<Kind>,
-    ctx: Ctx,
+    /// Where to send the system's commands.
+    tx: Senders,
+    /// What the system can do here.
+    caps: Capabilities,
+    /// Whether the dashboard is up, as last told to the system.
+    visible: Cell<bool>,
     layout: RefCell<Layout>,
     widgets: Rc<VecModel<WidgetInst>>,
     /// The Columns and Rows steppers of edit mode.
@@ -208,11 +226,11 @@ struct App {
     image_uses: Cell<u64>,
     /// Controls from the UI, run by the event loop, which has the shell at hand.
     pending: RefCell<Vec<Control>>,
-    locale: sources::Locale,
+    locale: sys::Locale,
     /// When the brightness slider was last dragged.
     brightness_touched: Cell<Option<Instant>>,
     /// The tray items as last reported, and the address of the one whose menu is open.
-    tray_items: RefCell<Vec<tray::Item>>,
+    tray_items: RefCell<Vec<sys::tray::Item>>,
     menu_address: RefCell<String>,
     toast_timer: Timer,
     /// Drives the blend between two themes.
@@ -225,6 +243,10 @@ struct App {
     hide_at: Cell<Option<Instant>>,
     /// While dragging: the widget being dragged (0 for a new one) and where others would go.
     preview: RefCell<Option<(u32, crate::layout::Reflow)>>,
+    /// A press that may turn into a long press.
+    hold: hold::Hold,
+    /// The hint labels last handed to `Nav.hint-chars`, to set it only when they change.
+    hints: RefCell<Vec<String>>,
     /// The window of each Claude session, by pid (niri only).
     claude_windows: RefCell<HashMap<i32, u64>>,
     /// config.kdl as we last wrote it, to ignore our own writes when watching the file.
@@ -233,17 +255,6 @@ struct App {
     config_broken: Cell<bool>,
     /// Files the watcher checks for changes (config.kdl and the active theme).
     watched: Arc<Mutex<Vec<PathBuf>>>,
-    weather: Weather,
-    wifi: Wifi,
-    bluetooth: Bluetooth,
-    audio: Audio,
-    brightness: Brightness,
-    notifications: Notifications,
-    tray: tray::Tray,
-    media: Media,
-    inhibit: Inhibit,
-    drives: Drives,
-    phones: KdeConnect,
     /// What the daemon keeps across restarts (do not disturb, the timer, picked colors).
     state: RefCell<crate::state::State>,
     clock: clock::ClockState,
@@ -252,8 +263,6 @@ struct App {
     picker: color_picker::Picker,
     privacy: privacy::Privacy,
     night: night_light::NightLight,
-    /// KWin's night light, on Plasma.
-    kwin_night: Option<sources::kde::NightLight>,
     mascots: mascots::Mascots,
     clipboard: clipboard::History,
     mixer: audio::Mixer,
@@ -327,8 +336,8 @@ impl App {
     }
 
     /// Called every loop iteration: starts the entrance once the surface is configured, removes
-    /// the surface when the exit animation is over, and does what needs the shell (a copied
-    /// clipboard entry, a color pick once the dashboard is out of the way).
+    /// the surface when the exit animation is over, and picks a color once the dashboard is out of
+    /// the way.
     fn tick(&self, shell: &mut Shell) {
         // Start the entrance only once the first (still invisible) frame is on screen: that frame
         // is the expensive one (buffers, full repaint), and the animation shouldn't run while it
@@ -342,16 +351,25 @@ impl App {
         {
             self.hide_at.set(None);
             shell.hide();
-            self.ctx.set_visible(false);
+            self.set_visible(false);
             self.set_awake(false);
         }
-        self.push_pending_clip(shell);
         self.tick_pick(shell);
-        self.tick_night_light(shell);
+    }
+
+    /// Tell the system whether the dashboard is up: sources only watch and poll while it is.
+    fn set_visible(&self, on: bool) {
+        self.visible.set(on);
+        self.tx.host.tell(sys::host::Command::Visible(on));
     }
 
     fn prepare_for_output(&self, shell: &mut Shell) {
-        if let Some((width, height, scale)) = crate::compositor::focused_output() {
+        let (reply, output) = sys::oneshot::channel();
+        self.tx
+            .host
+            .tell(sys::host::Command::FocusedOutput { reply });
+        // Blocks until the compositor answers, as the first frame needs the size.
+        if let Ok(Some((width, height, scale))) = output.blocking_recv() {
             shell.prepare(width, height, scale);
             self.sync_grid();
         }
@@ -366,9 +384,8 @@ impl App {
             // Shown again during the exit animation: just turn around.
             self.ui().set_shown(true);
         } else if !shell.is_visible() {
-            self.start_clock();
+            self.come_up();
             let ui = self.ui();
-            ui.invoke_reset();
             ui.set_shown(false);
             // Lay out for the output we are about to appear on before the first frame, so
             // nothing animates from a stale size. (An app window gets its size from niri.)
@@ -377,26 +394,43 @@ impl App {
             }
             shell.show();
             self.reveal_pending.set(true);
-            self.ctx.set_visible(true);
+            self.set_visible(true);
             self.set_awake(true);
         } else if self.solo.is_some() {
             // Already open: bring the window to the front.
-            crate::compositor::focus_pid(&self.ctx, std::process::id() as i32);
+            self.tx
+                .windows
+                .tell(sys::windows::Command::FocusPid(std::process::id() as i32));
         }
         if edit && self.solo.is_none() {
             self.set_editing(true);
         }
     }
 
-    fn hide(&self, shell: &mut Shell) {
+    /// The UI's part of coming up: the clock ticking, every widget back on its first page, no
+    /// widget entered (a standalone app in its one widget).
+    fn come_up(&self) {
+        self.start_clock();
+        self.ui().invoke_reset();
+        self.reset_nav();
+    }
+
+    /// The UI's part of going away: out of edit mode, menus shut, no widget entered.
+    fn go_down(&self) {
         if self.ui().get_editing() {
             self.set_editing(false);
         }
         self.ui().global::<UiTray>().set_menu_open(false);
+        self.reset_nav();
+        self.hold.cancel();
+    }
+
+    fn hide(&self, shell: &mut Shell) {
+        self.go_down();
         if !shell.is_visible() {
             // Already gone (e.g. the compositor closed it).
             self.ui().set_shown(false);
-            self.ctx.set_visible(false);
+            self.set_visible(false);
             self.set_awake(false);
             return;
         }
@@ -438,46 +472,70 @@ impl App {
                 }
                 std::process::exit(0);
             }
-            Control::Inhibit => self.inhibit.toggle(),
+            Control::Inhibit => self.tx.power.tell(sys::power::Command::ToggleInhibit),
             Control::Dnd => self.toggle_dnd(),
         }
     }
 
-    fn handle(&self, msg: Msg) -> Option<Control> {
-        match msg {
-            Msg::Control(c) => return Some(c),
-            Msg::Toast(t) => self.toast(&t),
-            Msg::ConfigChanged => self.reload_config(),
-            Msg::Perf(s) => self.show_perf(s),
-            Msg::ClaudeUsage(u) => self.show_claude_usage(u),
-            Msg::Claude(s) => self.show_claude(s),
-            Msg::Windows(s) => self.show_windows(s),
-            Msg::KeyboardLayouts(l) => self.show_keyboard_layouts(l),
-            Msg::Wifi(s) => self.show_wifi(*s),
-            Msg::Bluetooth(s) => self.show_bluetooth(*s),
-            Msg::Brightness(level) => self.show_brightness(level),
-            Msg::Tray(items) => self.show_tray(items),
-            Msg::TrayMenu(m) => self.show_tray_menu(m),
-            Msg::Weather(w) => self.show_weather(w),
-            Msg::Media(m) => self.show_media(m),
-            Msg::Power(s) => self.show_power(s),
-            Msg::Inhibited(on) => self.ui().global::<UiPower>().set_inhibited(on),
-            Msg::SleepBlockers(list) => self.show_blockers(list),
-            Msg::Audio(s) => self.show_audio(s),
-            Msg::Notifications(s) => self.show_notifications(s),
-            Msg::Clipboard(clip) => self.add_clip(clip),
-            Msg::Casts(casts) => self.set_casts(casts),
-            Msg::Privacy(usage) => self.set_privacy_usage(usage),
-            Msg::NightLight(cmd) => self.night_light(cmd, true),
-            Msg::KwinNightLight(s) => self.show_kwin_night_light(s),
-            Msg::Drives(s) => self.show_drives(s),
-            Msg::Phones(s) => self.show_phones(s),
-            Msg::ColorPicked(rgb) => return self.color_picked(rgb),
-            Msg::MascotSay(say) => self.mascot_say(say),
-            Msg::MascotAnswer(id, out) => self.mascot_answer(id, out),
+    /// What the control socket or the config watcher asked for.
+    fn handle_input(&self, input: Input) -> Option<Control> {
+        match input {
+            Input::Control(c) => return Some(c),
+            Input::ConfigChanged => self.reload_config(),
+            Input::NightLight(cmd) => self.night_light(cmd, true),
+            Input::MascotSay(say) => self.mascot_say(say),
         }
         None
     }
+
+    /// What the system reports.
+    fn handle_event(&self, event: Event) -> Option<Control> {
+        match event {
+            Event::Toast(t) => self.toast(&t),
+            Event::Perf(sys::perf::Event::Snapshot(s)) => self.show_perf(s),
+            Event::Claude(sys::claude::Event::Usage(u)) => self.show_claude_usage(*u),
+            Event::Claude(sys::claude::Event::Sessions(s)) => self.show_claude(s),
+            Event::Windows(sys::windows::Event::State(s)) => self.show_windows(s),
+            Event::Keyboard(sys::keyboard::Event::Layouts(l)) => self.show_keyboard_layouts(l),
+            Event::Wifi(sys::wifi::Event::State(s)) => self.show_wifi(*s),
+            Event::Bluetooth(sys::bluetooth::Event::State(s)) => self.show_bluetooth(*s),
+            Event::Brightness(sys::brightness::Event::Level(l)) => self.show_brightness(l),
+            Event::Tray(sys::tray::Event::Items(items)) => self.show_tray(items),
+            Event::Tray(sys::tray::Event::Menu(m)) => self.show_tray_menu(m),
+            Event::Weather(sys::weather::Event::State(w)) => self.show_weather(w),
+            Event::Media(sys::media::Event::State(m)) => self.show_media(m),
+            Event::Power(sys::power::Event::State(s)) => self.show_power(s),
+            Event::Power(sys::power::Event::Inhibited(on)) => {
+                self.ui().global::<UiPower>().set_inhibited(on)
+            }
+            Event::Power(sys::power::Event::SleepBlockers(list)) => self.show_blockers(list),
+            Event::Audio(sys::audio::Event::State(s)) => self.show_audio(s),
+            Event::Notifications(sys::notifications::Event::State(s)) => self.show_notifications(s),
+            Event::Clipboard(sys::clipboard::Event::Copied(clip)) => self.add_clip(clip),
+            Event::Privacy(sys::privacy::Event::Casts(casts)) => self.set_casts(casts),
+            Event::Privacy(sys::privacy::Event::Usage(usage)) => self.set_privacy_usage(usage),
+            Event::NightLight(sys::night_light::Event::Kwin(s)) => self.show_kwin_night_light(s),
+            Event::Drives(sys::drives::Event::State(s)) => self.show_drives(s),
+            Event::Phones(sys::phones::Event::State(s)) => self.show_phones(s),
+            Event::Color(sys::color::Event::Picked(rgb)) => return self.color_picked(rgb),
+            Event::Mascot(sys::mascot::Event::Output { id, stdout }) => {
+                self.mascot_output(id, stdout)
+            }
+        }
+        None
+    }
+}
+
+/// What reaches the dashboard from outside the system: the control socket and the config
+/// watcher.
+enum Input {
+    Control(Control),
+    /// config.kdl or the theme file changed on disk.
+    ConfigChanged,
+    /// `niri-dash night-light …`, or a standalone night-light app's change.
+    NightLight(sys::night_light::Cmd),
+    /// A line for the mascots, from `niri-dash say`.
+    MascotSay(crate::mascots::Say),
 }
 
 fn wire(app: &Rc<App>, ui: &Dash) {
@@ -487,6 +545,7 @@ fn wire(app: &Rc<App>, ui: &Dash) {
     ui.global::<UiShell>()
         .on_hide(move || a.pending.borrow_mut().push(Control::Hide));
     edit::wire(app, ui);
+    nav::wire(app, ui);
     look::wire(app, ui);
     clock::wire(app, ui);
     feeds::wire(app, ui);
@@ -503,7 +562,7 @@ fn wire(app: &Rc<App>, ui: &Dash) {
     mascots::wire(app, ui);
 }
 
-fn control_server(listener: UnixListener, tx: channel::Sender<Msg>) {
+fn control_server(listener: UnixListener, tx: channel::Sender<Input>) {
     std::thread::Builder::new()
         .name("control".into())
         .spawn(move || {
@@ -513,14 +572,14 @@ fn control_server(listener: UnixListener, tx: channel::Sender<Msg>) {
                 if BufReader::new(&stream).read_line(&mut line).is_err() {
                     continue;
                 }
-                if let Some(cmd) = crate::gamma::Cmd::parse_wire(line.trim()) {
-                    let _ = tx.send(Msg::NightLight(cmd));
+                if let Some(cmd) = sys::night_light::Cmd::parse_wire(line.trim()) {
+                    let _ = tx.send(Input::NightLight(cmd));
                     continue;
                 }
                 if let Some(say) = crate::mascots::Say::parse_wire(line.trim()) {
                     match say {
                         Ok(say) => {
-                            let _ = tx.send(Msg::MascotSay(say));
+                            let _ = tx.send(Input::MascotSay(say));
                         }
                         Err(e) => log::warn!("bad say command: {e}"),
                     }
@@ -530,35 +589,10 @@ fn control_server(listener: UnixListener, tx: channel::Sender<Msg>) {
                     log::warn!("unknown control command {:?}", line.trim());
                     continue;
                 };
-                let _ = tx.send(Msg::Control(c));
+                let _ = tx.send(Input::Control(c));
             }
         })
         .expect("spawning control thread");
-}
-
-/// A data source a widget reads from.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Feed {
-    Perf,
-    /// What the compositor reports: windows, keyboard layouts, screencasts.
-    Compositor,
-    /// KWin's night light (on Plasma; elsewhere the daemon holds the gamma control).
-    NightLight,
-    Power,
-    Claude,
-    ClaudeUsage,
-    Weather,
-    Wifi,
-    Bluetooth,
-    Audio,
-    Brightness,
-    Notifications,
-    Tray,
-    Media,
-    Inhibit,
-    Privacy,
-    Drives,
-    Phone,
 }
 
 /// Whether a standalone app keeps running when its window closes, so the next `niri-dash app`
@@ -567,24 +601,22 @@ fn resident(kind: Kind) -> bool {
     kind == Kind::Clipboard
 }
 
-fn build(ui: &Dash, ctx: Ctx, solo: Option<Kind>, config: Loaded) -> Rc<App> {
-    let compositor = crate::compositor::detect(ctx.runtime());
-    let kwin = compositor == crate::compositor::Compositor::Kwin;
-    let wants = |f: Feed| solo.is_none_or(|k| feeds(k).contains(&f));
-    // Sources a standalone app doesn't show get a dormant context: they exist but stay idle.
-    let feed_ctx = |f: Feed| ctx.live_if(wants(f));
-    sources::perf::start(feed_ctx(Feed::Perf));
-    crate::compositor::start(feed_ctx(Feed::Compositor));
-    sources::power::start(feed_ctx(Feed::Power));
-    sources::claude::start(feed_ctx(Feed::Claude));
-    sources::claude_usage::start(feed_ctx(Feed::ClaudeUsage));
-    sources::privacy::start(feed_ctx(Feed::Privacy));
+/// The dashboard on `system`. `visible`: it is up already (a snapshot renders without `show`).
+fn build(
+    ui: &Dash,
+    system: Started,
+    input: channel::Sender<Input>,
+    solo: Option<Kind>,
+    config: Loaded,
+    visible: bool,
+) -> Rc<App> {
+    let Started { senders, caps } = system;
     theme::install_bundled();
     ui.set_solo(solo.is_some());
     let desktop = ui.global::<crate::Desktop>();
-    desktop.set_niri(compositor == crate::compositor::Compositor::Niri);
-    desktop.set_plasma(kwin);
-    if !crate::compositor::has_windows() {
+    desktop.set_niri(caps.niri());
+    desktop.set_plasma(caps.kwin());
+    if !caps.has_windows() {
         ui.global::<crate::Windows>().set_available(false);
     }
 
@@ -594,7 +626,7 @@ fn build(ui: &Dash, ctx: Ctx, solo: Option<Kind>, config: Loaded) -> Rc<App> {
         broken,
         text,
     } = config;
-    let locale = sources::locale();
+    let locale = sys::locale();
     let widgets = Rc::new(VecModel::<WidgetInst>::default());
     ui.set_widgets(ModelRc::from(widgets.clone()));
     let grid_controls = Rc::new(VecModel::<crate::SettingRow>::default());
@@ -603,6 +635,9 @@ fn build(ui: &Dash, ctx: Ctx, solo: Option<Kind>, config: Loaded) -> Rc<App> {
     let app = Rc::new(App {
         ui: ui.as_weak(),
         solo,
+        tx: senders,
+        caps,
+        visible: Cell::new(visible),
         layout: RefCell::new(layout),
         widgets,
         grid_controls,
@@ -619,21 +654,12 @@ fn build(ui: &Dash, ctx: Ctx, solo: Option<Kind>, config: Loaded) -> Rc<App> {
         reveal_pending: Cell::new(false),
         hide_at: Cell::new(None),
         preview: Default::default(),
+        hold: Default::default(),
+        hints: Default::default(),
         claude_windows: Default::default(),
         last_written: RefCell::new(text),
         config_broken: Cell::new(broken),
         watched: Default::default(),
-        weather: Weather::start(feed_ctx(Feed::Weather), locale.chrono),
-        wifi: Wifi::start(feed_ctx(Feed::Wifi)),
-        bluetooth: Bluetooth::start(feed_ctx(Feed::Bluetooth)),
-        audio: Audio::start(feed_ctx(Feed::Audio)),
-        brightness: Brightness::start(feed_ctx(Feed::Brightness)),
-        notifications: Notifications::start(feed_ctx(Feed::Notifications)),
-        tray: tray::Tray::start(feed_ctx(Feed::Tray)),
-        media: Media::start(feed_ctx(Feed::Media)),
-        inhibit: Inhibit::start(feed_ctx(Feed::Inhibit)),
-        drives: Drives::start(feed_ctx(Feed::Drives)),
-        phones: KdeConnect::start(feed_ctx(Feed::Phone)),
         mixer: Default::default(),
         clock: Default::default(),
         timers: timer::Timers::restored(&state),
@@ -641,11 +667,9 @@ fn build(ui: &Dash, ctx: Ctx, solo: Option<Kind>, config: Loaded) -> Rc<App> {
         picker: Default::default(),
         privacy: Default::default(),
         night: Default::default(),
-        kwin_night: kwin.then(|| sources::kde::NightLight::start(feed_ctx(Feed::NightLight))),
         mascots: Default::default(),
         clipboard: Default::default(),
         state: RefCell::new(state),
-        ctx: ctx.clone(),
     });
     wire(&app, ui);
     app.apply_settings();
@@ -655,9 +679,8 @@ fn build(ui: &Dash, ctx: Ctx, solo: Option<Kind>, config: Loaded) -> Rc<App> {
         }
         app.toast(&warnings.join("; "));
     }
-    watch_config(app.watched.clone(), ctx);
-    if app.ctx.visible() {
-        // Snapshots render without `show`.
+    watch_config(app.watched.clone(), input);
+    if visible {
         app.set_awake(true);
     }
     app.sync_grid();
@@ -677,7 +700,14 @@ pub fn run(initial: Option<Control>) -> Result<()> {
         source,
     })?;
     log::info!("niri-dash running; control socket {}", path.display());
-    serve(listener, Mode::Dashboard, None, initial, Layout::load())
+    serve(
+        Some(listener),
+        Mode::Dashboard,
+        None,
+        initial,
+        Layout::load(),
+        None,
+    )
 }
 
 /// Run one widget as a standalone app in a normal window, with a control socket of its own (so a
@@ -701,20 +731,40 @@ pub fn run_app(kind: Kind) -> Result<()> {
         min_size: (px(min_w), px(min_h)),
     };
     log::info!("{} running; control socket {}", kind.name(), path.display());
-    let result = serve(listener, mode, Some(kind), Some(Control::Show), config);
+    let result = serve(
+        Some(listener),
+        mode,
+        Some(kind),
+        Some(Control::Show),
+        config,
+        None,
+    );
     let _ = std::fs::remove_file(&path);
     result
 }
 
-/// The runtime the sources run on. Also decides which compositor this is, before anything asks.
-fn runtime() -> Result<tokio::runtime::Runtime> {
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
-        .thread_name("niri-dash-io")
-        .enable_all()
-        .build()?;
-    crate::compositor::detect(rt.handle());
-    Ok(rt)
+/// The real system, with the sources `solo`'s widget needs (all of them for the dashboard),
+/// reporting to `events`; with the clipboard and night light if it gets the Wayland connection.
+/// Also decides which compositor this is, before anything asks. `NIRI_DASH_MOCK=1` (for
+/// development) runs on the mock system's made-up data instead.
+fn start_system(
+    events: channel::Sender<Event>,
+    solo: Option<Kind>,
+    wayland: Option<Connection>,
+) -> Result<Started> {
+    if std::env::var_os("NIRI_DASH_MOCK").is_some() {
+        log::info!("running on the mock system");
+        return Ok(sys::mock(events)?);
+    }
+    Ok(sys::live(
+        events,
+        sys::Options {
+            feeds: solo.map(feeds),
+            wayland,
+            // Only the dashboard holds the gamma tables; a standalone app asks it.
+            gamma: solo.is_none(),
+        },
+    )?)
 }
 
 /// Have Slint draw into `window`.
@@ -737,17 +787,56 @@ fn renderer_override() -> Option<RendererChoice> {
         .and_then(|r| r.parse().ok())
 }
 
+/// `niri-dash stress` on screen: the whole dashboard in a normal window, on the mock system, with
+/// no control socket. Ends when the keys run out or the window is closed.
+fn stress_window(mut run: stress::Run) -> Result<stress::Monkey> {
+    let mode = Mode::App {
+        app_id: "niri-dash-stress".into(),
+        title: "niri-dash stress run".into(),
+        size: (1280, 800),
+        min_size: (640, 400),
+    };
+    let config = Layout::load();
+    serve(
+        None,
+        mode,
+        None,
+        Some(Control::Show),
+        config,
+        Some(&mut run),
+    )?;
+    Ok(run.monkey)
+}
+
 /// The event loop shared by the dashboard and the standalone apps. Returns when a (non-resident)
-/// app's window closes; the dashboard runs until it is told to quit.
+/// app's window closes; the dashboard runs until it is told to quit. A stress run (`stress`)
+/// runs on the mock system, keeps its window when the dashboard hides, and returns when it is
+/// over.
 fn serve(
-    listener: UnixListener,
+    listener: Option<UnixListener>,
     mode: Mode,
     solo: Option<Kind>,
     initial: Option<Control>,
     config: Loaded,
+    mut stress: Option<&mut stress::Run>,
 ) -> Result<()> {
-    let rt = runtime()?;
+    let (events_tx, events) = channel::channel::<Event>();
+    let (input_tx, inputs) = channel::channel::<Input>();
     let conn = Connection::connect_to_env()?;
+    let keep = stress.is_some();
+    let system = if keep {
+        sys::mock(events_tx)?
+    } else {
+        start_system(events_tx, solo, Some(conn.clone()))?
+    };
+    // A stress run's window stays up when the dashboard hides.
+    let route = move |a: &App, shell: &mut Shell, c: Control| {
+        if keep {
+            a.control_in_place(c)
+        } else {
+            a.control(shell, c)
+        }
+    };
     let (globals, queue) = registry_queue_init::<Shell>(&conn)?;
     let mut event_loop: EventLoop<'static, Shell> = EventLoop::try_new()?;
     let backend = choose_backend(&conn, config.layout.renderer);
@@ -767,25 +856,36 @@ fn serve(
 
     let ui = new_ui()?;
 
-    let (tx, rx) = channel::channel::<Msg>();
-    let ctx = Ctx::new(tx.clone(), rt.handle().clone());
-    shell.clip_tx = Some(tx.clone());
-    let app = build(&ui, ctx, solo, config);
-    ui.global::<UiClipboard>()
-        .set_available(shell.has_clipboard());
+    let has_clipboard = system.caps.clipboard;
+    let app = build(&ui, system, input_tx.clone(), solo, config, false);
+    ui.global::<UiClipboard>().set_available(has_clipboard);
 
+    shell.watch_pointer(hold::watcher(&app));
     let a = app.clone();
     event_loop
         .handle()
-        .insert_source(rx, move |ev, _, shell| {
-            if let channel::Event::Msg(m) = ev
-                && let Some(c) = a.handle(m)
+        .insert_source(events, move |ev, _, shell| {
+            if let channel::Event::Msg(e) = ev
+                && let Some(c) = a.handle_event(e)
             {
-                a.control(shell, c);
+                route(&a, shell, c);
             }
         })
-        .map_err(|e| Error::Ui(format!("message source: {e}")))?;
-    control_server(listener, tx);
+        .map_err(|e| Error::Ui(format!("event source: {e}")))?;
+    let a = app.clone();
+    event_loop
+        .handle()
+        .insert_source(inputs, move |ev, _, shell| {
+            if let channel::Event::Msg(i) = ev
+                && let Some(c) = a.handle_input(i)
+            {
+                route(&a, shell, c);
+            }
+        })
+        .map_err(|e| Error::Ui(format!("input source: {e}")))?;
+    if let Some(listener) = listener {
+        control_server(listener, input_tx);
+    }
 
     if solo.is_none() {
         // Size the UI for the current output right away, so the first show is already laid out.
@@ -812,13 +912,30 @@ fn serve(
             slint::platform::duration_until_next_timer_update().unwrap_or(Duration::MAX)
         };
         let timeout = shell.frame_wait().map_or(timeout, |w| w.min(timeout));
+        let timeout = stress
+            .as_ref()
+            .map_or(timeout, |r| r.pace.wait().min(timeout));
         event_loop.dispatch(Some(timeout).filter(|t| *t != Duration::MAX), &mut shell)?;
         slint::platform::update_timers_and_animations();
+        app.keep_keyboard();
         let pending: Vec<Control> = app.pending.borrow_mut().drain(..).collect();
         for c in pending {
-            app.control(&mut shell, c);
+            route(&app, &mut shell, c);
         }
         app.tick(&mut shell);
+        if let Some(run) = stress.as_deref_mut() {
+            if shell.closed_by_compositor {
+                return Ok(());
+            }
+            if shell.is_configured() && run.pace.due() {
+                if run.ops.is_some_and(|n| run.monkey.done() >= n) {
+                    return Ok(());
+                }
+                run.monkey
+                    .step(&app, window.window())
+                    .map_err(|f| Error::Stress(f.to_string()))?;
+            }
+        }
         if shell.closed_by_compositor {
             shell.closed_by_compositor = false;
             app.hide(&mut shell);

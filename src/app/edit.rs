@@ -3,8 +3,10 @@
 use super::enums::{character_to_ui, kind_from_ui, kind_to_ui, shape_to_ui};
 use super::{App, model, set_if_changed};
 use crate::layout::{Kind, Placed};
+use crate::nav::Dir;
 use crate::{Dash, PaletteItem, WidgetInst};
-use slint::Model;
+use niri_dash_system::{Capabilities, Compositor, Tell, weather};
+use slint::{ComponentHandle, Model};
 use std::rc::Rc;
 use strum::IntoEnumIterator;
 
@@ -30,6 +32,7 @@ fn to_opts(p: &Placed, us: bool) -> crate::WidgetOpts {
         poweroff: b(Opt::PowerOff),
         confirm: b(Opt::Confirm),
         character: character_to_ui(character(p, us)),
+        cowfile: get_str(v, Opt::Cowfile, us).into(),
     }
 }
 
@@ -48,11 +51,15 @@ fn to_inst(p: &Placed, us: bool) -> WidgetInst {
         can_round: p.kind.info().can_be_round,
         id: p.id as i32,
         kind: kind_to_ui(p.kind),
+        title: p.kind.info().title.into(),
         shape: shape_to_ui(p.shape),
         col: p.col,
         row: p.row,
         w: p.w,
         h: p.h,
+        min_w: p.min_size().0,
+        min_h: p.min_size().1,
+        hint: Default::default(),
     }
 }
 
@@ -60,6 +67,7 @@ impl App {
     pub(super) fn sync_widgets(&self) {
         self.sync_mascots();
         self.sync_notes(false);
+        self.sync_history();
         if let Some(kind) = self.solo {
             let inst = to_inst(&self.layout.borrow().solo_widget(kind), self.locale.us);
             self.ui().set_solo_inst(inst);
@@ -69,7 +77,7 @@ impl App {
             .set_hidden_widgets(self.layout.borrow().hidden_count() as i32);
         let preview = self.preview.borrow();
         let us = self.locale.us;
-        let new: Vec<WidgetInst> = self
+        let mut new: Vec<WidgetInst> = self
             .layout
             .borrow()
             .visible()
@@ -86,6 +94,23 @@ impl App {
             })
             .collect();
         drop(preview);
+        let ids: Vec<(u32, Kind)> = new
+            .iter()
+            .map(|w| (w.id as u32, kind_from_ui(w.kind)))
+            .collect();
+        let hints = crate::nav::assign_hints(&ids);
+        if *self.hints.borrow() != hints {
+            let chars = hints.iter().map(|h| crate::HintChars {
+                chars: model(h.chars().map(|c| c.to_string().into()).collect()),
+            });
+            self.ui()
+                .global::<crate::Nav>()
+                .set_hint_chars(model(chars.collect()));
+            *self.hints.borrow_mut() = hints.clone();
+        }
+        for (w, hint) in new.iter_mut().zip(hints) {
+            w.hint = hint.into();
+        }
         let same_ids = self.widgets.row_count() == new.len()
             && self.widgets.iter().zip(&new).all(|(a, b)| a.id == b.id);
         if same_ids {
@@ -121,6 +146,51 @@ impl App {
         *self.preview.borrow_mut() = p;
         if changed {
             self.sync_widgets();
+        }
+    }
+
+    /// Put widget `id` at `target` from the keyboard, pushing others aside (`prefer`: the way
+    /// it went).
+    fn place_by_key(&self, id: u32, target: crate::layout::Rect, prefer: (i32, i32)) {
+        self.set_preview(None);
+        let placed = self.layout.borrow_mut().place_reflow(id, target, prefer);
+        if placed {
+            self.layout_changed();
+        } else {
+            self.toast("No room there");
+        }
+    }
+
+    /// Ctrl+Shift+h/j/k/l: move widget `id` one cell that way.
+    fn nudge(&self, id: u32, dir: Dir) {
+        let (dc, dr) = dir.step();
+        let Some(r) = self.layout.borrow().get(id).map(Placed::rect) else {
+            return;
+        };
+        let target = crate::layout::Rect {
+            col: r.col + dc,
+            row: r.row + dr,
+            ..r
+        };
+        self.place_by_key(id, target, (dc, dr));
+    }
+
+    /// The keyboard's sizing mode: push widget `id`'s `edge` out a cell, or pull it in.
+    fn reshape(&self, id: u32, edge: Dir, grow: bool) {
+        let target = {
+            let l = self.layout.borrow();
+            let Some(p) = l.get(id) else { return };
+            crate::nav::resized(
+                p.rect(),
+                edge,
+                grow,
+                p.shape == crate::layout::Shape::Round,
+                p.min_size(),
+            )
+        };
+        // At its smallest, shrinking does nothing.
+        if let Some(target) = target {
+            self.place_by_key(id, target, edge.step());
         }
     }
 
@@ -162,26 +232,10 @@ impl App {
         ok
     }
 
-    fn preview_resize(&self, id: u32, w: i32, h: i32) -> bool {
-        let result = {
-            let l = self.layout.borrow();
-            l.get(id).and_then(|p| {
-                let (w, h) = l.clamp_size(p, w, h);
-                let prefer = if h > p.h { (0, 1) } else { (1, 0) };
-                l.reflow(
-                    id,
-                    crate::layout::Rect {
-                        col: p.col,
-                        row: p.row,
-                        w,
-                        h,
-                    },
-                    prefer,
-                )
-            })
-        };
+    fn preview_resize(&self, id: u32, target: crate::layout::Rect) -> bool {
+        let result = self.layout.borrow().plan_resize(id, target);
         let ok = result.is_some();
-        self.set_preview(result.map(|m| (id, m)));
+        self.set_preview(result.map(|(_, moves)| (id, moves)));
         ok
     }
 
@@ -362,8 +416,27 @@ impl App {
         self.refresh_settings();
         if kind == Kind::Weather {
             let config = self.layout.borrow().weather_config(self.locale.us);
-            self.weather.configure(config);
+            self.tx.weather.tell(weather::Command::Configure(config));
         }
+    }
+}
+
+/// How a widget's description reads here, where the compositor lacks what it needs (None: as
+/// usual), and whether it can't work here at all.
+fn caveat(caps: Capabilities, kind: Kind) -> Option<(&'static str, bool)> {
+    use Compositor::*;
+    match (caps.compositor, kind) {
+        (Niri, _) => None,
+        (_, Kind::Windows) => Some(("Needs niri: open windows by workspace", true)),
+        (_, Kind::ClaudeSessions) => Some(("Running Claude Code sessions", false)),
+        (_, Kind::Privacy) => Some((
+            "Who uses the microphone or camera (screen sharing needs niri)",
+            false,
+        )),
+        (Kwin, Kind::Notifications) => Some(("Pause Plasma's notification pop-ups", false)),
+        (Kwin, Kind::NightLight) => Some(("Pause or resume Plasma's night light", false)),
+        (Other, Kind::KeyboardLayout | Kind::ColorPicker) => Some(("Needs niri or Plasma", true)),
+        _ => None,
     }
 }
 
@@ -374,7 +447,9 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     let a = app.clone();
     ui.on_preview_move(move |id, c, r| a.preview_move(id as u32, c, r));
     let a = app.clone();
-    ui.on_preview_resize(move |id, w, h| a.preview_resize(id as u32, w, h));
+    ui.on_preview_resize(move |id, col, row, w, h| {
+        a.preview_resize(id as u32, crate::layout::Rect { col, row, w, h })
+    });
     let a = app.clone();
     ui.on_preview_add(move |k, c, r| a.preview_add(kind_from_ui(k), c, r));
     let a = app.clone();
@@ -391,9 +466,22 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
         }
     });
     let a = app.clone();
-    ui.on_resize_widget(move |id, w, h| {
+    ui.on_nudge_widget(move |id, dir| {
+        if let Some(dir) = Dir::from_index(dir) {
+            a.nudge(id as u32, dir);
+        }
+    });
+    let a = app.clone();
+    ui.on_reshape_widget(move |id, edge, grow| {
+        if let Some(edge) = Dir::from_index(edge) {
+            a.reshape(id as u32, edge, grow);
+        }
+    });
+    let a = app.clone();
+    ui.on_resize_widget(move |id, col, row, w, h| {
         a.set_preview(None);
-        if a.layout.borrow_mut().resize_reflow(id as u32, w, h) {
+        let target = crate::layout::Rect { col, row, w, h };
+        if a.layout.borrow_mut().resize_reflow(id as u32, target) {
             a.layout_changed();
         } else {
             a.sync_widgets();
@@ -415,7 +503,16 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
         if a.layout.borrow_mut().toggle_shape(id as u32) {
             a.layout_changed();
         } else {
-            a.toast("No room to make this widget round here");
+            let round = a
+                .layout
+                .borrow()
+                .get(id as u32)
+                .is_some_and(|p| p.shape == crate::layout::Shape::Round);
+            a.toast(if round {
+                "No room to make this widget rectangular here"
+            } else {
+                "No room to make this widget round here"
+            });
         }
     });
     let a = app.clone();
@@ -434,9 +531,20 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     let a = app.clone();
     ui.on_setting_text(move |index, text| {
         let text = text.trim().to_string();
-        a.change_setting(index, |_, _| {
+        let mut complaint = None;
+        a.change_setting(index, |opt, _| {
+            use crate::widget_settings::Opt;
+            match opt {
+                Opt::Zones => complaint = crate::zones::complaint(&text),
+                Opt::Cowfile => complaint = crate::cowfile::complaint(&text),
+                _ => {}
+            }
             (!text.is_empty()).then_some(kdl::KdlValue::String(text))
-        })
+        });
+        // Kept as typed, to fix; the clock leaves the unknown ones out.
+        if let Some(c) = complaint {
+            a.toast(&c);
+        }
     });
     let a = app.clone();
     ui.on_setting_reset(move |index| a.change_setting(index, |_, _| None));
@@ -461,28 +569,61 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     });
     // The grid steppers: index 0 is the columns, 1 the rows. The first step makes the grid
     // explicit, starting from what fits the screen.
+    // A step that would leave no room for some widget is refused: the stepper shakes and says
+    // which ones, and nothing changes. Edit mode never deletes widgets on its own.
     let a = app.clone();
     ui.on_grid_step(move |index, delta| {
         let (cols, rows) = {
             let l = a.layout.borrow();
             (l.cols, l.rows)
         };
-        a.change_grid(Some(match index {
+        let grid = match index {
             0 => (cols + delta, rows),
             _ => (cols, rows + delta),
-        }));
+        };
+        let shake = || {
+            let ui = a.ui();
+            if index == 0 {
+                ui.set_grid_refusals_cols(ui.get_grid_refusals_cols() + 1);
+            } else {
+                ui.set_grid_refusals_rows(ui.get_grid_refusals_rows() + 1);
+            }
+        };
+        // Past the steppers' ends (the keyboard can try; the buttons are greyed out).
+        if !crate::layout::COLUMNS.contains(&grid.0) || !crate::layout::ROWS.contains(&grid.1) {
+            shake();
+            return;
+        }
+        let lost = {
+            let mut trial = a.layout.borrow().clone();
+            trial.set_grid(Some(grid)).evicted
+        };
+        if !lost.is_empty() {
+            let mut names: Vec<&str> = lost.iter().map(|p| p.kind.info().title).collect();
+            names.dedup();
+            shake();
+            a.toast(&format!(
+                "No room for {} on a {}\u{d7}{} grid. Shrink or remove widgets first.",
+                names.join(", "),
+                grid.0,
+                grid.1
+            ));
+            return;
+        }
+        a.change_grid(Some(grid));
     });
     let a = app.clone();
     ui.on_grid_auto(move || a.change_grid(None));
     // Widgets that can't work under this compositor go last, saying what they need.
     let mut kinds: Vec<Kind> = Kind::iter().collect();
-    kinds.sort_by_key(|&k| crate::compositor::caveat(k).is_some_and(|(_, out)| out));
+    let caps = app.caps;
+    kinds.sort_by_key(|&k| caveat(caps, k).is_some_and(|(_, out)| out));
     ui.set_palette(model(
         kinds
             .into_iter()
             .map(|k| {
                 let info = k.info();
-                let caveat = crate::compositor::caveat(k).map(|(text, _)| text);
+                let caveat = caveat(caps, k).map(|(text, _)| text);
                 PaletteItem {
                     kind: kind_to_ui(k),
                     title: info.title.into(),

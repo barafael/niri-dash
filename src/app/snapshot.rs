@@ -1,10 +1,10 @@
 //! `niri-dash snapshot`: render the dashboard offscreen into a PNG, with live data, without
 //! touching the screen. A development tool.
 
-use super::{Error, Result, build, new_ui, renderer_override, runtime, set_platform};
+use super::{Error, Input, Result, build, new_ui, renderer_override, set_platform, start_system};
 use crate::layout::{Kind, Layout, RendererChoice};
-use crate::sources::{Ctx, Msg};
 use crate::theme;
+use niri_dash_system::{Event, Tell, host};
 use slint::platform::software_renderer::{
     MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType,
 };
@@ -50,8 +50,10 @@ pub struct Args {
     /// Show this style instead of the configured one, without touching config.kdl.
     #[arg(long)]
     style: Option<String>,
-    /// Scripted pointer input after the wait, rendered incrementally with animations running in
-    /// between: "down:x,y;move:x,y;up:x,y;dbl:x,y;wait:ms".
+    /// Scripted input after the wait, rendered incrementally with animations running in
+    /// between: "down:x,y;move:x,y;up:x,y;dbl:x,y;wait:ms;key:K". K is a character, or esc,
+    /// enter, space, tab, backtab, backspace, left, right, up, down, with ctrl+ / shift+ / alt+
+    /// in front for modifiers held.
     #[arg(long, value_name = "SCRIPT")]
     events: Option<String>,
     /// Render incrementally while waiting, into a reused buffer as the daemon does.
@@ -63,11 +65,20 @@ pub struct Args {
     /// Time the frames of the open animation and print the figures.
     #[arg(long)]
     bench: bool,
+    /// Show the mock system's made-up data instead of the live system's.
+    #[arg(long)]
+    mock: bool,
 }
 
 /// Render the snapshot `args` describe, of the dashboard or of the standalone app `solo`.
 pub fn run(args: &Args, solo: Option<Kind>) -> Result<()> {
-    let rt = runtime()?;
+    let (events_tx, events) = channel::channel::<Event>();
+    let system = if args.mock {
+        niri_dash_system::mock(events_tx)?
+    } else {
+        start_system(events_tx, solo, None)?
+    };
+    system.senders.host.tell(host::Command::Visible(true));
     // NIRI_DASH_RENDERER=gpu: draw with FemtoVG/OpenGL ES into an offscreen texture instead.
     let gpu = match renderer_override() {
         Some(RendererChoice::Gpu) => {
@@ -120,16 +131,24 @@ pub fn run(args: &Args, solo: Option<Kind>) -> Result<()> {
     });
     window.set_size(slint::PhysicalSize::new(pw, ph));
     let mut event_loop: EventLoop<'static, ()> = EventLoop::try_new()?;
-    let (tx, rx) = channel::channel::<Msg>();
-    let ctx = Ctx::new(tx, rt.handle().clone());
-    ctx.set_visible(true);
-    let app = build(&ui, ctx.clone(), solo, Layout::load());
+    // Only the config watcher sends inputs: there is no control socket.
+    let (input_tx, inputs) = channel::channel::<Input>();
+    let app = build(&ui, system, input_tx, solo, Layout::load(), true);
     let a = app.clone();
     event_loop
         .handle()
-        .insert_source(rx, move |ev, _, _| {
-            if let channel::Event::Msg(m) = ev {
-                let _ = a.handle(m);
+        .insert_source(events, move |ev, _, _| {
+            if let channel::Event::Msg(e) = ev {
+                let _ = a.handle_event(e);
+            }
+        })
+        .map_err(|e| Error::Ui(e.to_string()))?;
+    let a = app.clone();
+    event_loop
+        .handle()
+        .insert_source(inputs, move |ev, _, _| {
+            if let channel::Event::Msg(i) = ev {
+                let _ = a.handle_input(i);
             }
         })
         .map_err(|e| Error::Ui(e.to_string()))?;
@@ -167,17 +186,25 @@ pub fn run(args: &Args, solo: Option<Kind>) -> Result<()> {
         if first {
             // Let layouts settle once before the grid size is read.
             first = false;
-            ctx.refresh();
+            app.tx.host.tell(host::Command::Refresh);
         }
         app.sync_grid();
         if args.incremental {
             render_into(&mut pixels, pw as usize, false);
         }
     }
+    // As on show: the keyboard goes to the dashboard (or to a standalone app's widget).
+    window.dispatch_event(WindowEvent::WindowActiveChanged(true));
+    ui.invoke_reset();
+    app.reset_nav();
     if let Some(script) = &args.events {
-        let pump = |ms: u64, pixels: &mut Vec<_>| {
+        // Events keep coming in meanwhile, so what the (mock) system answers shows up.
+        let mut pump = |ms: u64, pixels: &mut Vec<_>| {
             let t = Instant::now();
             while t.elapsed() < Duration::from_millis(ms) {
+                if let Err(e) = event_loop.dispatch(Some(Duration::ZERO), &mut ()) {
+                    log::warn!("event loop: {e}");
+                }
                 slint::platform::update_timers_and_animations();
                 render_into(pixels, pw as usize, false);
                 std::thread::sleep(Duration::from_millis(8));
@@ -187,6 +214,11 @@ pub fn run(args: &Args, solo: Option<Kind>) -> Result<()> {
             let (verb, arg) = step.split_once(':').unwrap_or((step, ""));
             if verb == "wait" {
                 pump(arg.parse().unwrap_or(300), &mut pixels);
+                continue;
+            }
+            if verb == "key" {
+                press_key(window, arg);
+                pump(40, &mut pixels);
                 continue;
             }
             let (x, y) = arg
@@ -246,6 +278,48 @@ pub fn run(args: &Args, solo: Option<Kind>) -> Result<()> {
         render_into(&mut pixels, pw as usize, true);
     }
     write_png(&args.out, pw, ph, &pixels)
+}
+
+/// Press and release `spec` ("f", "ctrl+l", "esc", …) as the platform layer would.
+pub(super) fn press_key(window: &slint::Window, spec: &str) {
+    use slint::platform::Key;
+    let mut rest = spec;
+    let mut mods = Vec::new();
+    loop {
+        let (m, r) = match rest.split_once('+') {
+            Some((m, r)) if !r.is_empty() => (m, r),
+            _ => break,
+        };
+        mods.push(match m {
+            "ctrl" => Key::Control,
+            "shift" => Key::Shift,
+            "alt" => Key::Alt,
+            _ => break,
+        });
+        rest = r;
+    }
+    let text: slint::SharedString = match rest {
+        "esc" => Key::Escape.into(),
+        "enter" => Key::Return.into(),
+        "space" => " ".into(),
+        "tab" => Key::Tab.into(),
+        "backtab" => Key::Backtab.into(),
+        "backspace" => Key::Backspace.into(),
+        "left" => Key::LeftArrow.into(),
+        "right" => Key::RightArrow.into(),
+        "up" => Key::UpArrow.into(),
+        "down" => Key::DownArrow.into(),
+        other => other.into(),
+    };
+    let ev = |e: WindowEvent| window.dispatch_event(e);
+    for m in &mods {
+        ev(WindowEvent::KeyPressed { text: (*m).into() });
+    }
+    ev(WindowEvent::KeyPressed { text: text.clone() });
+    ev(WindowEvent::KeyReleased { text });
+    for m in mods.iter().rev() {
+        ev(WindowEvent::KeyReleased { text: (*m).into() });
+    }
 }
 
 fn write_png(

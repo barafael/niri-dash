@@ -54,7 +54,7 @@ fn dir() -> PathBuf {
 /// path (e.g. a build in target/).
 fn exec() -> String {
     let me = std::env::current_exe().ok();
-    let on_path = crate::sources::which("niri-dash");
+    let on_path = niri_dash_system::which("niri-dash");
     let same = match (&me, &on_path) {
         (Some(a), Some(b)) => a.canonicalize().ok() == b.canonicalize().ok(),
         _ => false,
@@ -181,8 +181,9 @@ window-rule {{
     block-out-from "screen-capture"
 }}
 
-// A key for the clipboard history, for your binds {{ }} section (niri's default config uses
-// Mod+V for toggle-window-floating, so pick one that's free):
+// If you want clipboard history, a key for it, for your binds {{ }} section (niri's default config
+// uses Mod+V for toggle-window-floating, so pick one that's free). It starts recording what you
+// copy on the first press, and stops with `niri-dash app clipboard --quit`:
 //
 //     Mod+Ctrl+V {{ spawn "niri-dash" "app" "clipboard" "--toggle"; }}
 "#
@@ -191,7 +192,7 @@ window-rule {{
 
 /// `niri-dash window-rules [-o FILE]`.
 pub fn window_rules(output: Option<&Path>) -> Result<()> {
-    if !crate::compositor::is_niri() {
+    if niri_dash_system::guess_compositor() != niri_dash_system::Compositor::Niri {
         eprintln!(
             "niri-dash: these rules are for niri's config; on KDE Plasma, set up window rules in \
              System Settings (Window Management → Window Rules) matching window class niri-dash-*"

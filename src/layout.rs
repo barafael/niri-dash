@@ -202,7 +202,7 @@ impl Kind {
             },
             Kind::Clipboard => &KindInfo {
                 title: "Clipboard history",
-                description: "Recent copies; click to copy again",
+                description: "Records what you copy while it's on the dashboard, in memory only",
                 default_size: (4, 4),
                 min_size: (3, 2),
                 can_be_round: false,
@@ -277,7 +277,7 @@ impl Kind {
                 min_size: (3, 2),
                 can_be_round: false,
                 starts_round: false,
-                settings: &[Character, Wildness, Interval, Command],
+                settings: &[Character, Wildness, Interval, Command, Cowfile],
                 icon: "face-smile",
             },
             Kind::KeyboardLayout => &KindInfo {
@@ -463,7 +463,7 @@ impl Placed {
     }
 
     /// The smallest size it may be resized to; round widgets go down to a single cell.
-    fn min_size(&self) -> (i32, i32) {
+    pub fn min_size(&self) -> (i32, i32) {
         match self.shape {
             Shape::Rect => self.kind.info().min_size,
             Shape::Round => (1, 1),
@@ -471,13 +471,7 @@ impl Placed {
     }
 }
 
-/// Where the weather widget looks. Without a location, the city of the system time zone is used.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct WeatherConfig {
-    pub location: Option<String>,
-    pub coords: Option<(f64, f64)>,
-    pub fahrenheit: bool,
-}
+pub use niri_dash_system::weather::WeatherConfig;
 
 /// How the dashboard is drawn. `Auto` uses the GPU when EGL works and falls back to software.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, EnumString, AsRefStr)]
@@ -531,7 +525,8 @@ const HEADER: &str = r#"// niri-dash layout.
 // widget sits at a column and row (counting from 0) and spans `width` x `height` cells. Round
 // widgets are square: give them `size=N` and `shape="round"`. Widgets that don't fit a smaller
 // screen, or overlap one listed earlier, are hidden rather than moved. Changing the grid moves the
-// widgets that no longer fit, and removes the ones there is no room for.
+// widgets that no longer fit. Edit mode won't make it too small for them; a grid set too small here
+// removes the ones there is no room for.
 //
 // Edit mode (the pencil, or right-click the background) writes changes back into this file and
 // keeps your comments. Changes you save here show up right away.
@@ -557,37 +552,7 @@ fn widget_list() -> String {
     out
 }
 
-const DEFAULT: &str = r#"
-// The theme: a color scheme (colors) from ~/.config/niri-dash/colorschemes/ and a style
-// (corners, spacing, fonts, animation speed) from styles/. Any scheme goes with any style.
-theme colorscheme="default" style="default"
-
-// "auto" draws with the GPU (OpenGL ES) when it can, "software" always on the CPU. Read at start.
-// renderer "auto"
-
-// Weather location, as a place name or coordinates. Without it, the city of your time zone.
-// weather location="Hamburg"
-// weather latitude=53.55 longitude=9.99 units="fahrenheit"
-
-layout {
-    clock           col=0  row=0 width=4 height=2
-    weather         col=0  row=2 width=4 height=2
-    calendar        col=0  row=4 width=4 height=4
-    session         col=0  row=8 width=4 height=1
-    windows         col=4  row=0 width=5 height=3
-    claude-sessions col=4  row=3 width=5 height=3
-    media           col=4  row=6 width=5 height=2
-    tray            col=4  row=8 width=5 height=1
-    notifications   col=9  row=0 width=4 height=4
-    clipboard       col=9  row=4 width=4 height=3
-    volume          col=9  row=7 size=2 shape="round"
-    brightness      col=11 row=7 size=2 shape="round"
-    wifi            col=13 row=0 width=3 height=3
-    bluetooth       col=13 row=3 width=3 height=2
-    battery         col=13 row=5 width=3 height=2
-    system-monitor  col=13 row=7 width=3 height=2
-}
-"#;
+const DEFAULT: &str = include_str!("../assets/config.kdl");
 
 /// A KDL number, integer or not.
 pub(crate) fn number(v: &KdlValue) -> Option<f64> {
@@ -702,7 +667,7 @@ impl Layout {
     }
 
     pub fn default_text() -> String {
-        format!("{HEADER}{}{DEFAULT}", widget_list())
+        format!("{HEADER}{}\n{DEFAULT}", widget_list())
     }
 
     /// Parse a config. Unknown widgets and bad values are skipped with a warning.
@@ -1131,14 +1096,40 @@ impl Layout {
                 false
             }
             Shape::Round => {
-                let (dw, dh) = p.kind.info().default_size;
-                let (w, h) = (dw.max(p.w).min(self.cols), dh.min(self.rows));
-                let fits = self.can_place(id, p.col, p.row, w, h);
-                let q = self.get_mut(id).expect("checked");
-                q.shape = Shape::Rect;
-                if fits {
-                    (q.w, q.h) = (w, h);
+                // Never smaller than the rectangle's minimum: the default size (as wide as the
+                // circle was, if wider), else the minimum; where it is if there's room, else
+                // pushing the others aside. Without room it stays round.
+                let info = p.kind.info();
+                let (mw, mh) = info.min_size;
+                let (dw, dh) = info.default_size;
+                let fit = |w: i32, h: i32| (w.min(self.cols), h.min(self.rows));
+                let mut sizes = vec![fit(dw.max(p.w), dh), fit(dw, dh), fit(mw, mh)];
+                sizes.dedup();
+                sizes.retain(|&(w, h)| w >= mw && h >= mh);
+                let at = |w: i32, h: i32| Rect {
+                    col: p.col.min(self.cols - w).max(0),
+                    row: p.row.min(self.rows - h).max(0),
+                    w,
+                    h,
+                };
+                let free = sizes.iter().find(|&&(w, h)| {
+                    let r = at(w, h);
+                    self.can_place(id, r.col, r.row, w, h)
+                });
+                let target = match free {
+                    Some(&(w, h)) => Some(at(w, h)),
+                    None => sizes.iter().map(|&(w, h)| at(w, h)).find(|&r| {
+                        let mut trial = self.clone();
+                        trial.place_reflow(id, r, (0, 1))
+                    }),
+                };
+                let Some(target) = target else {
+                    return false;
+                };
+                if !self.place_reflow(id, target, (0, 1)) {
+                    return false;
                 }
+                self.get_mut(id).expect("checked").shape = Shape::Rect;
                 true
             }
         }
@@ -2118,19 +2109,61 @@ impl Layout {
         true
     }
 
-    /// Resize a widget, pushing others aside.
-    pub fn resize_reflow(&mut self, id: u32, w: i32, h: i32) -> bool {
-        let Some(p) = self.get(id) else { return false };
-        let (w, h) = self.clamp_size(p, w, h);
-        let target = Rect { w, h, ..p.rect() };
-        let grow = (i32::from(w > p.w), i32::from(h > p.h));
-        let prefer = if grow.1 > 0 { (0, 1) } else { (1, 0) };
+    /// Move and resize a widget at once (from the keyboard), pushing others aside; false if
+    /// there is no room.
+    pub fn place_reflow(&mut self, id: u32, target: Rect, prefer: (i32, i32)) -> bool {
         let Some(moves) = self.reflow(id, target, prefer) else {
             return false;
         };
         self.apply_reflow(&moves);
+        let Some(p) = self.get_mut(id) else {
+            return false;
+        };
+        (p.col, p.row, p.w, p.h) = (target.col, target.row, target.w, target.h);
+        true
+    }
+
+    /// What a resize of widget `id` to `target` comes to: where it ends up (at least its minimum
+    /// size, square if round, with the sides the resize left alone staying put) and what makes
+    /// room, pushed the way the widget grew. None if there is no room.
+    pub fn plan_resize(&self, id: u32, target: Rect) -> Option<(Rect, Reflow)> {
+        let p = self.get(id)?;
+        let from = p.rect();
+        let (w, h) = self.clamp_size(p, target.w, target.h);
+        let to = Rect {
+            col: if target.col == from.col {
+                from.col
+            } else {
+                target.col + target.w - w
+            },
+            row: if target.row == from.row {
+                from.row
+            } else {
+                target.row + target.h - h
+            },
+            w,
+            h,
+        };
+        let prefer = if to.row + to.h > from.row + from.h {
+            (0, 1)
+        } else if to.row < from.row {
+            (0, -1)
+        } else if to.col < from.col {
+            (-1, 0)
+        } else {
+            (1, 0)
+        };
+        Some((to, self.reflow(id, to, prefer)?))
+    }
+
+    /// Resize a widget to `target`, pushing others aside; false if there is no room.
+    pub fn resize_reflow(&mut self, id: u32, target: Rect) -> bool {
+        let Some((to, moves)) = self.plan_resize(id, target) else {
+            return false;
+        };
+        self.apply_reflow(&moves);
         let p = self.get_mut(id).expect("checked");
-        (p.w, p.h) = (w, h);
+        (p.col, p.row, p.w, p.h) = (to.col, to.row, to.w, to.h);
         true
     }
 
@@ -2225,9 +2258,49 @@ mod tests {
             "3x3 would overlap the weather widget"
         );
         l.remove(id_of(&l, Kind::Weather));
-        assert!(l.resize_reflow(clock, 3, 2));
+        let target = Rect {
+            w: 3,
+            h: 2,
+            ..l.get(clock).unwrap().rect()
+        };
+        assert!(l.resize_reflow(clock, target));
         let p = l.get(clock).unwrap();
         assert_eq!((p.w, p.h), (3, 3));
+    }
+
+    #[test]
+    fn resizing_from_the_left_and_top_keeps_the_far_sides() {
+        let mut l = Layout::parse(
+            "grid columns=16 rows=9\nlayout {\n    clock col=4 row=3 width=4 height=3\n}\n",
+        )
+        .unwrap()
+        .0;
+        l.set_screen_grid(16, 9);
+        let clock = id_of(&l, Kind::Clock);
+        let (min_w, min_h) = l.get(clock).unwrap().min_size();
+        // Out to the top left: the bottom right corner stays.
+        let out = Rect {
+            col: 2,
+            row: 1,
+            w: 6,
+            h: 5,
+        };
+        assert!(l.resize_reflow(clock, out));
+        assert_eq!(l.get(clock).unwrap().rect(), out);
+        // Far below its minimum: it stops there, the bottom right corner still in place.
+        let tiny = Rect {
+            col: 7,
+            row: 5,
+            w: 1,
+            h: 1,
+        };
+        assert!(l.resize_reflow(clock, tiny));
+        let r = l.get(clock).unwrap().rect();
+        assert_eq!((r.w, r.h), (min_w, min_h));
+        assert_eq!((r.col + r.w, r.row + r.h), (8, 6));
+        // Past the grid's edge: refused.
+        let past = Rect { col: -1, ..r };
+        assert!(!l.resize_reflow(clock, past));
     }
 
     #[test]
@@ -2256,6 +2329,31 @@ mod tests {
         l.set_screen_grid(16, 9);
         assert_eq!(l.visible().len(), 1);
         assert_eq!(l.hidden_count(), 1);
+    }
+
+    #[test]
+    fn round_back_to_rect_keeps_the_minimum() {
+        // A calendar shrunk to one round cell comes back at least 3x3, pushing the clock aside.
+        let text = "grid columns=8 rows=6\nlayout {\n    calendar col=0 row=0 size=1 shape=\"round\"\n    clock col=1 row=0 width=4 height=2\n}\n";
+        let (mut l, _) = Layout::parse(text).unwrap();
+        let cal = id_of(&l, Kind::Calendar);
+        assert!(l.toggle_shape(cal));
+        let p = l.get(cal).unwrap();
+        assert_eq!(p.shape, Shape::Rect);
+        assert!(p.w >= 3 && p.h >= 3, "{}x{}", p.w, p.h);
+        assert_eq!(l.hidden_count(), 0);
+        assert!(l.visible().len() == 2);
+    }
+
+    #[test]
+    fn round_stays_round_without_room() {
+        // A 4x3 grid full of other widgets: no room for a 3x3 calendar.
+        let text = "grid columns=4 rows=3\nlayout {\n    calendar col=0 row=0 size=1 shape=\"round\"\n    clock col=1 row=0 width=3 height=2\n    session col=0 row=2 width=4 height=1\n    brightness col=0 row=1 size=1 shape=\"round\"\n}\n";
+        let (mut l, _) = Layout::parse(text).unwrap();
+        let cal = id_of(&l, Kind::Calendar);
+        assert!(!l.toggle_shape(cal));
+        let p = l.get(cal).unwrap();
+        assert_eq!((p.shape, p.w, p.h), (Shape::Round, 1, 1));
     }
 
     #[test]
@@ -2352,6 +2450,13 @@ mod tests {
             ),
             (Kind::Volume, Shape::Round, 2, 2)
         );
+    }
+
+    /// A clipboard widget is what turns the recording of the clipboard on, so that's the user's
+    /// choice to make, not a default.
+    #[test]
+    fn default_layout_has_no_clipboard_history() {
+        assert!(!grid().widgets.iter().any(|w| w.kind == Kind::Clipboard));
     }
 
     #[test]

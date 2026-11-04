@@ -1,0 +1,12 @@
+##
+## A moose, drawn for niri-dash (MIT OR Apache-2.0), used when cowsay has no cow of this name.
+##
+$the_cow = <<EOC;
+         $thoughts  \\|/     \\|/
+          $thoughts  \\\\_   _//
+           $thoughts    \\_/
+             ( $eyes )______________
+              \\$tongue/    ,   ,      \\~
+               |  ,          ,   |
+               |_|------------|_|
+EOC

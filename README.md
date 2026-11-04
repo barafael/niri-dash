@@ -20,13 +20,55 @@ that comments on your day.
 Most widgets come in a rectangular and a round shape. Any widget can also run on its own as a
 small app window: `niri-dash app clock`.
 
+Clipboard history is opt-in. niri-dash reads what you copy only while a clipboard widget is in
+your layout (add one in edit mode) or `niri-dash app clipboard` is running. The history stays in
+memory and skips what password managers mark secret. Removing the widget, or
+`niri-dash app clipboard --quit`, stops the recording and forgets the history.
+
+The mascot can also be a cow in the manner of `cowsay`: `character "cow"`, and `cowfile "tux"` for
+another animal. Cows are read from your own cowsay install (or from a path); a few of our own stand
+in when there is no such file: `bunny`, `dragon`, `moose`, `sheep`, `tux`. Cow files are only read,
+never run, so one that needs Perl to draw itself is refused.
+
+## Keyboard
+
+`f` labels every widget with the start of its name, as much as it takes to tell it from the
+others: `v` volume, `ca` calendar, `cl` clock, `n` notifications, `cs` claude-sessions (two-word
+names go by the first word's initial). Type a label to go into that widget; Backspace takes back
+what you typed. Inside, `j`/`k` move between its rows and buttons (or turn a knob or a lone
+slider up and down), `h`/`l` move sideways or change a slider, Tab and Shift+Tab step through
+the stops, Enter or Space presses, and `g`/`G` jump to the first or last item. Lists have letters
+of their own: `d` closes a window or dismisses a notification, `r` rescans Wi-Fi, `t` turns it
+on and off, `m` mutes, `1`–`0` set a slider to 10–100 %, `x` ejects a drive, and so on. In the
+volume widget `j`/`k` make the slider under the cursor quieter and louder, and Tab goes to the
+next one. The calendar has a day cursor: `h`/`l` a day, `j`/`k` a week, `n`/`p` a month, `t` back to today.
+Enter on a text field types into it; Escape gets you out again.
+
+`e` blows the widget up in the middle of the dashboard (round widgets open into their full
+form); `e` or Escape puts it back. Ctrl+Shift+`h`/`j`/`k`/`l` move the widget a cell, pushing
+the others aside. Ctrl+`r` sizes it: `H`/`J`/`K`/`L` push that side out a cell, `h`/`j`/`k`/`l`
+pull it in; Enter, Escape or Ctrl+`r` again when done. Ctrl+`h`/`j`/`k`/`l` (or `H`/`J`/`K`/`L`)
+go to the neighbouring widget, Escape leaves the widget, and a second Escape closes the
+dashboard. A standalone app starts inside its widget.
+
 ## Edit mode
 
 The pencil in the corner (or a right-click on the background) opens edit mode: drag widgets
-around (the others make room), resize them from the corner, click one for its settings, and add
+around (the others make room), resize them from any edge or corner, click one for its settings, and add
 new ones from the sidebar. The sidebar also sets the grid's columns and rows, the color scheme
 (gruvbox, catppuccin, nord, dracula, rose-pine, everforest, solarized, …) and the style:
 corners, spacing, fonts, animation speed, frosted glass.
+
+All of it works from the keyboard too (Ctrl+E opens and closes edit mode). In the sidebar, Tab
+switches tabs, `j`/`k` move between rows, `h`/`l` step a value or flip a switch, Enter or Space
+presses (or starts typing in a text field), and Backspace puts a row back to its default. `f` and
+a label picks a widget and opens its settings; then Ctrl+`h`/`j`/`k`/`l` go to the next widget,
+Ctrl+Shift+`h`/`j`/`k`/`l` move it, Ctrl+`r` sizes it (`H`/`J`/`K`/`L` push a side out,
+`h`/`j`/`k`/`l` pull it in), `o` changes its shape and `x` removes it. Escape backs out a step at
+a time.
+
+The grid won't shrink past what its widgets need: a step that would leave no room for one shakes
+and says which, and nothing changes.
 
 Everything is kept in `~/.config/niri-dash/config.kdl`, which edit mode writes back with your
 comments intact. Color schemes and styles are KDL files next to it; add your own.
@@ -46,9 +88,10 @@ spawn-at-startup "niri-dash"
 
 binds {
     Mod+N { spawn "niri-dash" "toggle"; }
-    Mod+V { spawn "niri-dash" "app" "clipboard" "--toggle"; }
 }
 ```
+
+If you want clipboard history on a key, bind `spawn "niri-dash" "app" "clipboard" "--toggle"`.
 
 `niri-dash window-rules` prints window rules for the standalone apps (floating, centered) to
 `include` from niri's config.

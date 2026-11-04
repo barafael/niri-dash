@@ -1,11 +1,13 @@
 import { Theme, Icons } from "../theme.slint";
 import { Perf, Power, PowerProfile, DeviceKind, Audio, Brightness, NightLight, Session, WidgetOpts } from "../data.slint";
-import { Icon, Ring, Graph, RingKnob, Row, Muted, Switch, ScrollList, RoundGauge, SliderRow, Slider, Header, TextButton } from "../common.slint";
+import { Icon, Ring, Graph, RingKnob, Row, Muted, Switch, ScrollList, RoundGauge, SliderRow, Slider, Header, TextButton, NavScope } from "../common.slint";
 
 export component SystemMonitorWidget inherits Rectangle {
     in property <bool> round;
     in property <WidgetOpts> opts;
     if root.round: RoundGauge {
+        label: "CPU";
+        inner-label: "Memory";
         value: Perf.cpu;
         inner: Perf.mem;
         tint: Theme.accent;
@@ -81,10 +83,21 @@ export component SystemMonitorWidget inherits Rectangle {
 
 export component BatteryWidget inherits Rectangle {
     in property <bool> round;
+    in property <bool> nav;
+    // The profile d steps away from the current one (wrapping around).
+    function profile-step(d: int) -> PowerProfile {
+        let n = Power.profiles.length;
+        let i = !Power.has-profile ? 0 : Power.profiles[0] == Power.profile ? 0 : n > 1 && Power.profiles[1] == Power.profile ? 1 : 2;
+        Power.profiles[mod(i + d + n, max(1, n))]
+    }
+    // Keyboard stops (rectangular): the profiles, then the sleep switch.
+    // In the rect shape the profiles need room for their row next to a usable ring; without it
+    // they'd be cut off, with the cursor on them out of sight.
+    property <bool> has-profiles: Power.profiles.length > 0 && (root.round || root.height - 2 * Theme.pad - 38px >= 56px);
     property <color> level-color: Power.charging ? Theme.good : Power.percent <= 15 ? Theme.bad : Power.percent <= 30 ? Theme.warn : Theme.accent;
     // In the rect shape, the sleep switch gets a row only when there's room for it next to a
     // usable ring.
-    property <length> below-ring: Power.profiles.length > 0 ? 38px : 0px;
+    property <length> below-ring: root.has-profiles ? 38px : 0px;
     property <bool> show-inhibit: root.height - 2 * Theme.pad - self.below-ring >= 30px + 56px;
     // Bigger: device batteries (3 rows), then what blocks sleep (4 rows).
     property <bool> show-devices: root.height >= 260px && Power.peripherals.length > 0;
@@ -92,6 +105,8 @@ export component BatteryWidget inherits Rectangle {
     property <length> extra-rows: (root.show-devices ? 34px : 0px) + (root.show-blockers ? 96px : 0px);
     if root.round: Rectangle {
         Ring {
+            accessible-label: "Battery";
+            accessible-value: (Power.has-battery ? Power.percent + "%" : "On AC power") + (Power.charging ? ", charging" : "");
             width: 100%;
             height: 100%;
             value: Power.percent / 100;
@@ -117,6 +132,8 @@ export component BatteryWidget inherits Rectangle {
             if Power.inhibited: HorizontalLayout {
                 alignment: center;
                 Icon {
+                    accessible-role: image;
+                    accessible-label: "Sleep is blocked";
                     source: Icons.coffee;
                     size: min(root.width * 0.12, 16px);
                     tint: Theme.accent;
@@ -125,6 +142,16 @@ export component BatteryWidget inherits Rectangle {
         }
         TouchArea {
             // Cycle through the power profiles.
+            accessible-role: button;
+            accessible-label: "Change power profile";
+            accessible-enabled: Power.profiles.length > 0;
+            accessible-action-default => {
+                if (Power.profiles.length > 0) {
+                    Power.set-profile(Power.profile == PowerProfile.power-saver ? PowerProfile.balanced
+                        : Power.profile == PowerProfile.balanced && Power.profiles.length > 2 ? PowerProfile.performance
+                        : PowerProfile.power-saver);
+                }
+            }
             clicked => {
                 if (Power.profiles.length > 0) {
                     Power.set-profile(Power.profile == PowerProfile.power-saver ? PowerProfile.balanced
@@ -141,6 +168,8 @@ export component BatteryWidget inherits Rectangle {
             spacing: 12px;
             vertical-stretch: root.show-blockers ? 0 : 1;
             Ring {
+                accessible-label: "Battery";
+                accessible-value: (Power.has-battery ? Power.percent + "%" : "On AC power") + (Power.charging ? ", charging" : "");
                 property <length> d: min(110px, root.height - 2 * Theme.pad - root.below-ring - (root.show-inhibit ? 30px : 0px) - root.extra-rows);
                 width: self.d;
                 height: self.d;
@@ -170,13 +199,21 @@ export component BatteryWidget inherits Rectangle {
                 }
             }
         }
-        if Power.profiles.length > 0: HorizontalLayout {
+        if root.has-profiles: HorizontalLayout {
             spacing: 4px;
             height: 30px;
             for p in Power.profiles: Rectangle {
+                accessible-role: radio-button;
+                accessible-label: p == PowerProfile.power-saver ? "Saver" : p == PowerProfile.balanced ? "Balanced" : "Performance";
+                accessible-checkable: true;
+                accessible-checked: self.current;
+                accessible-item-selected: self.current && keys.on && keys.cursor == 0;
+                accessible-action-default => { Power.set-profile(p); }
                 border-radius: min(self.height / 2, Theme.radius-small);
                 property <bool> current: Power.has-profile && Power.profile == p;
                 background: self.current ? Theme.accent : pt.has-hover ? Theme.hover : Theme.card-raised;
+                border-width: self.current && keys.on && keys.cursor == 0 ? 2px : 0px;
+                border-color: Theme.text;
                 Text {
                     text: p == PowerProfile.power-saver ? "Saver" : p == PowerProfile.balanced ? "Balanced" : "Performance";
                     font-size: Theme.font-small;
@@ -207,6 +244,8 @@ export component BatteryWidget inherits Rectangle {
                 }
                 Switch {
                     checked: Power.inhibited;
+                    accessible-label: "Block sleep and screen locking";
+                    kfocus: keys.on && keys.cursor == (root.has-profiles ? 1 : 0);
                     toggled => { Power.toggle-inhibit(); }
                 }
             }
@@ -250,6 +289,8 @@ export component BatteryWidget inherits Rectangle {
                     }
                     Text {
                         text: d.percent + "%";
+                        // Without its name beside it, the charge wouldn't say whose it is.
+                        accessible-label: (chip-box.named ? "" : d.name + " ") + d.percent + "%";
                         font-size: Theme.font-small;
                         color: chip-box.tint;
                         vertical-alignment: center;
@@ -286,12 +327,35 @@ export component BatteryWidget inherits Rectangle {
             }
         }
     }
+    // h/l (or Enter) change the power profile; j to the sleep switch, Enter flips it.
+    keys := NavScope {
+        active: root.nav;
+        count: root.round ? 0 : (root.has-profiles ? 1 : 0) + (root.show-inhibit ? 1 : 0);
+        accessible-label: "Battery & power";
+        activate(i) => {
+            if (!root.round && (!root.has-profiles || i == 1)) {
+                Power.toggle-inhibit();
+            } else if (root.has-profiles) {
+                Power.set-profile(root.profile-step(1));
+            }
+        }
+        adjust(i, d) => {
+            if (!root.has-profiles || (!root.round && i != 0)) {
+                return false;
+            }
+            Power.set-profile(root.profile-step(d));
+            true
+        }
+    }
 }
 
 export component VolumeWidget inherits Rectangle {
     in property <bool> round;
+    in property <bool> nav;
     if root.round: RingKnob {
+        kfocus: keys.on;
         value <=> Audio.volume;
+        name: Audio.muted ? "Volume, muted" : "Volume";
         icon: Audio.muted ? Icons.volume-mute : Icons.volume;
         label: Audio.muted ? "muted" : Math.round(Audio.volume * 100) + "%";
         dimmed: Audio.muted;
@@ -302,6 +366,35 @@ export component VolumeWidget inherits Rectangle {
     property <bool> can-pick: root.height >= 200px && Audio.sinks.length > 1;
     property <bool> show-apps: root.height >= 280px;
     property <bool> picking;
+    // Keyboard stops (rectangular): the output picker, the outputs while picking, the output and
+    // microphone sliders, then the apps.
+    property <int> k-sinks: root.can-pick ? 1 : 0;
+    property <int> k-out: root.k-sinks + (root.picking && root.can-pick ? Audio.sinks.length : 0);
+    property <bool> has-mic: root.height > 130px;
+    property <int> k-apps: root.k-out + 1 + (root.has-mic ? 1 : 0);
+    property <int> k-count: root.k-apps + (root.show-apps && !root.picking ? Audio.streams.length : 0);
+    // Set (v in 0..1) or step (by d, v = -1) the slider at stop i.
+    function set-level(i: int, v: float, d: float) {
+        if (root.round || i == root.k-out) {
+            Audio.volume = clamp(v >= 0 ? v : Audio.volume + d, 0, 1);
+            Audio.set-volume(Audio.volume);
+        } else if (i == root.k-out + 1 && root.has-mic) {
+            Audio.mic-volume = clamp(v >= 0 ? v : Audio.mic-volume + d, 0, 1);
+            Audio.set-mic-volume(Audio.mic-volume);
+        } else if (i >= root.k-apps && i - root.k-apps < Audio.streams.length) {
+            let st = Audio.streams[i - root.k-apps];
+            Audio.set-stream-volume(st.id, clamp(v >= 0 ? v : st.volume + d, 0, 1));
+        }
+    }
+    function mute(i: int) {
+        if (root.round || i == root.k-out) {
+            Audio.toggle-mute();
+        } else if (i == root.k-out + 1 && root.has-mic) {
+            Audio.toggle-mic-mute();
+        } else if (i >= root.k-apps && i - root.k-apps < Audio.streams.length) {
+            Audio.toggle-stream-mute(Audio.streams[i - root.k-apps].id);
+        }
+    }
     if !root.round: VerticalLayout {
         padding: Theme.pad;
         spacing: 6px;
@@ -310,9 +403,16 @@ export component VolumeWidget inherits Rectangle {
             text: Audio.sink-name;
         }
         if root.can-pick: Rectangle {
+            accessible-role: button;
+            accessible-label: root.picking ? "Close output list" : "Choose output";
+            accessible-value: Audio.sink-name;
+            accessible-item-selected: keys.on && keys.cursor == 0;
+            accessible-action-default => { root.picking = !root.picking; }
             height: 24px;
             border-radius: min(6px, Theme.radius-small);
-            background: pick-touch.has-hover ? Theme.hover : transparent;
+            background: pick-touch.has-hover || (keys.on && keys.cursor == 0) ? Theme.hover : transparent;
+            border-width: keys.on && keys.cursor == 0 ? 2px : 0px;
+            border-color: Theme.accent;
             HorizontalLayout {
                 padding-left: 4px;
                 spacing: 4px;
@@ -333,9 +433,12 @@ export component VolumeWidget inherits Rectangle {
         }
         if root.picking && root.can-pick: VerticalLayout {
             spacing: 0px;
-            for k in Audio.sinks: Row {
+            for k[i] in Audio.sinks: Row {
+                accessible-label: k.name;
+                accessible-value: k.default ? "default" : "";
                 height: 30px;
                 selected: k.default;
+                kfocus: keys.on && keys.cursor == root.k-sinks + i;
                 clicked => {
                     Audio.set-default-sink(k.id);
                     root.picking = false;
@@ -353,17 +456,23 @@ export component VolumeWidget inherits Rectangle {
         }
         SliderRow {
             value <=> Audio.volume;
+            label: Audio.muted ? "Volume, muted" : "Volume";
+            icon-label: Audio.muted ? "Unmute" : "Mute";
             icon: Audio.muted ? Icons.volume-mute : Icons.volume;
             icon-tint: Audio.muted ? Theme.faint : Theme.text;
             tint: Audio.muted ? Theme.faint : Theme.accent;
+            kfocus: keys.on && keys.cursor == root.k-out;
             changed(v) => { Audio.set-volume(v); }
             icon-clicked => { Audio.toggle-mute(); }
         }
         if root.height > 130px: SliderRow {
+            label: Audio.mic-muted ? "Microphone, muted" : "Microphone";
+            icon-label: Audio.mic-muted ? "Unmute microphone" : "Mute microphone";
             value <=> Audio.mic-volume;
             icon: Audio.mic-muted ? Icons.mic-off : Icons.mic;
             icon-tint: Audio.mic-muted ? Theme.faint : Theme.text;
             tint: Audio.mic-muted ? Theme.faint : Theme.good;
+            kfocus: keys.on && keys.cursor == root.k-out + 1;
             changed(v) => { Audio.set-mic-volume(v); }
             icon-clicked => { Audio.toggle-mic-mute(); }
         }
@@ -375,9 +484,15 @@ export component VolumeWidget inherits Rectangle {
             text: "No app is playing sound";
             horizontal-alignment: center;
         }
-        if root.show-apps && !root.picking: ScrollList {
+        if root.show-apps && !root.picking: app-list := ScrollList {
             vertical-stretch: 1;
-            for st in Audio.streams: VerticalLayout {
+            for st[i] in Audio.streams: VerticalLayout {
+                property <bool> kfocus: keys.on && keys.cursor == root.k-apps + i;
+                changed kfocus => {
+                    if (self.kfocus) {
+                        app-list.reveal(self.absolute-position.y, self.height);
+                    }
+                }
                 spacing: 0px;
                 padding-bottom: 4px;
                 HorizontalLayout {
@@ -399,22 +514,85 @@ export component VolumeWidget inherits Rectangle {
                 }
                 SliderRow {
                     value <=> st.volume;
+                    label: st.muted ? st.app + ", muted" : st.app;
+                    icon-label: (st.muted ? "Unmute " : "Mute ") + st.app;
                     icon: st.muted ? Icons.volume-mute : Icons.volume;
                     icon-tint: st.muted ? Theme.faint : Theme.text;
                     icon-box: 28px;
                     tint: st.muted ? Theme.faint : Theme.accent;
+                    kfocus: parent.kfocus;
                     changed(v) => { Audio.set-stream-volume(st.id, v); }
                     icon-clicked => { Audio.toggle-stream-mute(st.id); }
                 }
             }
         }
     }
+    // On a slider j and k (h and l too) make it quieter and louder by 5 %, 1-9 and 0 set
+    // 10-100 %, m mutes. Tab goes to the next slider or the output picker; there j/k move as
+    // anywhere else and Enter opens the picker or picks an output.
+    keys := NavScope {
+        active: root.nav;
+        count: root.round ? 0 : root.k-count;
+        accessible-label: "Volume";
+        filter(t) => {
+            let down = t == "j" || t == Key.DownArrow;
+            let up = t == "k" || t == Key.UpArrow;
+            if ((down || up) && (root.round || self.cursor >= root.k-out)) {
+                root.set-level(self.cursor, -1, down ? -0.05 : 0.05);
+                return true;
+            }
+            false
+        }
+        activate(i) => {
+            if (!root.round && root.can-pick && i == 0) {
+                root.picking = !root.picking;
+            } else if (!root.round && i < root.k-out) {
+                Audio.set-default-sink(Audio.sinks[i - root.k-sinks].id);
+                root.picking = false;
+                self.cursor = root.k-sinks;
+            } else {
+                root.mute(i);
+            }
+        }
+        adjust(i, d) => {
+            if (!root.round && i < root.k-out) {
+                return false;
+            }
+            root.set-level(i, -1, d * 0.05);
+            true
+        }
+        letter(t, i) => {
+            if (t == "m") {
+                root.mute(i);
+                return true;
+            }
+            if (t.is-float() && t.character-count == 1 && (root.round || i >= root.k-out)) {
+                root.set-level(i, t == "0" ? 1 : t.to-float() / 10, 0);
+                return true;
+            }
+            false
+        }
+        back => {
+            if (root.picking) {
+                root.picking = false;
+                return true;
+            }
+            false
+        }
+    }
 }
 
 export component BrightnessWidget inherits Rectangle {
     in property <bool> round;
+    in property <bool> nav;
+    function set-level(v: float) {
+        Brightness.level = clamp(v, 0, 1);
+        Brightness.set(Brightness.level);
+    }
     if root.round: RingKnob {
+        kfocus: keys.on;
         value <=> Brightness.level;
+        name: "Brightness";
         tint: Theme.warn;
         icon: Icons.sun;
         label: Math.round(Brightness.level * 100) + "%";
@@ -422,6 +600,7 @@ export component BrightnessWidget inherits Rectangle {
         clicked => { Brightness.set(Brightness.level > 0.6 ? 0.3 : 1.0); }
     }
     if !root.round: SliderRow {
+        label: "Brightness";
         padding-left: Theme.pad;
         padding-right: Theme.pad;
         value <=> Brightness.level;
@@ -430,18 +609,50 @@ export component BrightnessWidget inherits Rectangle {
         icon-clickable: false;
         tint: Theme.warn;
         enabled: Brightness.available;
+        kfocus: keys.on;
         changed(v) => { Brightness.set(v); }
+    }
+    // h/l change the brightness by 5 %, 1-9 and 0 set 10-100 %.
+    keys := NavScope {
+        accessible-label: "Brightness";
+        active: root.nav;
+        activate => {
+            if (root.round) {
+                Brightness.set(Brightness.level > 0.6 ? 0.3 : 1.0);
+            }
+        }
+        adjust(i, d) => {
+            root.set-level(Brightness.level + d * 0.05);
+            true
+        }
+        letter(t) => {
+            if (t.is-float() && t.character-count == 1) {
+                root.set-level(t == "0" ? 1 : t.to-float() / 10);
+                return true;
+            }
+            false
+        }
     }
 }
 
 // Night light: a switch and a warmth slider; two rows add presets.
 export component NightLightWidget inherits Rectangle {
     in property <bool> round;
+    in property <bool> nav;
+    // Keyboard stops (rectangular): the switch, the warmth slider, the presets.
+    property <bool> has-slider: NightLight.available && !NightLight.fixed;
+    property <bool> has-presets: root.has-slider && root.height >= 170px;
+    function set-warmth(v: float) {
+        NightLight.warmth = clamp(v, 0, 1);
+        NightLight.set-warmth(NightLight.warmth);
+    }
     property <string> temp: NightLight.kelvin + " K";
     property <string> label: NightLight.status != "" ? NightLight.status : NightLight.on ? root.temp : "Off";
     // With a fixed temperature (KWin), scrolling the ring changes nothing: Rust puts it back.
     if root.round: RingKnob {
+        kfocus: keys.on;
         value <=> NightLight.warmth;
+        name: "Night light, " + root.label;
         tint: Theme.warn;
         icon: Icons.moon;
         label: root.label;
@@ -463,13 +674,17 @@ export component NightLightWidget inherits Rectangle {
             Switch {
                 y: (parent.height - self.height) / 2;
                 checked: NightLight.on;
+                accessible-label: "Night light";
                 enabled: NightLight.available;
+                kfocus: keys.on && keys.cursor == 0;
                 toggled => { NightLight.toggle(); }
             }
         }
         if NightLight.available && !NightLight.fixed: Slider {
+            accessible-label: "Warmth";
             value <=> NightLight.warmth;
             tint: NightLight.on ? Theme.warn : Theme.faint;
+            kfocus: keys.on && keys.cursor == 1;
             changed(v) => { NightLight.set-warmth(v); }
         }
         if NightLight.note != "": Muted {
@@ -481,12 +696,43 @@ export component NightLightWidget inherits Rectangle {
         }
         if NightLight.available && !NightLight.fixed && root.height >= 170px: HorizontalLayout {
             spacing: 6px;
-            for p in [3400, 4500, 5500]: TextButton {
+            for p[i] in [3400, 4500, 5500]: TextButton {
+                accessible-value: NightLight.on && NightLight.kelvin == p ? "current" : "";
                 horizontal-stretch: 1;
                 text: p + " K";
                 primary: NightLight.on && NightLight.kelvin == p;
+                kfocus: keys.on && keys.cursor == 2 && keys.sub == i;
                 clicked => { NightLight.set-kelvin(p); }
             }
+        }
+    }
+    // Enter or t turns it on and off; on the slider h/l change the warmth; on the presets h/l
+    // pick one and Enter sets it.
+    keys := NavScope {
+        active: root.nav;
+        count: root.round ? 0 : 1 + (root.has-slider ? 1 : 0) + (root.has-presets ? 1 : 0);
+        accessible-label: "Night light";
+        subs: !root.round && self.cursor == 2 ? 3 : 1;
+        activate(i, sub) => {
+            if (!root.round && i == 2) {
+                NightLight.set-kelvin(sub == 0 ? 3400 : sub == 1 ? 4500 : 5500);
+            } else {
+                NightLight.toggle();
+            }
+        }
+        adjust(i, d) => {
+            if (!root.has-slider || (!root.round && i != 1)) {
+                return false;
+            }
+            root.set-warmth(NightLight.warmth + d * 0.05);
+            true
+        }
+        letter(t) => {
+            if (t == "t") {
+                NightLight.toggle();
+                return true;
+            }
+            false
         }
     }
 }
@@ -496,10 +742,33 @@ component SessionButton inherits Rectangle {
     in property <string> label;
     in property <bool> danger;
     in property <bool> compact;
+    // Under the keyboard cursor; a change of `presses` while it is presses the button.
+    in property <bool> kfocus;
+    in property <int> presses;
     property <bool> armed;
     callback activated();
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-value: root.armed ? "Press again to confirm" : "";
+    accessible-item-selected: root.kfocus;
+    accessible-action-default => { root.press(); }
+    function press() {
+        if (root.danger && !root.armed) {
+            root.armed = true;
+        } else {
+            root.armed = false;
+            root.activated();
+        }
+    }
+    changed presses => {
+        if (self.kfocus) {
+            self.press();
+        }
+    }
     border-radius: Theme.radius-small;
-    background: armed ? Theme.bad.with-alpha(0.25) : touch.pressed ? Theme.pressed : touch.has-hover ? Theme.hover : Theme.card-raised;
+    background: armed ? Theme.bad.with-alpha(0.25) : touch.pressed ? Theme.pressed : touch.has-hover || kfocus ? Theme.hover : Theme.card-raised;
+    border-width: kfocus ? 2px : 0px;
+    border-color: Theme.accent;
     VerticalLayout {
         alignment: center;
         spacing: 2px;
@@ -524,20 +793,23 @@ component SessionButton inherits Rectangle {
         triggered => { root.armed = false; }
     }
     touch := TouchArea {
-        clicked => {
-            if (root.danger && !root.armed) {
-                root.armed = true;
-            } else {
-                root.armed = false;
-                root.activated();
-            }
-        }
+        clicked => { root.press(); }
     }
 }
 
 export component SessionWidget inherits Rectangle {
     in property <bool> round;
     in property <WidgetOpts> opts;
+    in property <bool> nav;
+    // Each shown button's keyboard stop, in order (round: lock, suspend, power off).
+    property <int> k-lock: root.opts.lock ? 0 : -1;
+    property <int> k-suspend: root.opts.suspend ? (root.opts.lock ? 1 : 0) : -1;
+    property <int> k-logout: !root.round && root.opts.logout ? (root.opts.lock ? 1 : 0) + (root.opts.suspend ? 1 : 0) : -1;
+    property <int> k-restart: !root.round && root.opts.restart ? (root.opts.lock ? 1 : 0) + (root.opts.suspend ? 1 : 0) + (root.opts.logout ? 1 : 0) : -1;
+    property <int> k-poweroff: root.opts.poweroff ? (root.opts.lock ? 1 : 0) + (root.opts.suspend ? 1 : 0)
+        + (!root.round && root.opts.logout ? 1 : 0) + (!root.round && root.opts.restart ? 1 : 0) : -1;
+    property <int> k-count: max(root.k-lock, root.k-suspend, root.k-logout, root.k-restart, root.k-poweroff) + 1;
+    property <int> presses;
     if root.round: Rectangle {
         property <length> b: root.width * 0.3;
         if root.opts.lock: SessionButton {
@@ -548,6 +820,10 @@ export component SessionWidget inherits Rectangle {
             border-radius: self.width / 2;
             compact: true;
             icon: Icons.lock;
+            // Compact, so never shown: this is what names the round button.
+            label: "Lock";
+            kfocus: keys.on && keys.cursor == root.k-lock;
+            presses: root.presses;
             activated => { Session.lock(); }
         }
         if root.opts.suspend: SessionButton {
@@ -558,6 +834,10 @@ export component SessionWidget inherits Rectangle {
             border-radius: self.width / 2;
             compact: true;
             icon: Icons.moon;
+            // Compact, so never shown: this is what names the round button.
+            label: "Suspend";
+            kfocus: keys.on && keys.cursor == root.k-suspend;
+            presses: root.presses;
             activated => { Session.suspend(); }
         }
         if root.opts.poweroff: SessionButton {
@@ -569,6 +849,10 @@ export component SessionWidget inherits Rectangle {
             compact: true;
             danger: root.opts.confirm;
             icon: Icons.power;
+            // Compact, so never shown: this is what names the round button.
+            label: "Power off";
+            kfocus: keys.on && keys.cursor == root.k-poweroff;
+            presses: root.presses;
             activated => { Session.poweroff(); }
         }
     }
@@ -578,29 +862,50 @@ export component SessionWidget inherits Rectangle {
         if root.opts.lock: SessionButton {
             icon: Icons.lock;
             label: "Lock";
+            kfocus: keys.on && keys.cursor == root.k-lock;
+            presses: root.presses;
             activated => { Session.lock(); }
         }
         if root.opts.suspend: SessionButton {
             icon: Icons.moon;
             label: "Suspend";
+            kfocus: keys.on && keys.cursor == root.k-suspend;
+            presses: root.presses;
             activated => { Session.suspend(); }
         }
         if root.opts.logout: SessionButton {
             icon: Icons.logout;
             label: "Log out";
+            kfocus: keys.on && keys.cursor == root.k-logout;
+            presses: root.presses;
             activated => { Session.logout(); }
         }
         if root.opts.restart: SessionButton {
             icon: Icons.restart;
             label: "Restart";
             danger: root.opts.confirm;
+            kfocus: keys.on && keys.cursor == root.k-restart;
+            presses: root.presses;
             activated => { Session.reboot(); }
         }
         if root.opts.poweroff: SessionButton {
             icon: Icons.power;
             label: "Power off";
             danger: root.opts.confirm;
+            kfocus: keys.on && keys.cursor == root.k-poweroff;
+            presses: root.presses;
             activated => { Session.poweroff(); }
+        }
+    }
+    // h/l (or j/k) over the buttons, Enter presses one (twice for the ones that ask).
+    keys := NavScope {
+        active: root.nav;
+        count: root.k-count;
+        accessible-label: "Session";
+        activate => { root.presses += 1; }
+        adjust(i, d) => {
+            self.move-to(clamp(i + d, 0, max(0, root.k-count - 1)));
+            true
         }
     }
 }

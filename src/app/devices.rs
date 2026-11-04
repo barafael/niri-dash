@@ -1,14 +1,14 @@
 //! The removable-drives and phone widgets: what UDisks and KDE Connect report, and their buttons.
 
 use super::{App, model};
-use crate::sources::{kdeconnect, perf::human_bytes, udisks};
 use crate::{
     Control, Dash, DriveVolume, Drives as UiDrives, PhoneItem, Phones as UiPhones, RemovableDrive,
 };
+use niri_dash_system::{Tell, drives, perf::human_bytes, phones};
 use slint::ComponentHandle;
 use std::rc::Rc;
 
-fn volume_detail(v: &udisks::Volume) -> String {
+fn volume_detail(v: &drives::Volume) -> String {
     if v.locked {
         "Locked".into()
     } else if let Some(m) = &v.mount {
@@ -21,37 +21,41 @@ fn volume_detail(v: &udisks::Volume) -> String {
 }
 
 impl App {
-    pub(super) fn show_drives(&self, s: udisks::State) {
+    pub(super) fn show_drives(&self, s: drives::State) {
         let ui = self.ui();
         let d = ui.global::<UiDrives>();
         d.set_available(s.available);
-        d.set_drives(model(
-            s.drives
-                .iter()
-                .map(|drive| RemovableDrive {
-                    path: drive.path.as_str().into(),
-                    name: drive.name.as_str().into(),
-                    detail: drive.summary().into(),
-                    volumes: model(
-                        drive
-                            .volumes
-                            .iter()
-                            .map(|v| DriveVolume {
-                                path: v.path.as_str().into(),
-                                name: v.name.as_str().into(),
-                                detail: volume_detail(v).into(),
-                                mount: v.mount.as_deref().unwrap_or_default().into(),
-                                mounted: v.mount.is_some(),
-                                locked: v.locked,
-                            })
-                            .collect(),
-                    ),
-                })
-                .collect(),
-        ));
+        // Each volume also goes into one flat list, for the keyboard cursor.
+        let mut all: Vec<DriveVolume> = Vec::new();
+        let mut drives = Vec::new();
+        for drive in &s.drives {
+            let mut volumes = Vec::new();
+            for v in &drive.volumes {
+                let vol = DriveVolume {
+                    path: v.path.as_str().into(),
+                    name: v.name.as_str().into(),
+                    detail: volume_detail(v).into(),
+                    mount: v.mount.as_deref().unwrap_or_default().into(),
+                    mounted: v.mount.is_some(),
+                    locked: v.locked,
+                    index: all.len() as i32,
+                    drive: drive.path.as_str().into(),
+                };
+                all.push(vol.clone());
+                volumes.push(vol);
+            }
+            drives.push(RemovableDrive {
+                path: drive.path.as_str().into(),
+                name: drive.name.as_str().into(),
+                detail: drive.summary().into(),
+                volumes: model(volumes),
+            });
+        }
+        d.set_drives(model(drives));
+        d.set_volumes(model(all));
     }
 
-    pub(super) fn show_phones(&self, s: kdeconnect::State) {
+    pub(super) fn show_phones(&self, s: phones::State) {
         let ui = self.ui();
         let p = ui.global::<UiPhones>();
         p.set_available(s.available);
@@ -76,22 +80,26 @@ impl App {
 pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     let d = ui.global::<UiDrives>();
     let a = app.clone();
-    d.on_mount(move |block| a.drives.mount(block.into()));
+    d.on_mount(move |block| a.tx.drives.tell(drives::Command::Mount(block.into())));
     let a = app.clone();
-    d.on_unmount(move |block| a.drives.unmount(block.into()));
+    d.on_unmount(move |block| a.tx.drives.tell(drives::Command::Unmount(block.into())));
     let a = app.clone();
-    d.on_eject(move |drive| a.drives.eject(drive.into()));
+    d.on_eject(move |drive| a.tx.drives.tell(drives::Command::Eject(drive.into())));
     let a = app.clone();
-    d.on_eject_all(move || a.drives.eject_all());
+    d.on_eject_all(move || a.tx.drives.tell(drives::Command::EjectAll));
     let a = app.clone();
     d.on_open(move |mount| {
-        a.drives.open(mount.into());
+        a.tx.drives.tell(drives::Command::Open(mount.into()));
         a.pending.borrow_mut().push(Control::Hide);
     });
 
     let p = ui.global::<UiPhones>();
     let a = app.clone();
-    p.on_ring(move |id| a.phones.ring(id.into()));
+    p.on_ring(move |id| a.tx.phones.tell(phones::Command::Ring(id.into())));
     let a = app.clone();
-    p.on_send(move |id| a.phones.send_files(id.into()));
+    p.on_send(move |id| {
+        // The file chooser would be behind the dashboard.
+        a.pending.borrow_mut().push(Control::Hide);
+        a.tx.phones.tell(phones::Command::SendFiles(id.into()));
+    });
 }

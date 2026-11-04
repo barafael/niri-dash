@@ -2,7 +2,8 @@
 
 use super::{App, model};
 use crate::Dash;
-use crate::sources::{self, niri};
+use niri_dash_system::Tell;
+use niri_dash_system::privacy::{Command, ScreenCast, Usage};
 use slint::ComponentHandle;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -11,13 +12,13 @@ use std::rc::Rc;
 #[derive(Default)]
 pub(super) struct Privacy {
     /// Screencasts, from niri.
-    casts: RefCell<Vec<niri::ScreenCast>>,
+    casts: RefCell<Vec<ScreenCast>>,
     /// Microphone and camera use, from PipeWire.
-    usage: RefCell<sources::privacy::Usage>,
+    usage: RefCell<Usage>,
 }
 
 impl App {
-    pub(super) fn set_casts(&self, casts: Vec<niri::ScreenCast>) {
+    pub(super) fn set_casts(&self, casts: Vec<ScreenCast>) {
         let started = casts.iter().any(|c| {
             !self
                 .privacy
@@ -33,7 +34,7 @@ impl App {
         self.push_privacy();
     }
 
-    pub(super) fn set_privacy_usage(&self, usage: sources::privacy::Usage) {
+    pub(super) fn set_privacy_usage(&self, usage: Usage) {
         *self.privacy.usage.borrow_mut() = usage;
         self.push_privacy();
     }
@@ -61,9 +62,8 @@ impl App {
         }
         for c in casts.iter() {
             let app = c
-                .pid
-                .and_then(|pid| std::fs::read_to_string(format!("/proc/{pid}/comm")).ok())
-                .map(|s| s.trim().to_string())
+                .process
+                .clone()
                 .or_else(|| {
                     let node = c.pw_node?;
                     usage
@@ -92,5 +92,5 @@ impl App {
 pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     let a = app.clone();
     ui.global::<crate::Privacy>()
-        .on_stop(move |session| crate::compositor::stop_cast(&a.ctx, session as u64));
+        .on_stop(move |session| a.tx.privacy.tell(Command::StopCast(session as u64)));
 }

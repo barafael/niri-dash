@@ -1,29 +1,53 @@
 import { LineEdit } from "std-widgets.slint";
 import { Theme, Icons } from "../theme.slint";
 import { Wifi, Bluetooth, BtDevice, DeviceKind } from "../data.slint";
-import { Icon, IconButton, TextButton, Switch, Header, Row, SectionLabel, Muted, Empty, SignalBars, ScrollList, RoundFace } from "../common.slint";
+import { Icon, IconButton, TextButton, Switch, Header, Row, SectionLabel, Muted, Empty, SignalBars, ScrollList, RoundFace, NavScope } from "../common.slint";
 
 // A row of choices, one of them picked (security type, EAP method).
 component Choice inherits HorizontalLayout {
     in property <[string]> options;
     in-out property <int> picked;
+    // What is being picked ("Security").
+    in property <string> label;
+    // Under the keyboard cursor (h/l pick).
+    in property <bool> kfocus;
     spacing: 4px;
     for o[i] in root.options: TextButton {
+        accessible-label: root.label + ": " + o;
+        accessible-value: i == root.picked ? "selected" : "";
         text: o;
         primary: i == root.picked;
+        kfocus: root.kfocus && i == root.picked;
         horizontal-stretch: 1;
         clicked => { root.picked = i; }
     }
 }
 
-// A password field (the LineEdit has its own button to show what was typed).
-component PasswordField inherits HorizontalLayout {
-    in property <string> placeholder: "Password";
+// A text field (a password's has its own button to show what was typed). Under the keyboard
+// cursor it is underlined, and a change of `edit-tick` then puts the keyboard in it.
+component KeyField inherits VerticalLayout {
+    in property <string> placeholder;
+    // What it is for, read out (the placeholder, unless said otherwise).
+    in property <string> label: root.placeholder;
+    in property <InputType> input-type: InputType.text;
+    // What is typed isn't read out.
+    in property <bool> secret: root.input-type == InputType.password;
     in property <bool> focus-first;
+    in property <bool> kfocus;
+    in property <int> edit-tick;
     in-out property <string> text <=> field.text;
     callback accepted();
+    spacing: 2px;
+    changed edit-tick => {
+        if (self.kfocus) {
+            field.focus();
+        }
+    }
     field := LineEdit {
-        input-type: password;
+        // A LineEdit's accessible value is its text, a password too, and can't be told apart
+        // from it. So it stays out of the accessibility tree; the underline speaks for it.
+        accessible-role: none;
+        input-type: root.input-type;
         placeholder-text: root.placeholder;
         accepted => { root.accepted(); }
         init => {
@@ -32,6 +56,17 @@ component PasswordField inherits HorizontalLayout {
             }
         }
     }
+    Rectangle {
+        accessible-role: text-input;
+        accessible-label: root.label;
+        accessible-value: root.secret ? "" : root.text;
+        accessible-placeholder-text: root.placeholder;
+        accessible-item-selected: root.kfocus;
+        accessible-action-default => { field.focus(); }
+        height: 2px;
+        border-radius: 1px;
+        background: root.kfocus ? Theme.accent : transparent;
+    }
 }
 
 // For a new Enterprise network: the domain the server's certificate must be issued for, or an
@@ -39,10 +74,16 @@ component PasswordField inherits HorizontalLayout {
 component ServerCheck inherits VerticalLayout {
     in-out property <string> domain;
     in-out property <bool> insecure;
+    in property <bool> kfocus-field;
+    in property <bool> kfocus-switch;
+    in property <int> edit-tick;
     spacing: 6px;
-    if !root.insecure: LineEdit {
-        placeholder-text: "Server domain, e.g. example.org";
+    if !root.insecure: KeyField {
+        label: "Server domain";
+        placeholder: "Server domain, e.g. example.org";
         text <=> root.domain;
+        kfocus: root.kfocus-field;
+        edit-tick: root.edit-tick;
     }
     HorizontalLayout {
         spacing: 8px;
@@ -55,8 +96,10 @@ component ServerCheck inherits VerticalLayout {
             horizontal-stretch: 1;
         }
         Switch {
+            accessible-label: "Don't check the server (unsafe)";
             y: (parent.height - self.height) / 2;
             checked: root.insecure;
+            kfocus: root.kfocus-switch;
             toggled => { root.insecure = !root.insecure; }
         }
     }
@@ -65,8 +108,20 @@ component ServerCheck inherits VerticalLayout {
 // The prompt for a network's password: asked by the widget for a new network, or by
 // NetworkManager (through the secret agent) for a saved one.
 component WifiPasswordPrompt inherits Rectangle {
+    in property <bool> nav;
     property <bool> enterprise: Wifi.prompt.kind == 2;
     property <bool> new-enterprise: root.enterprise && Wifi.prompt.new;
+    // Keyboard stops: the method, the user name, the password, the server check, Cancel, Join.
+    property <int> k-method: root.new-enterprise ? 0 : -1;
+    property <int> k-ident: root.enterprise ? (root.new-enterprise ? 1 : 0) : -1;
+    property <int> k-pass: (root.new-enterprise ? 1 : 0) + (root.enterprise ? 1 : 0);
+    property <int> k-domain: root.new-enterprise && !root.insecure ? root.k-pass + 1 : -1;
+    property <int> k-insecure: root.new-enterprise ? root.k-pass + (root.insecure ? 1 : 2) : -1;
+    property <int> k-cancel: root.k-pass + 1 + (root.new-enterprise ? (root.insecure ? 1 : 2) : 0);
+    property <int> edit-tick;
+    function kf(i: int) -> bool {
+        keys.on && keys.cursor == i
+    }
     property <int> method;
     property <string> identity;
     property <string> password;
@@ -79,52 +134,101 @@ component WifiPasswordPrompt inherits Rectangle {
     init => { root.reset(); }
     border-radius: Theme.radius-small;
     background: Theme.card-raised;
-    VerticalLayout {
-        padding: Theme.pad-tight;
-        spacing: 6px;
-        Text {
-            text: (Wifi.prompt.retry ? "Wrong password for " : root.enterprise ? "Sign in to " : "Password for ") + Wifi.prompt.ssid;
-            color: Wifi.prompt.retry ? Theme.warn : Theme.text;
-            font-size: Theme.font-small;
-            font-weight: 600;
-            overflow: elide;
-        }
-        if root.new-enterprise: Choice {
-            options: ["PEAP", "TTLS"];
-            picked <=> root.method;
-        }
-        if root.enterprise: LineEdit {
-            placeholder-text: "User name";
-            text <=> root.identity;
-            init => { self.focus(); }
-        }
-        PasswordField {
-            placeholder: Wifi.prompt.kind == 1 ? "WEP key" : "Password";
-            focus-first: !root.enterprise;
-            text <=> root.password;
-            accepted => { root.submit(); }
-        }
-        if root.new-enterprise: ServerCheck {
-            domain <=> root.domain;
-            insecure <=> root.insecure;
-        }
-        if Wifi.prompt.message != "": Text {
-            text: Wifi.prompt.message;
-            color: Theme.bad;
-            font-size: Theme.font-small;
-            wrap: word-wrap;
-        }
-        HorizontalLayout {
-            spacing: 6px;
-            alignment: end;
-            TextButton {
-                text: "Cancel";
-                clicked => { Wifi.cancel-prompt(); }
+    // j/k over the fields and buttons; Enter (or i) types into a field, h/l pick the method.
+    keys := NavScope {
+        accessible-label: "Wi-Fi password";
+        active: root.nav;
+        count: root.k-cancel + 2;
+        activate(i) => {
+            if (i == root.k-method) {
+                root.method = 1 - root.method;
+            } else if (i == root.k-insecure) {
+                root.insecure = !root.insecure;
+            } else if (i == root.k-cancel) {
+                Wifi.cancel-prompt();
+            } else if (i == root.k-cancel + 1) {
+                root.submit();
+            } else {
+                root.edit-tick += 1;
             }
-            TextButton {
-                text: "Join";
-                primary: true;
-                clicked => { root.submit(); }
+        }
+        adjust(i, d) => {
+            if (i != root.k-method) {
+                return false;
+            }
+            root.method = clamp(root.method + d, 0, 1);
+            true
+        }
+        letter(t, i) => {
+            if (t == "i" && (i == root.k-ident || i == root.k-pass || i == root.k-domain)) {
+                root.edit-tick += 1;
+                return true;
+            }
+            false
+        }
+        back => {
+            Wifi.cancel-prompt();
+            true
+        }
+        VerticalLayout {
+            padding: Theme.pad-tight;
+            spacing: 6px;
+            Text {
+                text: (Wifi.prompt.retry ? "Wrong password for " : root.enterprise ? "Sign in to " : "Password for ") + Wifi.prompt.ssid;
+                color: Wifi.prompt.retry ? Theme.warn : Theme.text;
+                font-size: Theme.font-small;
+                font-weight: 600;
+                overflow: elide;
+            }
+            if root.new-enterprise: Choice {
+                label: "Method";
+                options: ["PEAP", "TTLS"];
+                picked <=> root.method;
+                kfocus: root.kf(root.k-method);
+            }
+            if root.enterprise: KeyField {
+                placeholder: "User name";
+                text <=> root.identity;
+                focus-first: true;
+                kfocus: root.kf(root.k-ident);
+                edit-tick: root.edit-tick;
+            }
+            KeyField {
+                placeholder: Wifi.prompt.kind == 1 ? "WEP key" : "Password";
+                input-type: InputType.password;
+                focus-first: !root.enterprise;
+                text <=> root.password;
+                kfocus: root.kf(root.k-pass);
+                edit-tick: root.edit-tick;
+                accepted => { root.submit(); }
+            }
+            if root.new-enterprise: ServerCheck {
+                domain <=> root.domain;
+                insecure <=> root.insecure;
+                kfocus-field: root.kf(root.k-domain);
+                kfocus-switch: root.kf(root.k-insecure);
+                edit-tick: root.edit-tick;
+            }
+            if Wifi.prompt.message != "": Text {
+                text: Wifi.prompt.message;
+                color: Theme.bad;
+                font-size: Theme.font-small;
+                wrap: word-wrap;
+            }
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: end;
+                TextButton {
+                    text: "Cancel";
+                    kfocus: root.kf(root.k-cancel);
+                    clicked => { Wifi.cancel-prompt(); }
+                }
+                TextButton {
+                    text: "Join";
+                    primary: true;
+                    kfocus: root.kf(root.k-cancel + 1);
+                    clicked => { root.submit(); }
+                }
             }
         }
     }
@@ -143,11 +247,41 @@ component WifiPasswordPrompt inherits Rectangle {
 
 export component WifiWidget inherits Rectangle {
     in property <bool> round;
+    in property <bool> nav;
     // 0: networks, 1: one network's details, 2: join a hidden network, 3: saved networks.
     property <int> page;
     // Where the details page goes back to.
     property <int> back-to;
     property <bool> asking: Wifi.prompt.ssid != "";
+    // Keyboard stops. Networks page: the sign-in row, the networks, "Hidden network…", "Saved
+    // networks". Details: the autoconnect switch, then the buttons, the main one first. Hidden
+    // network: the form's fields and Join. Saved: the networks.
+    property <bool> on-list: Wifi.available && Wifi.enabled;
+    property <int> k-net: Wifi.portal ? 1 : 0;
+    property <int> k-hidden: root.k-net + Wifi.networks.length;
+    property <bool> has-act: Wifi.detail.active || Wifi.detail.ssid != "";
+    property <int> k-act: Wifi.detail.known ? 1 : 0;
+    property <int> k-share: Wifi.detail.known ? root.k-act + (root.has-act ? 1 : 0) : -1;
+    property <bool> enterprise: root.hidden-security == 2;
+    property <int> k-method: root.enterprise ? 2 : -1;
+    property <int> k-ident: root.enterprise ? 3 : -1;
+    property <int> k-pass: root.hidden-security == 0 ? -1 : root.enterprise ? 4 : 2;
+    property <int> k-domain: root.enterprise && !root.hidden-insecure ? 5 : -1;
+    property <int> k-insecure: root.enterprise ? (root.hidden-insecure ? 5 : 6) : -1;
+    property <int> k-join: root.hidden-security == 0 ? 2 : root.hidden-security == 1 ? 3 : root.hidden-insecure ? 6 : 7;
+    property <int> k-count: root.round || !Wifi.available ? 0
+        : root.page == 0 ? (root.on-list ? root.k-hidden + 1 + (Wifi.saved.length > 0 ? 1 : 0) : 0)
+        : root.page == 1 ? (Wifi.detail.known ? 3 : 0) + (root.has-act ? 1 : 0)
+        : root.page == 2 ? (Wifi.enabled ? root.k-join + 1 : 0)
+        : Wifi.saved.length;
+    property <int> edit-tick;
+    function kf(page: int, i: int) -> bool {
+        keys.on && root.page == page && keys.cursor == i
+    }
+    changed page => {
+        keys.cursor = 0;
+        keys.sub = 0;
+    }
     // The details page of the network with this key.
     function open(key: string, from: int) {
         root.back-to = from;
@@ -174,391 +308,561 @@ export component WifiWidget inherits Rectangle {
         root.hidden-domain = "";
         root.hidden-insecure = false;
     }
-    if root.round: RoundFace {
-        icon: Wifi.enabled ? Icons.wifi : Icons.wifi-off;
-        on: Wifi.enabled && Wifi.ssid != "";
-        tint: self.on ? Theme.accent : Theme.faint;
-        title: !Wifi.available ? "No Wi-Fi" : !Wifi.enabled ? "Off" : Wifi.ssid != "" ? Wifi.ssid : "Not connected";
-        caption: Wifi.enabled && Wifi.ssid != "" ? Wifi.signal + "%" : "";
-        TouchArea {
-            clicked => { Wifi.toggle(); }
+    // Wraps everything, so Escape from a text field comes up here (back to moving the cursor).
+    keys := NavScope {
+        accessible-label: "Wi-Fi";
+        active: root.nav && !root.asking;
+        count: root.k-count;
+        subs: root.page == 0 && self.cursor >= root.k-net && self.cursor < root.k-hidden
+            ? (Wifi.networks[self.cursor - root.k-net].active ? 3 : 2) : 1;
+        activate(i, sub) => { root.activate(i, sub); }
+        adjust(i, d) => {
+            if (root.page == 2 && i == 1) {
+                root.hidden-security = clamp(root.hidden-security + d, 0, 2);
+                return true;
+            }
+            if (root.page == 2 && i == root.k-method) {
+                root.hidden-method = clamp(root.hidden-method + d, 0, 1);
+                return true;
+            }
+            false
         }
-    }
-    if !root.round: VerticalLayout {
-        padding: Theme.pad;
-        spacing: 6px;
-        if root.page == 0: Header {
+        letter(t, i) => {
+            if (root.round) {
+                return false;
+            }
+            if (t == "r" && root.page == 0) {
+                Wifi.rescan();
+                return true;
+            }
+            if (t == "t" && root.page == 0) {
+                Wifi.toggle();
+                return true;
+            }
+            if (t == "d" && (Wifi.detail.active || (root.page == 0 && Wifi.ssid != ""))) {
+                Wifi.disconnect();
+                return true;
+            }
+            if (t == "i" && root.page == 2 && (i == 0 || i == root.k-ident || i == root.k-pass || i == root.k-domain)) {
+                root.edit-tick += 1;
+                return true;
+            }
+            false
+        }
+        back => {
+            if (root.page != 0) {
+                root.back();
+                return true;
+            }
+            false
+        }
+        if root.round: RoundFace {
             icon: Wifi.enabled ? Icons.wifi : Icons.wifi-off;
-            icon-color: Wifi.enabled ? Theme.accent : Theme.faint;
-            title: "Wi-Fi";
-            IconButton {
-                icon: Icons.refresh;
-                size: 28px;
-                enabled: Wifi.enabled && !Wifi.scanning;
-                clicked => { Wifi.rescan(); }
-            }
-            Switch {
-                y: (parent.height - self.height) / 2;
-                checked: Wifi.enabled;
-                enabled: Wifi.available && !Wifi.blocked;
-                toggled => { Wifi.toggle(); }
+            on: Wifi.enabled && Wifi.ssid != "";
+            tint: self.on ? Theme.accent : Theme.faint;
+            title: !Wifi.available ? "No Wi-Fi" : !Wifi.enabled ? "Off" : Wifi.ssid != "" ? Wifi.ssid : "Not connected";
+            caption: Wifi.enabled && Wifi.ssid != "" ? Wifi.signal + "%" : "";
+            TouchArea {
+                accessible-role: switch;
+                accessible-label: "Wi-Fi";
+                accessible-checkable: true;
+                accessible-checked: Wifi.enabled;
+                accessible-action-default => { Wifi.toggle(); }
+                clicked => { Wifi.toggle(); }
             }
         }
-        if root.page != 0: HorizontalLayout {
-            height: 28px;
-            spacing: 4px;
-            IconButton {
-                y: (parent.height - self.height) / 2;
-                icon: Icons.chevron-left;
-                size: 28px;
-                clicked => { root.back(); }
-            }
-            Text {
-                text: root.page == 1 ? Wifi.detail.ssid : root.page == 2 ? "Hidden network" : "Saved networks";
-                font-size: Theme.font-title;
-                font-weight: 600;
-                color: Theme.text;
-                vertical-alignment: center;
-                overflow: elide;
-                horizontal-stretch: 1;
-            }
-        }
-        Muted {
-            text: Wifi.status;
-            color: Wifi.failed ? Theme.bad : Theme.dim;
-            visible: Wifi.status != "";
-            wrap: word-wrap;
-        }
-        if root.asking: WifiPasswordPrompt { }
-        if !Wifi.available: Empty {
-            vertical-stretch: 1;
-            text: "No Wi-Fi device (NetworkManager)";
-        }
-        if Wifi.available && Wifi.blocked: Empty {
-            vertical-stretch: 1;
-            text: "Wi-Fi is blocked (airplane mode or a hardware switch)";
-        }
-        if Wifi.available && !Wifi.blocked && !Wifi.enabled && root.page == 0: Empty {
-            vertical-stretch: 1;
-            text: "Wi-Fi is off";
-        }
-        // The networks around, then the ways to the other pages.
-        if Wifi.available && Wifi.enabled && root.page == 0: ScrollList {
-            vertical-stretch: 1;
-            if Wifi.portal: Row {
-                background: self.hovered ? Theme.warn.with-alpha(0.3) : Theme.warn.with-alpha(0.18);
-                clicked => { Wifi.sign-in(); }
-                HorizontalLayout {
-                    padding-left: 10px;
-                    padding-right: 10px;
-                    spacing: 8px;
-                    Icon {
-                        y: (parent.height - self.height) / 2;
-                        source: Icons.globe;
-                        size: 16px;
-                        tint: Theme.warn;
-                    }
-                    Text {
-                        text: "Sign in to the network";
-                        color: Theme.text;
-                        font-size: Theme.font-body;
-                        vertical-alignment: center;
-                        overflow: elide;
-                        horizontal-stretch: 1;
-                    }
-                }
-            }
-            for n in Wifi.networks: Row {
-                selected: n.active;
-                clicked => {
-                    if (n.active) {
-                        root.open(n.key, 0);
-                    } else {
-                        Wifi.connect(n.key);
-                    }
-                }
-                HorizontalLayout {
-                    padding-left: 10px;
-                    padding-right: 2px;
-                    spacing: 8px;
-                    SignalBars {
-                        y: (parent.height - self.height) / 2;
-                        signal: n.signal;
-                        tint: n.active ? Theme.accent : Theme.text;
-                    }
-                    Text {
-                        text: n.ssid;
-                        color: n.active ? Theme.accent : Theme.text;
-                        font-size: Theme.font-body;
-                        font-weight: n.known ? 600 : 400;
-                        vertical-alignment: center;
-                        overflow: elide;
-                        horizontal-stretch: 1;
-                    }
-                    if n.key == Wifi.connecting: Muted {
-                        text: "joining…";
-                    }
-                    if n.tag != "": Muted {
-                        text: n.tag;
-                        color: n.secure ? Theme.dim : Theme.warn;
-                    }
-                    if n.secure: Icon {
-                        y: (parent.height - self.height) / 2;
-                        source: Icons.lock-small;
-                        size: 14px;
-                        tint: Theme.faint;
-                    }
-                    if n.active: IconButton {
-                        y: (parent.height - self.height) / 2;
-                        icon: Icons.close;
-                        size: 26px;
-                        clicked => { Wifi.disconnect(); }
-                    }
-                    IconButton {
-                        y: (parent.height - self.height) / 2;
-                        icon: Icons.chevron-right;
-                        size: 26px;
-                        tint: Theme.dim;
-                        clicked => { root.open(n.key, 0); }
-                    }
-                }
-            }
-            if Wifi.networks.length == 0: Empty {
-                height: 48px;
-                text: Wifi.scanning ? "Scanning…" : "No networks found";
-            }
-            Row {
-                clicked => {
-                    root.reset-hidden();
-                    root.page = 2;
-                }
-                HorizontalLayout {
-                    padding-left: 10px;
-                    spacing: 8px;
-                    Icon {
-                        y: (parent.height - self.height) / 2;
-                        source: Icons.plus;
-                        size: 16px;
-                        tint: Theme.dim;
-                    }
-                    Text {
-                        text: "Hidden network…";
-                        color: Theme.dim;
-                        font-size: Theme.font-body;
-                        vertical-alignment: center;
-                        horizontal-stretch: 1;
-                    }
-                }
-            }
-            if Wifi.saved.length > 0: Row {
-                clicked => { root.page = 3; }
-                HorizontalLayout {
-                    padding-left: 10px;
-                    padding-right: 2px;
-                    spacing: 8px;
-                    Icon {
-                        y: (parent.height - self.height) / 2;
-                        source: Icons.check;
-                        size: 16px;
-                        tint: Theme.dim;
-                    }
-                    Text {
-                        text: "Saved networks (" + Wifi.saved.length + ")";
-                        color: Theme.dim;
-                        font-size: Theme.font-body;
-                        vertical-alignment: center;
-                        horizontal-stretch: 1;
-                    }
-                    Icon {
-                        y: (parent.height - self.height) / 2;
-                        source: Icons.chevron-right;
-                        size: 16px;
-                        tint: Theme.dim;
-                    }
-                }
-            }
-        }
-        // One network: what NetworkManager knows about it, and what can be done with it.
-        if Wifi.available && root.page == 1: ScrollList {
-            vertical-stretch: 1;
-            if Wifi.detail.ssid == "": Empty {
-                height: 48px;
-                text: "This network is gone.";
-            }
-            for f in Wifi.detail.facts: HorizontalLayout {
-                height: 24px;
-                spacing: 8px;
-                Muted {
-                    text: f.label;
-                    width: 34%;
-                }
-                Text {
-                    text: f.value;
-                    color: Theme.text;
-                    font-size: Theme.font-small;
-                    vertical-alignment: center;
-                    horizontal-alignment: right;
-                    overflow: elide;
-                    horizontal-stretch: 1;
-                }
-            }
-            if Wifi.detail.known: HorizontalLayout {
-                height: 34px;
-                spacing: 8px;
-                Text {
-                    text: "Connect automatically";
-                    color: Theme.text;
-                    font-size: Theme.font-body;
-                    vertical-alignment: center;
-                    horizontal-stretch: 1;
-                    overflow: elide;
+        if !root.round: VerticalLayout {
+            padding: Theme.pad;
+            spacing: 6px;
+            if root.page == 0: Header {
+                icon: Wifi.enabled ? Icons.wifi : Icons.wifi-off;
+                icon-color: Wifi.enabled ? Theme.accent : Theme.faint;
+                title: "Wi-Fi";
+                IconButton {
+                    accessible-label: "Rescan";
+                    icon: Icons.refresh;
+                    size: 28px;
+                    enabled: Wifi.enabled && !Wifi.scanning;
+                    clicked => { Wifi.rescan(); }
                 }
                 Switch {
+                    accessible-label: "Wi-Fi";
                     y: (parent.height - self.height) / 2;
-                    checked: Wifi.detail.autoconnect;
-                    toggled => { Wifi.set-autoconnect(Wifi.detail.uuid, !Wifi.detail.autoconnect); }
+                    checked: Wifi.enabled;
+                    enabled: Wifi.available && !Wifi.blocked;
+                    toggled => { Wifi.toggle(); }
                 }
             }
-            if Wifi.detail.known && Wifi.revealed: VerticalLayout {
-                spacing: 6px;
-                padding-top: 4px;
-                if Wifi.password != "": HorizontalLayout {
+            if root.page != 0: HorizontalLayout {
+                height: 28px;
+                spacing: 4px;
+                IconButton {
+                    accessible-label: "Back";
+                    y: (parent.height - self.height) / 2;
+                    icon: Icons.chevron-left;
+                    size: 28px;
+                    clicked => { root.back(); }
+                }
+                Text {
+                    text: root.page == 1 ? Wifi.detail.ssid : root.page == 2 ? "Hidden network" : "Saved networks";
+                    font-size: Theme.font-title;
+                    font-weight: 600;
+                    color: Theme.text;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+            }
+            Muted {
+                text: Wifi.status;
+                color: Wifi.failed ? Theme.bad : Theme.dim;
+                visible: Wifi.status != "";
+                wrap: word-wrap;
+            }
+            if root.asking: WifiPasswordPrompt {
+                nav: root.nav;
+            }
+            if !Wifi.available: Empty {
+                vertical-stretch: 1;
+                text: "No Wi-Fi device (NetworkManager)";
+            }
+            if Wifi.available && Wifi.blocked: Empty {
+                vertical-stretch: 1;
+                text: "Wi-Fi is blocked (airplane mode or a hardware switch)";
+            }
+            if Wifi.available && !Wifi.blocked && !Wifi.enabled && root.page == 0: Empty {
+                vertical-stretch: 1;
+                text: "Wi-Fi is off";
+            }
+            // The networks around, then the ways to the other pages.
+            if Wifi.available && Wifi.enabled && root.page == 0: net-list := ScrollList {
+                vertical-stretch: 1;
+                if Wifi.portal: Row {
+                    accessible-label: "Sign in to the network";
+                    background: self.hovered || self.kfocus ? Theme.warn.with-alpha(0.3) : Theme.warn.with-alpha(0.18);
+                    kfocus: root.kf(0, 0);
+                    revealed(y, h) => { net-list.reveal(y, h); }
+                    clicked => { Wifi.sign-in(); }
+                    HorizontalLayout {
+                        padding-left: 10px;
+                        padding-right: 10px;
+                        spacing: 8px;
+                        Icon {
+                            y: (parent.height - self.height) / 2;
+                            source: Icons.globe;
+                            size: 16px;
+                            tint: Theme.warn;
+                        }
+                        Text {
+                            text: "Sign in to the network";
+                            color: Theme.text;
+                            font-size: Theme.font-body;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            horizontal-stretch: 1;
+                        }
+                    }
+                }
+                for n[i] in Wifi.networks: Row {
+                    accessible-label: n.ssid;
+                    accessible-value: (n.active ? "connected, " : n.key == Wifi.connecting ? "joining, " : n.known ? "saved, " : "")
+                        + "signal " + n.signal + "%, " + (n.tag != "" ? n.tag : n.secure ? "secured" : "open");
+                    selected: n.active;
+                    kfocus: root.kf(0, root.k-net + i) && keys.sub == 0;
+                    revealed(y, h) => { net-list.reveal(y, h); }
+                    clicked => {
+                        if (n.active) {
+                            root.open(n.key, 0);
+                        } else {
+                            Wifi.connect(n.key);
+                        }
+                    }
+                    HorizontalLayout {
+                        padding-left: 10px;
+                        padding-right: 2px;
+                        spacing: 8px;
+                        SignalBars {
+                            y: (parent.height - self.height) / 2;
+                            signal: n.signal;
+                            tint: n.active ? Theme.accent : Theme.text;
+                        }
+                        Text {
+                            text: n.ssid;
+                            color: n.active ? Theme.accent : Theme.text;
+                            font-size: Theme.font-body;
+                            font-weight: n.known ? 600 : 400;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            horizontal-stretch: 1;
+                        }
+                        if n.key == Wifi.connecting: Muted {
+                            text: "joining…";
+                        }
+                        if n.tag != "": Muted {
+                            text: n.tag;
+                            color: n.secure ? Theme.dim : Theme.warn;
+                        }
+                        if n.secure: Icon {
+                            y: (parent.height - self.height) / 2;
+                            source: Icons.lock-small;
+                            size: 14px;
+                            tint: Theme.faint;
+                        }
+                        if n.active: IconButton {
+                            accessible-label: "Disconnect from " + n.ssid;
+                            y: (parent.height - self.height) / 2;
+                            icon: Icons.close;
+                            size: 26px;
+                            kfocus: root.kf(0, root.k-net + i) && keys.sub == 1;
+                            clicked => { Wifi.disconnect(); }
+                        }
+                        IconButton {
+                            accessible-label: "Details of " + n.ssid;
+                            y: (parent.height - self.height) / 2;
+                            icon: Icons.chevron-right;
+                            size: 26px;
+                            tint: Theme.dim;
+                            kfocus: root.kf(0, root.k-net + i) && keys.sub == (n.active ? 2 : 1);
+                            clicked => { root.open(n.key, 0); }
+                        }
+                    }
+                }
+                if Wifi.networks.length == 0: Empty {
+                    height: 48px;
+                    text: Wifi.scanning ? "Scanning…" : "No networks found";
+                }
+                Row {
+                    accessible-label: "Hidden network";
+                    kfocus: root.kf(0, root.k-hidden);
+                    revealed(y, h) => { net-list.reveal(y, h); }
+                    clicked => {
+                        root.reset-hidden();
+                        root.page = 2;
+                    }
+                    HorizontalLayout {
+                        padding-left: 10px;
+                        spacing: 8px;
+                        Icon {
+                            y: (parent.height - self.height) / 2;
+                            source: Icons.plus;
+                            size: 16px;
+                            tint: Theme.dim;
+                        }
+                        Text {
+                            text: "Hidden network…";
+                            color: Theme.dim;
+                            font-size: Theme.font-body;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                    }
+                }
+                if Wifi.saved.length > 0: Row {
+                    accessible-label: "Saved networks (" + Wifi.saved.length + ")";
+                    kfocus: root.kf(0, root.k-hidden + 1);
+                    revealed(y, h) => { net-list.reveal(y, h); }
+                    clicked => { root.page = 3; }
+                    HorizontalLayout {
+                        padding-left: 10px;
+                        padding-right: 2px;
+                        spacing: 8px;
+                        Icon {
+                            y: (parent.height - self.height) / 2;
+                            source: Icons.check;
+                            size: 16px;
+                            tint: Theme.dim;
+                        }
+                        Text {
+                            text: "Saved networks (" + Wifi.saved.length + ")";
+                            color: Theme.dim;
+                            font-size: Theme.font-body;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                        Icon {
+                            y: (parent.height - self.height) / 2;
+                            source: Icons.chevron-right;
+                            size: 16px;
+                            tint: Theme.dim;
+                        }
+                    }
+                }
+            }
+            // One network: what NetworkManager knows about it, and what can be done with it.
+            if Wifi.available && root.page == 1: detail-list := ScrollList {
+                vertical-stretch: 1;
+                if Wifi.detail.ssid == "": Empty {
+                    height: 48px;
+                    text: "This network is gone.";
+                }
+                for f in Wifi.detail.facts: HorizontalLayout {
+                    height: 24px;
                     spacing: 8px;
                     Muted {
-                        text: "Password";
+                        text: f.label;
                         width: 34%;
                     }
                     Text {
-                        text: Wifi.password;
+                        text: f.value;
                         color: Theme.text;
-                        font-size: Theme.font-body;
-                        horizontal-alignment: right;
+                        font-size: Theme.font-small;
                         vertical-alignment: center;
+                        horizontal-alignment: right;
                         overflow: elide;
                         horizontal-stretch: 1;
                     }
                 }
-                HorizontalLayout {
-                    alignment: center;
-                    Image {
-                        source: Wifi.qr;
-                        width: min(160px, root.width - 2 * Theme.pad);
-                        height: self.width;
-                        image-rendering: pixelated;
-                    }
-                }
-                Muted {
-                    text: "Scan with a phone camera to join.";
-                    horizontal-alignment: center;
-                }
-            }
-            HorizontalLayout {
-                padding-top: 6px;
-                spacing: 6px;
-                alignment: end;
-                if Wifi.detail.known: TextButton {
-                    text: "Forget";
-                    danger: true;
-                    clicked => {
-                        Wifi.forget(Wifi.detail.uuid);
-                        root.back();
-                    }
-                }
-                if Wifi.detail.known: TextButton {
-                    text: Wifi.revealed ? "Hide" : "Share";
-                    clicked => {
-                        if (Wifi.revealed) {
-                            Wifi.hide-secret();
-                        } else {
-                            Wifi.reveal(Wifi.detail.uuid);
-                        }
-                    }
-                }
-                if Wifi.detail.active: TextButton {
-                    text: "Disconnect";
-                    clicked => { Wifi.disconnect(); }
-                }
-                if !Wifi.detail.active && Wifi.detail.ssid != "": TextButton {
-                    text: "Connect";
-                    primary: true;
-                    enabled: Wifi.enabled;
-                    clicked => { Wifi.connect(Wifi.detail.key); }
-                }
-            }
-        }
-        // A network that doesn't broadcast its name.
-        if Wifi.available && Wifi.enabled && root.page == 2: ScrollList {
-            vertical-stretch: 1;
-            VerticalLayout {
-                spacing: 6px;
-                LineEdit {
-                    placeholder-text: "Network name (SSID)";
-                    text <=> root.hidden-ssid;
-                    init => { self.focus(); }
-                }
-                Choice {
-                    options: ["Open", "WPA", "802.1X"];
-                    picked <=> root.hidden-security;
-                }
-                if root.hidden-security == 2: Choice {
-                    options: ["PEAP", "TTLS"];
-                    picked <=> root.hidden-method;
-                }
-                if root.hidden-security == 2: LineEdit {
-                    placeholder-text: "User name";
-                    text <=> root.hidden-identity;
-                }
-                // Bound both ways: what is sent is what the field shows.
-                if root.hidden-security != 0: PasswordField {
-                    text <=> root.hidden-password;
-                }
-                if root.hidden-security == 2: ServerCheck {
-                    domain <=> root.hidden-domain;
-                    insecure <=> root.hidden-insecure;
-                }
-                HorizontalLayout {
-                    alignment: end;
-                    TextButton {
-                        text: "Join";
-                        primary: true;
-                        enabled: root.hidden-ssid != "";
-                        clicked => {
-                            Wifi.join-hidden(root.hidden-ssid, root.hidden-security, root.hidden-identity, root.hidden-password, root.hidden-method, root.hidden-domain, root.hidden-insecure);
-                            root.reset-hidden();
-                            root.page = 0;
-                        }
-                    }
-                }
-            }
-        }
-        // Every saved network, last used first; in range or not.
-        if Wifi.available && root.page == 3: ScrollList {
-            vertical-stretch: 1;
-            for s in Wifi.saved: Row {
-                clicked => { root.open(s.key, 3); }
-                HorizontalLayout {
-                    padding-left: 10px;
-                    padding-right: 2px;
+                if Wifi.detail.known: HorizontalLayout {
+                    height: 34px;
                     spacing: 8px;
                     Text {
-                        text: s.ssid;
-                        color: s.ssid == Wifi.ssid ? Theme.accent : Theme.text;
+                        text: "Connect automatically";
+                        color: Theme.text;
                         font-size: Theme.font-body;
                         vertical-alignment: center;
-                        overflow: elide;
                         horizontal-stretch: 1;
+                        overflow: elide;
+                    }
+                    Switch {
+                        accessible-label: "Connect automatically";
+                        y: (parent.height - self.height) / 2;
+                        kfocus: root.kf(1, 0);
+                        checked: Wifi.detail.autoconnect;
+                        toggled => { Wifi.set-autoconnect(Wifi.detail.uuid, !Wifi.detail.autoconnect); }
+                    }
+                }
+                if Wifi.detail.known && Wifi.revealed: VerticalLayout {
+                    spacing: 6px;
+                    padding-top: 4px;
+                    if Wifi.password != "": HorizontalLayout {
+                        spacing: 8px;
+                        Muted {
+                            text: "Password";
+                            width: 34%;
+                        }
+                        Text {
+                            // The password itself is never read out.
+                            accessible-role: text;
+                            accessible-label: "Shown on screen, not read out";
+                            text: Wifi.password;
+                            color: Theme.text;
+                            font-size: Theme.font-body;
+                            horizontal-alignment: right;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            horizontal-stretch: 1;
+                        }
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        Image {
+                            accessible-role: image;
+                            accessible-label: "QR code to join the network";
+                            source: Wifi.qr;
+                            width: min(160px, root.width - 2 * Theme.pad);
+                            height: self.width;
+                            image-rendering: pixelated;
+                        }
                     }
                     Muted {
-                        text: s.detail;
+                        text: "Scan with a phone camera to join.";
+                        horizontal-alignment: center;
                     }
-                    Icon {
-                        y: (parent.height - self.height) / 2;
-                        source: Icons.chevron-right;
-                        size: 16px;
-                        tint: Theme.dim;
+                }
+                HorizontalLayout {
+                    padding-top: 6px;
+                    spacing: 6px;
+                    alignment: end;
+                    // The keyboard cursor comes to these right to left: the main one first.
+                    property <bool> kf: keys.on && root.page == 1 && keys.cursor >= root.k-act;
+                    changed kf => {
+                        if (self.kf) {
+                            detail-list.reveal(self.absolute-position.y, self.height);
+                        }
+                    }
+                    if Wifi.detail.known: TextButton {
+                        accessible-label: "Forget network";
+                        text: "Forget";
+                        danger: true;
+                        kfocus: root.kf(1, root.k-share + 1);
+                        clicked => {
+                            Wifi.forget(Wifi.detail.uuid);
+                            root.back();
+                        }
+                    }
+                    if Wifi.detail.known: TextButton {
+                        accessible-label: Wifi.revealed ? "Hide password" : "Share network";
+                        text: Wifi.revealed ? "Hide" : "Share";
+                        kfocus: root.kf(1, root.k-share);
+                        clicked => {
+                            if (Wifi.revealed) {
+                                Wifi.hide-secret();
+                            } else {
+                                Wifi.reveal(Wifi.detail.uuid);
+                            }
+                        }
+                    }
+                    if Wifi.detail.active: TextButton {
+                        text: "Disconnect";
+                        kfocus: root.kf(1, root.k-act);
+                        clicked => { Wifi.disconnect(); }
+                    }
+                    if !Wifi.detail.active && Wifi.detail.ssid != "": TextButton {
+                        text: "Connect";
+                        primary: true;
+                        enabled: Wifi.enabled;
+                        kfocus: root.kf(1, root.k-act);
+                        clicked => { Wifi.connect(Wifi.detail.key); }
                     }
                 }
             }
+            // A network that doesn't broadcast its name.
+            if Wifi.available && Wifi.enabled && root.page == 2: ScrollList {
+                vertical-stretch: 1;
+                VerticalLayout {
+                    spacing: 6px;
+                    KeyField {
+                        placeholder: "Network name (SSID)";
+                        text <=> root.hidden-ssid;
+                        focus-first: true;
+                        kfocus: root.kf(2, 0);
+                        edit-tick: root.edit-tick;
+                    }
+                    Choice {
+                        label: "Security";
+                        options: ["Open", "WPA", "802.1X"];
+                        picked <=> root.hidden-security;
+                        kfocus: root.kf(2, 1);
+                    }
+                    if root.hidden-security == 2: Choice {
+                        label: "Method";
+                        options: ["PEAP", "TTLS"];
+                        picked <=> root.hidden-method;
+                        kfocus: root.kf(2, root.k-method);
+                    }
+                    if root.hidden-security == 2: KeyField {
+                        placeholder: "User name";
+                        text <=> root.hidden-identity;
+                        kfocus: root.kf(2, root.k-ident);
+                        edit-tick: root.edit-tick;
+                    }
+                    // Bound both ways: what is sent is what the field shows.
+                    if root.hidden-security != 0: KeyField {
+                        placeholder: "Password";
+                        input-type: InputType.password;
+                        text <=> root.hidden-password;
+                        kfocus: root.kf(2, root.k-pass);
+                        edit-tick: root.edit-tick;
+                        accepted => { root.join-hidden(); }
+                    }
+                    if root.hidden-security == 2: ServerCheck {
+                        domain <=> root.hidden-domain;
+                        insecure <=> root.hidden-insecure;
+                        kfocus-field: root.kf(2, root.k-domain);
+                        kfocus-switch: root.kf(2, root.k-insecure);
+                        edit-tick: root.edit-tick;
+                    }
+                    HorizontalLayout {
+                        alignment: end;
+                        TextButton {
+                            text: "Join";
+                            primary: true;
+                            enabled: root.hidden-ssid != "";
+                            kfocus: root.kf(2, root.k-join);
+                            clicked => { root.join-hidden(); }
+                        }
+                    }
+                }
+            }
+            // Every saved network, last used first; in range or not.
+            if Wifi.available && root.page == 3: saved-list := ScrollList {
+                vertical-stretch: 1;
+                for s[i] in Wifi.saved: Row {
+                    accessible-label: s.ssid;
+                    accessible-value: (s.ssid == Wifi.ssid ? "connected, " : "") + s.detail;
+                    kfocus: root.kf(3, i);
+                    revealed(y, h) => { saved-list.reveal(y, h); }
+                    clicked => { root.open(s.key, 3); }
+                    HorizontalLayout {
+                        padding-left: 10px;
+                        padding-right: 2px;
+                        spacing: 8px;
+                        Text {
+                            text: s.ssid;
+                            color: s.ssid == Wifi.ssid ? Theme.accent : Theme.text;
+                            font-size: Theme.font-body;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            horizontal-stretch: 1;
+                        }
+                        Muted {
+                            text: s.detail;
+                        }
+                        Icon {
+                            y: (parent.height - self.height) / 2;
+                            source: Icons.chevron-right;
+                            size: 16px;
+                            tint: Theme.dim;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    function join-hidden() {
+        if (root.hidden-ssid == "") {
+            return;
+        }
+        Wifi.join-hidden(root.hidden-ssid, root.hidden-security, root.hidden-identity, root.hidden-password, root.hidden-method, root.hidden-domain, root.hidden-insecure);
+        root.reset-hidden();
+        root.page = 0;
+    }
+    function activate(i: int, sub: int) {
+        if (root.round) {
+            Wifi.toggle();
+        } else if (root.page == 0) {
+            if (i < root.k-net) {
+                Wifi.sign-in();
+            } else if (i < root.k-hidden) {
+                let n = Wifi.networks[i - root.k-net];
+                if (sub == 0 && !n.active) {
+                    Wifi.connect(n.key);
+                } else if (sub == 1 && n.active) {
+                    Wifi.disconnect();
+                } else {
+                    root.open(n.key, 0);
+                }
+            } else if (i == root.k-hidden) {
+                root.reset-hidden();
+                root.page = 2;
+            } else {
+                root.page = 3;
+            }
+        } else if (root.page == 1) {
+            if (Wifi.detail.known && i == 0) {
+                Wifi.set-autoconnect(Wifi.detail.uuid, !Wifi.detail.autoconnect);
+            } else if (i == root.k-act && root.has-act) {
+                if (Wifi.detail.active) { Wifi.disconnect(); } else if (Wifi.enabled) { Wifi.connect(Wifi.detail.key); }
+            } else if (i == root.k-share) {
+                if (Wifi.revealed) { Wifi.hide-secret(); } else { Wifi.reveal(Wifi.detail.uuid); }
+            } else if (i == root.k-share + 1) {
+                Wifi.forget(Wifi.detail.uuid);
+                root.back();
+            }
+        } else if (root.page == 2) {
+            if (i == 1) {
+                root.hidden-security = mod(root.hidden-security + 1, 3);
+            } else if (i == root.k-method) {
+                root.hidden-method = 1 - root.hidden-method;
+            } else if (i == root.k-insecure) {
+                root.hidden-insecure = !root.hidden-insecure;
+            } else if (i == root.k-join) {
+                root.join-hidden();
+            } else {
+                root.edit-tick += 1;
+            }
+        } else if (i < Wifi.saved.length) {
+            root.open(Wifi.saved[i].key, 3);
         }
     }
     property <string> hidden-ssid;
@@ -583,6 +887,7 @@ component DeviceIcon inherits Icon {
 
 // A pairing prompt: compare a code, type one, or type one shown here on the device.
 component BtPairingPrompt inherits Rectangle {
+    in property <bool> nav;
     property <int> kind: Bluetooth.prompt.kind;
     // Asks for a code (2: PIN, 3: passkey).
     property <bool> asks-code: root.kind == 2 || root.kind == 3;
@@ -592,67 +897,118 @@ component BtPairingPrompt inherits Rectangle {
     // A new prompt starts empty.
     property <int> serial: Bluetooth.prompt.serial;
     changed serial => { root.code = ""; }
+    // Keyboard stops: the code field, No / Cancel, and the answer.
+    property <int> k-no: root.asks-code ? 1 : 0;
+    property <int> edit-tick;
+    function no() {
+        if (root.shows-code) {
+            Bluetooth.cancel-pairing();
+        } else {
+            Bluetooth.answer(Bluetooth.prompt.serial, false, "");
+        }
+    }
+    function yes() {
+        if (!root.asks-code || root.code != "") {
+            Bluetooth.answer(Bluetooth.prompt.serial, true, root.code);
+        }
+    }
     border-radius: Theme.radius-small;
     background: Theme.card-raised;
-    VerticalLayout {
-        padding: Theme.pad-tight;
-        spacing: 6px;
-        Text {
-            text: root.kind == 1 ? "Pair with " + Bluetooth.prompt.name + "?"
-                : root.asks-code ? (root.kind == 2 ? "PIN for " : "Passkey for ") + Bluetooth.prompt.name
-                : root.shows-code ? "Type this on " + Bluetooth.prompt.name + ", then Enter"
-                : "Allow " + Bluetooth.prompt.name + " to pair?";
-            color: Theme.text;
-            font-size: Theme.font-small;
-            font-weight: 600;
-            wrap: word-wrap;
-        }
-        // The address too: the name is whatever the device says it is.
-        Muted {
-            text: Bluetooth.prompt.address;
-        }
-        if root.kind == 1 || root.shows-code: Text {
-            text: Bluetooth.prompt.code;
-            color: Theme.accent;
-            font-size: Theme.font-title * 1.6;
-            font-weight: 600;
-            horizontal-alignment: center;
-            letter-spacing: 3px;
-        }
-        if root.kind == 1: Muted {
-            text: "Pair only if the device shows the same number.";
-            horizontal-alignment: center;
-            wrap: word-wrap;
-        }
-        if root.kind == 5 && Bluetooth.prompt.entered > 0: Muted {
-            text: Bluetooth.prompt.entered + " of 6 typed";
-            horizontal-alignment: center;
-        }
-        if root.asks-code: LineEdit {
-            placeholder-text: root.kind == 2 ? "PIN (often 0000)" : "6-digit passkey";
-            input-type: root.kind == 3 ? InputType.number : InputType.text;
-            text <=> root.code;
-            init => { self.focus(); }
-            accepted => { Bluetooth.answer(Bluetooth.prompt.serial, true, root.code); }
-        }
-        HorizontalLayout {
-            spacing: 6px;
-            alignment: end;
-            TextButton {
-                text: root.kind == 1 || root.kind == 6 ? "No" : "Cancel";
-                clicked => {
-                    if (root.shows-code) {
-                        Bluetooth.cancel-pairing();
-                    } else {
-                        Bluetooth.answer(Bluetooth.prompt.serial, false, "");
-                    }
-                }
+    // j/k (or h/l) over the field and buttons, Enter (or i) types into the field.
+    keys := NavScope {
+        accessible-label: "Bluetooth pairing";
+        active: root.nav;
+        count: root.k-no + (root.shows-code ? 1 : 2);
+        changed on => {
+            // A yes/no question: the cursor starts on the answer.
+            if (self.on && !root.asks-code && !root.shows-code) {
+                self.cursor = 1;
             }
-            if !root.shows-code: TextButton {
-                text: root.kind == 1 ? "Yes, they match" : root.kind == 6 ? "Allow" : "Pair";
-                primary: true;
-                enabled: !root.asks-code || root.code != "";
-                clicked => { Bluetooth.answer(Bluetooth.prompt.serial, true, root.code); }
+        }
+        activate(i) => {
+            if (i < root.k-no) {
+                root.edit-tick += 1;
+            } else if (i == root.k-no) {
+                root.no();
+            } else {
+                root.yes();
+            }
+        }
+        adjust(i, d) => {
+            self.move-to(clamp(i + d, root.k-no, self.count - 1));
+            true
+        }
+        letter(t, i) => {
+            if (t == "i" && i < root.k-no) {
+                root.edit-tick += 1;
+                return true;
+            }
+            false
+        }
+        back => {
+            root.no();
+            true
+        }
+        VerticalLayout {
+            padding: Theme.pad-tight;
+            spacing: 6px;
+            Text {
+                text: root.kind == 1 ? "Pair with " + Bluetooth.prompt.name + "?"
+                    : root.asks-code ? (root.kind == 2 ? "PIN for " : "Passkey for ") + Bluetooth.prompt.name
+                    : root.shows-code ? "Type this on " + Bluetooth.prompt.name + ", then Enter"
+                    : "Allow " + Bluetooth.prompt.name + " to pair?";
+                color: Theme.text;
+                font-size: Theme.font-small;
+                font-weight: 600;
+                wrap: word-wrap;
+            }
+            // The address too: the name is whatever the device says it is.
+            Muted {
+                text: Bluetooth.prompt.address;
+            }
+            if root.kind == 1 || root.shows-code: Text {
+                text: Bluetooth.prompt.code;
+                color: Theme.accent;
+                font-size: Theme.font-title * 1.6;
+                font-weight: 600;
+                horizontal-alignment: center;
+                letter-spacing: 3px;
+            }
+            if root.kind == 1: Muted {
+                text: "Pair only if the device shows the same number.";
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+            if root.kind == 5 && Bluetooth.prompt.entered > 0: Muted {
+                text: Bluetooth.prompt.entered + " of 6 typed";
+                horizontal-alignment: center;
+            }
+            if root.asks-code: KeyField {
+                label: root.kind == 2 ? "PIN" : "Passkey";
+                secret: true;
+                placeholder: root.kind == 2 ? "PIN (often 0000)" : "6-digit passkey";
+                input-type: root.kind == 3 ? InputType.number : InputType.text;
+                text <=> root.code;
+                focus-first: true;
+                kfocus: keys.on && keys.cursor == 0;
+                edit-tick: root.edit-tick;
+                accepted => { Bluetooth.answer(Bluetooth.prompt.serial, true, root.code); }
+            }
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: end;
+                TextButton {
+                    text: root.kind == 1 || root.kind == 6 ? "No" : "Cancel";
+                    kfocus: keys.on && keys.cursor == root.k-no;
+                    clicked => { root.no(); }
+                }
+                if !root.shows-code: TextButton {
+                    text: root.kind == 1 ? "Yes, they match" : root.kind == 6 ? "Allow" : "Pair";
+                    primary: true;
+                    enabled: !root.asks-code || root.code != "";
+                    kfocus: keys.on && keys.cursor == root.k-no + 1;
+                    clicked => { root.yes(); }
+                }
             }
         }
     }
@@ -661,7 +1017,17 @@ component BtPairingPrompt inherits Rectangle {
 // One device: icon, name, and what's worth knowing at a glance.
 component BtRow inherits Row {
     in property <BtDevice> device;
+    // The keyboard cursor is on the details button.
+    in property <bool> kfocus-details;
     callback details();
+    accessible-label: root.device.name;
+    accessible-value: root.device.busy ? "busy"
+        : root.device.blocked ? "blocked"
+        : root.device.connected && !root.device.paired ? "connected, not paired"
+        : root.device.connected && root.device.battery >= 0 ? "connected, battery " + root.device.battery + "%"
+        : root.device.connected ? "connected"
+        : root.device.battery >= 0 ? "battery " + root.device.battery + "%"
+        : "";
     selected: root.device.connected;
     enabled: !root.device.busy;
     HorizontalLayout {
@@ -693,10 +1059,12 @@ component BtRow inherits Row {
             signal: root.device.signal * 25;
         }
         IconButton {
+            accessible-label: "Details of " + root.device.name;
             y: (parent.height - self.height) / 2;
             icon: Icons.chevron-right;
             size: 26px;
             tint: Theme.dim;
+            kfocus: root.kfocus-details;
             clicked => { root.details(); }
         }
     }
@@ -704,9 +1072,85 @@ component BtRow inherits Row {
 
 export component BluetoothWidget inherits Rectangle {
     in property <bool> round;
+    in property <bool> nav;
     // 0: devices, 1: one device's details.
     property <int> page;
     property <string> rename-to;
+    property <bool> asking: Bluetooth.prompt.address != "";
+    // Keyboard stops. Devices: the paired ones, the nearby ones, "Add a device". Details: the
+    // switches, the name, then the buttons, the main one first.
+    property <int> k-near: Bluetooth.devices.length;
+    property <int> k-add: root.k-near + Bluetooth.nearby.length;
+    property <bool> paired: Bluetooth.detail.paired;
+    property <bool> known: Bluetooth.detail.address != "";
+    property <bool> can-connect: !Bluetooth.detail.connected && root.paired && !Bluetooth.detail.blocked;
+    property <bool> can-pair: !root.paired && root.known && !Bluetooth.detail.blocked;
+    property <bool> has-act: Bluetooth.detail.connected || root.can-connect || root.can-pair;
+    property <int> k-act: root.paired ? 3 : root.known ? 1 : 0;
+    property <int> k-forget: root.paired ? root.k-act + (root.has-act ? 1 : 0) : -1;
+    property <int> k-count: root.round || !Bluetooth.available ? 0
+        : root.page == 0 ? (Bluetooth.powered ? root.k-add + 1 : 0)
+        : root.k-act + (root.has-act ? 1 : 0) + (root.paired ? 1 : 0);
+    property <int> edit-tick;
+    function kf(page: int, i: int) -> bool {
+        keys.on && root.page == page && keys.cursor == i
+    }
+    changed page => {
+        keys.cursor = 0;
+        keys.sub = 0;
+    }
+    function rename() {
+        if (root.rename-to != "") {
+            Bluetooth.rename(Bluetooth.detail.address, root.rename-to);
+            root.rename-to = "";
+        }
+    }
+    // A device's row: what a click does.
+    function press-device(d: BtDevice, nearby: bool) {
+        if (nearby) {
+            Bluetooth.pair(d.address);
+        } else if (d.blocked) {
+            root.open(d.address);
+        } else if (d.connected) {
+            Bluetooth.disconnect(d.address);
+        } else {
+            Bluetooth.connect(d.address);
+        }
+    }
+    function activate(i: int, sub: int) {
+        if (root.round) {
+            Bluetooth.toggle();
+        } else if (root.page == 0) {
+            if (i < root.k-add) {
+                let d = i < root.k-near ? Bluetooth.devices[i] : Bluetooth.nearby[i - root.k-near];
+                if (sub == 1) {
+                    root.open(d.address);
+                } else if (!d.busy) {
+                    root.press-device(d, i >= root.k-near);
+                }
+            } else {
+                Bluetooth.scan(!Bluetooth.discovering);
+            }
+        } else if (root.paired && i == 0) {
+            Bluetooth.set-trusted(Bluetooth.detail.address, !Bluetooth.detail.trusted);
+        } else if (root.known && i == (root.paired ? 1 : 0)) {
+            Bluetooth.set-blocked(Bluetooth.detail.address, !Bluetooth.detail.blocked);
+        } else if (root.paired && i == 2) {
+            root.edit-tick += 1;
+        } else if (i == root.k-act && root.has-act) {
+            if (Bluetooth.detail.connected) {
+                Bluetooth.disconnect(Bluetooth.detail.address);
+            } else if (root.can-connect && Bluetooth.powered) {
+                Bluetooth.connect(Bluetooth.detail.address);
+            } else if (root.can-pair && Bluetooth.powered) {
+                Bluetooth.pair(Bluetooth.detail.address);
+                root.back();
+            }
+        } else if (i == root.k-forget) {
+            Bluetooth.forget(Bluetooth.detail.address);
+            root.back();
+        }
+    }
     function open(address: string) {
         root.rename-to = "";
         root.page = 1;
@@ -716,238 +1160,303 @@ export component BluetoothWidget inherits Rectangle {
         Bluetooth.select("");
         root.page = 0;
     }
-    if root.round: RoundFace {
-        icon: Icons.bluetooth;
-        on: Bluetooth.powered;
-        tint: self.on ? Theme.accent : Theme.faint;
-        title: !Bluetooth.available ? "No adapter" : Bluetooth.blocked ? "Blocked" : !Bluetooth.powered ? "Off" : Bluetooth.connected-count > 0 ? Bluetooth.connected-count + " connected" : "On";
-        TouchArea {
-            clicked => { Bluetooth.toggle(); }
+    // Wraps everything, so Escape from the name field comes up here.
+    keys := NavScope {
+        accessible-label: "Bluetooth";
+        active: root.nav && !root.asking;
+        count: root.k-count;
+        subs: root.page == 0 && self.cursor < root.k-add ? 2 : 1;
+        activate(i, sub) => { root.activate(i, sub); }
+        letter(t, i) => {
+            if (root.round || root.page != 0) {
+                if (t == "i" && root.page == 1 && root.paired && i == 2) {
+                    root.edit-tick += 1;
+                    return true;
+                }
+                return false;
+            }
+            if (t == "r" && Bluetooth.powered) {
+                Bluetooth.scan(!Bluetooth.discovering);
+                return true;
+            }
+            if (t == "t") {
+                Bluetooth.toggle();
+                return true;
+            }
+            false
         }
-    }
-    if !root.round: VerticalLayout {
-        padding: Theme.pad;
-        spacing: 6px;
-        if root.page == 0: Header {
+        back => {
+            if (root.page != 0) {
+                root.back();
+                return true;
+            }
+            false
+        }
+        if root.round: RoundFace {
             icon: Icons.bluetooth;
-            icon-color: Bluetooth.powered ? Theme.accent : Theme.faint;
-            title: "Bluetooth";
-            IconButton {
-                y: (parent.height - self.height) / 2;
-                icon: Icons.plus;
-                size: 28px;
-                active: Bluetooth.discovering;
-                enabled: Bluetooth.powered;
-                clicked => { Bluetooth.scan(!Bluetooth.discovering); }
-            }
-            Switch {
-                y: (parent.height - self.height) / 2;
-                checked: Bluetooth.powered;
-                enabled: Bluetooth.available && !Bluetooth.blocked;
-                toggled => { Bluetooth.toggle(); }
+            on: Bluetooth.powered;
+            tint: self.on ? Theme.accent : Theme.faint;
+            title: !Bluetooth.available ? "No adapter" : Bluetooth.blocked ? "Blocked" : !Bluetooth.powered ? "Off" : Bluetooth.connected-count > 0 ? Bluetooth.connected-count + " connected" : "On";
+            TouchArea {
+                accessible-role: switch;
+                accessible-label: "Bluetooth";
+                accessible-checkable: true;
+                accessible-checked: Bluetooth.powered;
+                accessible-action-default => { Bluetooth.toggle(); }
+                clicked => { Bluetooth.toggle(); }
             }
         }
-        if root.page == 1: HorizontalLayout {
-            height: 28px;
-            spacing: 4px;
-            IconButton {
-                y: (parent.height - self.height) / 2;
-                icon: Icons.chevron-left;
-                size: 28px;
-                clicked => { root.back(); }
+        if !root.round: VerticalLayout {
+            padding: Theme.pad;
+            spacing: 6px;
+            if root.page == 0: Header {
+                icon: Icons.bluetooth;
+                icon-color: Bluetooth.powered ? Theme.accent : Theme.faint;
+                title: "Bluetooth";
+                IconButton {
+                    accessible-label: Bluetooth.discovering ? "Stop looking" : "Add a device";
+                    y: (parent.height - self.height) / 2;
+                    icon: Icons.plus;
+                    size: 28px;
+                    active: Bluetooth.discovering;
+                    enabled: Bluetooth.powered;
+                    clicked => { Bluetooth.scan(!Bluetooth.discovering); }
+                }
+                Switch {
+                    accessible-label: "Bluetooth";
+                    y: (parent.height - self.height) / 2;
+                    checked: Bluetooth.powered;
+                    enabled: Bluetooth.available && !Bluetooth.blocked;
+                    toggled => { Bluetooth.toggle(); }
+                }
             }
-            Text {
-                text: Bluetooth.detail.name;
-                font-size: Theme.font-title;
-                font-weight: 600;
-                color: Theme.text;
-                vertical-alignment: center;
-                overflow: elide;
-                horizontal-stretch: 1;
+            if root.page == 1: HorizontalLayout {
+                height: 28px;
+                spacing: 4px;
+                IconButton {
+                    accessible-label: "Back";
+                    y: (parent.height - self.height) / 2;
+                    icon: Icons.chevron-left;
+                    size: 28px;
+                    clicked => { root.back(); }
+                }
+                Text {
+                    text: Bluetooth.detail.name;
+                    font-size: Theme.font-title;
+                    font-weight: 600;
+                    color: Theme.text;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
             }
-        }
-        Muted {
-            text: Bluetooth.status;
-            color: Bluetooth.failed ? Theme.bad : Theme.dim;
-            visible: Bluetooth.status != "";
-            wrap: word-wrap;
-        }
-        if Bluetooth.prompt.address != "": BtPairingPrompt { }
-        if !Bluetooth.available: Empty {
-            vertical-stretch: 1;
-            text: "No Bluetooth adapter";
-        }
-        if Bluetooth.available && Bluetooth.blocked: Empty {
-            vertical-stretch: 1;
-            text: "Bluetooth is blocked (airplane mode or a hardware switch)";
-        }
-        if Bluetooth.available && !Bluetooth.blocked && !Bluetooth.powered: Empty {
-            vertical-stretch: 1;
-            text: "Bluetooth is off";
-        }
-        // Paired devices, then what a scan finds.
-        if Bluetooth.available && Bluetooth.powered && root.page == 0: ScrollList {
-            vertical-stretch: 1;
-            for d in Bluetooth.devices: BtRow {
-                device: d;
-                clicked => {
-                    if (d.blocked) {
-                        root.open(d.address);
-                    } else if (d.connected) {
-                        Bluetooth.disconnect(d.address);
-                    } else {
-                        Bluetooth.connect(d.address);
+            Muted {
+                text: Bluetooth.status;
+                color: Bluetooth.failed ? Theme.bad : Theme.dim;
+                visible: Bluetooth.status != "";
+                wrap: word-wrap;
+            }
+            if root.asking: BtPairingPrompt {
+                nav: root.nav;
+            }
+            if !Bluetooth.available: Empty {
+                vertical-stretch: 1;
+                text: "No Bluetooth adapter";
+            }
+            if Bluetooth.available && Bluetooth.blocked: Empty {
+                vertical-stretch: 1;
+                text: "Bluetooth is blocked (airplane mode or a hardware switch)";
+            }
+            if Bluetooth.available && !Bluetooth.blocked && !Bluetooth.powered: Empty {
+                vertical-stretch: 1;
+                text: "Bluetooth is off";
+            }
+            // Paired devices, then what a scan finds.
+            if Bluetooth.available && Bluetooth.powered && root.page == 0: device-list := ScrollList {
+                vertical-stretch: 1;
+                for d[i] in Bluetooth.devices: BtRow {
+                    device: d;
+                    kfocus: root.kf(0, i) && keys.sub == 0;
+                    kfocus-details: root.kf(0, i) && keys.sub == 1;
+                    revealed(y, h) => { device-list.reveal(y, h); }
+                    clicked => {
+                        if (d.blocked) {
+                            root.open(d.address);
+                        } else if (d.connected) {
+                            Bluetooth.disconnect(d.address);
+                        } else {
+                            Bluetooth.connect(d.address);
+                        }
+                    }
+                    details => { root.open(d.address); }
+                }
+                if Bluetooth.devices.length == 0 && !Bluetooth.discovering: Empty {
+                    height: 48px;
+                    text: "No paired devices";
+                }
+                if Bluetooth.discovering || Bluetooth.nearby.length > 0: SectionLabel {
+                    height: 26px;
+                    text: Bluetooth.discovering ? "Nearby (looking…)" : "Nearby";
+                }
+                for d[i] in Bluetooth.nearby: BtRow {
+                    device: d;
+                    kfocus: root.kf(0, root.k-near + i) && keys.sub == 0;
+                    kfocus-details: root.kf(0, root.k-near + i) && keys.sub == 1;
+                    revealed(y, h) => { device-list.reveal(y, h); }
+                    clicked => { Bluetooth.pair(d.address); }
+                    details => { root.open(d.address); }
+                }
+                if Bluetooth.discovering && Bluetooth.nearby.length == 0: Muted {
+                    height: 30px;
+                    text: "Put the device into pairing mode.";
+                }
+                if Bluetooth.unnamed > 0: Muted {
+                    height: 24px;
+                    text: "+ " + Bluetooth.unnamed + (Bluetooth.unnamed == 1 ? " device" : " devices") + " without a name";
+                }
+                Row {
+                    accessible-label: Bluetooth.discovering ? "Stop looking" : "Add a device";
+                    kfocus: root.kf(0, root.k-add);
+                    revealed(y, h) => { device-list.reveal(y, h); }
+                    clicked => { Bluetooth.scan(!Bluetooth.discovering); }
+                    HorizontalLayout {
+                        padding-left: 10px;
+                        spacing: 8px;
+                        Icon {
+                            y: (parent.height - self.height) / 2;
+                            source: Bluetooth.discovering ? Icons.close : Icons.plus;
+                            size: 16px;
+                            tint: Theme.dim;
+                        }
+                        Text {
+                            text: Bluetooth.discovering ? "Stop looking" : "Add a device…";
+                            color: Theme.dim;
+                            font-size: Theme.font-body;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
                     }
                 }
-                details => { root.open(d.address); }
             }
-            if Bluetooth.devices.length == 0 && !Bluetooth.discovering: Empty {
-                height: 48px;
-                text: "No paired devices";
-            }
-            if Bluetooth.discovering || Bluetooth.nearby.length > 0: SectionLabel {
-                height: 26px;
-                text: Bluetooth.discovering ? "Nearby (looking…)" : "Nearby";
-            }
-            for d in Bluetooth.nearby: BtRow {
-                device: d;
-                clicked => { Bluetooth.pair(d.address); }
-                details => { root.open(d.address); }
-            }
-            if Bluetooth.discovering && Bluetooth.nearby.length == 0: Muted {
-                height: 30px;
-                text: "Put the device into pairing mode.";
-            }
-            if Bluetooth.unnamed > 0: Muted {
-                height: 24px;
-                text: "+ " + Bluetooth.unnamed + (Bluetooth.unnamed == 1 ? " device" : " devices") + " without a name";
-            }
-            Row {
-                clicked => { Bluetooth.scan(!Bluetooth.discovering); }
-                HorizontalLayout {
-                    padding-left: 10px;
+            // One device: what BlueZ knows, and what can be done with it.
+            if Bluetooth.available && root.page == 1: bt-detail-list := ScrollList {
+                vertical-stretch: 1;
+                if Bluetooth.detail.address == "": Empty {
+                    height: 48px;
+                    text: "This device is gone.";
+                }
+                for f in Bluetooth.detail.facts: HorizontalLayout {
+                    height: 24px;
                     spacing: 8px;
-                    Icon {
-                        y: (parent.height - self.height) / 2;
-                        source: Bluetooth.discovering ? Icons.close : Icons.plus;
-                        size: 16px;
-                        tint: Theme.dim;
+                    Muted {
+                        text: f.label;
+                        width: 34%;
                     }
                     Text {
-                        text: Bluetooth.discovering ? "Stop looking" : "Add a device…";
-                        color: Theme.dim;
+                        text: f.value;
+                        color: Theme.text;
+                        font-size: Theme.font-small;
+                        vertical-alignment: center;
+                        horizontal-alignment: right;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                    }
+                }
+                if Bluetooth.detail.paired: HorizontalLayout {
+                    height: 34px;
+                    spacing: 8px;
+                    Text {
+                        text: "Connect automatically";
+                        color: Theme.text;
+                        font-size: Theme.font-body;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                        overflow: elide;
+                    }
+                    Switch {
+                        accessible-label: "Connect automatically";
+                        y: (parent.height - self.height) / 2;
+                        checked: Bluetooth.detail.trusted;
+                        kfocus: root.kf(1, 0);
+                        toggled => { Bluetooth.set-trusted(Bluetooth.detail.address, !Bluetooth.detail.trusted); }
+                    }
+                }
+                if Bluetooth.detail.address != "": HorizontalLayout {
+                    height: 34px;
+                    spacing: 8px;
+                    Text {
+                        text: "Block";
+                        color: Theme.text;
                         font-size: Theme.font-body;
                         vertical-alignment: center;
                         horizontal-stretch: 1;
                     }
-                }
-            }
-        }
-        // One device: what BlueZ knows, and what can be done with it.
-        if Bluetooth.available && root.page == 1: ScrollList {
-            vertical-stretch: 1;
-            if Bluetooth.detail.address == "": Empty {
-                height: 48px;
-                text: "This device is gone.";
-            }
-            for f in Bluetooth.detail.facts: HorizontalLayout {
-                height: 24px;
-                spacing: 8px;
-                Muted {
-                    text: f.label;
-                    width: 34%;
-                }
-                Text {
-                    text: f.value;
-                    color: Theme.text;
-                    font-size: Theme.font-small;
-                    vertical-alignment: center;
-                    horizontal-alignment: right;
-                    overflow: elide;
-                    horizontal-stretch: 1;
-                }
-            }
-            if Bluetooth.detail.paired: HorizontalLayout {
-                height: 34px;
-                spacing: 8px;
-                Text {
-                    text: "Connect automatically";
-                    color: Theme.text;
-                    font-size: Theme.font-body;
-                    vertical-alignment: center;
-                    horizontal-stretch: 1;
-                    overflow: elide;
-                }
-                Switch {
-                    y: (parent.height - self.height) / 2;
-                    checked: Bluetooth.detail.trusted;
-                    toggled => { Bluetooth.set-trusted(Bluetooth.detail.address, !Bluetooth.detail.trusted); }
-                }
-            }
-            if Bluetooth.detail.address != "": HorizontalLayout {
-                height: 34px;
-                spacing: 8px;
-                Text {
-                    text: "Block";
-                    color: Theme.text;
-                    font-size: Theme.font-body;
-                    vertical-alignment: center;
-                    horizontal-stretch: 1;
-                }
-                Switch {
-                    y: (parent.height - self.height) / 2;
-                    checked: Bluetooth.detail.blocked;
-                    toggled => { Bluetooth.set-blocked(Bluetooth.detail.address, !Bluetooth.detail.blocked); }
-                }
-            }
-            if Bluetooth.detail.paired: HorizontalLayout {
-                spacing: 6px;
-                LineEdit {
-                    placeholder-text: "Rename";
-                    text <=> root.rename-to;
-                    accepted => {
-                        Bluetooth.rename(Bluetooth.detail.address, root.rename-to);
-                        root.rename-to = "";
+                    Switch {
+                        accessible-label: "Block";
+                        y: (parent.height - self.height) / 2;
+                        checked: Bluetooth.detail.blocked;
+                        kfocus: root.kf(1, root.paired ? 1 : 0);
+                        toggled => { Bluetooth.set-blocked(Bluetooth.detail.address, !Bluetooth.detail.blocked); }
                     }
                 }
-                TextButton {
-                    text: "Rename";
-                    enabled: root.rename-to != "";
-                    clicked => {
-                        Bluetooth.rename(Bluetooth.detail.address, root.rename-to);
-                        root.rename-to = "";
+                if Bluetooth.detail.paired: HorizontalLayout {
+                    spacing: 6px;
+                    KeyField {
+                        label: "New name";
+                        placeholder: "Rename";
+                        text <=> root.rename-to;
+                        kfocus: root.kf(1, 2);
+                        edit-tick: root.edit-tick;
+                        accepted => { root.rename(); }
+                    }
+                    TextButton {
+                        text: "Rename";
+                        enabled: root.rename-to != "";
+                        clicked => { root.rename(); }
                     }
                 }
-            }
-            HorizontalLayout {
-                padding-top: 6px;
-                spacing: 6px;
-                alignment: end;
-                if Bluetooth.detail.paired: TextButton {
-                    text: "Forget";
-                    danger: true;
-                    clicked => {
-                        Bluetooth.forget(Bluetooth.detail.address);
-                        root.back();
+                HorizontalLayout {
+                    padding-top: 6px;
+                    spacing: 6px;
+                    alignment: end;
+                    // The keyboard cursor comes to these right to left: the main one first.
+                    property <bool> kf: keys.on && root.page == 1 && keys.cursor >= root.k-act;
+                    changed kf => {
+                        if (self.kf) {
+                            bt-detail-list.reveal(self.absolute-position.y, self.height);
+                        }
                     }
-                }
-                if Bluetooth.detail.connected: TextButton {
-                    text: "Disconnect";
-                    clicked => { Bluetooth.disconnect(Bluetooth.detail.address); }
-                }
-                if !Bluetooth.detail.connected && Bluetooth.detail.paired && !Bluetooth.detail.blocked: TextButton {
-                    text: "Connect";
-                    primary: true;
-                    enabled: Bluetooth.powered;
-                    clicked => { Bluetooth.connect(Bluetooth.detail.address); }
-                }
-                if !Bluetooth.detail.paired && Bluetooth.detail.address != "" && !Bluetooth.detail.blocked: TextButton {
-                    text: "Pair";
-                    primary: true;
-                    enabled: Bluetooth.powered;
-                    clicked => {
-                        Bluetooth.pair(Bluetooth.detail.address);
-                        root.back();
+                    if Bluetooth.detail.paired: TextButton {
+                        accessible-label: "Forget device";
+                        text: "Forget";
+                        danger: true;
+                        kfocus: root.kf(1, root.k-forget);
+                        clicked => {
+                            Bluetooth.forget(Bluetooth.detail.address);
+                            root.back();
+                        }
+                    }
+                    if Bluetooth.detail.connected: TextButton {
+                        text: "Disconnect";
+                        kfocus: root.kf(1, root.k-act);
+                        clicked => { Bluetooth.disconnect(Bluetooth.detail.address); }
+                    }
+                    if !Bluetooth.detail.connected && Bluetooth.detail.paired && !Bluetooth.detail.blocked: TextButton {
+                        text: "Connect";
+                        primary: true;
+                        kfocus: root.kf(1, root.k-act);
+                        enabled: Bluetooth.powered;
+                        clicked => { Bluetooth.connect(Bluetooth.detail.address); }
+                    }
+                    if !Bluetooth.detail.paired && Bluetooth.detail.address != "" && !Bluetooth.detail.blocked: TextButton {
+                        text: "Pair";
+                        primary: true;
+                        kfocus: root.kf(1, root.k-act);
+                        enabled: Bluetooth.powered;
+                        clicked => {
+                            Bluetooth.pair(Bluetooth.detail.address);
+                            root.back();
+                        }
                     }
                 }
             }

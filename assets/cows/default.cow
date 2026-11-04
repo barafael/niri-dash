@@ -1,0 +1,11 @@
+##
+## A cow, drawn for niri-dash (MIT OR Apache-2.0), used when cowsay has no cow of this name.
+##
+$the_cow = <<EOC;
+            $thoughts    \\_    _/
+             $thoughts     \\__/
+              $thoughts   ( $eyes )__________
+                   \\$tongue/  %%   %%  \\~
+                    |  %%   %%%    |
+                    |_|---------|_|
+EOC

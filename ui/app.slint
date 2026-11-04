@@ -1,5 +1,5 @@
 import { Theme, Icons } from "theme.slint";
-import { WidgetInst, WidgetKind, Shape, PaletteItem, Tray, MenuToggle, DrawerTab, PointerShape } from "data.slint";
+import { WidgetInst, WidgetKind, Shape, PaletteItem, Tray, MenuToggle, DrawerTab, PointerShape, Nav, NavMode } from "data.slint";
 import { Icon, IconButton, TextButton, Muted, Switch, SectionLabel } from "common.slint";
 import { WidgetFrame, WidgetBody } from "frame.slint";
 import { LineEdit, Palette } from "std-widgets.slint";
@@ -8,6 +8,9 @@ export { Theme, Icons }
 export * from "data.slint";
 
 component TrayMenu inherits Rectangle {
+    accessible-role: list;
+    accessible-id: "tray-menu";
+    accessible-label: "Tray menu";
     // Full-window catcher: clicking outside the panel closes the menu.
     TouchArea {
         clicked => { Tray.menu-close(); }
@@ -39,10 +42,24 @@ component TrayMenu inherits Rectangle {
                 vertical-alignment: center;
                 x: 10px;
             }
-            for e in Tray.menu: Rectangle {
+            for e[i] in Tray.menu: Rectangle {
+                // One role for all entries (a role must be constant): a toggle says so by being checkable.
+                accessible-role: list-item;
+                accessible-label: e.label;
+                accessible-enabled: !e.separator && e.enabled && !e.header;
+                accessible-checkable: e.toggle != MenuToggle.none;
+                accessible-checked: e.checked;
+                accessible-item-selected: i == Tray.menu-cursor;
+                accessible-action-default => {
+                    if (!e.separator && e.enabled && !e.header) {
+                        Tray.menu-activate(e.id);
+                    }
+                }
                 height: e.separator ? 9px : 32px;
                 border-radius: Theme.radius-small;
-                background: !e.separator && e.enabled && !e.header && mt.has-hover ? Theme.hover : transparent;
+                background: !e.separator && e.enabled && !e.header && (mt.has-hover || i == Tray.menu-cursor) ? Theme.hover : transparent;
+                border-width: i == Tray.menu-cursor ? 2px : 0px;
+                border-color: Theme.accent;
                 if e.separator: Rectangle {
                     height: 1px;
                     x: 8px;
@@ -76,6 +93,45 @@ component TrayMenu inherits Rectangle {
                     clicked => { Tray.menu-activate(e.id); }
                 }
             }
+        }
+    }
+}
+
+// A widget's label for keyboard navigation, centered on (cx, cy). The letters already typed show
+// dimmed; labels that no longer match fade out.
+component HintLabel inherits Rectangle {
+    in property <string> label;
+    in property <[string]> chars;
+    // For the eye, as what a person types; the letters themselves stay out of the tree.
+    accessible-role: text;
+    accessible-label: "Press " + root.label;
+    in property <length> cx;
+    in property <length> cy;
+    property <bool> matches: root.label.starts-with(Nav.typed.to-lowercase());
+    property <int> typed: root.matches ? Nav.typed.character-count : 0;
+    property <float> pop: 0;
+    animate pop { duration: 120ms * Theme.motion; easing: ease-out; }
+    init => { self.pop = 1; }
+    x: root.cx - self.width / 2;
+    y: root.cy - self.height / 2 + (1 - self.pop) * 6px;
+    width: max(self.height, label.preferred-width + 24px);
+    height: label.preferred-height + 10px;
+    opacity: self.pop * (root.matches ? 1 : 0.15);
+    border-radius: Theme.radius-small;
+    background: Theme.accent;
+    border-width: 1px;
+    border-color: Theme.on-accent.with-alpha(0.25);
+    drop-shadow-blur: 14px;
+    drop-shadow-color: Theme.shadow;
+    label := HorizontalLayout {
+        alignment: center;
+        for c[i] in root.chars: Text {
+            accessible-role: none;
+            text: c.to-uppercase();
+            font-size: 26px;
+            font-weight: 800;
+            color: Theme.on-accent.with-alpha(i < root.typed ? 0.45 : 1);
+            vertical-alignment: center;
         }
     }
 }
@@ -115,6 +171,10 @@ component Segment inherits Rectangle {
     in property <string> label;
     in property <bool> active;
     callback clicked();
+    accessible-role: tab;
+    accessible-label: root.label;
+    accessible-value: root.active ? "selected" : "";
+    accessible-action-default => { root.clicked(); }
     horizontal-stretch: 1;
     border-radius: min(self.height / 2, Theme.radius-small);
     background: self.active ? Theme.accent : tt.has-hover ? Theme.hover : transparent;
@@ -131,6 +191,20 @@ component Segment inherits Rectangle {
     }
 }
 
+// A scrolling list in the sidebar; `reveal` scrolls just enough to show what is at window
+// position `y`, `h` high (the keyboard cursor's row).
+component SideList inherits Flickable {
+    public function reveal(y: length, h: length) {
+        let top = y - self.absolute-position.y;
+        let lowest = min(0px, self.height - self.content-height);
+        if (top < 0px) {
+            self.content-y = clamp(self.content-y - top, lowest, 0px);
+        } else if (top + h > self.height) {
+            self.content-y = clamp(self.content-y - (top + h - self.height), lowest, 0px);
+        }
+    }
+}
+
 // A setting in the sidebar: a label with a switch, a − value + stepper, or a line to type into
 // below it (`text`). Set to something other than the default, it is highlighted and gets a reset
 // button.
@@ -143,14 +217,54 @@ component SettingControl inherits Rectangle {
     in property <bool> can-dec;
     in property <bool> can-inc;
     in property <string> placeholder;
+    // Under the keyboard cursor; a change of `edit-tick` then puts the keyboard in the text field.
+    in property <bool> kfocus;
+    in property <int> edit-tick;
+    callback revealed(length, length);
+    changed kfocus => {
+        if (self.kfocus) {
+            self.revealed(self.absolute-position.y, self.height);
+        }
+    }
+    // Bumped when a step was refused: the row shakes (and flushes red) once.
+    in property <int> shakes;
+    property <float> shake: mod(root.shakes, 2);
+    animate shake { duration: 420ms * Theme.motion; easing: linear; }
+    // 0 at rest; up to 1 halfway through a shake.
+    property <float> shaking: sin(root.shake * 180deg);
     // +1 or -1; a toggle flips with +1.
     callback step(int);
     callback reset();
     callback text-entered(string);
+    // The row is what the keyboard is on. A toggle says its state by being checked.
+    accessible-role: list-item;
+    accessible-label: root.label;
+    accessible-value: root.kind == RowKind.toggle ? "" : root.value;
+    accessible-checkable: root.kind == RowKind.toggle;
+    accessible-checked: root.on;
+    accessible-item-selected: root.kfocus;
+    accessible-action-default => {
+        if (root.kind == RowKind.toggle) {
+            root.step(1);
+        }
+    }
+    accessible-action-increment => {
+        if (root.kind == RowKind.stepper && root.can-inc) {
+            root.step(1);
+        }
+    }
+    accessible-action-decrement => {
+        if (root.kind == RowKind.stepper && root.can-dec) {
+            root.step(-1);
+        }
+    }
     height: root.kind == RowKind.text ? 76px : 40px;
     border-radius: Theme.radius-small;
-    background: root.modified ? Theme.accent-soft : Theme.card-raised;
+    background: (root.modified ? Theme.accent-soft : Theme.card-raised).mix(Theme.bad, 1 - root.shaking * 0.45);
+    border-width: root.kfocus ? 2px : 0px;
+    border-color: Theme.accent;
     VerticalLayout {
+        x: sin(root.shake * 1080deg) * root.shaking * 7px;
         padding-left: 12px;
         padding-right: 4px;
         padding-bottom: root.kind == RowKind.text ? 8px : 0px;
@@ -166,6 +280,7 @@ component SettingControl inherits Rectangle {
                 overflow: elide;
             }
             if root.modified: IconButton {
+                accessible-label: "Reset " + root.label;
                 y: (parent.height - self.height) / 2;
                 icon: Icons.reset;
                 size: 26px;
@@ -173,6 +288,7 @@ component SettingControl inherits Rectangle {
                 clicked => { root.reset(); }
             }
             if root.kind == RowKind.toggle: Switch {
+                accessible-label: root.label;
                 y: (parent.height - self.height) / 2;
                 checked: root.on;
                 toggled => { root.step(1); }
@@ -180,6 +296,7 @@ component SettingControl inherits Rectangle {
             if root.kind == RowKind.stepper: IconButton {
                 y: (parent.height - self.height) / 2;
                 icon: Icons.minus;
+                accessible-label: "Decrease " + root.label;
                 size: 30px;
                 enabled: root.can-dec;
                 clicked => { root.step(-1); }
@@ -196,6 +313,7 @@ component SettingControl inherits Rectangle {
             if root.kind == RowKind.stepper: IconButton {
                 y: (parent.height - self.height) / 2;
                 icon: Icons.plus;
+                accessible-label: "Increase " + root.label;
                 size: 30px;
                 enabled: root.can-inc;
                 clicked => { root.step(1); }
@@ -203,8 +321,21 @@ component SettingControl inherits Rectangle {
         }
         if root.kind == RowKind.text: HorizontalLayout {
             padding-right: 8px;
-            LineEdit {
+            property <int> tick: root.edit-tick;
+            changed tick => {
+                if (root.kfocus) {
+                    field.focus();
+                }
+            }
+            field := LineEdit {
+                accessible-label: root.label;
                 text: root.value;
+                // Left without Enter: what was typed is dropped, not left showing as if saved.
+                changed has-focus => {
+                    if (!self.has-focus) {
+                        self.text = root.value;
+                    }
+                }
                 placeholder-text: root.placeholder;
                 accepted(text) => { root.text-entered(text); }
             }
@@ -218,10 +349,24 @@ component ChoiceCard inherits Rectangle {
     in property <string> name;
     in property <string> description;
     in property <bool> current;
+    in property <bool> kfocus;
     callback clicked();
+    accessible-role: radio-button;
+    accessible-label: root.name;
+    accessible-description: root.description;
+    accessible-checkable: true;
+    accessible-checked: root.current;
+    accessible-item-selected: root.kfocus;
+    accessible-action-default => { root.clicked(); }
+    callback revealed(length, length);
+    changed kfocus => {
+        if (self.kfocus) {
+            self.revealed(self.absolute-position.y, self.height);
+        }
+    }
     border-radius: Theme.radius-small;
-    background: root.current ? Theme.accent-soft : touch.has-hover ? Theme.hover : Theme.card-raised;
-    border-width: root.current ? 1px : 0px;
+    background: root.current ? Theme.accent-soft : touch.has-hover || root.kfocus ? Theme.hover : Theme.card-raised;
+    border-width: root.kfocus ? 2px : root.current ? 1px : 0px;
     border-color: Theme.accent;
     HorizontalLayout {
         padding: 8px;
@@ -316,6 +461,9 @@ export component Dash inherits Window {
     in property <int> grid-rows;
     // The Columns and Rows steppers in the Widgets tab.
     in property <[SettingRow]> grid-controls;
+    // How often each of them refused a step (there was no room left for some widget).
+    in-out property <int> grid-refusals-cols;
+    in-out property <int> grid-refusals-rows;
     // The cell size of the automatic grid (layout::AUTO_CELL).
     property <length> auto-cell: 100px;
     // Set by Rust once the surface is on screen, cleared just before it is hidden.
@@ -325,6 +473,8 @@ export component Dash inherits Window {
     property <float> edit-fade: self.editing ? 1 : 0;
     animate edit-fade { duration: 160ms * Theme.motion; easing: ease-out; }
     out property <PointerShape> cursor;
+    // The widget that asked for it.
+    property <int> cursor-id;
     // Slint's own inputs (LineEdit, TextEdit) come in a light and a dark variant: the one that
     // matches the cards.
     property <bool> light-cards: Theme.card.to-hsv().value > 0.5;
@@ -334,6 +484,17 @@ export component Dash inherits Window {
     init => { self.match-inputs(); }
     changed light-cards => { self.match-inputs(); }
     changed editing => {
+        if (self.editing && Nav.mode != NavMode.off) {
+            Nav.mode = NavMode.off;
+        }
+        Nav.expanded-id = 0;
+        Nav.sizing = false;
+        self.edit-sizing = false;
+        self.side-keys = false;
+        self.side-cursor = 0;
+        if (Nav.mode == NavMode.off) {
+            keys.focus();
+        }
         if (!self.editing) {
             self.cursor = PointerShape.normal;
             self.settings-id = 0;
@@ -367,10 +528,10 @@ export component Dash inherits Window {
     property <length> grid-side: self.margin + self.drawer-shift * (self.edge - Theme.gap - self.margin);
     property <length> grid-top: self.bar + self.drawer-shift * (self.drawer-y - Theme.gap - self.bar);
     property <length> grid-bottom: self.height - self.margin + self.drawer-shift * (self.margin - self.edge + Theme.gap);
-    property <length> cell: min((self.avail-w - 2 * self.grid-side) / self.cols, (self.grid-bottom - self.grid-top) / self.rows);
-    property <length> grid-x: (self.avail-w - self.cols * self.cell) / 2;
+    out property <length> cell: min((self.avail-w - 2 * self.grid-side) / self.cols, (self.grid-bottom - self.grid-top) / self.rows);
+    out property <length> grid-x: (self.avail-w - self.cols * self.cell) / 2;
     // Centered vertically; top-aligned with the drawer while it is open.
-    property <length> grid-y: self.grid-top + (1 - self.drawer-shift) * (self.grid-bottom - self.grid-top - self.rows * self.cell) / 2;
+    out property <length> grid-y: self.grid-top + (1 - self.drawer-shift) * (self.grid-bottom - self.grid-top - self.rows * self.cell) / 2;
 
     // Dragging a new widget from the drawer (add) or a picked-up widget (carry).
     in-out property <DragMode> drag-mode: DragMode.none;
@@ -425,6 +586,23 @@ export component Dash inherits Window {
     callback close-requested();
 
     // Called by Rust whenever the overlay is shown again.
+    // What had the keyboard is gone (a page or prompt went away with its text field).
+    // A press held still on widget `id`: open it on its own for adjusting, unless the pointer is
+    // busy with something else. False if it stays as it is.
+    public function hold-widget(id: int) -> bool {
+        if (root.solo || root.editing || root.adjust-id != 0 || root.dragging || Tray.menu-open
+            || Nav.mode == NavMode.hints || Nav.expanded-id != 0) {
+            return false;
+        }
+        if (Nav.mode != NavMode.off) {
+            root.nav-off();
+        }
+        root.adjust-id = id;
+        return true;
+    }
+    public function take-keyboard() {
+        keys.focus();
+    }
     public function reset() {
         keys.focus();
         root.adjust-id = 0;
@@ -440,12 +618,17 @@ export component Dash inherits Window {
     callback grid-step(int, int);
     callback grid-auto();
     callback move-widget(int, int, int);
-    callback resize-widget(int, int, int);
+    // Widget id and where it goes: column, row, width, height.
+    callback resize-widget(int, int, int, int, int);
+    // From the keyboard: move a widget one cell (0..3 = h, j, k, l), or push one of its edges
+    // out (true) or pull it in.
+    callback nudge-widget(int, int);
+    callback reshape-widget(int, int, bool);
     callback toggle-shape(int);
     callback remove-widget(int);
     // Live reflow while dragging: others move out of the way; false if there is no room.
     callback preview-move(int, int, int) -> bool;
-    callback preview-resize(int, int, int) -> bool;
+    callback preview-resize(int, int, int, int, int) -> bool;
     callback preview-add(WidgetKind, int, int) -> bool;
     callback end-preview();
     callback choose-colorscheme(string);
@@ -461,16 +644,252 @@ export component Dash inherits Window {
     callback setting-text(int, string);
     callback setting-reset(int);
 
+    // Keyboard navigation (Nav in data.slint). Typing a hint label enters that widget.
+    function nav-enter(id: int) {
+        keys.focus();
+        Nav.typed = "";
+        Nav.expanded-id = 0;
+        Nav.sizing = false;
+        Nav.active-id = id;
+        Nav.mode = NavMode.widget;
+        Nav.tick += 1;
+    }
+    // Edit mode by keyboard. A cursor over the sidebar tab's rows (shown once a key moved it), and
+    // the widget whose settings are open as the one that keys move, size, reshape and remove.
+    in-out property <int> side-cursor;
+    in-out property <bool> side-keys;
+    property <int> side-edit-tick;
+    property <bool> edit-sizing;
+    // Stops: Widgets: the grid's columns and rows, the palette, "Reset" (the layout). Colors: the
+    // schemes, the folder button. Style: the presets, "Reset all" (when adjusted), the
+    // adjustments, the folder button. A widget's tab: its settings.
+    property <int> k-adjust: root.styles.length + (root.style-customized ? 1 : 0);
+    property <int> side-count: root.drawer-tab == DrawerTab.widgets ? 3 + root.palette.length
+        : root.drawer-tab == DrawerTab.colors ? root.colorschemes.length + 1
+        : root.drawer-tab == DrawerTab.style ? root.k-adjust + root.style-rows.length + 1
+        : root.setting-rows.length;
+    function side-on(tab: DrawerTab, i: int) -> bool {
+        root.editing && root.side-keys && root.drawer-tab == tab && root.side-cursor == i
+    }
+    changed drawer-tab => {
+        self.side-cursor = 0;
+        // A text field on the tab that went took the keyboard with it.
+        keys.focus();
+    }
+    changed side-count => {
+        if (self.side-cursor >= self.side-count) {
+            self.side-cursor = max(0, self.side-count - 1);
+        }
+    }
+    function side-tab(d: int) {
+        let n = root.settings-id != 0 ? 4 : 3;
+        let i = root.drawer-tab == DrawerTab.widgets ? 0 : root.drawer-tab == DrawerTab.colors ? 1
+            : root.drawer-tab == DrawerTab.style ? 2 : 3;
+        let j = mod(i + d + n, n);
+        root.drawer-tab = j == 0 ? DrawerTab.widgets : j == 1 ? DrawerTab.colors : j == 2 ? DrawerTab.style : DrawerTab.widget;
+    }
+    // h/l on stop i: step it down or up (a switch flips).
+    function side-step(i: int, d: int) {
+        if (root.drawer-tab == DrawerTab.widgets && i < 2) {
+            root.grid-step(i, d);
+        } else if (root.drawer-tab == DrawerTab.style && i >= root.k-adjust && i - root.k-adjust < root.style-rows.length) {
+            root.style-step(root.style-rows[i - root.k-adjust].key, d);
+        } else if (root.drawer-tab == DrawerTab.widget && i < root.setting-rows.length
+            && root.setting-rows[i].kind != RowKind.text) {
+            root.setting-step(root.setting-rows[i].index, d);
+        }
+    }
+    // Enter or Space on stop i.
+    function side-activate(i: int) {
+        if (root.drawer-tab == DrawerTab.widgets) {
+            if (i >= 2 && i - 2 < root.palette.length) {
+                root.add-widget(root.palette[i - 2].kind);
+            } else if (i == 2 + root.palette.length) {
+                root.reset-layout();
+            }
+        } else if (root.drawer-tab == DrawerTab.colors) {
+            if (i < root.colorschemes.length) {
+                root.choose-colorscheme(root.colorschemes[i].name);
+            } else {
+                root.open-themes-folder();
+            }
+        } else if (root.drawer-tab == DrawerTab.style) {
+            if (i < root.styles.length) {
+                root.choose-style(root.styles[i].name);
+            } else if (i < root.k-adjust) {
+                root.style-reset-all();
+            } else if (i - root.k-adjust < root.style-rows.length) {
+                if (root.style-rows[i - root.k-adjust].kind == RowKind.toggle) {
+                    root.style-step(root.style-rows[i - root.k-adjust].key, 1);
+                }
+            } else {
+                root.open-themes-folder();
+            }
+        } else if (i < root.setting-rows.length) {
+            if (root.setting-rows[i].kind == RowKind.text) {
+                root.side-edit-tick += 1;
+            } else {
+                root.setting-step(root.setting-rows[i].index, 1);
+            }
+        }
+    }
+    // Backspace on stop i: back to the default.
+    function side-reset(i: int) {
+        if (root.drawer-tab == DrawerTab.widgets && i < 2) {
+            root.grid-auto();
+        } else if (root.drawer-tab == DrawerTab.style && i >= root.k-adjust && i - root.k-adjust < root.style-rows.length) {
+            root.style-reset(root.style-rows[i - root.k-adjust].key);
+        } else if (root.drawer-tab == DrawerTab.widget && i < root.setting-rows.length) {
+            root.setting-reset(root.setting-rows[i].index);
+        }
+    }
+    // The keys of edit mode; true if one was used.
+    function edit-key(e: KeyEvent) -> bool {
+        let target = root.settings-id;
+        let plain = !e.modifiers.control && !e.modifiers.alt && !e.modifiers.meta;
+        if (root.edit-sizing) {
+            if (e.text == Key.Return || ((e.text == "r" || e.text == "R") && e.modifiers.control)) {
+                root.edit-sizing = false;
+                return true;
+            }
+            let d = root.key-dir(e);
+            if (d >= 0 && plain && target != 0) {
+                // Capitals (or Shift with an arrow) push the edge out.
+                root.reshape-widget(target, d, e.modifiers.shift || e.text != e.text.to-lowercase());
+            }
+            return true;
+        }
+        if ((e.text == "e" || e.text == "E") && e.modifiers.control) {
+            root.set-editing(false);
+            return true;
+        }
+        if (target != 0 && e.modifiers.control && !e.modifiers.alt && !e.modifiers.meta) {
+            let d = root.key-dir(e);
+            if (d >= 0) {
+                if (e.modifiers.shift) {
+                    root.nudge-widget(target, d);
+                } else {
+                    let next = Nav.neighbor(target, d);
+                    if (next > 0) {
+                        root.configure-widget(next);
+                    }
+                }
+                return true;
+            }
+            if (e.text == "r" || e.text == "R") {
+                root.edit-sizing = true;
+                return true;
+            }
+        }
+        if (!plain) {
+            return false;
+        }
+        if (target != 0 && e.text == "o") {
+            root.toggle-shape(target);
+            return true;
+        }
+        if (target != 0 && (e.text == "x" || e.text == Key.Delete)) {
+            root.remove-widget(target);
+            return true;
+        }
+        if (e.text == Key.Tab || e.text == Key.Backtab) {
+            root.side-keys = true;
+            root.side-tab(e.text == Key.Tab ? 1 : -1);
+            return true;
+        }
+        let down = e.text == "j" || e.text == Key.DownArrow;
+        let up = e.text == "k" || e.text == Key.UpArrow;
+        if (down || up || e.text == "g" || e.text == "G" || e.text == Key.Home || e.text == Key.End) {
+            let last = max(0, root.side-count - 1);
+            // The first key shows the cursor where it is.
+            if (root.side-keys) {
+                root.side-cursor = down ? min(last, root.side-cursor + 1) : up ? max(0, root.side-cursor - 1)
+                    : e.text == "g" || e.text == Key.Home ? 0 : last;
+            }
+            root.side-keys = true;
+            return true;
+        }
+        if (e.text == "h" || e.text == "l" || e.text == Key.LeftArrow || e.text == Key.RightArrow) {
+            root.side-keys = true;
+            root.side-step(root.side-cursor, e.text == "h" || e.text == Key.LeftArrow ? -1 : 1);
+            return true;
+        }
+        if (e.text == Key.Return || e.text == " ") {
+            root.side-keys = true;
+            root.side-activate(root.side-cursor);
+            return true;
+        }
+        if (e.text == Key.Backspace) {
+            root.side-keys = true;
+            root.side-reset(root.side-cursor);
+            return true;
+        }
+        false
+    }
+    function nav-off() {
+        Nav.typed = "";
+        Nav.expanded-id = 0;
+        Nav.sizing = false;
+        Nav.mode = NavMode.off;
+        keys.focus();
+    }
+    // Sizing mode ends: the widget takes the keyboard again.
+    function sizing-off() {
+        Nav.sizing = false;
+        Nav.tick += 1;
+    }
+    // h/j/k/l or the arrows, either case: the direction (0..3), or -1.
+    function key-dir(e: KeyEvent) -> int {
+        let t = e.text.to-lowercase();
+        t == "h" || e.text == Key.LeftArrow ? 0 : t == "j" || e.text == Key.DownArrow ? 1
+            : t == "k" || e.text == Key.UpArrow ? 2 : t == "l" || e.text == Key.RightArrow ? 3 : -1
+    }
+    // A widget is blown up in the middle (`e`).
+    property <bool> expand-on: Nav.expanded-id != 0 && Nav.mode == NavMode.widget && !root.editing;
+    // Ctrl+h/j/k/l, H/J/K/L or Ctrl+arrows: the direction (0..3), or -1.
+    function nav-dir(e: KeyEvent) -> int {
+        if (e.modifiers.alt || e.modifiers.meta) {
+            return -1;
+        }
+        if (e.modifiers.control) {
+            return e.text == "h" || e.text == Key.LeftArrow ? 0 : e.text == "j" || e.text == Key.DownArrow ? 1
+                : e.text == "k" || e.text == Key.UpArrow ? 2 : e.text == "l" || e.text == Key.RightArrow ? 3 : -1;
+        }
+        e.text == "H" ? 0 : e.text == "J" ? 1 : e.text == "K" ? 2 : e.text == "L" ? 3 : -1
+    }
+
+    // Everything is inside, so keys nothing below takes come up here (Escape from a text field
+    // too). Printable keys typed into a text field stay there: `f` only shows the hints when no
+    // text field has the keyboard.
     forward-focus: keys;
     keys := FocusScope {
+        width: 100%;
+        height: 100%;
+        focus-on-click: false;
+        focus-on-tab-navigation: false;
         key-pressed(e) => {
             if (e.text == Key.Escape) {
+                if (root.editing && !keys.has-focus) {
+                    // Out of a sidebar text field, back to the keys of edit mode.
+                    keys.focus();
+                    return accept;
+                }
+                if (root.edit-sizing) {
+                    root.edit-sizing = false;
+                    return accept;
+                }
                 if (root.dragging) {
                     root.finish-drag(false);
                 } else if (root.adjust-id != 0) {
                     root.adjust-id = 0;
                 } else if (Tray.menu-open) {
                     Tray.menu-close();
+                } else if (Nav.sizing && Nav.mode == NavMode.widget) {
+                    root.sizing-off();
+                } else if (Nav.expanded-id != 0 && Nav.mode == NavMode.widget) {
+                    Nav.expanded-id = 0;
+                } else if (Nav.mode != NavMode.off && !root.solo) {
+                    root.nav-off();
                 } else if (root.editing) {
                     root.set-editing(false);
                 } else {
@@ -478,553 +897,747 @@ export component Dash inherits Window {
                 }
                 return accept;
             }
+            if (Nav.mode == NavMode.hints) {
+                // f hides the hints before anything is typed; Backspace takes back what was.
+                if (e.text == Key.Backspace && Nav.typed != "") {
+                    Nav.typed = "";
+                    return accept;
+                }
+                if ((e.text == "f" && Nav.typed == "") || e.text == Key.Backspace) {
+                    root.nav-off();
+                    return accept;
+                }
+                if (!root.solo && (e.text == "e" || e.text == "E") && e.modifiers.control) {
+                    root.nav-off();
+                    root.set-editing(true);
+                    return accept;
+                }
+                if (e.modifiers.control || e.modifiers.alt || e.modifiers.meta || e.text == Key.Shift) {
+                    return accept;
+                }
+                let typed = Nav.typed + e.text;
+                let id = Nav.pick(typed);
+                if (id > 0 && root.editing) {
+                    // In edit mode a label picks the widget to work on: its settings open.
+                    root.nav-off();
+                    root.configure-widget(id);
+                    root.side-keys = true;
+                } else if (id > 0) {
+                    root.nav-enter(id);
+                } else if (id == 0) {
+                    Nav.typed = typed;
+                } else {
+                    root.nav-off();
+                }
+                return accept;
+            }
+            if (!root.solo && !root.dragging && root.adjust-id == 0 && !Nav.sizing && !root.edit-sizing && e.text == "f"
+                && !e.modifiers.control && !e.modifiers.alt && !e.modifiers.meta) {
+                keys.focus();
+                Nav.typed = "";
+                Nav.expanded-id = 0;
+                Nav.mode = NavMode.hints;
+                return accept;
+            }
+            if (root.editing && !root.solo && !root.dragging) {
+                if (!keys.has-focus) {
+                    // A sidebar text field passed this on. Tab leaves it; the rest is its own.
+                    if (e.text == Key.Tab || e.text == Key.Backtab) {
+                        keys.focus();
+                        return accept;
+                    }
+                    return reject;
+                }
+                return root.edit-key(e) ? accept : reject;
+            }
+            if (Nav.mode == NavMode.widget && !root.solo && !root.editing) {
+                // Ctrl+Shift+h/j/k/l moves the widget a cell, pushing others aside.
+                if (e.modifiers.control && e.modifiers.shift && !e.modifiers.alt && !e.modifiers.meta) {
+                    let d = root.key-dir(e);
+                    if (d >= 0) {
+                        Nav.expanded-id = 0;
+                        root.nudge-widget(Nav.active-id, d);
+                        return accept;
+                    }
+                }
+                // Ctrl+R: sizing mode, until Ctrl+R, Enter or Escape again.
+                if ((e.text == "r" || e.text == "R") && e.modifiers.control && !e.modifiers.shift
+                    && !e.modifiers.alt && !e.modifiers.meta) {
+                    if (Nav.sizing) {
+                        root.sizing-off();
+                    } else {
+                        Nav.expanded-id = 0;
+                        Nav.sizing = true;
+                        keys.focus();
+                    }
+                    return accept;
+                }
+                if (Nav.sizing) {
+                    if (e.text == Key.Return) {
+                        root.sizing-off();
+                        return accept;
+                    }
+                    let d = root.key-dir(e);
+                    if (d >= 0 && !e.modifiers.control && !e.modifiers.alt && !e.modifiers.meta) {
+                        // Capitals (or Shift with an arrow) push the edge out.
+                        root.reshape-widget(Nav.active-id, d, e.modifiers.shift || e.text != e.text.to-lowercase());
+                    }
+                    // Everything else waits until sizing is done.
+                    return accept;
+                }
+                // e blows the widget up in the middle of the dashboard, and back.
+                if (e.text == "e" && !e.modifiers.control && !e.modifiers.alt && !e.modifiers.meta) {
+                    Nav.expanded-id = Nav.expanded-id == Nav.active-id ? 0 : Nav.active-id;
+                    return accept;
+                }
+                let d = root.nav-dir(e);
+                if (d >= 0) {
+                    let next = Nav.neighbor(Nav.active-id, d);
+                    if (next > 0) {
+                        root.nav-enter(next);
+                    }
+                    return accept;
+                }
+            }
             if (!root.solo && !root.editing && (e.text == "e" || e.text == "E") && e.modifiers.control) {
+                root.nav-off();
                 root.set-editing(true);
                 return accept;
             }
             reject
         }
-    }
 
-    // Backdrop. Clicking empty space closes; right click toggles edit mode.
-    Rectangle {
-        visible: !root.solo;
-        background: Theme.backdrop.transparentize(1 - Theme.backdrop-opacity);
-        opacity: root.reveal;
-        TouchArea {
-            pointer-event(e) => {
-                // In edit mode (or with a widget opened for adjusting) clicks never close the
-                // dashboard; Done or Esc does.
-                if (e.kind == PointerEventKind.up && e.button == PointerEventButton.left) {
-                    if (root.adjust-id != 0) {
+        // Backdrop. Clicking empty space closes; right click toggles edit mode.
+        Rectangle {
+            visible: !root.solo;
+            background: Theme.backdrop.transparentize(1 - Theme.backdrop-opacity);
+            opacity: root.reveal;
+            TouchArea {
+                pointer-event(e) => {
+                    // In edit mode (or with a widget opened for adjusting) clicks never close the
+                    // dashboard; Done or Esc does.
+                    if (e.kind == PointerEventKind.up && e.button == PointerEventButton.left) {
+                        if (Nav.mode == NavMode.hints) {
+                            root.nav-off();
+                        } else if (root.adjust-id != 0) {
+                            root.adjust-id = 0;
+                        } else if (!root.editing) {
+                            root.close-requested();
+                        }
+                    }
+                    if (e.kind == PointerEventKind.up && e.button == PointerEventButton.right && !root.editing) {
                         root.adjust-id = 0;
-                    } else if (!root.editing) {
-                        root.close-requested();
+                        root.set-editing(true);
                     }
                 }
-                if (e.kind == PointerEventKind.up && e.button == PointerEventButton.right && !root.editing) {
-                    root.adjust-id = 0;
-                    root.set-editing(true);
-                }
-            }
-        }
-    }
-
-    // Top bar.
-    HorizontalLayout {
-        visible: !root.solo;
-        y: (1 - root.reveal) * -12px;
-        opacity: root.reveal;
-        height: root.bar;
-        padding-left: root.grid-x + Theme.gap;
-        padding-right: root.width - root.avail-w + root.grid-x + Theme.gap;
-        padding-top: 6px;
-        spacing: 8px;
-        Text {
-            text: root.drag-mode == DragMode.carry ? "Click where it should go · Esc cancels"
-                : root.adjust-id != 0 ? "Drag to move, corner to resize, ◯/▢ to change shape · click outside or Esc when done"
-                : !root.editing ? "" : "Edit mode: drag to move (others make room), corner to resize, click a widget for its settings"
-                + (root.hidden-widgets > 0 ? "  ·  " + root.hidden-widgets + " widget(s) don't fit " + (root.grid-cols > 0 ? "the grid" : "this screen") : "");
-            color: Theme.dim;
-            font-size: Theme.font-body;
-            vertical-alignment: center;
-            horizontal-stretch: 1;
-            overflow: elide;
-        }
-        if !root.editing: IconButton {
-            y: (parent.height - self.height) / 2 + 3px;
-            icon: Icons.edit;
-            size: 34px;
-            tint: Theme.dim;
-            clicked => { root.set-editing(true); }
-        }
-        if !root.editing: IconButton {
-            y: (parent.height - self.height) / 2 + 3px;
-            icon: Icons.close;
-            size: 34px;
-            tint: Theme.dim;
-            clicked => { root.close-requested(); }
-        }
-    }
-
-    grid := Rectangle {
-        visible: !root.solo;
-        x: root.grid-x;
-        y: root.grid-y;
-        width: root.cols * root.cell;
-        height: root.rows * root.cell;
-
-        if root.edit-fade > 0.01 || root.dragging: Rectangle {
-            opacity: max(root.edit-fade, root.dragging ? 1 : 0);
-            for i in root.cols * root.rows: Rectangle {
-                x: mod(i, root.cols) * root.cell + Theme.gap;
-                y: floor(i / root.cols) * root.cell + Theme.gap;
-                width: root.cell - 2 * Theme.gap;
-                height: root.cell - 2 * Theme.gap;
-                border-radius: Theme.radius-small;
-                border-width: 1px;
-                border-color: Theme.border;
-                background: Theme.subtle;
             }
         }
 
-        // Where a dragged-in or carried widget will land.
-        if root.dragging && (root.drag-mode == DragMode.carry || root.over-grid): Rectangle {
-            x: root.drag-col * root.cell + Theme.gap;
-            y: root.drag-row * root.cell + Theme.gap;
-            width: root.drag-w * root.cell - 2 * Theme.gap;
-            height: root.drag-h * root.cell - 2 * Theme.gap;
-            animate x, y { duration: 90ms * Theme.motion; easing: ease-out; }
-            border-radius: Theme.radius;
-            border-width: 2px;
-            border-color: root.drag-ok ? Theme.good : Theme.bad;
-            background: (root.drag-ok ? Theme.good : Theme.bad).with-alpha(0.12);
-        }
-
-        // While one widget is opened for adjusting, the others don't react; a click on them (or
-        // anywhere outside) ends adjusting instead of, say, focusing a window and closing.
-        if root.adjust-id != 0 && root.drag-mode == DragMode.none: TouchArea {
-            z: 50;
-            clicked => { root.adjust-id = 0; }
-        }
-
-        for w in root.widgets: WidgetFrame {
-            inst: w;
-            cell: root.cell;
-            cols: root.cols;
-            rows: root.rows;
-            editing: root.editing || root.adjust-id == w.id;
-            lifted: root.adjust-id == w.id;
-            shown: root.shown;
-            carried: root.drag-mode == DragMode.carry && root.drag-id == w.id;
-            carry-x: root.drag-px - root.grab-dx - root.grid-x;
-            carry-y: root.drag-py - root.grab-dy - root.grid-y;
-            preview-move(id, c, r) => { return root.preview-move(id, c, r); }
-            preview-resize(id, ww, hh) => { return root.preview-resize(id, ww, hh); }
-            end-preview => { root.end-preview(); }
-            move-to(id, c, r) => { root.move-widget(id, c, r); }
-            resize-to(id, ww, hh) => { root.resize-widget(id, ww, hh); }
-            toggle-shape(id) => { root.toggle-shape(id); }
-            selected: root.editing && root.settings-id == w.id && root.drawer-tab == DrawerTab.widget;
-            configure(id) => {
-                root.adjust-id = 0;
-                root.configure-widget(id);
-            }
-            remove(id) => {
-                if (root.adjust-id == id) {
-                    root.adjust-id = 0;
-                }
-                root.remove-widget(id);
-            }
-            cursor(c) => { root.cursor = c; }
-            grab(id, px, py, ox, oy) => {
-                if (root.drag-mode == DragMode.none) {
-                    if (!root.editing) {
-                        root.adjust-id = id;
-                    }
-                    root.drag-id = id;
-                    root.drag-w = w.w;
-                    root.drag-h = w.h;
-                    root.grab-dx = ox;
-                    root.grab-dy = oy;
-                    root.drag-px = px;
-                    root.drag-py = py;
-                    root.drag-ok = true;
-                    root.drag-mode = DragMode.carry;
-                }
-            }
-        }
-    }
-
-    // While carrying, the whole window follows the pointer; a click drops, right click cancels.
-    if root.drag-mode == DragMode.carry: TouchArea {
-        changed mouse-x => { root.drag-px = self.mouse-x; }
-        changed mouse-y => { root.drag-py = self.mouse-y; }
-        pointer-event(e) => {
-            if (e.kind == PointerEventKind.down) {
-                root.drag-px = self.mouse-x;
-                root.drag-py = self.mouse-y;
-            }
-            if (e.kind == PointerEventKind.up && e.button == PointerEventButton.left) {
-                root.finish-drag(true);
-            }
-            if (e.kind == PointerEventKind.up && e.button == PointerEventButton.right) {
-                root.finish-drag(false);
-            }
-        }
-    }
-
-    // The edit mode's buttons sit over the drawer, flush with its edges, and slide in with it.
-    if root.editing: HorizontalLayout {
-        x: drawer.x;
-        width: drawer.width;
-        // Level with the bar's buttons outside edit mode.
-        y: 6px + (root.bar - 6px - self.height) / 2 + 3px;
-        height: 30px;
-        TextButton {
-            text: "Reset";
-            icon: Icons.reset;
-            has-icon: true;
-            clicked => { root.reset-layout(); }
-        }
-        Rectangle { horizontal-stretch: 1; }
-        TextButton {
-            text: "Done";
-            primary: true;
-            icon: Icons.check;
-            has-icon: true;
-            clicked => { root.set-editing(false); }
-        }
-    }
-
-    // Widgets and themes, slides in from the right and shrinks the grid to make room.
-    drawer := Rectangle {
-        x: root.width + 40px - root.drawer-shift * (self.width + root.edge + 40px);
-        visible: root.drawer-shift > 0.001;
-        y: root.drawer-y;
-        width: root.drawer-w;
-        height: root.height - root.drawer-y - root.edge;
-        border-radius: Theme.radius;
-        background: Theme.panel;
-        border-width: 1px;
-        border-color: Theme.border;
-        drop-shadow-blur: 30px;
-        drop-shadow-color: Theme.shadow;
-        TouchArea { }
-        VerticalLayout {
-            padding: 14px;
+        // Top bar.
+        HorizontalLayout {
+            visible: !root.solo;
+            y: (1 - root.reveal) * -12px;
+            opacity: root.reveal;
+            height: root.bar;
+            padding-left: root.grid-x + Theme.gap;
+            padding-right: root.width - root.avail-w + root.grid-x + Theme.gap;
+            padding-top: 6px;
             spacing: 8px;
-            // One segmented control: the three sections clearly belong together.
-            Rectangle {
-                height: 38px;
-                border-radius: min(self.height / 2, Theme.radius-small + 3px);
-                background: Theme.card-raised;
-                HorizontalLayout {
-                    padding: 3px;
-                    spacing: 3px;
-                    for tab in [
-                        { id: DrawerTab.widgets, label: "Widgets" },
-                        { id: DrawerTab.colors, label: "Colors" },
-                        { id: DrawerTab.style, label: "Style" },
-                    ]: Segment {
-                        label: tab.label;
-                        active: root.drawer-tab == tab.id;
-                        clicked => { root.drawer-tab = tab.id; }
+            Text {
+                text: Nav.sizing && Nav.mode == NavMode.widget ? "Sizing: H/J/K/L push that side out, h/j/k/l pull it in · Enter or Esc when done"
+                    : root.drag-mode == DragMode.carry ? "Click where it should go · Esc cancels"
+                    : root.adjust-id != 0 ? "Drag to move, edges and corners to resize, ◯/▢ to change shape · click outside or Esc when done"
+                    : root.edit-sizing ? "Sizing: H J K L push a side out, h j k l pull it in · Enter or Esc when done"
+                    : root.editing && root.side-keys ? "f picks a widget · Ctrl+h j k l next widget · Ctrl+Shift+h j k l moves · Ctrl+R sizes · o shape · x removes · Tab sidebar tab · j k h l Enter row · Backspace resets · Esc done"
+                    : !root.editing ? "" : "Edit mode: drag to move (others make room), edges and corners to resize, click a widget for its settings"
+                    + (root.hidden-widgets > 0 ? "  ·  " + root.hidden-widgets + " widget(s) don't fit " + (root.grid-cols > 0 ? "the grid" : "this screen") : "");
+                color: Theme.dim;
+                font-size: Theme.font-body;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+                overflow: elide;
+            }
+            if !root.editing: IconButton {
+                y: (parent.height - self.height) / 2 + 3px;
+                icon: Icons.edit;
+                accessible-label: "Edit dashboard";
+                size: 34px;
+                tint: Theme.dim;
+                clicked => { root.set-editing(true); }
+            }
+            if !root.editing: IconButton {
+                y: (parent.height - self.height) / 2 + 3px;
+                icon: Icons.close;
+                accessible-label: "Close dashboard";
+                size: 34px;
+                tint: Theme.dim;
+                clicked => { root.close-requested(); }
+            }
+        }
+
+        grid := Rectangle {
+            visible: !root.solo;
+            x: root.grid-x;
+            y: root.grid-y;
+            width: root.cols * root.cell;
+            height: root.rows * root.cell;
+
+            if root.edit-fade > 0.01 || root.dragging: Rectangle {
+                opacity: max(root.edit-fade, root.dragging ? 1 : 0);
+                for i in root.cols * root.rows: Rectangle {
+                    x: mod(i, root.cols) * root.cell + Theme.gap;
+                    y: floor(i / root.cols) * root.cell + Theme.gap;
+                    width: root.cell - 2 * Theme.gap;
+                    height: root.cell - 2 * Theme.gap;
+                    border-radius: Theme.radius-small;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    background: Theme.subtle;
+                }
+            }
+
+            // Where a dragged-in or carried widget will land.
+            if root.dragging && (root.drag-mode == DragMode.carry || root.over-grid): Rectangle {
+                x: root.drag-col * root.cell + Theme.gap;
+                y: root.drag-row * root.cell + Theme.gap;
+                width: root.drag-w * root.cell - 2 * Theme.gap;
+                height: root.drag-h * root.cell - 2 * Theme.gap;
+                animate x, y { duration: 90ms * Theme.motion; easing: ease-out; }
+                border-radius: Theme.radius;
+                border-width: 2px;
+                border-color: root.drag-ok ? Theme.good : Theme.bad;
+                background: (root.drag-ok ? Theme.good : Theme.bad).with-alpha(0.12);
+            }
+
+            // While one widget is opened for adjusting, the others don't react; a click on them (or
+            // anywhere outside) ends adjusting instead of, say, focusing a window and closing.
+            if root.adjust-id != 0 && root.drag-mode == DragMode.none: TouchArea {
+                z: 50;
+                clicked => { root.adjust-id = 0; }
+            }
+
+            // Behind an expanded widget the others fade back; a click anywhere puts it back.
+            if root.expand-on: Rectangle {
+                z: 140;
+                property <float> fade: 0;
+                init => { self.fade = 1; }
+                animate fade { duration: 200ms * Theme.motion; easing: ease-out; }
+                opacity: self.fade;
+                background: Theme.backdrop.with-alpha(0.75);
+                TouchArea {
+                    clicked => { Nav.expanded-id = 0; }
+                }
+            }
+
+            for w in root.widgets: WidgetFrame {
+                inst: w;
+                cell: root.cell;
+                area-w: root.cols * root.cell;
+                area-h: root.rows * root.cell;
+                expanded: root.expand-on && Nav.expanded-id == w.id;
+                cols: root.cols;
+                rows: root.rows;
+                editing: root.editing || root.adjust-id == w.id;
+                lifted: root.adjust-id == w.id;
+                shown: root.shown;
+                carried: root.drag-mode == DragMode.carry && root.drag-id == w.id;
+                carry-x: root.drag-px - root.grab-dx - root.grid-x;
+                carry-y: root.drag-py - root.grab-dy - root.grid-y;
+                preview-move(id, c, r) => { return root.preview-move(id, c, r); }
+                preview-resize(id, c, r, ww, hh) => { return root.preview-resize(id, c, r, ww, hh); }
+                end-preview => { root.end-preview(); }
+                move-to(id, c, r) => { root.move-widget(id, c, r); }
+                resize-to(id, c, r, ww, hh) => { root.resize-widget(id, c, r, ww, hh); }
+                toggle-shape(id) => { root.toggle-shape(id); }
+                selected: root.editing && root.settings-id == w.id && root.drawer-tab == DrawerTab.widget;
+                configure(id) => {
+                    root.adjust-id = 0;
+                    root.configure-widget(id);
+                }
+                remove(id) => {
+                    if (root.adjust-id == id) {
+                        root.adjust-id = 0;
                     }
-                    // The selected widget's own settings, named after it.
-                    if root.settings-id != 0: Segment {
-                        label: root.settings-title;
-                        active: root.drawer-tab == DrawerTab.widget;
-                        clicked => { root.drawer-tab = DrawerTab.widget; }
+                    root.remove-widget(id);
+                }
+                // Frames touch, so one's "normal" can come after the next one's own shape.
+                cursor(c) => {
+                    if (c != PointerShape.normal) {
+                        root.cursor-id = w.id;
+                        root.cursor = c;
+                    } else if (root.cursor-id == w.id) {
+                        root.cursor = c;
+                    }
+                }
+                grab(id, px, py, ox, oy) => {
+                    if (root.drag-mode == DragMode.none) {
+                        if (!root.editing) {
+                            root.adjust-id = id;
+                        }
+                        root.drag-id = id;
+                        root.drag-w = w.w;
+                        root.drag-h = w.h;
+                        root.grab-dx = ox;
+                        root.grab-dy = oy;
+                        root.drag-px = px;
+                        root.drag-py = py;
+                        root.drag-ok = true;
+                        root.drag-mode = DragMode.carry;
                     }
                 }
             }
-            if root.drawer-tab == DrawerTab.widgets: Flickable {
-                vertical-stretch: 1;
-                // Not draggable, so dragging an entry out isn't taken for scrolling.
-                interactive: false;
-                content-height: palette-list.preferred-height;
-                palette-list := VerticalLayout {
-                    width: parent.width;
-                    // How many cells across and down. Changing them fits the widgets in; the
-                    // reset buttons go back to as many cells as fit the screen.
-                    VerticalLayout {
-                        spacing: 6px;
-                        padding-bottom: 4px;
-                        HorizontalLayout {
-                            height: 22px;
-                            SectionLabel {
-                                text: "Grid";
-                                horizontal-stretch: 1;
+
+            // Keyboard hints (`f`): the other widgets fade back and each gets its label.
+            if Nav.mode == NavMode.hints: Rectangle {
+                z: 200;
+                Rectangle {
+                    background: Theme.backdrop.with-alpha(0.35);
+                }
+                for w[i] in root.widgets: HintLabel {
+                    label: w.hint;
+                    chars: i < Nav.hint-chars.length ? Nav.hint-chars[i].chars : [];
+                    cx: (w.col + w.w / 2) * root.cell;
+                    cy: (w.row + (w.shape == Shape.round ? w.w : w.h) / 2) * root.cell;
+                }
+            }
+        }
+
+        // While carrying, the whole window follows the pointer; a click drops, right click cancels.
+        if root.drag-mode == DragMode.carry: TouchArea {
+            changed mouse-x => { root.drag-px = self.mouse-x; }
+            changed mouse-y => { root.drag-py = self.mouse-y; }
+            pointer-event(e) => {
+                if (e.kind == PointerEventKind.down) {
+                    root.drag-px = self.mouse-x;
+                    root.drag-py = self.mouse-y;
+                }
+                if (e.kind == PointerEventKind.up && e.button == PointerEventButton.left) {
+                    root.finish-drag(true);
+                }
+                if (e.kind == PointerEventKind.up && e.button == PointerEventButton.right) {
+                    root.finish-drag(false);
+                }
+            }
+        }
+
+        // The edit mode's buttons sit over the drawer, flush with its edges, and slide in with it.
+        if root.editing: HorizontalLayout {
+            x: drawer.x;
+            width: drawer.width;
+            // Level with the bar's buttons outside edit mode.
+            y: 6px + (root.bar - 6px - self.height) / 2 + 3px;
+            height: 30px;
+            TextButton {
+                text: "Reset";
+                accessible-label: "Reset layout";
+                icon: Icons.reset;
+                has-icon: true;
+                kfocus: root.side-on(DrawerTab.widgets, 2 + root.palette.length);
+                clicked => { root.reset-layout(); }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            TextButton {
+                text: "Done";
+                primary: true;
+                icon: Icons.check;
+                has-icon: true;
+                clicked => { root.set-editing(false); }
+            }
+        }
+
+        // Widgets and themes, slides in from the right and shrinks the grid to make room.
+        drawer := Rectangle {
+            x: root.width + 40px - root.drawer-shift * (self.width + root.edge + 40px);
+            visible: root.drawer-shift > 0.001;
+            y: root.drawer-y;
+            width: root.drawer-w;
+            height: root.height - root.drawer-y - root.edge;
+            border-radius: Theme.radius;
+            background: Theme.panel;
+            border-width: 1px;
+            border-color: Theme.border;
+            drop-shadow-blur: 30px;
+            drop-shadow-color: Theme.shadow;
+            TouchArea { }
+            VerticalLayout {
+                padding: 14px;
+                spacing: 8px;
+                // One segmented control: the three sections clearly belong together.
+                Rectangle {
+                    accessible-role: tab-list;
+                    accessible-label: "Sidebar sections";
+                    height: 38px;
+                    border-radius: min(self.height / 2, Theme.radius-small + 3px);
+                    background: Theme.card-raised;
+                    HorizontalLayout {
+                        padding: 3px;
+                        spacing: 3px;
+                        for tab in [
+                            { id: DrawerTab.widgets, label: "Widgets" },
+                            { id: DrawerTab.colors, label: "Colors" },
+                            { id: DrawerTab.style, label: "Style" },
+                        ]: Segment {
+                            label: tab.label;
+                            active: root.drawer-tab == tab.id;
+                            clicked => { root.drawer-tab = tab.id; }
+                        }
+                        // The selected widget's own settings, named after it.
+                        if root.settings-id != 0: Segment {
+                            label: root.settings-title;
+                            active: root.drawer-tab == DrawerTab.widget;
+                            clicked => { root.drawer-tab = DrawerTab.widget; }
+                        }
+                    }
+                }
+                if root.drawer-tab == DrawerTab.widgets: widgets-side := SideList {
+                    vertical-stretch: 1;
+                    // Not draggable, so dragging an entry out isn't taken for scrolling.
+                    interactive: false;
+                    content-height: palette-list.preferred-height;
+                    palette-list := VerticalLayout {
+                        width: parent.width;
+                        // How many cells across and down. Changing them fits the widgets in; the
+                        // reset buttons go back to as many cells as fit the screen.
+                        VerticalLayout {
+                            spacing: 6px;
+                            padding-bottom: 4px;
+                            HorizontalLayout {
+                                height: 22px;
+                                SectionLabel {
+                                    text: "Grid";
+                                    horizontal-stretch: 1;
+                                }
+                                SectionLabel {
+                                    text: root.grid-cols > 0 ? "" : "fits the screen";
+                                    font-weight: 400;
+                                }
+                            }
+                            for v in root.grid-controls: SettingControl {
+                                shakes: v.index == 0 ? root.grid-refusals-cols : root.grid-refusals-rows;
+                                kind: v.kind;
+                                label: v.label;
+                                value: v.value;
+                                modified: v.changed;
+                                can-dec: v.can-dec;
+                                can-inc: v.can-inc;
+                                kfocus: root.side-on(DrawerTab.widgets, v.index);
+                                revealed(y, h) => { widgets-side.reveal(y, h); }
+                                step(d) => { root.grid-step(v.index, d); }
+                                reset => { root.grid-auto(); }
                             }
                             SectionLabel {
-                                text: root.grid-cols > 0 ? "" : "fits the screen";
-                                font-weight: 400;
+                                text: "Add";
+                                height: 28px;
                             }
                         }
-                        for v in root.grid-controls: SettingControl {
+                        for p[i] in root.palette: entry := Rectangle {
+                            height: 62px;
+                            property <bool> dragged-out;
+                            property <bool> kfocus: root.side-on(DrawerTab.widgets, 2 + i);
+                            changed kfocus => {
+                                if (self.kfocus) {
+                                    widgets-side.reveal(self.absolute-position.y, self.height);
+                                }
+                            }
+                            Rectangle {
+                                y: 3px;
+                                height: parent.height - 6px;
+                                accessible-role: button;
+                                accessible-label: p.title;
+                                accessible-description: p.description;
+                                accessible-item-selected: entry.kfocus;
+                                accessible-action-default => { root.add-widget(p.kind); }
+                                border-radius: Theme.radius-small;
+                                background: pt.pressed ? Theme.pressed : pt.has-hover || entry.kfocus ? Theme.hover : Theme.card-raised;
+                                border-width: entry.kfocus ? 2px : 0px;
+                                border-color: Theme.accent;
+                                HorizontalLayout {
+                                    padding: 10px;
+                                    spacing: 10px;
+                                    Rectangle {
+                                        width: 36px;
+                                        border-radius: min(self.height / 2, Theme.radius-small);
+                                        background: Theme.accent-soft;
+                                        Icon {
+                                            source: Icons.plus;
+                                            size: 18px;
+                                            tint: Theme.accent;
+                                        }
+                                    }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Text {
+                                            text: p.title;
+                                            color: Theme.text;
+                                            font-size: Theme.font-body;
+                                            font-weight: 600;
+                                        }
+                                        Muted {
+                                            text: p.description;
+                                        }
+                                    }
+                                }
+                                pt := TouchArea {
+                                    pointer-event(e) => {
+                                        if (e.kind == PointerEventKind.down) {
+                                            entry.dragged-out = false;
+                                        }
+                                        if (e.kind == PointerEventKind.up && root.drag-mode == DragMode.add) {
+                                            root.finish-drag(true);
+                                        }
+                                    }
+                                    moved => {
+                                        if (self.pressed && root.drag-mode == DragMode.none
+                                            && abs(self.mouse-x - self.pressed-x) + abs(self.mouse-y - self.pressed-y) > 8px) {
+                                            entry.dragged-out = true;
+                                            root.drag-kind = p.kind;
+                                            root.drag-title = p.title;
+                                            root.drag-w = p.w;
+                                            root.drag-h = p.h;
+                                            root.grab-dx = p.w * root.cell / 2;
+                                            root.grab-dy = p.h * root.cell / 2;
+                                            root.drag-ok = false;
+                                            root.drag-mode = DragMode.add;
+                                        }
+                                        if (root.drag-mode == DragMode.add) {
+                                            root.drag-px = self.absolute-position.x + self.mouse-x;
+                                            root.drag-py = self.absolute-position.y + self.mouse-y;
+                                        }
+                                    }
+                                    clicked => {
+                                        if (!entry.dragged-out) {
+                                            root.add-widget(p.kind);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if root.drawer-tab == DrawerTab.colors: colors-side := SideList {
+                    vertical-stretch: 1;
+                    content-height: look-list.preferred-height;
+                    look-list := VerticalLayout {
+                        width: parent.width;
+                        spacing: 6px;
+                        for t[i] in root.colorschemes: ChoiceCard {
+                            height: 56px;
+                            name: t.name;
+                            description: t.description;
+                            current: t.current;
+                            kfocus: root.side-on(DrawerTab.colors, i);
+                            revealed(y, h) => { colors-side.reveal(y, h); }
+                            clicked => { root.choose-colorscheme(t.name); }
+                            // The scheme in miniature: backdrop, a card, accent, text and status colors.
+                            Rectangle {
+                                border-radius: 8px;
+                                background: t.backdrop.with-alpha(1);
+                                border-width: 1px;
+                                border-color: Theme.border;
+                                Rectangle {
+                                    x: 6px;
+                                    y: 6px;
+                                    width: parent.width - 12px;
+                                    height: parent.height - 12px;
+                                    border-radius: 5px;
+                                    background: t.card.with-alpha(1);
+                                    for c[i] in [t.accent, t.good, t.bad]: Rectangle {
+                                        x: 5px + i * 11px;
+                                        y: 5px;
+                                        width: 8px;
+                                        height: 8px;
+                                        border-radius: 4px;
+                                        background: c;
+                                    }
+                                    Rectangle {
+                                        x: 5px;
+                                        y: parent.height - 8px;
+                                        width: parent.width - 10px;
+                                        height: 3px;
+                                        border-radius: 1.5px;
+                                        background: t.text;
+                                    }
+                                }
+                            }
+                        }
+                        TextButton {
+                            text: "Open the config folder";
+                            property <bool> kf: root.side-on(DrawerTab.colors, root.colorschemes.length);
+                            kfocus: self.kf;
+                            changed kf => {
+                                if (self.kf) {
+                                    colors-side.reveal(self.absolute-position.y, self.height);
+                                }
+                            }
+                            clicked => { root.open-themes-folder(); }
+                        }
+                    }
+                }
+                if root.drawer-tab == DrawerTab.widget: settings-side := SideList {
+                    vertical-stretch: 1;
+                    content-height: settings-list.preferred-height;
+                    settings-list := VerticalLayout {
+                        width: parent.width;
+                        spacing: 6px;
+                        for v[i] in root.setting-rows: SettingControl {
+                            kfocus: root.side-on(DrawerTab.widget, i);
+                            edit-tick: root.side-edit-tick;
+                            revealed(y, h) => { settings-side.reveal(y, h); }
                             kind: v.kind;
                             label: v.label;
                             value: v.value;
+                            on: v.on;
                             modified: v.changed;
                             can-dec: v.can-dec;
                             can-inc: v.can-inc;
-                            step(d) => { root.grid-step(v.index, d); }
-                            reset => { root.grid-auto(); }
-                        }
-                        SectionLabel {
-                            text: "Add";
-                            height: 28px;
-                        }
-                    }
-                    for p in root.palette: entry := Rectangle {
-                        height: 62px;
-                        property <bool> dragged-out;
-                        Rectangle {
-                            y: 3px;
-                            height: parent.height - 6px;
-                            border-radius: Theme.radius-small;
-                            background: pt.pressed ? Theme.pressed : pt.has-hover ? Theme.hover : Theme.card-raised;
-                            HorizontalLayout {
-                                padding: 10px;
-                                spacing: 10px;
-                                Rectangle {
-                                    width: 36px;
-                                    border-radius: min(self.height / 2, Theme.radius-small);
-                                    background: Theme.accent-soft;
-                                    Icon {
-                                        source: Icons.plus;
-                                        size: 18px;
-                                        tint: Theme.accent;
-                                    }
-                                }
-                                VerticalLayout {
-                                    alignment: center;
-                                    Text {
-                                        text: p.title;
-                                        color: Theme.text;
-                                        font-size: Theme.font-body;
-                                        font-weight: 600;
-                                    }
-                                    Muted {
-                                        text: p.description;
-                                    }
-                                }
-                            }
-                            pt := TouchArea {
-                                pointer-event(e) => {
-                                    if (e.kind == PointerEventKind.down) {
-                                        entry.dragged-out = false;
-                                    }
-                                    if (e.kind == PointerEventKind.up && root.drag-mode == DragMode.add) {
-                                        root.finish-drag(true);
-                                    }
-                                }
-                                moved => {
-                                    if (self.pressed && root.drag-mode == DragMode.none
-                                        && abs(self.mouse-x - self.pressed-x) + abs(self.mouse-y - self.pressed-y) > 8px) {
-                                        entry.dragged-out = true;
-                                        root.drag-kind = p.kind;
-                                        root.drag-title = p.title;
-                                        root.drag-w = p.w;
-                                        root.drag-h = p.h;
-                                        root.grab-dx = p.w * root.cell / 2;
-                                        root.grab-dy = p.h * root.cell / 2;
-                                        root.drag-ok = false;
-                                        root.drag-mode = DragMode.add;
-                                    }
-                                    if (root.drag-mode == DragMode.add) {
-                                        root.drag-px = self.absolute-position.x + self.mouse-x;
-                                        root.drag-py = self.absolute-position.y + self.mouse-y;
-                                    }
-                                }
-                                clicked => {
-                                    if (!entry.dragged-out) {
-                                        root.add-widget(p.kind);
-                                    }
-                                }
+                            placeholder: v.placeholder;
+                            step(d) => { root.setting-step(v.index, d); }
+                            reset => { root.setting-reset(v.index); }
+                            text-entered(text) => {
+                                root.setting-text(v.index, text);
+                                keys.focus();
                             }
                         }
                     }
                 }
-            }
-            if root.drawer-tab == DrawerTab.colors: Flickable {
-                vertical-stretch: 1;
-                content-height: look-list.preferred-height;
-                look-list := VerticalLayout {
-                    width: parent.width;
-                    spacing: 6px;
-                    for t in root.colorschemes: ChoiceCard {
-                        height: 56px;
-                        name: t.name;
-                        description: t.description;
-                        current: t.current;
-                        clicked => { root.choose-colorscheme(t.name); }
-                        // The scheme in miniature: backdrop, a card, accent, text and status colors.
-                        Rectangle {
-                            border-radius: 8px;
-                            background: t.backdrop.with-alpha(1);
-                            border-width: 1px;
-                            border-color: Theme.border;
+                if root.drawer-tab == DrawerTab.style: style-side := SideList {
+                    vertical-stretch: 1;
+                    content-height: style-list.preferred-height;
+                    style-list := VerticalLayout {
+                        width: parent.width;
+                        spacing: 6px;
+                        SectionLabel {
+                            text: "Preset";
+                            height: 22px;
+                        }
+                        for st[i] in root.styles: ChoiceCard {
+                            height: 50px;
+                            kfocus: root.side-on(DrawerTab.style, i);
+                            revealed(y, h) => { style-side.reveal(y, h); }
+                            name: st.name;
+                            description: st.current && root.style-customized ? "adjusted below"
+                                : st.description != "" ? st.description : (st.motion == 0 ? "no animations" : "");
+                            current: st.current;
+                            clicked => { root.choose-style(st.name); }
+                            // Two cards with the style's corner radius and gap, scaled down. They sit
+                            // in one rectangle that fills the preview slot: `parent` of the slot's
+                            // direct children would be the whole card. They are drawn in the text
+                            // color, which every color scheme keeps legible on the sidebar; the
+                            // scheme's own card and border colors are too close to it to show the
+                            // shapes.
                             Rectangle {
-                                x: 6px;
-                                y: 6px;
-                                width: parent.width - 12px;
-                                height: parent.height - 12px;
-                                border-radius: 5px;
-                                background: t.card.with-alpha(1);
-                                for c[i] in [t.accent, t.good, t.bad]: Rectangle {
-                                    x: 5px + i * 11px;
-                                    y: 5px;
-                                    width: 8px;
-                                    height: 8px;
-                                    border-radius: 4px;
-                                    background: c;
-                                }
-                                Rectangle {
-                                    x: 5px;
-                                    y: parent.height - 8px;
-                                    width: parent.width - 10px;
-                                    height: 3px;
-                                    border-radius: 1.5px;
-                                    background: t.text;
+                                for i in 2: Rectangle {
+                                    x: i * (parent.width - self.width);
+                                    width: (parent.width - st.gap * 0.6px) / 2;
+                                    border-radius: min(self.width / 2, st.radius * 0.45px);
+                                    background: Theme.text.with-alpha(0.16);
+                                    border-width: 1px;
+                                    border-color: Theme.text.with-alpha(0.55);
                                 }
                             }
                         }
-                    }
-                    TextButton {
-                        text: "Open the config folder";
-                        clicked => { root.open-themes-folder(); }
-                    }
-                }
-            }
-            if root.drawer-tab == DrawerTab.widget: Flickable {
-                vertical-stretch: 1;
-                content-height: settings-list.preferred-height;
-                settings-list := VerticalLayout {
-                    width: parent.width;
-                    spacing: 6px;
-                    for v in root.setting-rows: SettingControl {
-                        kind: v.kind;
-                        label: v.label;
-                        value: v.value;
-                        on: v.on;
-                        modified: v.changed;
-                        can-dec: v.can-dec;
-                        can-inc: v.can-inc;
-                        placeholder: v.placeholder;
-                        step(d) => { root.setting-step(v.index, d); }
-                        reset => { root.setting-reset(v.index); }
-                        text-entered(text) => {
-                            root.setting-text(v.index, text);
-                            keys.focus();
-                        }
-                    }
-                }
-            }
-            if root.drawer-tab == DrawerTab.style: Flickable {
-                vertical-stretch: 1;
-                content-height: style-list.preferred-height;
-                style-list := VerticalLayout {
-                    width: parent.width;
-                    spacing: 6px;
-                    SectionLabel {
-                        text: "Preset";
-                        height: 22px;
-                    }
-                    for st in root.styles: ChoiceCard {
-                        height: 50px;
-                        name: st.name;
-                        description: st.current && root.style-customized ? "adjusted below"
-                            : st.description != "" ? st.description : (st.motion == 0 ? "no animations" : "");
-                        current: st.current;
-                        clicked => { root.choose-style(st.name); }
-                        // Two cards with the style's corner radius and gap, scaled down. They sit
-                        // in one rectangle that fills the preview slot: `parent` of the slot's
-                        // direct children would be the whole card. They are drawn in the text
-                        // color, which every color scheme keeps legible on the sidebar; the
-                        // scheme's own card and border colors are too close to it to show the
-                        // shapes.
-                        Rectangle {
-                            for i in 2: Rectangle {
-                                x: i * (parent.width - self.width);
-                                width: (parent.width - st.gap * 0.6px) / 2;
-                                border-radius: min(self.width / 2, st.radius * 0.45px);
-                                background: Theme.text.with-alpha(0.16);
-                                border-width: 1px;
-                                border-color: Theme.text.with-alpha(0.55);
+                        HorizontalLayout {
+                            height: 34px;
+                            SectionLabel {
+                                text: "Adjust";
+                                horizontal-stretch: 1;
+                            }
+                            if root.style-customized: TextButton {
+                                y: parent.height - self.height;
+                                text: "Reset all";
+                                accessible-label: "Reset all style adjustments";
+                                icon: Icons.reset;
+                                has-icon: true;
+                                kfocus: root.side-on(DrawerTab.style, root.styles.length);
+                                clicked => { root.style-reset-all(); }
                             }
                         }
-                    }
-                    HorizontalLayout {
-                        height: 34px;
-                        SectionLabel {
-                            text: "Adjust";
-                            horizontal-stretch: 1;
+                        for v[i] in root.style-rows: SettingControl {
+                            kfocus: root.side-on(DrawerTab.style, root.k-adjust + i);
+                            revealed(y, h) => { style-side.reveal(y, h); }
+                            kind: v.kind;
+                            label: v.label;
+                            value: v.value;
+                            on: v.on;
+                            modified: v.overridden;
+                            can-dec: v.can-dec;
+                            can-inc: v.can-inc;
+                            step(d) => { root.style-step(v.key, d); }
+                            reset => { root.style-reset(v.key); }
                         }
-                        if root.style-customized: TextButton {
-                            y: parent.height - self.height;
-                            text: "Reset all";
-                            icon: Icons.reset;
-                            has-icon: true;
-                            clicked => { root.style-reset-all(); }
+                        TextButton {
+                            text: "Open the config folder";
+                            property <bool> kf: root.side-on(DrawerTab.style, root.k-adjust + root.style-rows.length);
+                            kfocus: self.kf;
+                            changed kf => {
+                                if (self.kf) {
+                                    style-side.reveal(self.absolute-position.y, self.height);
+                                }
+                            }
+                            clicked => { root.open-themes-folder(); }
                         }
-                    }
-                    for v in root.style-rows: SettingControl {
-                        kind: v.kind;
-                        label: v.label;
-                        value: v.value;
-                        on: v.on;
-                        modified: v.overridden;
-                        can-dec: v.can-dec;
-                        can-inc: v.can-inc;
-                        step(d) => { root.style-step(v.key, d); }
-                        reset => { root.style-reset(v.key); }
-                    }
-                    TextButton {
-                        text: "Open the config folder";
-                        clicked => { root.open-themes-folder(); }
                     }
                 }
             }
         }
-    }
 
-    // The widget being dragged in from the drawer, under the pointer.
-    if root.drag-mode == DragMode.add: Rectangle {
-        x: root.drag-px - self.width / 2;
-        y: root.drag-py - self.height / 2;
-        width: max(120px, min(root.drag-w * root.cell, 260px));
-        height: 48px;
-        border-radius: min(self.height / 2, Theme.radius-small + 4px);
-        background: Theme.card-raised;
-        border-width: 1px;
-        border-color: root.drag-ok ? Theme.good : Theme.accent;
-        drop-shadow-blur: 20px;
-        drop-shadow-color: Theme.shadow;
-        Text {
-            text: root.drag-title + " · " + root.drag-w + "×" + root.drag-h;
-            color: Theme.text;
-            font-size: Theme.font-body;
+        // The widget being dragged in from the drawer, under the pointer.
+        if root.drag-mode == DragMode.add: Rectangle {
+            x: root.drag-px - self.width / 2;
+            y: root.drag-py - self.height / 2;
+            width: max(120px, min(root.drag-w * root.cell, 260px));
+            height: 48px;
+            border-radius: min(self.height / 2, Theme.radius-small + 4px);
+            background: Theme.card-raised;
+            border-width: 1px;
+            border-color: root.drag-ok ? Theme.good : Theme.accent;
+            drop-shadow-blur: 20px;
+            drop-shadow-color: Theme.shadow;
+            Text {
+                text: root.drag-title + " · " + root.drag-w + "×" + root.drag-h;
+                color: Theme.text;
+                font-size: Theme.font-body;
+            }
         }
-    }
 
-    // A standalone app: the card is the window, round widgets sit centered in it.
-    if root.solo: Rectangle {
-        property <bool> round: root.solo-inst.shape == Shape.round;
-        property <length> side: min(self.width, self.height);
-        background: Theme.card.transparentize(1 - Theme.card-opacity);
-        WidgetBody {
-            x: parent.round ? (parent.width - parent.side) / 2 : 0;
-            y: parent.round ? (parent.height - parent.side) / 2 : 0;
-            width: parent.round ? parent.side : parent.width;
-            height: parent.round ? parent.side : parent.height;
-            inst: root.solo-inst;
-            round: parent.round;
+        // A standalone app: the card is the window, round widgets sit centered in it.
+        if root.solo: Rectangle {
+            property <bool> round: root.solo-inst.shape == Shape.round;
+            property <length> side: min(self.width, self.height);
+            background: Theme.card.transparentize(1 - Theme.card-opacity);
+            WidgetBody {
+                x: parent.round ? (parent.width - parent.side) / 2 : 0;
+                y: parent.round ? (parent.height - parent.side) / 2 : 0;
+                width: parent.round ? parent.side : parent.width;
+                height: parent.round ? parent.side : parent.height;
+                inst: root.solo-inst;
+                round: parent.round;
+            }
         }
-    }
 
-    if Tray.menu-open: TrayMenu {
-        width: root.width;
-        height: root.height;
-    }
+        if Tray.menu-open: TrayMenu {
+            width: root.width;
+            height: root.height;
+        }
 
-    Rectangle {
-        opacity: root.toast-shown ? 1 : 0;
-        animate opacity { duration: 160ms * Theme.motion; }
-        visible: self.opacity > 0.01;
-        y: root.height - 70px + (1 - self.opacity) * 16px;
-        x: (root.width - self.width) / 2;
-        width: toast-text.preferred-width + 32px;
-        height: 38px;
-        border-radius: min(self.height / 2, Theme.radius-small + 4px);
-        background: Theme.panel;
-        border-width: 1px;
-        border-color: Theme.border;
-        toast-text := Text {
-            text: root.toast;
-            color: Theme.text;
-            font-size: Theme.font-body;
+        Rectangle {
+            opacity: root.toast-shown ? 1 : 0;
+            animate opacity { duration: 160ms * Theme.motion; }
+            visible: self.opacity > 0.01;
+            y: root.height - 70px + (1 - self.opacity) * 16px;
+            x: (root.width - self.width) / 2;
+            width: toast-text.preferred-width + 32px;
+            height: 38px;
+            border-radius: min(self.height / 2, Theme.radius-small + 4px);
+            background: Theme.panel;
+            border-width: 1px;
+            border-color: Theme.border;
+            toast-text := Text {
+                accessible-live-region: polite;
+                text: root.toast;
+                color: Theme.text;
+                font-size: Theme.font-body;
+            }
         }
     }
 }

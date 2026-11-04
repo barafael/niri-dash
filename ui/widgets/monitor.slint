@@ -26,6 +26,8 @@ export component MemoryWidget inherits Rectangle {
     in property <bool> round;
     in property <WidgetOpts> opts;
     if root.round: RoundGauge {
+        label: "Memory";
+        inner-label: "Swap";
         value: Perf.mem;
         inner: Perf.swap;
         tint: Theme.good;
@@ -53,6 +55,8 @@ export component MemoryWidget inherits Rectangle {
         Graph {
             vertical-stretch: 1;
             min-height: 30px;
+            accessible-role: image;
+            accessible-label: "Memory use over time";
             values: Perf.mem-history;
             capacity: root.opts.history;
             tint: Theme.good;
@@ -78,6 +82,7 @@ export component DisksWidget inherits Rectangle {
     in property <bool> round;
     in property <WidgetOpts> opts;
     if root.round: RoundGauge {
+        label: "Root disk used";
         value: Perf.root-used;
         tint: Theme.accent;
         big: Math.round(Perf.root-used * 100) + "%";
@@ -101,12 +106,15 @@ export component DisksWidget inherits Rectangle {
                 value: d.text;
             }
             Bar {
+                accessible-label: d.mount + " used";
                 value: d.used;
             }
         }
         if root.height > 180px: Graph {
             vertical-stretch: 1;
             min-height: 24px;
+            accessible-role: image;
+            accessible-label: "Disk activity over time";
             values: Perf.disk-history;
             tint: Theme.warn;
         }
@@ -121,6 +129,8 @@ export component NetworkWidget inherits Rectangle {
     in property <WidgetOpts> opts;
     // Both rings are relative to the recent peak, so a full one is nothing to warn about.
     if root.round: RoundGauge {
+        label: "Download compared to the recent peak";
+        inner-label: "Upload compared to the recent peak";
         value: Perf.net-rx-frac;
         inner: Perf.net-tx-frac;
         tint: Theme.accent;
@@ -167,11 +177,15 @@ export component NetworkWidget inherits Rectangle {
             vertical-stretch: 1;
             min-height: 24px;
             Graph {
+                accessible-role: image;
+                accessible-label: "Download over time";
                 values: Perf.net-rx-history;
                 capacity: root.opts.history;
                 tint: Theme.accent;
             }
             Graph {
+                accessible-role: image;
+                accessible-label: "Upload over time";
                 values: Perf.net-tx-history;
                 capacity: root.opts.history;
                 tint: Theme.warn;
@@ -192,6 +206,8 @@ export component GpuWidget inherits Rectangle {
         text: "No GPU with readable load (amdgpu)";
     }
     if Perf.has-gpu && root.round: RoundGauge {
+        label: "GPU load";
+        inner-label: "Video memory";
         value: Perf.gpu-busy;
         inner: Perf.gpu-vram;
         tint: Theme.accent;
@@ -222,6 +238,8 @@ export component GpuWidget inherits Rectangle {
         if root.height > 110px: Graph {
             vertical-stretch: 1;
             min-height: 24px;
+            accessible-role: image;
+            accessible-label: "GPU load over time";
             values: Perf.gpu-history;
             capacity: root.opts.history;
             tint: Theme.accent;
@@ -231,6 +249,7 @@ export component GpuWidget inherits Rectangle {
             value: Perf.gpu-vram-text;
         }
         Bar {
+            accessible-label: "Video memory";
             value: Perf.gpu-vram;
             tint: Theme.warn;
         }
@@ -240,6 +259,7 @@ export component GpuWidget inherits Rectangle {
 export component ClaudeUsageWidget inherits Rectangle {
     in property <bool> round;
     if root.round: RoundGauge {
+        label: "5-hour window";
         value: ClaudeUsage.window-progress;
         tint: Theme.accent;
         big: ClaudeUsage.window-active ? ClaudeUsage.window-count : "idle";
@@ -284,6 +304,7 @@ export component ClaudeUsageWidget inherits Rectangle {
             }
         }
         Bar {
+            accessible-label: "5-hour window";
             value: ClaudeUsage.window-progress;
         }
         if ClaudeUsage.window-active: Stat {
@@ -309,6 +330,8 @@ export component ClaudeUsageWidget inherits Rectangle {
         if root.height > 160px: Graph {
             vertical-stretch: 1;
             min-height: 24px;
+            accessible-role: image;
+            accessible-label: "Claude tokens per hour";
             values: ClaudeUsage.hourly;
             capacity: 24;
             tint: Theme.accent;

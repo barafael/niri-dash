@@ -5,9 +5,10 @@ use super::enums::outfit_to_ui;
 use super::{App, set_if_changed};
 use crate::Dash;
 use crate::layout::Kind;
-use crate::sources::{self, Ctx, Msg};
+use niri_dash_system::{Tell, mascot};
 use slint::{ComponentHandle, ModelRc, Timer, TimerMode, VecModel};
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -61,7 +62,9 @@ impl App {
     pub(super) fn mascot_todo(&self, todo: Vec<crate::mascots::Todo>) {
         for t in todo {
             if let crate::mascots::Todo::Run { id, command, name } = t {
-                run_mascot_command(&self.ctx, id, command, name);
+                self.tx
+                    .mascot
+                    .tell(mascot::Command::Run { id, name, command });
             }
         }
         self.push_mascots();
@@ -105,11 +108,10 @@ impl App {
         }
     }
 
-    pub(super) fn mascot_answer(
-        &self,
-        id: u32,
-        out: Option<(String, Option<crate::mascots::Outfit>)>,
-    ) {
+    /// What a mascot widget's command printed (None: it failed); a command that fails, hangs or
+    /// prints nothing gets a remark of the mascot's own.
+    pub(super) fn mascot_output(&self, id: u32, stdout: Option<String>) {
+        let out = stdout.and_then(|s| crate::mascots::from_command_output(&s));
         self.mascots
             .board
             .borrow_mut()
@@ -118,27 +120,48 @@ impl App {
     }
 }
 
-/// Run a mascot widget's `command` (with `NIRI_DASH_MASCOT` set to its name) and send back what
-/// it printed. A command that fails, hangs or prints nothing gets a remark of the mascot's own.
-fn run_mascot_command(ctx: &Ctx, id: u32, command: String, name: &'static str) {
-    let c = ctx.clone();
-    ctx.spawn(async move {
-        let env = [("NIRI_DASH_MASCOT", name)];
-        let timeout = Some(Duration::from_secs(10));
-        let out = match sources::run_with("sh", &["-c", &command], &env, timeout).await {
-            Ok(stdout) => crate::mascots::from_command_output(&stdout),
-            Err(e) => {
-                log::warn!("mascot command {command:?}: {e}");
-                None
-            }
-        };
-        c.send(Msg::MascotAnswer(id, out));
-    });
-}
-
 pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     ui.global::<crate::Mascots>()
         .set_lines(ModelRc::from(app.mascots.lines.clone()));
+    // The cows named so far. One that can't be loaded isn't kept, so installing cowsay helps
+    // without a restart; until then it is our own cow.
+    let cows: RefCell<HashMap<String, Rc<crate::cowfile::Cow>>> = Default::default();
+    let cow = Rc::new(move |name: &str| -> Rc<crate::cowfile::Cow> {
+        if let Some(cow) = cows.borrow().get(name) {
+            return cow.clone();
+        }
+        match crate::cowfile::load(name) {
+            Ok(cow) => {
+                let cow = Rc::new(cow);
+                cows.borrow_mut().insert(name.to_string(), cow.clone());
+                cow
+            }
+            Err(why) => {
+                log::warn!("cow: {why}");
+                Rc::new(crate::cowfile::Cow::own())
+            }
+        }
+    });
+    // Asked once, and only if a cow shows up.
+    let font = std::cell::OnceCell::<slint::SharedString>::new();
+    ui.global::<crate::Mascots>().on_cow_font(move || {
+        font.get_or_init(|| crate::cowfile::monospace_family().into())
+            .clone()
+    });
+    let c = cow.clone();
+    ui.global::<crate::Mascots>()
+        .on_cow_art(move |name, eyes, tongue| c(&name).draw(&eyes, &tongue).into());
+    ui.global::<crate::Mascots>().on_cow_size(move |name| {
+        let (width, lines) = cow(&name).size();
+        crate::CowSize {
+            width: width as i32,
+            lines: lines as i32,
+        }
+    });
+    ui.global::<crate::Mascots>()
+        .on_cow_bubble(|text, cols, rows| {
+            crate::mascots::cow_bubble(&text, cols.max(0) as usize, rows.max(0) as usize).into()
+        });
     let a = Rc::downgrade(app);
     app.mascots
         .timer

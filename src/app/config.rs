@@ -1,8 +1,9 @@
 //! config.kdl: saving edits, and picking up changes made to it (or the theme files) by hand.
 
-use super::App;
+use super::{App, Input};
 use crate::layout::Layout;
-use crate::sources::{Ctx, Msg};
+use niri_dash_system::{Tell, weather};
+use smithay_client_toolkit::reexports::calloop::channel::Sender;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -20,8 +21,8 @@ impl App {
 
     pub(super) fn apply_settings(&self) {
         let weather = self.layout.borrow().weather_config(self.locale.us);
-        self.apply_look(self.ctx.visible());
-        self.weather.configure(weather);
+        self.apply_look(self.visible.get());
+        self.tx.weather.tell(weather::Command::Configure(weather));
         self.apply_grid();
     }
 
@@ -32,7 +33,7 @@ impl App {
         };
         if text == *self.last_written.borrow() {
             // Our own write; only a color scheme or style file may have changed.
-            self.apply_look(self.ctx.visible());
+            self.apply_look(self.visible.get());
             return;
         }
         match Layout::parse(&text) {
@@ -66,7 +67,7 @@ impl App {
 /// Watch config.kdl and the theme files: inotify on the directories holding them (after following
 /// symlinks, so a symlinked dotfile counts as its target). The list of files changes with the
 /// theme, which goes through config.kdl, so the watches are re-synced after every event.
-pub(super) fn watch_config(paths: Arc<Mutex<Vec<PathBuf>>>, ctx: Ctx) {
+pub(super) fn watch_config(paths: Arc<Mutex<Vec<PathBuf>>>, input: Sender<Input>) {
     use notify::{RecursiveMode, Watcher};
     use std::collections::HashSet;
     fn resolve(p: &std::path::Path) -> PathBuf {
@@ -121,7 +122,7 @@ pub(super) fn watch_config(paths: Arc<Mutex<Vec<PathBuf>>>, ctx: Ctx) {
                     changed |= hits(ev);
                 }
                 if changed {
-                    ctx.send(Msg::ConfigChanged);
+                    let _ = input.send(Input::ConfigChanged);
                 }
             }
         })

@@ -1,6 +1,6 @@
 //! The mascots: Schraubi the screw, Zolli the folding rule and Verschnitti the offcut, from
-//! osb-verlegeplan (gitlab.com/felintusun/osb-verlegeplan). Each lives in a widget and talks in a
-//! speech bubble.
+//! osb-verlegeplan (gitlab.com/felintusun/osb-verlegeplan), and a cow in the manner of `cowsay`.
+//! Each lives in a widget and talks in a speech bubble.
 //!
 //! What they say comes from, in order:
 //! - lines anyone sends with `niri-dash say` (the control socket's `say {json}`), queued per
@@ -27,6 +27,7 @@ pub enum Character {
     Schraubi,
     Zolli,
     Verschnitti,
+    Cow,
 }
 
 impl Character {
@@ -379,12 +380,139 @@ const VERSCHNITTI: &[Remark] = &[
     ),
 ];
 
+const COW: &[Remark] = &[
+    r(
+        0,
+        Plain,
+        "I used to live in a terminal. Then someone gave me a dashboard. The grass isn't greener, but the pixels are.",
+    ),
+    r(
+        0,
+        Plain,
+        "Moo. That's the whole message. You'd be surprised how many meetings could have been this.",
+    ),
+    r(
+        0,
+        Vest,
+        "Chew on it twice before you push. I have four stomachs and I still don't rush a merge.",
+    ),
+    r(
+        0,
+        Plain,
+        "Pipe me anything. I'll say it with the same expression either way.",
+    ),
+    r(
+        1,
+        Beard,
+        "If a cow says something in a terminal and nobody reads the scrollback, was it logged?",
+    ),
+    r(
+        1,
+        Plain,
+        "Your uptime is impressive. So is standing in one field for a decade, and nobody claps for that either.",
+    ),
+    r(
+        1,
+        Helmet,
+        "Careful with that rm -rf. Fences exist for a reason, and I've seen what's on the other side.",
+    ),
+    r(
+        2,
+        Plain,
+        "You've rewritten your dotfiles again. I've been eating the same grass for years and I look great.",
+    ),
+    r(
+        2,
+        Plain,
+        "Another side project? Lovely. Put it in the pasture with the others.",
+    ),
+    r(
+        2,
+        Beard,
+        "All software is ruminating: it comes back up, you chew it again, and you call it a refactor.",
+    ),
+    r(
+        3,
+        Plain,
+        "That commit message said \"small fix\". I've seen smaller barns.",
+    ),
+    r(
+        3,
+        Plain,
+        "I can see your browser tabs from here. That's not a workflow, that's a herd.",
+    ),
+    r(
+        4,
+        Plain,
+        "You asked an AI, a forum and a cow. Only one of us admits it just goes moo.",
+    ),
+    r(
+        4,
+        Plain,
+        "Ship it on a Friday. Go on. I could use the entertainment; the view here is one field.",
+    ),
+];
+
 pub fn remarks(c: Character) -> &'static [Remark] {
     match c {
         Character::Schraubi => SCHRAUBI,
         Character::Zolli => ZOLLI,
         Character::Verschnitti => VERSCHNITTI,
+        Character::Cow => COW,
     }
+}
+
+/// `text` in a `cowsay` speech bubble: wrapped to fit `cols` columns (borders included), at most
+/// `rows` lines of text, cut short with an ellipsis if it takes more.
+pub fn cow_bubble(text: &str, cols: usize, rows: usize) -> String {
+    let width = cols.saturating_sub(4).max(4);
+    let mut lines: Vec<String> = Vec::new();
+    for paragraph in text.lines() {
+        let mut line = String::new();
+        let mut len = 0;
+        for word in paragraph.split_whitespace() {
+            let mut word: Vec<char> = word.chars().collect();
+            if len > 0 && len + 1 + word.len() > width {
+                lines.push(std::mem::take(&mut line));
+                len = 0;
+            }
+            // Longer than a whole line: broken up.
+            while word.len() > width {
+                let rest = word.split_off(width);
+                lines.push(word.iter().collect());
+                word = rest;
+            }
+            if len > 0 {
+                line.push(' ');
+                len += 1;
+            }
+            line.extend(word.iter());
+            len += word.len();
+        }
+        lines.push(line);
+    }
+    let rows = rows.max(1);
+    if lines.len() > rows {
+        lines.truncate(rows);
+        let last = &mut lines[rows - 1];
+        let keep: String = last.chars().take(width.saturating_sub(1)).collect();
+        *last = format!("{keep}\u{2026}");
+    }
+    let wide = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+    let n = lines.len();
+    let mut out = format!(" {}\n", "_".repeat(wide + 2));
+    for (i, line) in lines.iter().enumerate() {
+        let (open, close) = match (n, i) {
+            (1, _) => ('<', '>'),
+            (_, 0) => ('/', '\\'),
+            (_, i) if i == n - 1 => ('\\', '/'),
+            _ => ('|', '|'),
+        };
+        let pad = wide - line.chars().count();
+        out.push_str(&format!("{open} {line}{} {close}\n", " ".repeat(pad)));
+    }
+    out.push_str(&format!(" {}", "-".repeat(wide + 2)));
+    out
 }
 
 /// A remark for the time it is, if this mascot has one for it.
@@ -406,6 +534,10 @@ pub fn timely(c: Character, now: chrono::DateTime<Local>) -> Option<(String, Out
             Character::Verschnitti => (
                 format!("It's {time}. What you write now is tomorrow's offcut."),
                 Beard,
+            ),
+            Character::Cow => (
+                format!("It's {time}. Even the night shift in the barn has gone to sleep."),
+                Plain,
             ),
         },
         Character::Verschnitti if day == Weekday::Fri && h >= 14 => (
@@ -804,6 +936,27 @@ impl Board {
 mod tests {
     use super::*;
     use strum::IntoEnumIterator;
+
+    #[test]
+    fn the_cows_bubble_is_shaped_like_cowsays() {
+        assert_eq!(cow_bubble("moo", 40, 5), " _____\n< moo >\n -----");
+        assert_eq!(
+            cow_bubble("one two three four", 11, 5),
+            " _________\n/ one two \\\n| three   |\n\\ four    /\n ---------"
+        );
+    }
+
+    #[test]
+    fn the_cows_bubble_stays_inside_its_box() {
+        let long = "x".repeat(50);
+        for (cols, rows) in [(10, 2), (24, 3), (5, 1), (0, 0)] {
+            let b = cow_bubble(&format!("a few words and {long} too\nsecond"), cols, rows);
+            assert!(b.lines().count() <= rows.max(1) + 2, "{b}");
+            let widest = b.lines().map(|l| l.chars().count()).max().unwrap();
+            assert!(widest <= cols.max(8), "{cols}: {b}");
+        }
+        assert!(cow_bubble(&"word ".repeat(40), 20, 2).contains('\u{2026}'));
+    }
 
     #[test]
     fn everyone_has_something_to_say_even_when_calm() {

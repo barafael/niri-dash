@@ -2,8 +2,8 @@
 //! `x_from_ui`.
 
 use crate::layout::{self, Kind};
-use crate::sources::{self, power, tray};
 use crate::{WidgetKind, theme};
+use niri_dash_system::{power, tray, weather};
 use smithay_client_toolkit::seat::pointer::CursorIcon;
 use strum::IntoEnumIterator;
 
@@ -69,7 +69,10 @@ pub(super) fn cursor_from_ui(p: crate::PointerShape) -> CursorIcon {
     match p {
         crate::PointerShape::Normal => CursorIcon::Default,
         crate::PointerShape::Move => CursorIcon::Move,
-        crate::PointerShape::Resize => CursorIcon::NwseResize,
+        crate::PointerShape::ResizeEw => CursorIcon::EwResize,
+        crate::PointerShape::ResizeNs => CursorIcon::NsResize,
+        crate::PointerShape::ResizeNwse => CursorIcon::NwseResize,
+        crate::PointerShape::ResizeNesw => CursorIcon::NeswResize,
     }
 }
 
@@ -129,8 +132,8 @@ pub(super) fn profile_from_ui(p: crate::PowerProfile) -> power::Profile {
     }
 }
 
-pub(super) fn weather_icon_to_ui(i: sources::weather::Icon) -> crate::WeatherIcon {
-    use sources::weather::Icon;
+pub(super) fn weather_icon_to_ui(i: weather::Icon) -> crate::WeatherIcon {
+    use weather::Icon;
     match i {
         Icon::Sun => crate::WeatherIcon::Sun,
         Icon::Moon => crate::WeatherIcon::Moon,
@@ -150,6 +153,7 @@ pub(super) fn character_to_ui(c: crate::mascots::Character) -> crate::Character 
         C::Schraubi => crate::Character::Schraubi,
         C::Zolli => crate::Character::Zolli,
         C::Verschnitti => crate::Character::Verschnitti,
+        C::Cow => crate::Character::Cow,
     }
 }
 
@@ -166,8 +170,8 @@ pub(super) fn outfit_to_ui(o: crate::mascots::Outfit) -> crate::Outfit {
     }
 }
 
-pub(super) fn device_kind_to_ui(k: sources::power::DeviceKind) -> crate::DeviceKind {
-    use crate::sources::power::DeviceKind as K;
+pub(super) fn device_kind_to_ui(k: power::DeviceKind) -> crate::DeviceKind {
+    use power::DeviceKind as K;
     match k {
         K::Mouse => crate::DeviceKind::Mouse,
         K::Keyboard => crate::DeviceKind::Keyboard,

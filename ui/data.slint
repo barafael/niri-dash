@@ -7,9 +7,9 @@ export enum Shape { rect, round }
 // The sidebar's sections.
 export enum DrawerTab { widgets, colors, style, widget }
 // The pointer shape the platform layer should show.
-export enum PointerShape { normal, move, resize }
+export enum PointerShape { normal, move, resize-ew, resize-ns, resize-nwse, resize-nesw }
 // The mascots (src/mascots.rs) and what they wear for a line.
-export enum Character { schraubi, zolli, verschnitti }
+export enum Character { schraubi, zolli, verschnitti, cow }
 export enum Outfit { plain, helmet, vest, beard, shades, tophat, party }
 
 // Per-widget settings (Rust fills in every field, defaults included). Each widget reads the ones
@@ -36,20 +36,29 @@ export struct WidgetOpts {
     confirm: bool,
     // Mascot.
     character: Character,
+    cowfile: string,
 }
 
 export struct WidgetInst {
     id: int,
     kind: WidgetKind,
+    // Its name as the palette shows it ("Wi-Fi"), for screen readers.
+    title: string,
     shape: Shape,
     col: int,
     row: int,
     w: int,
     h: int,
+    // The smallest it can be resized to.
+    min-w: int,
+    min-h: int,
     // Whether this kind of widget has a round version.
     can-round: bool,
     has-settings: bool,
     opts: WidgetOpts,
+    // Its label for keyboard navigation (`f`), and that split into the first letter and the rest.
+    // Its label for keyboard navigation (the start of its name).
+    hint: string,
 }
 
 export struct PaletteItem {
@@ -59,6 +68,35 @@ export struct PaletteItem {
     // Default size in cells.
     w: int,
     h: int,
+}
+
+// A hint label, letter by letter (so the part typed can be drawn dimmed).
+export struct HintChars {
+    chars: [string],
+}
+
+// Keyboard navigation. `f` shows a label on every widget (hints); typing one enters that widget
+// (widget), whose controls j/k/h/l/Enter then work.
+export enum NavMode { off, hints, widget }
+export global Nav {
+    in-out property <NavMode> mode;
+    // The widget entered (0 = none).
+    in-out property <int> active-id;
+    // The widget blown up in the middle of the dashboard with `e` (0 = none); only while entered.
+    in-out property <int> expanded-id;
+    // Ctrl+R: the entered widget's size changes with h/j/k/l (smaller) and H/J/K/L (bigger).
+    in-out property <bool> sizing;
+    // Each widget's label (in the order of the dashboard's widgets), letter by letter.
+    in property <[HintChars]> hint-chars;
+    // The part of a two-letter label typed so far.
+    in-out property <string> typed;
+    // Bumped whenever the entered widget should take the keyboard.
+    in-out property <int> tick;
+    // The widget whose label is the text: its id, 0 while it is still the start of a label, -1
+    // when it matches none.
+    callback pick(string) -> int;
+    // The widget next to one, in a direction (0..3 = h, j, k, l); 0 if there is none.
+    callback neighbor(int, int) -> int;
 }
 
 // Called by widgets that act on something outside the dashboard (focus a window, open a tray
@@ -105,6 +143,8 @@ export struct CalDay {
     day: int,
     in-month: bool,
     today: bool,
+    // Under the keyboard cursor (shown while the calendar is entered).
+    selected: bool,
 }
 
 export global Calendar {
@@ -118,7 +158,10 @@ export global Calendar {
     in property <[CalDay]> days-sun;
     in property <[int]> weeks-sun;
     in property <bool> showing-current: true;
+    // Show the month d months on (0: back to this one). The keyboard cursor goes along.
     callback shift(int);
+    // Move the keyboard cursor by d days, turning the month as it leaves the one shown.
+    callback move-day(int);
 }
 
 export struct NameValue {
@@ -554,6 +597,8 @@ export global Tray {
     in property <[MenuEntry]> menu;
     in property <length> menu-x;
     in property <length> menu-y;
+    // The entry under the keyboard cursor of a menu opened from the keyboard; -1: none.
+    in-out property <int> menu-cursor: -1;
     callback activate(string, length, length);
     callback open-menu(string, length, length);
     callback menu-activate(int);
@@ -644,12 +689,25 @@ export struct MascotLine {
     queued: int,
 }
 
+// A cow's drawing, in columns and lines.
+export struct CowSize {
+    width: int,
+    lines: int,
+}
+
 export global Mascots {
     in property <[MascotLine]> lines;
     // The dashboard is up: blink and look around only then.
     in property <bool> awake;
     // Clicked: the next line (and the sent one goes away).
     callback next(int);
+    // A line in the cow's ASCII speech bubble, for so many columns and lines of text.
+    pure callback cow-bubble(string, int, int) -> string;
+    // The drawing of the cow a `cowfile` setting names, with these eyes and tongue, and its size.
+    pure callback cow-art(string, string, string) -> string;
+    pure callback cow-size(string) -> CowSize;
+    // The font family cows are drawn in.
+    pure callback cow-font() -> string;
 }
 
 export struct LayoutItem {
@@ -740,6 +798,9 @@ export struct DriveVolume {
     mount: string,
     mounted: bool,
     locked: bool,
+    // Its place among all drives' volumes (`Drives.volumes`), and its drive's path.
+    index: int,
+    drive: string,
 }
 
 export struct RemovableDrive {
@@ -752,6 +813,8 @@ export struct RemovableDrive {
 export global Drives {
     in property <bool> available;
     in property <[RemovableDrive]> drives;
+    // Every drive's volumes in one list, in order (for the keyboard cursor).
+    in property <[DriveVolume]> volumes;
     callback mount(string);
     callback unmount(string);
     callback eject(string);

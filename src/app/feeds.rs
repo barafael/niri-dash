@@ -3,20 +3,21 @@
 
 use super::enums::{device_kind_to_ui, toggle_to_ui, weather_icon_to_ui};
 use super::{App, held, model};
-use crate::compositor;
-use crate::sources::{self, IconSrc, niri, tray};
 use crate::{
     Bluetooth as UiBluetooth, BtDetail, BtDevice, BtFact, BtPrompt, Claude as UiClaude,
     ClaudeSession, Control, Dash, Media as UiMedia, MenuEntry, Perf, Tray as UiTray, TrayItem,
     Weather as UiWeather, WeatherDay, Wifi as UiWifi, WifiDetail, WifiFact, WifiNet, WifiPrompt,
     WifiSaved, WinItem, Windows as UiWindows,
 };
+use niri_dash_system::{
+    self as sys, IconSrc, Tell, bluetooth, brightness, keyboard, media, tray, wifi, windows,
+};
 use slint::ComponentHandle;
 use std::rc::Rc;
 use std::time::Instant;
 
 impl App {
-    pub(super) fn show_perf(&self, s: Box<sources::perf::Snapshot>) {
+    pub(super) fn show_perf(&self, s: Box<sys::perf::Snapshot>) {
         let ui = self.ui();
         let s = *s;
         let p = ui.global::<Perf>();
@@ -52,7 +53,7 @@ impl App {
         p.set_net_addr(s.net_addr.into());
         p.set_net_rx_frac(s.net_rx_frac);
         p.set_net_tx_frac(s.net_tx_frac);
-        let row = |d: &sources::perf::DiskRow| crate::DiskRow {
+        let row = |d: &sys::perf::DiskRow| crate::DiskRow {
             mount: d.mount.as_str().into(),
             used: d.used,
             text: d.text.as_str().into(),
@@ -77,7 +78,7 @@ impl App {
         }
     }
 
-    pub(super) fn show_claude_usage(&self, u: sources::claude_usage::State) {
+    pub(super) fn show_claude_usage(&self, u: sys::claude::Usage) {
         let ui = self.ui();
         let c = ui.global::<crate::ClaudeUsage>();
         c.set_plan(u.plan.into());
@@ -104,7 +105,7 @@ impl App {
         ));
     }
 
-    pub(super) fn show_claude(&self, st: sources::claude::State) {
+    pub(super) fn show_claude(&self, st: sys::claude::State) {
         let ui = self.ui();
         let c = ui.global::<UiClaude>();
         let mut wins = self.claude_windows.borrow_mut();
@@ -122,7 +123,7 @@ impl App {
                         title: s.title.as_str().into(),
                         place: s.place.as_str().into(),
                         status: s.status_text.as_str().into(),
-                        busy: s.status == sources::claude::Status::Busy,
+                        busy: s.status == sys::claude::Status::Busy,
                         has_window: s.window.is_some(),
                     }
                 })
@@ -130,7 +131,7 @@ impl App {
         ));
     }
 
-    pub(super) fn show_windows(&self, s: niri::WindowsState) {
+    pub(super) fn show_windows(&self, s: windows::State) {
         let ui = self.ui();
         let w = ui.global::<UiWindows>();
         let rows: Vec<WinItem> = s
@@ -158,7 +159,7 @@ impl App {
         w.set_focused_icon(icon.unwrap_or_default());
     }
 
-    pub(super) fn show_keyboard_layouts(&self, l: Option<sources::keyboard::Layouts>) {
+    pub(super) fn show_keyboard_layouts(&self, l: Option<keyboard::Layouts>) {
         let ui = self.ui();
         let k = ui.global::<crate::KeyboardLayouts>();
         k.set_available(l.is_some());
@@ -175,14 +176,14 @@ impl App {
         ));
     }
 
-    pub(super) fn show_wifi(&self, s: sources::wifi::State) {
-        use sources::wifi::{Activity, PromptKind};
+    pub(super) fn show_wifi(&self, s: wifi::State) {
+        use wifi::{Activity, PromptKind};
         let ui = self.ui();
         let w = ui.global::<UiWifi>();
         w.set_available(s.available);
         w.set_enabled(s.enabled);
         w.set_blocked(s.blocked);
-        w.set_ssid(sources::clean_label(&s.ssid).into());
+        w.set_ssid(sys::clean_label(&s.ssid).into());
         w.set_signal(s.signal);
         w.set_connecting(s.connecting_key.as_str().into());
         let status = match &s.activity {
@@ -194,11 +195,11 @@ impl App {
         w.set_status(status.into());
         w.set_failed(matches!(s.activity, Activity::Failed(_)));
         w.set_scanning(s.scanning);
-        w.set_portal(s.link.connectivity == sources::wifi::Connectivity::Portal);
+        w.set_portal(s.link.connectivity == wifi::Connectivity::Portal);
         w.set_prompt(match &s.prompt {
             Some(p) => WifiPrompt {
                 serial: p.serial as i32,
-                ssid: sources::clean_label(&p.ssid).into(),
+                ssid: sys::clean_label(&p.ssid).into(),
                 kind: match p.kind {
                     PromptKind::Password => 0,
                     PromptKind::Wep => 1,
@@ -214,7 +215,7 @@ impl App {
         w.set_detail(match &s.detail {
             Some(d) => WifiDetail {
                 key: d.key.as_str().into(),
-                ssid: sources::clean_label(&d.ssid).into(),
+                ssid: sys::clean_label(&d.ssid).into(),
                 in_range: d.network.is_some(),
                 active: d.network.as_ref().is_some_and(|n| n.active),
                 known: d.profile.is_some(),
@@ -226,7 +227,7 @@ impl App {
                     .into(),
                 autoconnect: d.profile.as_ref().is_some_and(|p| p.autoconnect),
                 facts: model(
-                    sources::wifi::facts(d, &s.link)
+                    wifi::facts(d, &s.link)
                         .into_iter()
                         .map(|(label, value)| WifiFact {
                             label: label.into(),
@@ -260,12 +261,12 @@ impl App {
                     WifiSaved {
                         key: key.into(),
                         uuid: p.uuid.as_str().into(),
-                        ssid: sources::clean_label(&p.ssid).into(),
+                        ssid: sys::clean_label(&p.ssid).into(),
                         in_range,
                         detail: if in_range {
                             "in range".into()
                         } else if p.timestamp > 0 {
-                            sources::wifi::day(p.timestamp).into()
+                            wifi::day(p.timestamp).into()
                         } else {
                             "never used".into()
                         },
@@ -280,7 +281,7 @@ impl App {
                     let twins = s.networks.iter().filter(|m| m.ssid == n.ssid).count();
                     WifiNet {
                         key: n.key().into(),
-                        ssid: sources::clean_label(&n.ssid).into(),
+                        ssid: sys::clean_label(&n.ssid).into(),
                         signal: n.signal,
                         secure: n.security.needs_secret(),
                         active: n.active,
@@ -296,11 +297,11 @@ impl App {
         ));
     }
 
-    pub(super) fn show_bluetooth(&self, s: sources::bluetooth::State) {
-        use sources::bluetooth::{Activity, PromptKind};
+    pub(super) fn show_bluetooth(&self, s: bluetooth::State) {
+        use bluetooth::{Activity, PromptKind};
         let ui = self.ui();
         let b = ui.global::<UiBluetooth>();
-        let device = |d: &sources::bluetooth::Device| BtDevice {
+        let device = |d: &bluetooth::Device| BtDevice {
             address: d.address.as_str().into(),
             name: d.name.as_str().into(),
             kind: device_kind_to_ui(d.kind),
@@ -354,7 +355,7 @@ impl App {
                 trusted: d.trusted,
                 blocked: d.blocked,
                 facts: model(
-                    sources::bluetooth::facts(d)
+                    bluetooth::facts(d)
                         .into_iter()
                         .map(|(label, value)| BtFact {
                             label: label.into(),
@@ -428,7 +429,7 @@ impl App {
         t.set_menu_open(true);
     }
 
-    pub(super) fn show_weather(&self, w: sources::weather::State) {
+    pub(super) fn show_weather(&self, w: sys::weather::State) {
         let ui = self.ui();
         let u = ui.global::<UiWeather>();
         u.set_error(w.error.as_str().into());
@@ -456,7 +457,7 @@ impl App {
         ));
     }
 
-    pub(super) fn show_media(&self, m: Option<sources::media::State>) {
+    pub(super) fn show_media(&self, m: Option<media::State>) {
         let ui = self.ui();
         let u = ui.global::<UiMedia>();
         u.set_available(m.is_some());
@@ -476,110 +477,141 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     // Windows.
     let w = ui.global::<UiWindows>();
     let a = app.clone();
-    w.on_focus(move |id| compositor::focus_window(&a.ctx, id as u64));
+    w.on_focus(move |id| a.tx.windows.tell(windows::Command::Focus(id as u64)));
     let a = app.clone();
-    w.on_close(move |id| compositor::close_window(&a.ctx, id as u64));
-    use sources::keyboard::Switch;
+    w.on_close(move |id| a.tx.windows.tell(windows::Command::Close(id as u64)));
+    use keyboard::{Command::Switch, Switch as To};
     let kb = ui.global::<crate::KeyboardLayouts>();
     let a = app.clone();
-    kb.on_next(move || compositor::switch_layout(&a.ctx, Switch::Next));
+    kb.on_next(move || a.tx.keyboard.tell(Switch(To::Next)));
     let a = app.clone();
-    kb.on_prev(move || compositor::switch_layout(&a.ctx, Switch::Prev));
+    kb.on_prev(move || a.tx.keyboard.tell(Switch(To::Prev)));
     let a = app.clone();
-    kb.on_pick(move |i| compositor::switch_layout(&a.ctx, Switch::Index(i.max(0) as u32)));
+    kb.on_pick(move |i| a.tx.keyboard.tell(Switch(To::Index(i.max(0) as u32))));
     // Wi-Fi.
     let w = ui.global::<UiWifi>();
+    let wifi = |a: &Rc<App>, cmd: wifi::Command| a.tx.wifi.tell(cmd);
     let a = app.clone();
-    w.on_toggle(move || a.wifi.toggle());
+    w.on_toggle(move || wifi(&a, wifi::Command::Toggle));
     let a = app.clone();
-    w.on_rescan(move || a.wifi.rescan());
+    w.on_rescan(move || wifi(&a, wifi::Command::Rescan));
     let a = app.clone();
-    w.on_connect(move |ssid| a.wifi.connect(ssid.into()));
+    w.on_connect(move |ssid| wifi(&a, wifi::Command::Connect { key: ssid.into() }));
     let a = app.clone();
     w.on_answer(move |serial, identity, password, eap, domain, insecure| {
-        a.wifi.answer(
-            serial.max(0) as u64,
-            sources::wifi::Answer {
-                identity: identity.into(),
-                password: password.into(),
-                eap: sources::wifi::Eap::from_index(eap),
-                domain: domain.into(),
-                insecure,
+        let answer = wifi::Answer {
+            identity: identity.into(),
+            password: password.into(),
+            eap: wifi::Eap::from_index(eap),
+            domain: domain.into(),
+            insecure,
+        };
+        wifi(
+            &a,
+            wifi::Command::Answer {
+                serial: serial.max(0) as u64,
+                answer,
             },
         )
     });
     let a = app.clone();
-    w.on_cancel_prompt(move || a.wifi.cancel_prompt());
+    w.on_cancel_prompt(move || wifi(&a, wifi::Command::CancelPrompt));
     let a = app.clone();
     w.on_join_hidden(
         move |ssid, security, identity, password, eap, domain, insecure| {
-            a.wifi.join_hidden(
-                ssid.into(),
-                security,
-                sources::wifi::Answer {
-                    identity: identity.into(),
-                    password: password.into(),
-                    eap: sources::wifi::Eap::from_index(eap),
-                    domain: domain.into(),
-                    insecure,
+            let answer = wifi::Answer {
+                identity: identity.into(),
+                password: password.into(),
+                eap: wifi::Eap::from_index(eap),
+                domain: domain.into(),
+                insecure,
+            };
+            wifi(
+                &a,
+                wifi::Command::JoinHidden {
+                    ssid: ssid.into(),
+                    security,
+                    answer,
                 },
             )
         },
     );
     let a = app.clone();
-    w.on_disconnect(move || a.wifi.disconnect());
+    w.on_disconnect(move || wifi(&a, wifi::Command::Disconnect));
     let a = app.clone();
-    w.on_forget(move |uuid| a.wifi.forget(uuid.into()));
+    w.on_forget(move |uuid| wifi(&a, wifi::Command::Forget { uuid: uuid.into() }));
     let a = app.clone();
-    w.on_set_autoconnect(move |uuid, on| a.wifi.set_autoconnect(uuid.into(), on));
+    w.on_set_autoconnect(move |uuid, on| {
+        wifi(
+            &a,
+            wifi::Command::SetAutoconnect {
+                uuid: uuid.into(),
+                on,
+            },
+        )
+    });
     let a = app.clone();
-    w.on_select(move |ssid| a.wifi.select(ssid.into()));
+    w.on_select(move |ssid| wifi(&a, wifi::Command::Select { key: ssid.into() }));
     let a = app.clone();
-    w.on_reveal(move |uuid| a.wifi.reveal(uuid.into()));
+    w.on_reveal(move |uuid| wifi(&a, wifi::Command::Reveal { uuid: uuid.into() }));
     let a = app.clone();
-    w.on_hide_secret(move || a.wifi.hide_secret());
+    w.on_hide_secret(move || wifi(&a, wifi::Command::HideSecret));
     let a = app.clone();
-    w.on_sign_in(move || a.wifi.sign_in());
+    w.on_sign_in(move || wifi(&a, wifi::Command::SignIn));
     // Bluetooth.
+    use bluetooth::Command as Bt;
     let b = ui.global::<UiBluetooth>();
+    let bt = |a: &Rc<App>, cmd: Bt| a.tx.bluetooth.tell(cmd);
     let a = app.clone();
-    b.on_toggle(move || a.bluetooth.toggle());
+    b.on_toggle(move || bt(&a, Bt::Toggle));
     let a = app.clone();
-    b.on_connect(move |addr| a.bluetooth.connect(addr.into()));
+    b.on_connect(move |addr| bt(&a, Bt::Connect(addr.into())));
     let a = app.clone();
-    b.on_disconnect(move |addr| a.bluetooth.disconnect(addr.into()));
+    b.on_disconnect(move |addr| bt(&a, Bt::Disconnect(addr.into())));
     let a = app.clone();
-    b.on_scan(move |on| a.bluetooth.scan(on));
+    b.on_scan(move |on| bt(&a, Bt::Scan(on)));
     let a = app.clone();
-    b.on_pair(move |addr| a.bluetooth.pair(addr.into()));
+    b.on_pair(move |addr| bt(&a, Bt::Pair(addr.into())));
     let a = app.clone();
-    b.on_cancel_pairing(move || a.bluetooth.cancel_pairing());
+    b.on_cancel_pairing(move || bt(&a, Bt::CancelPairing));
     let a = app.clone();
     b.on_answer(move |serial, yes, code| {
-        use sources::bluetooth::Answer;
+        use bluetooth::Answer;
+        let serial = serial.max(0) as u64;
         if !yes {
-            a.bluetooth.decline();
+            bt(&a, Bt::Decline);
         } else if code.is_empty() {
-            a.bluetooth.answer(serial.max(0) as u64, Answer::Yes);
+            bt(
+                &a,
+                Bt::Answer {
+                    serial,
+                    answer: Answer::Yes,
+                },
+            );
         } else {
-            a.bluetooth
-                .answer(serial.max(0) as u64, Answer::Code(code.into()));
+            bt(
+                &a,
+                Bt::Answer {
+                    serial,
+                    answer: Answer::Code(code.into()),
+                },
+            );
         }
     });
     let a = app.clone();
-    b.on_select(move |addr| a.bluetooth.select(addr.into()));
+    b.on_select(move |addr| bt(&a, Bt::Select(addr.into())));
     let a = app.clone();
-    b.on_set_trusted(move |addr, on| a.bluetooth.set_trusted(addr.into(), on));
+    b.on_set_trusted(move |addr, on| bt(&a, Bt::SetTrusted(addr.into(), on)));
     let a = app.clone();
-    b.on_set_blocked(move |addr, on| a.bluetooth.set_blocked(addr.into(), on));
+    b.on_set_blocked(move |addr, on| bt(&a, Bt::SetBlocked(addr.into(), on)));
     let a = app.clone();
-    b.on_forget(move |addr| a.bluetooth.forget(addr.into()));
+    b.on_forget(move |addr| bt(&a, Bt::Forget(addr.into())));
     let a = app.clone();
-    b.on_rename(move |addr, name| a.bluetooth.rename(addr.into(), name.into()));
+    b.on_rename(move |addr, name| bt(&a, Bt::Rename(addr.into(), name.into())));
     let a = app.clone();
     ui.global::<crate::Brightness>().on_set(move |v| {
         a.brightness_touched.set(Some(Instant::now()));
-        a.brightness.set(v);
+        a.tx.brightness.tell(brightness::Command::Set(v));
         if let Some(ui) = a.ui.upgrade() {
             ui.global::<crate::Brightness>().set_level(v);
         }
@@ -595,20 +627,34 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
             .find(|i| i.address == id.as_str())
             .cloned();
         match item {
-            Some(i) if i.item_is_menu && i.has_menu => a.tray.open_menu(i.address, x, y),
+            Some(i) if i.item_is_menu && i.has_menu => a.tx.tray.tell(tray::Command::OpenMenu {
+                address: i.address,
+                x,
+                y,
+            }),
             Some(i) => {
-                a.tray.activate(i.address, x as i32, y as i32);
+                a.tx.tray.tell(tray::Command::Activate {
+                    address: i.address,
+                    x: x as i32,
+                    y: y as i32,
+                });
                 a.pending.borrow_mut().push(Control::Hide);
             }
             None => {}
         }
     });
     let a = app.clone();
-    t.on_open_menu(move |id, x, y| a.tray.open_menu(id.into(), x, y));
+    t.on_open_menu(move |id, x, y| {
+        a.tx.tray.tell(tray::Command::OpenMenu {
+            address: id.into(),
+            x,
+            y,
+        })
+    });
     let a = app.clone();
     t.on_menu_activate(move |id| {
         let address = a.menu_address.borrow().clone();
-        a.tray.menu_item(address, id);
+        a.tx.tray.tell(tray::Command::MenuItem { address, id });
         if let Some(ui) = a.ui.upgrade() {
             ui.global::<UiTray>().set_menu_open(false);
         }
@@ -625,15 +671,15 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     ui.global::<UiClaude>().on_focus(move |pid| {
         let win = a.claude_windows.borrow().get(&pid).copied();
         if let Some(id) = win {
-            compositor::focus_window(&a.ctx, id);
+            a.tx.windows.tell(windows::Command::Focus(id));
         }
     });
     // Media.
     let m = ui.global::<UiMedia>();
     let a = app.clone();
-    m.on_play_pause(move || a.media.play_pause());
+    m.on_play_pause(move || a.tx.media.tell(media::Command::PlayPause));
     let a = app.clone();
-    m.on_next(move || a.media.next());
+    m.on_next(move || a.tx.media.tell(media::Command::Next));
     let a = app.clone();
-    m.on_previous(move || a.media.previous());
+    m.on_previous(move || a.tx.media.tell(media::Command::Previous));
 }

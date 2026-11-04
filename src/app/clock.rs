@@ -3,7 +3,7 @@
 use super::{App, model, set_if_changed};
 use crate::layout::Kind;
 use crate::{CalDay, Calendar, Clock, Dash};
-use chrono::{Datelike, Local, Timelike};
+use chrono::{Datelike, Local, Months, NaiveDate, Timelike};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, VecModel};
 use std::cell::Cell;
 use std::rc::Rc;
@@ -15,10 +15,29 @@ pub(super) struct ClockState {
     timer: Timer,
     /// The month the calendar shows, from this one.
     month_offset: Cell<i32>,
+    /// The day under the keyboard cursor, once it has been moved; until then the cursor is on
+    /// today, or on the same day of the month shown.
+    selected: Cell<Option<NaiveDate>>,
     /// The day the calendar was last built for.
     last_day: Cell<u32>,
     /// `Clock.zones`, by widget id.
     zones: Rc<VecModel<crate::ZoneList>>,
+}
+
+/// `d` moved by `n` months, the day of the month cut down to fit the month (Jan 31 + 1 → Feb 28).
+fn add_months(d: NaiveDate, n: i32) -> NaiveDate {
+    let m = Months::new(n.unsigned_abs());
+    if n >= 0 {
+        d.checked_add_months(m)
+    } else {
+        d.checked_sub_months(m)
+    }
+    .unwrap_or(d)
+}
+
+/// How many months `b` lies after `a`.
+fn months_between(a: NaiveDate, b: NaiveDate) -> i32 {
+    (b.year() * 12 + b.month0() as i32) - (a.year() * 12 + a.month0() as i32)
 }
 
 /// A time of day as the locale writes it: "9:41 AM" in the US, "9:41" elsewhere.
@@ -46,6 +65,7 @@ impl App {
     /// The dashboard opens: back to the current month and time, ticking every second.
     pub(super) fn start_clock(&self) {
         self.clock.month_offset.set(0);
+        self.clock.selected.set(None);
         self.tick_clock(true);
         self.arm_clock();
     }
@@ -88,8 +108,43 @@ impl App {
         }
     }
 
+    /// Where the calendar's keyboard cursor is.
+    fn calendar_cursor(&self) -> NaiveDate {
+        let today = Local::now().date_naive();
+        self.clock
+            .selected
+            .get()
+            .unwrap_or_else(|| add_months(today, self.clock.month_offset.get()))
+    }
+
+    /// Show the month `d` months on, or this one for 0; the cursor goes along.
+    fn shift_calendar(&self, d: i32) {
+        if d == 0 {
+            self.clock.month_offset.set(0);
+            self.clock.selected.set(None);
+        } else {
+            if let Some(s) = self.clock.selected.get() {
+                self.clock.selected.set(Some(add_months(s, d)));
+            }
+            self.clock
+                .month_offset
+                .set(self.clock.month_offset.get() + d);
+        }
+        self.build_calendar();
+    }
+
+    /// Move the calendar's cursor by `d` days, and the month shown with it.
+    fn move_calendar_day(&self, d: i32) {
+        let to = self.calendar_cursor() + chrono::Duration::days(d.into());
+        self.clock.selected.set(Some(to));
+        let today = Local::now().date_naive();
+        self.clock.month_offset.set(months_between(today, to));
+        self.build_calendar();
+    }
+
     fn build_calendar(&self) {
         let today = Local::now().date_naive();
+        let cursor = self.calendar_cursor();
         let off = self.clock.month_offset.get();
         let months = today.year() * 12 + today.month0() as i32 + off;
         let (y, m) = (months.div_euclid(12), months.rem_euclid(12) as u32 + 1);
@@ -110,6 +165,7 @@ impl App {
                         day: d.day() as i32,
                         in_month: d.month() == m,
                         today: d == today,
+                        selected: d == cursor,
                     }
                 })
                 .collect();
@@ -185,23 +241,37 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
         .set_zones(ModelRc::from(app.clock.zones.clone()));
     // Calendar.
     let a = app.clone();
-    ui.global::<Calendar>().on_shift(move |d| {
-        a.clock.month_offset.set(if d == 0 {
-            0
-        } else {
-            a.clock.month_offset.get() + d
-        });
-        a.build_calendar();
-    });
+    ui.global::<Calendar>()
+        .on_shift(move |d| a.shift_calendar(d));
+    let a = app.clone();
+    ui.global::<Calendar>()
+        .on_move_day(move |d| a.move_calendar_day(d));
     let a = Rc::downgrade(app);
     app.clock
         .timer
         .start(TimerMode::SingleShot, Duration::from_secs(1), move || {
             if let Some(a) = a.upgrade()
-                && a.ctx.visible()
+                && a.visible.get()
             {
                 a.tick_clock(false);
                 a.arm_clock();
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn day(y: i32, m: u32, d: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(y, m, d).unwrap()
+    }
+
+    #[test]
+    fn months_on_and_back() {
+        assert_eq!(add_months(day(2026, 1, 31), 1), day(2026, 2, 28));
+        assert_eq!(add_months(day(2026, 1, 15), -1), day(2025, 12, 15));
+        assert_eq!(months_between(day(2026, 11, 3), day(2027, 1, 1)), 2);
+        assert_eq!(months_between(day(2026, 11, 3), day(2026, 10, 31)), -1);
+    }
 }

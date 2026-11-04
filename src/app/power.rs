@@ -2,8 +2,8 @@
 
 use super::enums::{device_kind_to_ui, profile_from_ui, profile_to_ui};
 use super::{App, model};
-use crate::sources::{self, power, session};
 use crate::{Control, Dash, Power as UiPower, Session as UiSession};
+use niri_dash_system::{Tell, power, session};
 use slint::ComponentHandle;
 use std::rc::Rc;
 
@@ -35,7 +35,7 @@ impl App {
         ));
     }
 
-    pub(super) fn show_blockers(&self, list: Vec<sources::inhibit::Blocker>) {
+    pub(super) fn show_blockers(&self, list: Vec<power::Blocker>) {
         let ui = self.ui();
         ui.global::<UiPower>().set_blockers(model(
             list.into_iter()
@@ -51,30 +51,32 @@ impl App {
 pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     // Power profiles and inhibiting sleep.
     let a = app.clone();
-    ui.global::<UiPower>()
-        .on_set_profile(move |p| power::set_profile(&a.ctx, profile_from_ui(p)));
+    ui.global::<UiPower>().on_set_profile(move |p| {
+        a.tx.power
+            .tell(power::Command::SetProfile(profile_from_ui(p)))
+    });
     let a = app.clone();
     ui.global::<UiPower>()
-        .on_toggle_inhibit(move || a.inhibit.toggle());
+        .on_toggle_inhibit(move || a.tx.power.tell(power::Command::ToggleInhibit));
     // Session.
     let s = ui.global::<UiSession>();
     let a = app.clone();
     s.on_lock(move || {
         a.pending.borrow_mut().push(Control::Hide);
-        session::lock(&a.ctx);
+        a.tx.session.tell(session::Command::Lock);
     });
     let a = app.clone();
     s.on_suspend(move || {
         a.pending.borrow_mut().push(Control::Hide);
-        session::suspend(&a.ctx);
+        a.tx.session.tell(session::Command::Suspend);
     });
     let a = app.clone();
     s.on_logout(move || {
         a.pending.borrow_mut().push(Control::Hide);
-        session::logout(&a.ctx);
+        a.tx.session.tell(session::Command::Logout);
     });
     let a = app.clone();
-    s.on_reboot(move || session::reboot(&a.ctx));
+    s.on_reboot(move || a.tx.session.tell(session::Command::Reboot));
     let a = app.clone();
-    s.on_poweroff(move || session::poweroff(&a.ctx));
+    s.on_poweroff(move || a.tx.session.tell(session::Command::Poweroff));
 }
