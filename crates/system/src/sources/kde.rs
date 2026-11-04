@@ -3,6 +3,7 @@
 //! Plasma's on-screen messages.
 
 use super::{Ctx, Dedup, Trigger, keyboard, prop};
+pub use crate::night_light::NightLightState;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -217,29 +218,6 @@ const NIGHT_LIGHT: (&str, &str, &str) = (
     "/org/kde/KWin/NightLight",
     "org.kde.KWin.NightLight",
 );
-
-/// KWin's night light as the widget shows it. Its schedule and temperatures are set in System
-/// Settings; the dashboard can only pause it.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct NightLightState {
-    /// KWin can change the screen colors at all.
-    pub available: bool,
-    /// Turned on in System Settings.
-    pub enabled: bool,
-    /// Paused by someone (us included).
-    pub inhibited: bool,
-    /// We hold a pause.
-    pub paused_by_us: bool,
-    /// The screen's temperature right now, in kelvin.
-    pub temperature: u32,
-}
-
-impl NightLightState {
-    /// Whether night light follows its schedule (it may still be daytime).
-    pub fn on(self) -> bool {
-        self.available && self.enabled && !self.inhibited
-    }
-}
 
 fn night_light_state(props: &HashMap<String, OwnedValue>, ours: bool) -> NightLightState {
     let flag = |k| prop::<bool>(props, k).unwrap_or(false);

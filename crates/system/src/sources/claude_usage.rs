@@ -5,6 +5,7 @@
 //! The plan's actual limits aren't stored locally, so this shows usage, not a percentage of them.
 
 use super::{Ctx, Dedup};
+pub use crate::claude::Usage as State;
 use chrono::{DateTime, Duration as Span, DurationRound, Local, Utc};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -15,27 +16,6 @@ use std::time::{Duration, SystemTime};
 
 const WINDOW: Span = Span::hours(5);
 const KEEP_DAYS: i64 = 8;
-
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct State {
-    pub plan: String,
-    pub window_active: bool,
-    pub window_tokens: String,
-    /// Just the number, for small spaces ("2.2M").
-    pub window_count: String,
-    pub window_cached: String,
-    pub window_messages: u32,
-    pub window_left: String,
-    pub window_progress: f32,
-    pub window_resets: String,
-    pub burn: String,
-    pub today: String,
-    pub week: String,
-    /// Tokens per hour over the last 24 hours, scaled to the busiest hour.
-    pub hourly: Vec<f32>,
-    /// Models used in the current window, by share of tokens.
-    pub models: Vec<(String, f32)>,
-}
 
 #[derive(Debug, Clone)]
 struct Entry {

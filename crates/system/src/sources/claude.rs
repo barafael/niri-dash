@@ -2,7 +2,8 @@
 //! matched to their niri window by walking up the process tree.
 
 use super::{Ctx, Dedup, Trigger, strip_spinner};
-use crate::compositor::Compositor;
+use crate::Compositor;
+pub use crate::claude::{Session, State, Status};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -27,34 +28,6 @@ struct SessionFile {
     proc_start: Option<String>,
     #[serde(default)]
     entrypoint: String,
-}
-
-/// What Claude Code reports a session doing. Unknown values (newer Claude Code versions) are
-/// kept as they are.
-#[derive(Debug, Clone, PartialEq, Eq, Default, strum::EnumString)]
-#[strum(serialize_all = "lowercase")]
-pub enum Status {
-    Busy,
-    #[default]
-    Idle,
-    #[strum(default)]
-    Other(String),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Session {
-    pub pid: i32,
-    pub title: String,
-    pub place: String,
-    pub status: Status,
-    pub status_text: String,
-    pub window: Option<u64>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct State {
-    pub sessions: Vec<Session>,
-    pub busy: usize,
 }
 
 fn proc_stat(pid: i32) -> Option<(i32, String)> {

@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#14161d">
+  <title>niri-dash</title>
+  <meta name="description" content="A fullscreen widget dashboard for niri and KDE Plasma, running in your browser on a simulated system.">
+  <link data-trunk rel="rust" href="../Cargo.toml" data-bin="niri-dash" data-wasm-opt="s">
+  <style>
+    :root {
+      --night-light: rgb(255 255 255);
+      --ink: #eceff4;
+      --ink-soft: #aab1bf;
+      --accent: #8fb8ff;
+    }
+    html, body {
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      overscroll-behavior: none;
+    }
+    /* What the dashboard covers: a desktop's wallpaper. */
+    body {
+      background:
+        radial-gradient(60vmax 45vmax at 18% 12%, #33507f 0%, transparent 70%),
+        radial-gradient(55vmax 50vmax at 88% 22%, #6b3f6e 0%, transparent 70%),
+        radial-gradient(70vmax 50vmax at 60% 100%, #1f5a5c 0%, transparent 72%),
+        #14161d;
+      color: var(--ink);
+      font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+    }
+    #canvas {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      outline: none;
+      /* Fingers go to the dashboard, which scrolls and drags for itself. */
+      touch-action: none;
+    }
+    body.away #canvas { visibility: hidden; }
+    /* Frosted glass, which on the desktop is the compositor's. */
+    body.glass #canvas {
+      -webkit-backdrop-filter: blur(22px);
+      backdrop-filter: blur(22px);
+    }
+    /* Night light: on the desktop it warms the whole screen through the gamma tables. */
+    #night {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background: var(--night-light);
+      mix-blend-mode: multiply;
+    }
+    #desk {
+      position: fixed;
+      inset: 0;
+      display: none;
+      place-items: center;
+      padding: 24px;
+      text-align: center;
+    }
+    body.away #desk { display: grid; }
+    #desk h1 { margin: 0 0 4px; font-size: 1.6rem; font-weight: 600; }
+    #desk p { margin: 8px auto; max-width: 34rem; color: var(--ink-soft); }
+    #desk a { color: var(--accent); }
+    kbd {
+      padding: 1px 6px;
+      border: 1px solid #ffffff38;
+      border-radius: 5px;
+      background: #ffffff14;
+      color: var(--ink);
+      font: inherit;
+      font-size: .9em;
+    }
+    /* Before the dashboard has come up for the first time, and if it can't. */
+    .while-loading, .if-failed { display: none; }
+    body.loading .while-loading { display: block; }
+    body.loading .once-loaded { display: none; }
+    body.failed .if-failed { display: block; }
+    body.failed .while-loading, body.failed .once-loaded { display: none; }
+    #tip {
+      position: fixed;
+      left: 50%;
+      bottom: 14px;
+      transform: translateX(-50%);
+      max-width: calc(100vw - 32px);
+      box-sizing: border-box;
+      padding: 5px 14px;
+      border-radius: 999px;
+      background: #000000b8;
+      color: #fff;
+      font-size: .85rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      pointer-events: none;
+      animation: tip 14s ease-in both;
+    }
+    body.loading #tip, body.away #tip { display: none; }
+    @keyframes tip {
+      0%, 85% { opacity: 1; }
+      100% { opacity: 0; }
+    }
+    /* It is about keys. */
+    @media (hover: none) {
+      #tip { display: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #tip { animation-timing-function: steps(1, end); }
+    }
+  </style>
+</head>
+<body class="away loading">
+  <canvas id="canvas" tabindex="0" aria-label="The niri-dash dashboard"></canvas>
+  <main id="desk">
+    <div>
+      <h1>niri-dash</h1>
+      <div class="while-loading"><p>Loading the dashboard…</p></div>
+      <div class="if-failed">
+        <p>The dashboard could not start. It draws with WebGL 2, so this browser may have it turned
+          off. The browser's console says more.</p>
+      </div>
+      <div class="once-loaded">
+        <p>This is the desktop the dashboard covers. <kbd>Any key</kbd> or a click brings it
+          back, as a hotkey does on niri or KDE Plasma.</p>
+        <p>Everything you see is simulated: the machine, its network and its notifications keep
+          changing, and nothing leaves this page. Your layout and settings stay in this browser.</p>
+      </div>
+      <p>
+        <a href="https://github.com/barafael/niri-dash">Source on GitHub</a> ·
+        <a href="?reset">Start over</a>
+      </p>
+    </div>
+  </main>
+  <div id="tip">Simulated system. <b>f</b> jumps to a widget, <b>j</b>/<b>k</b> move, <b>Esc</b> goes back, right-click edits</div>
+  <div id="night"></div>
+</body>
+</html>

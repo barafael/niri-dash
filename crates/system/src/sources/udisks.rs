@@ -3,6 +3,7 @@
 
 use super::perf::human_bytes;
 use super::{Ctx, Dedup, Trigger, prop, prop_str, signals_from};
+pub use crate::drives::{Drive, State, Volume};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -38,60 +39,6 @@ fn refused(e: zbus::Error) -> Error {
 }
 
 type Result<T, E = Error> = std::result::Result<T, E>;
-
-/// A filesystem (or a locked encrypted one) on a removable drive.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct Volume {
-    /// The block device's object path.
-    pub path: String,
-    pub name: String,
-    pub size: u64,
-    /// Where it is mounted, if it is.
-    pub mount: Option<String>,
-    /// Encrypted and not unlocked (this version doesn't unlock).
-    pub locked: bool,
-    /// For an unlocked encrypted volume: the encrypted block to lock again on eject.
-    pub backing: Option<String>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct Drive {
-    /// The drive's object path.
-    pub path: String,
-    pub name: String,
-    pub size: u64,
-    pub can_power_off: bool,
-    pub ejectable: bool,
-    pub volumes: Vec<Volume>,
-}
-
-impl Drive {
-    /// "16 GiB · mounted at /run/media/me/STICK", "not mounted", "locked".
-    pub fn summary(&self) -> String {
-        let mounted: Vec<&str> = self
-            .volumes
-            .iter()
-            .filter_map(|v| v.mount.as_deref())
-            .collect();
-        let state = match mounted.as_slice() {
-            [] if self.volumes.iter().all(|v| v.locked) => "locked".to_string(),
-            [] => "not mounted".to_string(),
-            [one] => format!("mounted at {one}"),
-            more => format!("{} mounted", more.len()),
-        };
-        if self.size > 0 {
-            format!("{} · {state}", human_bytes(self.size))
-        } else {
-            state
-        }
-    }
-}
-
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct State {
-    pub available: bool,
-    pub drives: Vec<Drive>,
-}
 
 /// What matters of a UDisks drive object.
 #[derive(Debug, Clone, Default)]

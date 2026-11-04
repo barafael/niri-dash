@@ -10,7 +10,8 @@ use slint::{ComponentHandle, ModelRc, Timer, TimerMode, VecModel};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use web_time::Instant;
 
 #[derive(Default)]
 pub(super) struct Mascots {

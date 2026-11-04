@@ -2,6 +2,7 @@
 //! settings for new connections. The parsing is kept apart from the bus calls so it can be tested.
 
 use super::{Answer, Eap, Error, Security};
+pub use crate::wifi::{Connectivity, Link, Network, Profile, band_bit, key, security_of};
 use std::collections::HashMap;
 use zbus::Connection;
 use zbus::names::OwnedInterfaceName;
@@ -67,146 +68,9 @@ impl Ap {
     }
 }
 
-/// A saved Wi-Fi connection profile.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct Profile {
-    pub path: String,
-    pub uuid: String,
-    pub name: String,
-    pub ssid: String,
-    pub autoconnect: bool,
-    pub hidden: bool,
-    /// key-mgmt of its security setting; empty for an open network.
-    pub key_mgmt: String,
-    /// When it was last connected (Unix seconds), 0 if never.
-    pub timestamp: u64,
-    /// A hotspot this machine makes rather than a network it joins.
-    pub hotspot: bool,
-}
-
-/// The security a connection's key-mgmt stands for.
-pub fn security_of(key_mgmt: &str) -> Security {
-    match key_mgmt {
-        "" => Security::Open,
-        "owe" => Security::Owe,
-        "none" | "ieee8021x" => Security::Wep,
-        "wpa-eap" | "wpa-eap-suite-b-192" => Security::Enterprise,
-        _ => Security::Personal,
-    }
-}
-
-/// What identifies a network: its SSID and how it is joined. Access points that share an SSID
-/// but differ in that are different networks, so an open access point named like a WPA network
-/// (an evil twin) gets a row of its own rather than making the network look open.
-pub fn key(ssid: &str, security: Security) -> String {
-    let class = match security {
-        Security::Open | Security::Owe => 'o',
-        Security::Personal => 'p',
-        Security::Wep => 'w',
-        Security::Enterprise => 'e',
-    };
-    format!("{class}{ssid}")
-}
-
-impl Profile {
-    pub fn security(&self) -> Security {
-        security_of(&self.key_mgmt)
-    }
-
-    pub fn key(&self) -> String {
-        key(&self.ssid, self.security())
-    }
-}
-
-/// One network: the access points that share an SSID and how they are joined.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct Network {
-    pub ssid: String,
-    pub signal: i32,
-    /// The easiest way in among its access points: a network with an open access point among
-    /// WPA ones is open.
-    pub security: Security,
-    /// For `Personal`: whether any access point takes WPA2 (PSK) and WPA3 (SAE).
-    pub wpa2: bool,
-    pub wpa3: bool,
-    /// Bit 0: 2.4 GHz, bit 1: 5 GHz, bit 2: 6 GHz.
-    pub bands: u8,
-    pub aps: usize,
-    /// The strongest access point with that security, to connect through.
-    pub ap: String,
-    pub active: bool,
-    pub profile: Option<Profile>,
-}
-
-impl Network {
-    pub fn key(&self) -> String {
-        key(&self.ssid, self.security)
-    }
-
-    pub fn known(&self) -> bool {
-        self.profile.is_some()
-    }
-
-    pub fn security_label(&self) -> String {
-        match self.security {
-            Security::Personal => match (self.wpa2, self.wpa3) {
-                (true, true) => "WPA2/WPA3",
-                (false, true) => "WPA3",
-                _ => "WPA2",
-            }
-            .into(),
-            s => s.label().into(),
-        }
-    }
-
-    pub fn bands_label(&self) -> String {
-        let names: Vec<&str> = [(1, "2.4"), (2, "5"), (4, "6")]
-            .into_iter()
-            .filter(|(bit, _)| self.bands & bit != 0)
-            .map(|(_, name)| name)
-            .collect();
-        if names.is_empty() {
-            String::new()
-        } else {
-            format!("{} GHz", names.join(" · "))
-        }
-    }
-
-    /// key-mgmt for a new connection with a password. wpa-psk also does WPA3 (SAE) with
-    /// NetworkManager, so it is used unless no access point offers WPA2.
-    pub fn key_mgmt(&self) -> &'static str {
-        match self.security {
-            Security::Personal if !self.wpa2 => "sae",
-            Security::Personal => "wpa-psk",
-            Security::Enterprise => "wpa-eap",
-            Security::Wep => "none",
-            Security::Owe => "owe",
-            Security::Open => "",
-        }
-    }
-}
-
 /// Whether an SSID names its network: hidden ones come empty or as NUL bytes.
 fn named(ssid: &str) -> bool {
     ssid.chars().any(|c| !c.is_control())
-}
-
-pub fn band_bit(freq: u32) -> u8 {
-    match freq {
-        0 => 0,
-        f if f < 3000 => 1,
-        f if f < 5925 => 2,
-        _ => 4,
-    }
-}
-
-pub fn channel(freq: u32) -> u32 {
-    match freq {
-        2484 => 14,
-        f if f < 3000 => f.saturating_sub(2407) / 5,
-        f if f < 5925 => f.saturating_sub(5000) / 5,
-        f => f.saturating_sub(5950) / 5,
-    }
 }
 
 /// Group access points into networks, sorted active first, then saved, then by signal.
@@ -329,44 +193,6 @@ pub fn profile(path: &str, s: &Settings) -> Option<Profile> {
         timestamp: get::<u64>(conn, "timestamp").unwrap_or(0),
         hotspot: mode == "ap" || mode == "adhoc",
     })
-}
-
-/// NMConnectivityState.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum Connectivity {
-    #[default]
-    Unknown,
-    None,
-    Portal,
-    Limited,
-    Full,
-}
-
-impl Connectivity {
-    fn from_u32(v: u32) -> Self {
-        match v {
-            1 => Self::None,
-            2 => Self::Portal,
-            3 => Self::Limited,
-            4 => Self::Full,
-            _ => Self::Unknown,
-        }
-    }
-}
-
-/// The connection in use: addresses and radio details.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct Link {
-    pub ip4: Vec<String>,
-    pub gateway4: String,
-    pub dns: Vec<String>,
-    pub ip6: Vec<String>,
-    pub gateway6: String,
-    pub bitrate_kbps: u32,
-    pub freq: u32,
-    pub bssid: String,
-    pub mac: String,
-    pub connectivity: Connectivity,
 }
 
 /// Everything read in one GetManagedObjects call.
@@ -674,6 +500,7 @@ pub fn qr_text(ssid: &str, security: Security, password: &str, hidden: bool) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::wifi::channel;
 
     fn ap(ssid: &str, strength: u8, rsn: u32, freq: u32) -> Ap {
         Ap {

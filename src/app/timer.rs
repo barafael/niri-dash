@@ -7,7 +7,8 @@ use niri_dash_system::{Tell, host, notifications};
 use slint::{ComponentHandle, Model, Timer, TimerMode};
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
+use web_time::{SystemTime, UNIX_EPOCH};
 
 /// Played when the timer goes off, if it's there.
 const ALARM_SOUND: &str = "/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga";

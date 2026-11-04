@@ -1,8 +1,7 @@
 //! The color picker widget: picking a pixel through the compositor (niri or KWin), and the
 //! recently picked colors.
 
-use super::{App, model};
-use crate::shell::Shell;
+use super::{App, Surface, model};
 use crate::{Control, Dash};
 use niri_dash_system::{Tell, color};
 use slint::ComponentHandle;
@@ -39,7 +38,7 @@ impl App {
     }
 
     /// Called every loop iteration: pick once the dashboard is out of the way.
-    pub(super) fn tick_pick(&self, shell: &mut Shell) {
+    pub(super) fn tick_pick(&self, shell: &impl Surface) {
         if !shell.is_visible() {
             self.pick_if_pending();
         }

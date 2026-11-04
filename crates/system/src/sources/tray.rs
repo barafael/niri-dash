@@ -1,49 +1,12 @@
 //! System tray: a StatusNotifierWatcher/host via the `system-tray` crate, with dbusmenu menus.
 
 use super::{Ctx, Dedup, IconSrc, icons};
+pub use crate::tray::{Entry, Item, Menu, Toggle};
 use std::sync::Arc;
 use system_tray::client::{ActivateRequest, Client};
 use system_tray::item::{IconPixmap, StatusNotifierItem};
 use system_tray::menu::{MenuItem, MenuType, ToggleState, ToggleType};
 use tokio::sync::mpsc;
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Item {
-    pub address: String,
-    pub title: String,
-    pub icon: IconSrc,
-    pub has_menu: bool,
-    pub item_is_menu: bool,
-}
-
-/// Whether a menu entry shows a checkmark or radio state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Toggle {
-    None,
-    Check,
-    Radio,
-}
-
-#[derive(Debug, Clone)]
-pub struct Entry {
-    pub id: i32,
-    pub label: String,
-    pub depth: i32,
-    pub separator: bool,
-    pub enabled: bool,
-    pub toggle: Toggle,
-    pub checked: bool,
-    pub header: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct Menu {
-    pub address: String,
-    pub title: String,
-    pub entries: Vec<Entry>,
-    pub x: f32,
-    pub y: f32,
-}
 
 enum Cmd {
     Activate { address: String, x: i32, y: i32 },

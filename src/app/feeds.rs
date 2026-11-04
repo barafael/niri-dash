@@ -10,11 +10,11 @@ use crate::{
     WifiSaved, WinItem, Windows as UiWindows,
 };
 use niri_dash_system::{
-    self as sys, IconSrc, Tell, bluetooth, brightness, keyboard, media, tray, wifi, windows,
+    self as sys, Tell, bluetooth, brightness, keyboard, media, tray, wifi, windows,
 };
 use slint::ComponentHandle;
 use std::rc::Rc;
-use std::time::Instant;
+use web_time::Instant;
 
 impl App {
     pub(super) fn show_perf(&self, s: Box<sys::perf::Snapshot>) {
@@ -467,7 +467,20 @@ impl App {
         u.set_player(m.player.into());
         u.set_playing(m.playing);
         u.set_progress(m.progress);
-        let art = m.art.map(IconSrc::Path).and_then(|a| self.image(&a));
+        // A cover in pixels is only turned into an image when it changes: the state comes every second.
+        let mut last = self.media_art.borrow_mut();
+        let art = match (&m.art, last.as_ref()) {
+            (Some(new), Some((old, image))) if new == old => image.clone(),
+            (Some(new), _) => {
+                let image = self.image(new);
+                *last = Some((new.clone(), image.clone()));
+                image
+            }
+            (None, _) => {
+                *last = None;
+                None
+            }
+        };
         u.set_has_art(art.is_some());
         u.set_art(art.unwrap_or_default());
     }

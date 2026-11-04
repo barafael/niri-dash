@@ -3,18 +3,10 @@
 //! through one function here, which picks niri's IPC or KDE Plasma's D-Bus services (or does
 //! without).
 
+use crate::Compositor;
 use crate::sources::{Ctx, kde, keyboard, niri};
 use std::collections::HashMap;
 use std::time::Duration;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Compositor {
-    Niri,
-    /// KDE Plasma's KWin.
-    Kwin,
-    /// Anything else: the Wayland protocols work, the compositor-specific features don't.
-    Other,
-}
 
 /// The compositor the environment names, if it names one: niri sets `NIRI_SOCKET` (and its
 /// session `XDG_CURRENT_DESKTOP=niri`), a Plasma session `XDG_CURRENT_DESKTOP=KDE` and

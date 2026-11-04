@@ -1,0 +1,60 @@
+# Builds the web version (the dashboard on a simulated system) and puts it on GitHub Pages.
+name: Web version
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push replaces a deployment still waiting; one already going finishes.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  TRUNK_VERSION: "0.22.1"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # For the Slint compiler, which runs on this machine during the build.
+      - name: Install fontconfig
+        run: sudo apt-get update && sudo apt-get install --yes libfontconfig1-dev
+
+      # rust-toolchain.toml picks the toolchain; the browser target comes on top.
+      - name: Add the browser target
+        run: rustup target add wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Trunk
+        run: |
+          curl --fail --silent --show-error --location \
+            "https://github.com/trunk-rs/trunk/releases/download/v${TRUNK_VERSION}/trunk-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz -C "$HOME/.cargo/bin"
+
+      - name: Build
+        run: trunk build --release --cargo-profile web --locked
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,7 +1,8 @@
 //! The Timer widget's state, apart from the UI so it can be tested: a countdown or a stopwatch,
 //! as its `mode` setting picks.
 
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
+use web_time::SystemTime;
 
 /// A countdown. Its end is wall-clock time so it survives a restart of the daemon.
 #[derive(Debug, Clone, PartialEq)]

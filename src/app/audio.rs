@@ -6,7 +6,7 @@ use niri_dash_system::{Tell, audio::Command, audio::State};
 use slint::{ComponentHandle, Model, ModelRc, VecModel};
 use std::cell::Cell;
 use std::rc::Rc;
-use std::time::Instant;
+use web_time::Instant;
 
 #[derive(Default)]
 pub(super) struct Mixer {

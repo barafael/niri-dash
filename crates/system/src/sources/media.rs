@@ -1,6 +1,7 @@
 //! Now playing, from MPRIS players on the session bus.
 
-use super::{Ctx, Dedup, Trigger, prop, prop_str};
+use super::{Ctx, Dedup, IconSrc, Trigger, prop, prop_str};
+pub use crate::media::State;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -21,17 +22,6 @@ type Result<T, E = Error> = std::result::Result<T, E>;
 
 const PREFIX: &str = "org.mpris.MediaPlayer2.";
 const OBJ: &str = "/org/mpris/MediaPlayer2";
-
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct State {
-    pub bus_name: String,
-    pub player: String,
-    pub title: String,
-    pub artist: String,
-    pub playing: bool,
-    pub art: Option<std::path::PathBuf>,
-    pub progress: f32,
-}
 
 async fn player_proxy<'a>(conn: &Connection, name: &'a str) -> Result<zbus::Proxy<'a>> {
     Ok(zbus::Proxy::new(conn, name.to_string(), OBJ, "org.mpris.MediaPlayer2.Player").await?)
@@ -73,7 +63,7 @@ async fn read_player(conn: &Connection, name: &str) -> Result<State> {
         title: prop_str(&meta, "xesam:title").unwrap_or_default(),
         artist: meta_artist(&meta),
         playing: status == "Playing",
-        art,
+        art: art.map(IconSrc::Path),
         progress: len
             .filter(|l| *l > 0)
             .map(|l| position as f32 / l as f32)

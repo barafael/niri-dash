@@ -7,7 +7,8 @@ use crate::{Dash, theme};
 use niri_dash_system::{Tell, host};
 use slint::TimerMode;
 use std::rc::Rc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use web_time::Instant;
 
 impl App {
     /// Fill the Look tab: every color scheme with a preview of its colors, every style with a

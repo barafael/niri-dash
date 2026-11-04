@@ -7,6 +7,7 @@
 //! powerdevil's `org.freedesktop.PowerManagement.Inhibit` is taken too where it runs.
 
 use super::{Ctx, Dedup};
+pub use crate::power::Blocker;
 use std::sync::Arc;
 use tokio::sync::watch;
 use zbus::Connection;
@@ -176,15 +177,6 @@ async fn acquire(ctx: &Ctx) -> (Held, Option<String>) {
         Err(e) => log::warn!("inhibit: {e}"),
     }
     (held, problem)
-}
-
-/// Something that blocks sleep or idling right now, from logind's list. Apps that only block
-/// the screensaver through niri (or with Wayland's idle inhibitor) don't show up here: niri
-/// keeps those to itself.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Blocker {
-    pub who: String,
-    pub why: String,
 }
 
 async fn blockers(ctx: &Ctx) -> zbus::Result<Vec<Blocker>> {

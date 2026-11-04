@@ -7,6 +7,9 @@ the background puts it away.
 It is a single daemon: a layer-shell overlay drawn with [Slint](https://slint.dev), on the GPU
 through EGL (or in software). While hidden it renders nothing and its data sources go quiet.
 
+**[Try it in your browser](https://barafael.github.io/niri-dash/)**: the same dashboard, keyboard
+and all, on a simulated system whose machine, network and notifications keep changing.
+
 ## Widgets
 
 Clock, calendar, weather (Open-Meteo, no API key), windows by workspace, Wi-Fi, Bluetooth,
@@ -106,6 +109,22 @@ keyboard layouts, the color picker and logging out go through Plasma. The window
 windows and noticing screen sharing need niri.
 
 `niri-dash --help` lists the other commands: `inhibit`, `dnd`, `night-light`, `say`, ….
+
+## The web version
+
+The dashboard also builds for the browser, against a simulated system instead of the real one
+(`crates/system/src/sim`): the same commands and events, with a machine behind them that builds,
+browses and takes calls, each thing on a period of its own. Layout and settings stay in the
+browser's localStorage; `?reset` starts over. On the desktop, `NIRI_DASH_SIM=1` runs on the same
+simulation.
+
+```sh
+rustup target add wasm32-unknown-unknown
+cargo install trunk --locked
+trunk serve
+```
+
+A push to `main` builds it and puts it on GitHub Pages (`.github/workflows/pages.yml`).
 
 ## License
 

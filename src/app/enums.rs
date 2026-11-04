@@ -4,7 +4,6 @@
 use crate::layout::{self, Kind};
 use crate::{WidgetKind, theme};
 use niri_dash_system::{power, tray, weather};
-use smithay_client_toolkit::seat::pointer::CursorIcon;
 use strum::IntoEnumIterator;
 
 pub(super) fn kind_to_ui(k: Kind) -> WidgetKind {
@@ -61,18 +60,6 @@ pub(super) fn toggle_to_ui(t: tray::Toggle) -> crate::MenuToggle {
         tray::Toggle::None => crate::MenuToggle::None,
         tray::Toggle::Check => crate::MenuToggle::Check,
         tray::Toggle::Radio => crate::MenuToggle::Radio,
-    }
-}
-
-/// The pointer the UI asks for, as a cursor shape.
-pub(super) fn cursor_from_ui(p: crate::PointerShape) -> CursorIcon {
-    match p {
-        crate::PointerShape::Normal => CursorIcon::Default,
-        crate::PointerShape::Move => CursorIcon::Move,
-        crate::PointerShape::ResizeEw => CursorIcon::EwResize,
-        crate::PointerShape::ResizeNs => CursorIcon::NsResize,
-        crate::PointerShape::ResizeNwse => CursorIcon::NwseResize,
-        crate::PointerShape::ResizeNesw => CursorIcon::NeswResize,
     }
 }
 

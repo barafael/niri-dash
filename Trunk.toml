@@ -1,0 +1,7 @@
+# The web version: `trunk serve` to try it, `trunk build --release --cargo-profile web` for what
+# goes on GitHub Pages.
+[build]
+target = "web/index.html"
+dist = "dist"
+# Relative, so it works under github.io/niri-dash/ as well as anywhere else.
+public_url = "./"

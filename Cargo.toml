@@ -24,12 +24,9 @@ wayland-protocols = { version = "0.32", features = ["client", "staging"] }
 [dependencies]
 # What the dashboard runs on: it sends this crate's commands and gets its events, nothing else.
 niri-dash-system = { path = "crates/system" }
-clap = { version = "4", features = ["derive"] }
 log.workspace = true
-env_logger = "0.11"
 thiserror.workspace = true
 dirs.workspace = true
-notify.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 kdl = "6"
@@ -37,21 +34,30 @@ strum.workspace = true
 chrono.workspace = true
 chrono-tz = "0.10"
 png.workspace = true
+# std::time, which panics in a browser, with what works there; the same types on the desktop.
+web-time = "1"
 
-# ui: no windowing backend, the platform is our own (app.rs) on top of the Wayland crates below.
+# ui: no windowing backend, the platform is our own (app.rs) on top of Wayland or a canvas.
 slint = { version = "1.18", default-features = false, features = [
     "std",
     "compat-1-2",
-    "renderer-software",
     "renderer-femtovg",
-    "software-renderer-path",
-    "software-renderer-systemfonts",
 ] }
 # Must match slint's exact version. Used directly for scroll gesture phases (not in Slint's public
 # API); its features load images at runtime (icon themes, album art, notification images).
 i-slint-core = { version = "=1.18.1", features = ["image-decoders", "svg"] }
 # Not used directly: Slint decodes only png and jpeg, this adds the other formats icons come in.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "ico"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+clap = { version = "4", features = ["derive"] }
+env_logger = "0.11"
+notify.workspace = true
+slint = { version = "1.18", default-features = false, features = [
+    "renderer-software",
+    "software-renderer-path",
+    "software-renderer-systemfonts",
+] }
 
 # wayland
 smithay-client-toolkit.workspace = true
@@ -61,6 +67,38 @@ wayland-backend = { version = "0.3", features = ["client_system"] }
 wayland-protocols.workspace = true
 wayland-egl = "0.32"
 khronos-egl = { version = "6", features = ["dynamic"] }
+
+# The web version: a canvas, the page's events, and localStorage for files.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# Must match slint's exact version: drawing on a canvas isn't in Slint's public API.
+i-slint-renderer-femtovg = { version = "=1.18.1", features = ["opengl"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+console_error_panic_hook = "0.1"
+console_log = "1"
+web-sys = { version = "0.3", features = [
+    "AddEventListenerOptions",
+    "Clipboard",
+    "ClipboardEvent",
+    "CssStyleDeclaration",
+    "DataTransfer",
+    "Document",
+    "DomTokenList",
+    "Element",
+    "Event",
+    "EventTarget",
+    "HtmlCanvasElement",
+    "HtmlElement",
+    "KeyboardEvent",
+    "Location",
+    "MouseEvent",
+    "Navigator",
+    "PointerEvent",
+    "Storage",
+    "UrlSearchParams",
+    "WheelEvent",
+    "Window",
+] }
 
 # Slint wants one thread and one platform per process: the UI tests are one plain program.
 [[test]]
@@ -88,6 +126,14 @@ opt-level = 1
 opt-level = 3
 [profile.release]
 debug = 1
+# The web version: as small as it gets, since every visitor downloads it.
+[profile.web]
+inherits = "release"
+debug = 0
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
 
 # Slint 1.18's software renderer doesn't clip paths to the repainted region, so partial repaints
 # draw arcs over overlays (tray menus, a widget dragged in from the drawer). Patched copy; see its

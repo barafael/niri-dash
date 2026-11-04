@@ -554,6 +554,15 @@ fn widget_list() -> String {
 
 const DEFAULT: &str = include_str!("../assets/config.kdl");
 
+/// The layout to start from: a browser's window can be a phone's, so it goes by the page's shape.
+fn default_layout() -> &'static str {
+    #[cfg(target_arch = "wasm32")]
+    if crate::web::is_portrait() {
+        return include_str!("../assets/config-portrait.kdl");
+    }
+    DEFAULT
+}
+
 /// A KDL number, integer or not.
 pub(crate) fn number(v: &KdlValue) -> Option<f64> {
     match v {
@@ -667,7 +676,7 @@ impl Layout {
     }
 
     pub fn default_text() -> String {
-        format!("{HEADER}{}\n{DEFAULT}", widget_list())
+        format!("{HEADER}{}\n{}", widget_list(), default_layout())
     }
 
     /// Parse a config. Unknown widgets and bad values are skipped with a warning.
@@ -807,7 +816,7 @@ impl Layout {
 
     fn load_from_disk(create: bool) -> Loaded {
         let path = Self::path();
-        let text = match std::fs::read_to_string(&path) {
+        let text = match crate::files::read(&path) {
             Ok(t) => t,
             Err(_) => {
                 let t = Self::default_text();
@@ -1600,7 +1609,7 @@ impl Occupancy {
         &mut self,
         items: &[Item],
         budget: &mut u32,
-        deadline: std::time::Instant,
+        deadline: web_time::Instant,
     ) -> Option<Vec<(u32, Rect)>> {
         let mut items = items.to_vec();
         items.sort_by_key(|m| -(m.orig.w * m.orig.h));
@@ -1615,7 +1624,7 @@ impl Occupancy {
         i: usize,
         out: &mut Vec<(u32, Rect)>,
         budget: &mut u32,
-        deadline: std::time::Instant,
+        deadline: web_time::Instant,
     ) -> bool {
         let Some(m) = items.get(i) else { return true };
         let rest_min: i32 = items[i..].iter().map(|m| m.min_w * m.min_h).sum();
@@ -1630,7 +1639,7 @@ impl Occupancy {
                 .collect();
             spots.sort_by_key(|r| (r.col - orig.col).abs() + (r.row - orig.row).abs());
             for r in spots.into_iter().take(8) {
-                if *budget == 0 || std::time::Instant::now() > deadline {
+                if *budget == 0 || web_time::Instant::now() > deadline {
                     return false;
                 }
                 *budget -= 1;
@@ -1792,7 +1801,7 @@ impl Layout {
     /// bounded search that keeps widgets close to where they were; on a full grid it first tries
     /// an exact re-tiling, then lets displaced widgets shrink towards their minimum size.
     fn repack(&self, others: &[(u32, Rect)], target: Rect) -> Option<Vec<(u32, Rect)>> {
-        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(25);
+        let deadline = web_time::Instant::now() + std::time::Duration::from_millis(25);
         let center = |r: &Rect| (2 * r.col + r.w, 2 * r.row + r.h);
         let tc = center(&target);
         let mut order: Vec<usize> = (0..others.len()).collect();
@@ -1817,7 +1826,7 @@ impl Layout {
         ks.push(others.len());
         let total = self.cols * self.rows;
         for k in ks {
-            if std::time::Instant::now() > deadline {
+            if web_time::Instant::now() > deadline {
                 break;
             }
             let movable: Vec<Item> = order[..k]
@@ -2031,7 +2040,7 @@ impl Layout {
             return Refit::default();
         }
         misfits.sort_by_key(|m| (m.orig.row, m.orig.col));
-        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(50);
+        let deadline = web_time::Instant::now() + std::time::Duration::from_millis(50);
         let mut budget = 5000;
         let mut evicted = Vec::new();
         let moves = match occ.pack_shrinking(&misfits, &mut budget, deadline) {
@@ -2636,7 +2645,7 @@ mod tests {
         ];
         for (kind, col, row) in cases {
             let id = id_of(&l, kind);
-            let t = std::time::Instant::now();
+            let t = web_time::Instant::now();
             assert!(
                 l.move_reflow(id, col, row, (0, 1)),
                 "{kind:?} to {col},{row}"
@@ -2712,7 +2721,7 @@ mod tests {
         for w in base.widgets.clone() {
             for row in 0..=base.rows - w.h {
                 for col in 0..=base.cols - w.w {
-                    let t = std::time::Instant::now();
+                    let t = web_time::Instant::now();
                     let sol = base.reflow(
                         w.id,
                         Rect {

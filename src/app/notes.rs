@@ -59,7 +59,7 @@ impl App {
                     continue;
                 }
                 if reload || !notes.contains_key(name) {
-                    let text = std::fs::read_to_string(note_path(name)).unwrap_or_default();
+                    let text = crate::files::read(&note_path(name)).unwrap_or_default();
                     notes.insert(name.clone(), text);
                 }
             }

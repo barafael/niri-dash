@@ -634,7 +634,14 @@ pub const KNOBS: &[Knob] = &[
     },
 ];
 
+/// Font families offered for `font-family`: in a browser, only what comes with the page.
+#[cfg(target_arch = "wasm32")]
+pub fn font_choices() -> Vec<String> {
+    vec![String::new()]
+}
+
 /// Font families offered for `font-family`, of those installed ("" is the system default).
+#[cfg(not(target_arch = "wasm32"))]
 pub fn font_choices() -> Vec<String> {
     const CANDIDATES: [&str; 13] = [
         "Inter",
@@ -738,7 +745,7 @@ pub fn style_path(name: &str) -> PathBuf {
 
 /// The text of a color scheme or style: its file, else the bundled copy.
 fn load_text(path: &Path, bundled: &[(&str, &str)], name: &str) -> Option<String> {
-    std::fs::read_to_string(path).ok().or_else(|| {
+    crate::files::read(path).ok().or_else(|| {
         bundled
             .iter()
             .find(|(n, _)| *n == name)
@@ -759,11 +766,10 @@ pub fn style_text(name: &str) -> Option<String> {
 /// Write the bundled color schemes and styles if missing (never overwrites user edits).
 pub fn install_bundled() {
     for (dir, set) in [(colorschemes_dir(), COLORSCHEMES), (styles_dir(), STYLES)] {
-        let _ = std::fs::create_dir_all(&dir);
         for (name, text) in set {
             let p = dir.join(format!("{name}.kdl"));
-            if !p.exists()
-                && let Err(e) = std::fs::write(&p, text)
+            if !crate::files::exists(&p)
+                && let Err(e) = crate::files::write_atomic(&p, text)
             {
                 log::warn!("writing {}: {e}", p.display());
             }
@@ -773,20 +779,16 @@ pub fn install_bundled() {
 
 /// Names of the color schemes or styles in a directory, "default" first.
 pub fn list(dir: &Path) -> Vec<String> {
-    let mut names: Vec<String> = std::fs::read_dir(dir)
-        .map(|rd| {
-            rd.flatten()
-                .filter_map(|e| {
-                    let p = e.path();
-                    if p.extension().is_some_and(|x| x == "kdl") {
-                        p.file_stem().map(|s| s.to_string_lossy().into_owned())
-                    } else {
-                        None
-                    }
-                })
-                .collect()
+    let mut names: Vec<String> = crate::files::list(dir)
+        .into_iter()
+        .filter_map(|p| {
+            if p.extension().is_some_and(|x| x == "kdl") {
+                p.file_stem().map(|s| s.to_string_lossy().into_owned())
+            } else {
+                None
+            }
         })
-        .unwrap_or_default();
+        .collect();
     names.sort_by(|a, b| (a != "default").cmp(&(b != "default")).then(a.cmp(b)));
     names
 }

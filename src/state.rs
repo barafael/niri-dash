@@ -45,7 +45,7 @@ pub fn path() -> PathBuf {
 
 pub fn load() -> State {
     let path = path();
-    match std::fs::read_to_string(&path) {
+    match crate::files::read(&path) {
         Ok(text) => serde_json::from_str(&text).unwrap_or_else(|e| {
             log::warn!("{}: {e}; starting fresh", path.display());
             State::default()

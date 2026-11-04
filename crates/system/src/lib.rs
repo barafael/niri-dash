@@ -3,7 +3,9 @@
 //! commands is an actor that owns that part of the system. The dashboard holds nothing but the
 //! actors' senders ([`Senders`]) and gets their events on its event loop.
 //!
-//! [`live`] runs the real system, under niri, KWin or another compositor.
+//! [`live`] runs the real system, under niri, KWin or another compositor (not in a browser).
+//! [`simulated`] runs a made-up one that keeps moving, which is all a browser gets. [`mock`] runs
+//! one that sits still, for tests and screenshots.
 
 pub mod audio;
 pub mod bluetooth;
@@ -11,10 +13,12 @@ pub mod brightness;
 pub mod claude;
 pub mod clipboard;
 pub mod color;
+#[cfg(not(target_arch = "wasm32"))]
 mod compositor;
 pub mod drives;
 pub mod host;
 pub mod keyboard;
+#[cfg(not(target_arch = "wasm32"))]
 mod live;
 pub mod mascot;
 pub mod media;
@@ -26,20 +30,61 @@ pub mod phones;
 pub mod power;
 pub mod privacy;
 pub mod session;
+mod sim;
+#[cfg(not(target_arch = "wasm32"))]
 mod sources;
+mod text;
 pub mod tray;
+#[cfg(not(target_arch = "wasm32"))]
 mod wayland;
 pub mod weather;
 pub mod wifi;
 pub mod windows;
 
-pub use compositor::{Compositor, guess as guess_compositor};
+#[cfg(not(target_arch = "wasm32"))]
+pub use compositor::guess as guess_compositor;
+#[cfg(not(target_arch = "wasm32"))]
 pub use live::{Options, live};
-pub use mock::{Demo, MockSystem, Received, mock};
-pub use sources::{IconSrc, Locale, clean_label, locale, which};
-use tokio::sync::mpsc::unbounded_channel;
-pub use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+#[cfg(not(target_arch = "wasm32"))]
+pub use mock::mock;
+pub use mock::{Demo, MockSystem, Received};
+pub use sim::{Sim, simulated};
+#[cfg(not(target_arch = "wasm32"))]
+pub use sources::which;
+use std::path::PathBuf;
+use std::sync::Arc;
+pub use text::{Locale, clean_label, locale, one_line, strip_spinner, unescape_entities};
+pub use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 pub use tokio::sync::oneshot;
+
+/// Where a system's events go. On the desktop they wake the dashboard's calloop; in a browser the
+/// dashboard awaits them on its one thread.
+#[cfg(not(target_arch = "wasm32"))]
+pub type EventSender = smithay_client_toolkit::reexports::calloop::channel::Sender<Event>;
+#[cfg(target_arch = "wasm32")]
+pub type EventSender = UnboundedSender<Event>;
+
+/// An image that the UI thread turns into a `slint::Image`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum IconSrc {
+    None,
+    Path(PathBuf),
+    Rgba {
+        width: u32,
+        height: u32,
+        data: Arc<Vec<u8>>,
+    },
+}
+
+/// Which compositor we run under.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Compositor {
+    Niri,
+    /// KDE Plasma's KWin.
+    Kwin,
+    /// Anything else: the Wayland protocols work, the compositor-specific features don't.
+    Other,
+}
 
 /// Hand a command to an actor. Commands are never refused, so the only failure is that the actor
 /// is gone, which means the system is shutting down; there is nobody left to tell.

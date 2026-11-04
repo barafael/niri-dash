@@ -1,12 +1,16 @@
 //! config.kdl: saving edits, and picking up changes made to it (or the theme files) by hand.
 
-use super::{App, Input};
-use crate::layout::Layout;
+use super::App;
 use niri_dash_system::{Tell, weather};
-use smithay_client_toolkit::reexports::calloop::channel::Sender;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+#[cfg(not(target_arch = "wasm32"))]
+use {
+    super::wayland::Input,
+    crate::layout::Layout,
+    smithay_client_toolkit::reexports::calloop::channel::Sender,
+    std::path::PathBuf,
+    std::sync::{Arc, Mutex},
+    std::time::Duration,
+};
 
 impl App {
     pub(super) fn save_layout(&self) {
@@ -26,9 +30,10 @@ impl App {
         self.apply_grid();
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub(super) fn reload_config(&self) {
         let path = Layout::path();
-        let Ok(text) = std::fs::read_to_string(&path) else {
+        let Ok(text) = crate::files::read(&path) else {
             return;
         };
         if text == *self.last_written.borrow() {
@@ -67,6 +72,7 @@ impl App {
 /// Watch config.kdl and the theme files: inotify on the directories holding them (after following
 /// symlinks, so a symlinked dotfile counts as its target). The list of files changes with the
 /// theme, which goes through config.kdl, so the watches are re-synced after every event.
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn watch_config(paths: Arc<Mutex<Vec<PathBuf>>>, input: Sender<Input>) {
     use notify::{RecursiveMode, Watcher};
     use std::collections::HashSet;

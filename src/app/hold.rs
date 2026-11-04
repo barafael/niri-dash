@@ -58,8 +58,8 @@ impl Hold {
     }
 }
 
-/// What the shell calls with each pointer event.
-pub(super) fn watcher(app: &Rc<App>) -> crate::shell::PointerWatcher {
+/// What the shell (or the page) calls with each pointer event.
+pub(super) fn watcher(app: &Rc<App>) -> Box<dyn Fn(&WindowEvent)> {
     let app = app.clone();
     Box::new(move |event| app.hold.watch(&app, event))
 }

@@ -4,14 +4,16 @@
 //! dashboard without the services behind it.
 
 use crate::{
-    Capabilities, Compositor, Event, IconSrc, Inboxes, Started, audio, bluetooth, brightness,
-    channels, claude, clipboard, color, drives, host, keyboard, mascot, media, night_light,
-    notifications, perf, phones, power, privacy, session, tray, weather, wifi, windows,
+    Capabilities, Compositor, Event, EventSender, IconSrc, Inboxes, audio, bluetooth, brightness,
+    claude, clipboard, color, drives, host, keyboard, mascot, media, night_light, notifications,
+    perf, phones, power, privacy, session, tray, weather, wifi, windows,
 };
-use smithay_client_toolkit::reexports::calloop::channel::Sender;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::{Started, channels};
 
 /// Start a mock system on a thread of its own, reporting to `events`.
-pub fn mock(events: Sender<Event>) -> std::io::Result<Started> {
+#[cfg(not(target_arch = "wasm32"))]
+pub fn mock(events: EventSender) -> std::io::Result<Started> {
     let (senders, inboxes) = channels();
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -50,11 +52,41 @@ pub enum Received {
     Clipboard(clipboard::Command),
 }
 
+impl Inboxes {
+    /// The next command of any applet; None when every sender is gone. Each applet's commands
+    /// keep their order; between applets there is none.
+    pub async fn next(&mut self) -> Option<Received> {
+        Some(tokio::select! {
+            Some(c) = self.host.recv() => Received::Host(c),
+            Some(c) = self.windows.recv() => Received::Windows(c),
+            Some(c) = self.keyboard.recv() => Received::Keyboard(c),
+            Some(c) = self.privacy.recv() => Received::Privacy(c),
+            Some(c) = self.color.recv() => Received::Color(c),
+            Some(c) = self.wifi.recv() => Received::Wifi(c),
+            Some(c) = self.bluetooth.recv() => Received::Bluetooth(c),
+            Some(c) = self.audio.recv() => Received::Audio(c),
+            Some(c) = self.brightness.recv() => Received::Brightness(c),
+            Some(c) = self.notifications.recv() => Received::Notifications(c),
+            Some(c) = self.tray.recv() => Received::Tray(c),
+            Some(c) = self.media.recv() => Received::Media(c),
+            Some(c) = self.power.recv() => Received::Power(c),
+            Some(c) = self.session.recv() => Received::Session(c),
+            Some(c) = self.drives.recv() => Received::Drives(c),
+            Some(c) = self.phones.recv() => Received::Phones(c),
+            Some(c) = self.weather.recv() => Received::Weather(c),
+            Some(c) = self.night_light.recv() => Received::NightLight(c),
+            Some(c) = self.mascot.recv() => Received::Mascot(c),
+            Some(c) = self.clipboard.recv() => Received::Clipboard(c),
+            else => return None,
+        })
+    }
+}
+
 /// The mock: what every applet shows, and every command it got, in order.
 pub struct MockSystem {
     pub demo: Demo,
     pub received: Vec<Received>,
-    events: Sender<Event>,
+    events: EventSender,
 }
 
 impl MockSystem {
@@ -65,7 +97,7 @@ impl MockSystem {
         gamma: true,
     };
 
-    pub fn new(demo: Demo, events: Sender<Event>) -> Self {
+    pub fn new(demo: Demo, events: EventSender) -> Self {
         Self {
             demo,
             received: Vec::new(),
@@ -75,30 +107,7 @@ impl MockSystem {
 
     /// Answer commands until every sender is gone; hands back what it saw.
     pub async fn event_loop(mut self, mut inbox: Inboxes) -> Self {
-        loop {
-            let cmd = tokio::select! {
-                Some(c) = inbox.host.recv() => Received::Host(c),
-                Some(c) = inbox.windows.recv() => Received::Windows(c),
-                Some(c) = inbox.keyboard.recv() => Received::Keyboard(c),
-                Some(c) = inbox.privacy.recv() => Received::Privacy(c),
-                Some(c) = inbox.color.recv() => Received::Color(c),
-                Some(c) = inbox.wifi.recv() => Received::Wifi(c),
-                Some(c) = inbox.bluetooth.recv() => Received::Bluetooth(c),
-                Some(c) = inbox.audio.recv() => Received::Audio(c),
-                Some(c) = inbox.brightness.recv() => Received::Brightness(c),
-                Some(c) = inbox.notifications.recv() => Received::Notifications(c),
-                Some(c) = inbox.tray.recv() => Received::Tray(c),
-                Some(c) = inbox.media.recv() => Received::Media(c),
-                Some(c) = inbox.power.recv() => Received::Power(c),
-                Some(c) = inbox.session.recv() => Received::Session(c),
-                Some(c) = inbox.drives.recv() => Received::Drives(c),
-                Some(c) = inbox.phones.recv() => Received::Phones(c),
-                Some(c) = inbox.weather.recv() => Received::Weather(c),
-                Some(c) = inbox.night_light.recv() => Received::NightLight(c),
-                Some(c) = inbox.mascot.recv() => Received::Mascot(c),
-                Some(c) = inbox.clipboard.recv() => Received::Clipboard(c),
-                else => break,
-            };
+        while let Some(cmd) = inbox.next().await {
             let cmd = self.handle(cmd);
             self.received.push(cmd);
         }
@@ -623,7 +632,7 @@ fn demo_weather() -> weather::State {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Tell;
+    use crate::{Tell, channels};
     use smithay_client_toolkit::reexports::calloop::{EventLoop, channel};
 
     /// Commands queued before the loop runs, then the senders dropped: the loop answers them

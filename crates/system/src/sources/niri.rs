@@ -1,28 +1,11 @@
 //! Windows and workspaces from niri's event stream; window actions over the IPC socket.
 
 use super::{Ctx, Dedup, IconSrc, icons, keyboard, strip_spinner};
+pub use crate::privacy::ScreenCast;
+pub use crate::windows::{Row, State as WindowsState};
 use niri_ipc::state::{EventStreamState, EventStreamStatePart};
 use niri_ipc::{Action, Reply, Request, Response, socket::Socket};
 use std::time::Duration;
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Row {
-    pub id: u64,
-    pub header: bool,
-    pub title: String,
-    pub app: String,
-    pub icon: IconSrc,
-    pub focused: bool,
-    pub urgent: bool,
-}
-
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct WindowsState {
-    pub connected: bool,
-    pub rows: Vec<Row>,
-    pub count: usize,
-    pub focused_icon: Option<IconSrc>,
-}
 
 /// Talking to niri over its IPC socket failed.
 #[derive(Debug, thiserror::Error)]
@@ -212,21 +195,6 @@ fn stream(ctx: &Ctx, sent: &Sent) -> Result<()> {
             ctx.refresh();
         }
     }
-}
-
-/// A screencast as the privacy widget shows it.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ScreenCast {
-    pub session_id: u64,
-    /// What is shared: a monitor name or a window title.
-    pub target: String,
-    pub active: bool,
-    /// The consumer's process (wlr-screencopy only).
-    pub pid: Option<i32>,
-    /// That process's name.
-    pub process: Option<String>,
-    /// The PipeWire node of the stream, to find who reads it.
-    pub pw_node: Option<u32>,
 }
 
 fn casts(state: &EventStreamState) -> Vec<ScreenCast> {

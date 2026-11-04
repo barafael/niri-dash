@@ -10,7 +10,6 @@ use crate::{Dash, NightLight as UiNightLight};
 use niri_dash_system::Tell;
 use niri_dash_system::night_light::{self as gamma, Cmd, NightLightState};
 use slint::{ComponentHandle, Timer, TimerMode};
-use std::io::Write;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -97,7 +96,13 @@ impl App {
     }
 
     /// A standalone app hands night light to the daemon.
+    #[cfg(target_arch = "wasm32")]
+    fn forward_night_light(&self, _: Cmd) {}
+
+    /// A standalone app hands night light to the daemon.
+    #[cfg(not(target_arch = "wasm32"))]
     fn forward_night_light(&self, cmd: Cmd) {
+        use std::io::Write;
         if let Err(e) = std::os::unix::net::UnixStream::connect(crate::socket_path())
             .and_then(|mut s| writeln!(s, "{}", cmd.to_wire()))
         {

@@ -2,19 +2,10 @@
 //! from niri (`privacy::Event::Casts`); its consumer is looked up here in the PipeWire graph.
 
 use super::{Ctx, Dedup, Trigger, pipewire};
+pub use crate::privacy::Usage;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::Duration;
-
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct Usage {
-    /// Apps recording audio.
-    pub mic: Vec<String>,
-    /// Apps reading a camera.
-    pub camera: Vec<String>,
-    /// For each video node that something reads (screencasts among them): who reads it.
-    pub video_readers: Vec<(u32, String)>,
-}
 
 fn is_camera(n: &pipewire::Node) -> bool {
     n.class == "Video/Source" && (n.name.starts_with("v4l2_") || n.name.starts_with("libcamera"))

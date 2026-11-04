@@ -8,13 +8,18 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 log.workspace = true
 thiserror.workspace = true
-dirs.workspace = true
-notify.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 strum.workspace = true
 chrono.workspace = true
 png.workspace = true
+tokio = { version = "1", features = ["sync", "macros"] }
+qrcode = { version = "0.14.1", default-features = false }
+
+# The real system: none of this exists in a browser.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+dirs.workspace = true
+notify.workspace = true
 
 # wayland: the clipboard and night light, on the dashboard's connection
 smithay-client-toolkit.workspace = true
@@ -24,11 +29,17 @@ wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 # data sources
 niri-ipc = "26.4"
 sysinfo = "0.37"
-tokio = { version = "1", features = ["rt-multi-thread", "process", "time", "sync", "macros", "io-util"] }
+tokio = { version = "1", features = ["rt-multi-thread", "process", "time", "io-util"] }
 futures-util = "0.3"
 zbus = { version = "5", default-features = false, features = ["tokio"] }
 system-tray = "0.8"
 freedesktop-icons = "0.4"
 ureq = { version = "2", features = ["json"] }
-qrcode = { version = "0.14.1", default-features = false }
 nmrs = "3.5.7"
+
+# The simulated system's clock and night light, in a browser.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+gloo-timers = { version = "0.3", features = ["futures"] }
+web-sys = { version = "0.3", features = ["Window", "Navigator", "Document", "Element", "HtmlElement", "CssStyleDeclaration", "Clipboard"] }

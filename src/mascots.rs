@@ -15,8 +15,9 @@
 use chrono::{Datelike, Local, Timelike, Weekday};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use strum::{AsRefStr, EnumIter, EnumString, IntoStaticStr, VariantNames};
+use web_time::Instant;
 
 /// A mascot. [`Character::VARIANTS`] lists their names.
 #[derive(
@@ -49,8 +50,8 @@ impl Character {
     AsRefStr,
     Serialize,
     Deserialize,
-    clap::ValueEnum,
 )]
+#[cfg_attr(not(target_arch = "wasm32"), derive(clap::ValueEnum))]
 #[strum(serialize_all = "lowercase", ascii_case_insensitive)]
 #[serde(rename_all = "lowercase")]
 pub enum Outfit {
@@ -569,11 +570,11 @@ pub struct Rng(u64);
 
 impl Rng {
     pub fn seeded() -> Self {
-        let t = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
+        let t = web_time::SystemTime::now()
+            .duration_since(web_time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos() as u64;
-        Rng((t ^ (u64::from(std::process::id()) << 32)) | 1)
+        Rng((t ^ (u64::from(crate::own_pid()) << 32)) | 1)
     }
 
     pub fn next(&mut self) -> u64 {
