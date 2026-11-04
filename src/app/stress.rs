@@ -302,6 +302,9 @@ impl Monkey {
 
     /// Check the dashboard as the last key left it, then press the next one (or open it again).
     pub(super) fn step(&mut self, app: &App, window: &slint::Window) -> Result<(), Failure> {
+        // Slint runs `changed` handlers on its next pass: a list that just grew hasn't scrolled
+        // the cursor's row back into sight until then, and the check shouldn't look in between.
+        slint::platform::update_timers_and_animations();
         let place = place(app);
         if let Err(p) = check(app) {
             self.report(format!("{}: {p}", kind_name(app)))?;

@@ -414,6 +414,45 @@ fn cow_draws(issues: &mut Issues) {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A short Bluetooth tile: Enter on "Add a device" makes the list grow above that row, which
+/// pushes it out of sight until the next pass of the event loop, when it scrolls back.
+fn bluetooth_row_stays_in_sight(issues: &mut Issues) {
+    let config =
+        "grid columns=16 rows=9\nlayout {\n    bluetooth col=0 row=0 width=3 height=2\n}\n";
+    let mut h = dashboard(config);
+    h.settle(50);
+    h.press("f");
+    type_label(&mut h, "bluetooth");
+    h.press("G");
+    h.press("enter");
+    h.pump();
+    if let Err(why) = h.spoken() {
+        issues.add(format!(
+            "bluetooth: the cursor's row is out of sight a pass later: {why}"
+        ));
+    }
+    // As the daemon does: a pass of the event loop, then a frame, for a while.
+    for _ in 0..30 {
+        h.render();
+        h.settle(10);
+        if h.spoken().is_err() {
+            // The list changed on the last pass; the row is due back on this one.
+            h.pump();
+            if let Err(why) = h.spoken() {
+                issues.add(format!(
+                    "bluetooth: the cursor's row stays out of sight: {why}"
+                ));
+            }
+        }
+    }
+    match h.spoken() {
+        Ok(Some(said)) if said.contains("Stop looking") => {}
+        said => issues.add(format!(
+            "bluetooth: the cursor should be on Stop looking: {said:?}"
+        )),
+    }
+}
+
 // ------------------------------------------------------------------------------------------
 // Random edit sequences through the callbacks the pointer would call.
 
@@ -1659,6 +1698,10 @@ fn main() {
         ),
         ("settings: text that makes no sense", settings_bad_text),
         ("cow: draws, with any cow file", cow_draws),
+        (
+            "bluetooth: the cursor's row stays in sight",
+            bluetooth_row_stays_in_sight,
+        ),
         ("edits: random on a roomy layout", |i| {
             random_edits(i, MIXED, "mixed")
         }),
