@@ -10,3 +10,5 @@ git-repository-url = "https://github.com/barafael/niri-dash"
 edit-url-template = "https://github.com/barafael/niri-dash/edit/main/book/{path}"
 default-theme = "light"
 preferred-dark-theme = "navy"
+additional-css = ["css/custom.css"]
+additional-js = ["mermaid.min.js", "mermaid-init.js"]

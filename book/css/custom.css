@@ -1,0 +1,159 @@
+/* The manual's look, on top of mdBook's. Colors come from mdBook's theme variables, so every
+   theme (light, rust, coal, navy, ayu) gets a matching version. */
+
+:root {
+    --content-max-width: 1120px;
+    --page-padding: 24px;
+    --sidebar-target-width: 290px;
+    --mono-font: ui-monospace, "JetBrains Mono", "Cascadia Code", "DejaVu Sans Mono", Consolas, monospace;
+    --code-font-size: 0.9em;
+}
+
+/* Text: the system's own UI font, a size to read for a while, and room between lines. */
+body {
+    font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans", "Helvetica Neue", Arial, sans-serif;
+    font-size: 1.7rem;
+}
+.content p,
+.content ol,
+.content ul,
+.content dl {
+    line-height: 1.65;
+}
+.content li + li {
+    margin-top: 0.25em;
+}
+#mdbook-sidebar {
+    font-size: 1.5rem;
+}
+
+/* Headings: a rule under each section, less empty space above it. */
+.content h1,
+.content h2,
+.content h3,
+.content h4 {
+    font-weight: 650;
+    line-height: 1.25;
+}
+.content h2 {
+    margin-block-start: 2em;
+    padding-bottom: 0.25em;
+    border-bottom: 1px solid var(--table-border-color);
+}
+.content h3 {
+    margin-block-start: 1.6em;
+}
+
+/* Code */
+.content code {
+    font-family: var(--mono-font);
+}
+.content :not(pre) > code {
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+}
+.content pre > code {
+    padding: 1em 1.2em;
+    line-height: 1.5;
+}
+
+/* Tables: one card each, full width, a quiet header, room in the cells. */
+.content .table-wrapper {
+    margin: 1.6rem 0 2.4rem;
+    border: 1px solid var(--table-border-color);
+    border-radius: 8px;
+    overflow-x: auto;
+}
+.content table {
+    width: 100%;
+    margin: 0;
+    border: 0;
+    border-collapse: collapse;
+}
+.content table th,
+.content table td {
+    padding: 0.7rem 1.2rem;
+    border: 0;
+    border-top: 1px solid var(--table-border-color);
+    text-align: left;
+    vertical-align: top;
+    line-height: 1.5;
+}
+.content table thead {
+    background: color-mix(in srgb, var(--links) 10%, var(--bg));
+}
+.content table thead th,
+.content table thead td {
+    border-top: 0;
+    font-weight: 650;
+    white-space: nowrap;
+}
+.content table tbody tr:nth-child(2n) {
+    background: var(--table-alternate-bg);
+}
+.content table td code,
+.content table th code {
+    overflow-wrap: break-word;
+}
+/* The first column of a table is usually what the row is about. */
+.content table tbody td:first-child {
+    font-weight: 500;
+}
+.content table tbody td:first-child code {
+    font-weight: 400;
+    white-space: nowrap;
+}
+
+/* A widget's facts (generated, see src/book.rs): a compact card next to nothing, with the
+   widget's name as its header. */
+.widget-facts .table-wrapper {
+    max-width: 640px;
+    margin-bottom: 1.6rem;
+}
+.widget-facts table thead {
+    background: color-mix(in srgb, var(--links) 16%, var(--bg));
+}
+.widget-facts table thead th:last-child,
+.widget-facts table thead td:last-child {
+    text-align: right;
+}
+.widget-facts table tbody td:first-child {
+    width: 11em;
+    color: var(--sidebar-fg);
+    font-weight: 400;
+}
+.widget-facts + .table-wrapper {
+    margin-top: 0;
+}
+
+/* The previous/next arrows are fixed at the page's edges: leave them a gutter of their own, so
+   the wider text column doesn't run under them. (Below 1080px mdBook moves them to the bottom.) */
+@media only screen and (min-width: 1081px) {
+    .content {
+        padding-inline: 72px;
+    }
+    .nav-chapters {
+        min-width: 64px;
+    }
+}
+
+/* Pictures: a frame, so a screenshot of a dark UI doesn't melt into a dark page. */
+.content img {
+    border: 1px solid var(--table-border-color);
+    border-radius: 8px;
+}
+
+/* Diagrams */
+pre.mermaid {
+    margin: 2rem 0;
+    padding: 1.2rem;
+    text-align: center;
+    background: transparent;
+    border: 1px solid var(--table-border-color);
+    border-radius: 8px;
+    overflow-x: auto;
+}
+pre.mermaid svg {
+    max-width: 100%;
+    height: auto;
+}

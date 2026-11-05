@@ -18,6 +18,18 @@ the commands and events.
 Any set of actors that speaks the same commands and events can stand in for the real ones. That is
 the whole mechanism, and the simulated and mock systems are two such sets.
 
+```mermaid
+flowchart LR
+    D["Dashboard<br/>(the Slint UI)"] <-->|"commands and events"| S
+    subgraph S["crates/system: one of these"]
+        direction TB
+        L["live<br/>the real machine"]
+        Si["simulated<br/>a made-up machine that moves"]
+        M["mock<br/>a made-up machine that sits still"]
+    end
+    style S fill:transparent,stroke-dasharray:5 5
+```
+
 ## Why a browser needs one
 
 A page has no D-Bus and no compositor to ask. For the web version to be the same dashboard and

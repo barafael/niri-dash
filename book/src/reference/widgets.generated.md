@@ -39,6 +39,8 @@
 <!-- ANCHOR_END: index -->
 
 <!-- ANCHOR: clock -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `clock` |
 |---|---|
 | Title | Clock |
@@ -46,6 +48,8 @@
 | Group | Time |
 | Size in cells | 4×2 by default, 2×1 at least, 6×3 at most |
 | Shapes | rectangular, round |
+
+</div>
 
 | Setting | Label in the sidebar | Values | Default |
 |---|---|---|---|
@@ -56,6 +60,8 @@
 <!-- ANCHOR_END: clock -->
 
 <!-- ANCHOR: calendar -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `calendar` |
 |---|---|
 | Title | Calendar |
@@ -64,6 +70,8 @@
 | Size in cells | 4×4 by default, 3×3 at least, 6×6 at most |
 | Shapes | rectangular, round |
 
+</div>
+
 | Setting | Label in the sidebar | Values | Default |
 |---|---|---|---|
 | `first-day` | Week starts on | `"monday"`, `"sunday"` | `"monday"` (`"sunday"` with a US locale) |
@@ -71,6 +79,8 @@
 <!-- ANCHOR_END: calendar -->
 
 <!-- ANCHOR: system-monitor -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `system-monitor` |
 |---|---|
 | Title | System monitor |
@@ -79,6 +89,8 @@
 | Size in cells | 4×3 by default, 2×2 at least, 6×5 at most |
 | Shapes | rectangular, round |
 
+</div>
+
 | Setting | Label in the sidebar | Values | Default |
 |---|---|---|---|
 | `history` | Chart covers | `30`, `60`, `90`, `120`, `180` (seconds) | `90` |
@@ -86,6 +98,8 @@
 <!-- ANCHOR_END: system-monitor -->
 
 <!-- ANCHOR: windows -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `windows` |
 |---|---|
 | Title | Windows |
@@ -94,9 +108,13 @@
 | Size in cells | 5×5 by default, 3×2 at least, 8×8 at most |
 | Shapes | rectangular |
 | Settings | none |
+
+</div>
 <!-- ANCHOR_END: windows -->
 
 <!-- ANCHOR: claude-sessions -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `claude-sessions` |
 |---|---|
 | Title | Claude sessions |
@@ -105,9 +123,13 @@
 | Size in cells | 4×3 by default, 3×2 at least, 6×5 at most |
 | Shapes | rectangular, round |
 | Settings | none |
+
+</div>
 <!-- ANCHOR_END: claude-sessions -->
 
 <!-- ANCHOR: wifi -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `wifi` |
 |---|---|
 | Title | Wi-Fi |
@@ -116,9 +138,13 @@
 | Size in cells | 3×4 by default, 2×2 at least, 4×6 at most |
 | Shapes | rectangular, round |
 | Settings | none |
+
+</div>
 <!-- ANCHOR_END: wifi -->
 
 <!-- ANCHOR: bluetooth -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `bluetooth` |
 |---|---|
 | Title | Bluetooth |
@@ -127,9 +153,13 @@
 | Size in cells | 3×3 by default, 2×2 at least, 4×5 at most |
 | Shapes | rectangular, round |
 | Settings | none |
+
+</div>
 <!-- ANCHOR_END: bluetooth -->
 
 <!-- ANCHOR: battery -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `battery` |
 |---|---|
 | Title | Battery & power |
@@ -138,9 +168,13 @@
 | Size in cells | 3×2 by default, 2×1 at least, 4×3 at most |
 | Shapes | rectangular, round |
 | Settings | none |
+
+</div>
 <!-- ANCHOR_END: battery -->
 
 <!-- ANCHOR: volume -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `volume` |
 |---|---|
 | Title | Volume |
@@ -149,9 +183,13 @@
 | Size in cells | 3×3 by default, 2×1 at least, 4×4 at most |
 | Shapes | rectangular, round |
 | Settings | none |
+
+</div>
 <!-- ANCHOR_END: volume -->
 
 <!-- ANCHOR: brightness -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `brightness` |
 |---|---|
 | Title | Brightness |
@@ -160,9 +198,13 @@
 | Size in cells | 3×1 by default, 2×1 at least, 4×2 at most |
 | Shapes | rectangular, round |
 | Settings | none |
+
+</div>
 <!-- ANCHOR_END: brightness -->
 
 <!-- ANCHOR: notifications -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `notifications` |
 |---|---|
 | Title | Notifications |
@@ -171,9 +213,13 @@
 | Size in cells | 4×5 by default, 3×2 at least, 6×10 at most |
 | Shapes | rectangular |
 | Settings | none |
+
+</div>
 <!-- ANCHOR_END: notifications -->
 
 <!-- ANCHOR: tray -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `tray` |
 |---|---|
 | Title | Tray |
@@ -182,9 +228,13 @@
 | Size in cells | 4×1 by default, 1×1 at least, 8×2 at most |
 | Shapes | rectangular |
 | Settings | none |
+
+</div>
 <!-- ANCHOR_END: tray -->
 
 <!-- ANCHOR: media -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `media` |
 |---|---|
 | Title | Media player |
@@ -193,9 +243,13 @@
 | Size in cells | 5×2 by default, 3×1 at least, 6×3 at most |
 | Shapes | rectangular |
 | Settings | none |
+
+</div>
 <!-- ANCHOR_END: media -->
 
 <!-- ANCHOR: session -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `session` |
 |---|---|
 | Title | Session |
@@ -203,6 +257,8 @@
 | Group | Controls |
 | Size in cells | 4×1 by default, 3×1 at least, 6×2 at most |
 | Shapes | rectangular |
+
+</div>
 
 | Setting | Label in the sidebar | Values | Default |
 |---|---|---|---|
@@ -215,6 +271,8 @@
 <!-- ANCHOR_END: session -->
 
 <!-- ANCHOR: clipboard -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `clipboard` |
 |---|---|
 | Title | Clipboard history |
@@ -223,9 +281,13 @@
 | Size in cells | 4×4 by default, 3×2 at least, 6×8 at most |
 | Shapes | rectangular |
 | Settings | none |
+
+</div>
 <!-- ANCHOR_END: clipboard -->
 
 <!-- ANCHOR: weather -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `weather` |
 |---|---|
 | Title | Weather |
@@ -234,6 +296,8 @@
 | Size in cells | 4×2 by default, 2×1 at least, 6×4 at most |
 | Shapes | rectangular, round |
 
+</div>
+
 | Setting | Label in the sidebar | Values | Default |
 |---|---|---|---|
 | `location` | Location | text (the sidebar's hint: *City of your time zone*) | empty |
@@ -241,6 +305,8 @@
 <!-- ANCHOR_END: weather -->
 
 <!-- ANCHOR: memory -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `memory` |
 |---|---|
 | Title | Memory |
@@ -249,6 +315,8 @@
 | Size in cells | 4×3 by default, 2×2 at least, 5×4 at most |
 | Shapes | rectangular, round |
 
+</div>
+
 | Setting | Label in the sidebar | Values | Default |
 |---|---|---|---|
 | `history` | Chart covers | `30`, `60`, `90`, `120`, `180` (seconds) | `90` |
@@ -256,6 +324,8 @@
 <!-- ANCHOR_END: memory -->
 
 <!-- ANCHOR: disks -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `disks` |
 |---|---|
 | Title | Disks |
@@ -264,12 +334,16 @@
 | Size in cells | 4×2 by default, 3×1 at least, 6×3 at most |
 | Shapes | rectangular, round |
 
+</div>
+
 | Setting | Label in the sidebar | Values | Default |
 |---|---|---|---|
 | `hide-system` | Hide /boot and /efi | `#true`, `#false` | `#false` |
 <!-- ANCHOR_END: disks -->
 
 <!-- ANCHOR: network -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `network` |
 |---|---|
 | Title | Network |
@@ -278,12 +352,16 @@
 | Size in cells | 4×2 by default, 2×1 at least, 5×3 at most |
 | Shapes | rectangular, round |
 
+</div>
+
 | Setting | Label in the sidebar | Values | Default |
 |---|---|---|---|
 | `history` | Chart covers | `30`, `60`, `90`, `120`, `180` (seconds) | `90` |
 <!-- ANCHOR_END: network -->
 
 <!-- ANCHOR: gpu -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `gpu` |
 |---|---|
 | Title | GPU |
@@ -292,12 +370,16 @@
 | Size in cells | 4×2 by default, 2×1 at least, 5×3 at most |
 | Shapes | rectangular, round |
 
+</div>
+
 | Setting | Label in the sidebar | Values | Default |
 |---|---|---|---|
 | `history` | Chart covers | `30`, `60`, `90`, `120`, `180` (seconds) | `90` |
 <!-- ANCHOR_END: gpu -->
 
 <!-- ANCHOR: claude-usage -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `claude-usage` |
 |---|---|
 | Title | Claude usage |
@@ -306,9 +388,13 @@
 | Size in cells | 4×3 by default, 3×2 at least, 5×4 at most |
 | Shapes | rectangular, round |
 | Settings | none |
+
+</div>
 <!-- ANCHOR_END: claude-usage -->
 
 <!-- ANCHOR: mascot -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `mascot` |
 |---|---|
 | Title | Mascot |
@@ -316,6 +402,8 @@
 | Group | Activity |
 | Size in cells | 4×2 by default, 3×2 at least, 5×4 at most |
 | Shapes | rectangular |
+
+</div>
 
 | Setting | Label in the sidebar | Values | Default |
 |---|---|---|---|
@@ -327,6 +415,8 @@
 <!-- ANCHOR_END: mascot -->
 
 <!-- ANCHOR: keyboard-layout -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `keyboard-layout` |
 |---|---|
 | Title | Keyboard layout |
@@ -335,9 +425,13 @@
 | Size in cells | 2×1 by default, 1×1 at least, 3×1 at most |
 | Shapes | rectangular, round |
 | Settings | none |
+
+</div>
 <!-- ANCHOR_END: keyboard-layout -->
 
 <!-- ANCHOR: color-picker -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `color-picker` |
 |---|---|
 | Title | Color picker |
@@ -346,9 +440,13 @@
 | Size in cells | 3×2 by default, 2×1 at least, 4×3 at most |
 | Shapes | rectangular, round |
 | Settings | none |
+
+</div>
 <!-- ANCHOR_END: color-picker -->
 
 <!-- ANCHOR: timer -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `timer` |
 |---|---|
 | Title | Timer |
@@ -357,9 +455,13 @@
 | Size in cells | 3×2 by default, 2×1 at least, 4×3 at most |
 | Shapes | round, rectangular (a new one starts round) |
 | Settings | none |
+
+</div>
 <!-- ANCHOR_END: timer -->
 
 <!-- ANCHOR: stopwatch -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `stopwatch` |
 |---|---|
 | Title | Stopwatch |
@@ -368,9 +470,13 @@
 | Size in cells | 3×3 by default, 2×1 at least, 4×4 at most |
 | Shapes | round, rectangular (a new one starts round) |
 | Settings | none |
+
+</div>
 <!-- ANCHOR_END: stopwatch -->
 
 <!-- ANCHOR: notes -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `notes` |
 |---|---|
 | Title | Sticky note |
@@ -379,12 +485,16 @@
 | Size in cells | 3×3 by default, 2×1 at least, 6×6 at most |
 | Shapes | rectangular |
 
+</div>
+
 | Setting | Label in the sidebar | Values | Default |
 |---|---|---|---|
 | `note` | Note | text (the sidebar's hint: *notes (same name, same note)*) | empty |
 <!-- ANCHOR_END: notes -->
 
 <!-- ANCHOR: privacy -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `privacy` |
 |---|---|
 | Title | Privacy |
@@ -393,9 +503,13 @@
 | Size in cells | 3×2 by default, 2×1 at least, 4×3 at most |
 | Shapes | rectangular, round |
 | Settings | none |
+
+</div>
 <!-- ANCHOR_END: privacy -->
 
 <!-- ANCHOR: night-light -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `night-light` |
 |---|---|
 | Title | Night light |
@@ -404,9 +518,13 @@
 | Size in cells | 3×1 by default, 2×1 at least, 4×2 at most |
 | Shapes | rectangular, round |
 | Settings | none |
+
+</div>
 <!-- ANCHOR_END: night-light -->
 
 <!-- ANCHOR: removable-drives -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `removable-drives` |
 |---|---|
 | Title | Removable drives |
@@ -415,9 +533,13 @@
 | Size in cells | 3×2 by default, 2×1 at least, 4×4 at most |
 | Shapes | rectangular |
 | Settings | none |
+
+</div>
 <!-- ANCHOR_END: removable-drives -->
 
 <!-- ANCHOR: phone -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `phone` |
 |---|---|
 | Title | Phone |
@@ -426,9 +548,13 @@
 | Size in cells | 3×2 by default, 2×1 at least, 4×4 at most |
 | Shapes | rectangular, round |
 | Settings | none |
+
+</div>
 <!-- ANCHOR_END: phone -->
 
 <!-- ANCHOR: sleep-timer -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `sleep-timer` |
 |---|---|
 | Title | Sleep timer |
@@ -436,6 +562,8 @@
 | Group | Time |
 | Size in cells | 4×3 by default, 3×2 at least, 5×4 at most |
 | Shapes | rectangular, round |
+
+</div>
 
 | Setting | Label in the sidebar | Values | Default |
 |---|---|---|---|
@@ -446,6 +574,8 @@
 <!-- ANCHOR_END: sleep-timer -->
 
 <!-- ANCHOR: pomodoro -->
+<div class="widget-facts">
+
 | Name in `config.kdl` | `pomodoro` |
 |---|---|
 | Title | Pomodoro |
@@ -453,6 +583,8 @@
 | Group | Time |
 | Size in cells | 3×2 by default, 2×1 at least, 4×3 at most |
 | Shapes | round, rectangular (a new one starts round) |
+
+</div>
 
 | Setting | Label in the sidebar | Values | Default |
 |---|---|---|---|

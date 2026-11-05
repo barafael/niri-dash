@@ -14,6 +14,17 @@ one *level*, the keys mean what the level says, and Escape goes up one.
 Escape leaves a level. On the dashboard itself, Escape puts the dashboard away. That is why the
 same key gets you out of a text field, out of a widget and out of the dashboard, one press each.
 
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> Dashboard: show
+    Dashboard --> Widget: f, then a label
+    Widget --> Inside: Enter in a text field, or s
+    Inside --> Widget: Escape
+    Widget --> Dashboard: Escape
+    Dashboard --> [*]: Escape
+```
+
 ## Choosing a widget by typing its name
 
 With dozens of widgets, arrow keys across a grid are slow, and the grid changes whenever you
