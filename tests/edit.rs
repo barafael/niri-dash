@@ -1916,6 +1916,72 @@ fn arrange_tab(issues: &mut Issues) {
 // ------------------------------------------------------------------------------------------
 // Pinning.
 
+/// The shortcuts in the top bar follow what the keys do just now.
+fn shortcut_hints(issues: &mut Issues) {
+    let hints = |h: &Harness| -> Vec<String> {
+        h.ui()
+            .get_edit_hints()
+            .iter()
+            .map(|k| format!("{} {}", k.key, k.does))
+            .collect()
+    };
+    let has = |h: &Harness, what: &str| hints(h).iter().any(|s| s.contains(what));
+    let mut h = dashboard(MIXED);
+    h.settle(300);
+    let clock = id_of(&h, "clock");
+    if !hints(&h).is_empty() {
+        issues.add(format!("hints: shown outside edit mode: {:?}", hints(&h)));
+    }
+    h.press("ctrl+e");
+    if !has(&h, "pick a widget") || has(&h, "h j k l size") {
+        issues.add(format!("hints: nothing picked: {:?}", hints(&h)));
+    }
+    h.press("f");
+    if !has(&h, "Type a label") {
+        issues.add(format!("hints: with the labels up: {:?}", hints(&h)));
+    }
+    h.press("f");
+    // A widget picked: the keys are on it.
+    h.ui().invoke_configure_widget(clock as i32);
+    h.press("l");
+    for want in [
+        "h j k l size",
+        "Ctrl + h j k l move",
+        "w a s d pick another",
+        "pin",
+    ] {
+        if !has(&h, want) {
+            issues.add(format!("hints: clock picked, no {want:?}: {:?}", hints(&h)));
+        }
+    }
+    if !hints(&h).iter().any(|s| s.contains("Clock")) {
+        issues.add("hints: the picked widget isn't named");
+    }
+    // Pinned: it can't be sized or moved, and says how to unpin.
+    h.press("p");
+    if !has(&h, "p unpin") || has(&h, "h j k l size") || has(&h, "Ctrl + h j k l move") {
+        issues.add(format!("hints: clock pinned: {:?}", hints(&h)));
+    }
+    h.press("p");
+    if !has(&h, "h j k l size") {
+        issues.add(format!("hints: clock unpinned again: {:?}", hints(&h)));
+    }
+    // Tab goes to the settings: the keys of the rows, and the way back.
+    h.press("tab");
+    if !has(&h, "w a s d") || has(&h, "h j k l size") {
+        issues.add(format!("hints: in the sidebar: {:?}", hints(&h)));
+    }
+    h.press("d");
+    if !has(&h, "h j k l size") {
+        issues.add(format!("hints: back on the widgets: {:?}", hints(&h)));
+    }
+    h.press("ctrl+e");
+    if !hints(&h).is_empty() {
+        issues.add("hints: still shown after leaving edit mode");
+    }
+    issues.check(&h, "hints: the top bar's shortcuts");
+}
+
 /// A pinned widget can't be moved, resized or pushed, the others work around it, Arrange leaves
 /// it where it is, `p` toggles it, and config.kdl remembers.
 fn pinning(issues: &mut Issues) {
@@ -2200,6 +2266,7 @@ fn main() {
             pointer_long_press,
         ),
         ("keyboard: edit mode", keyboard_editing),
+        ("hints: the shortcuts in the top bar", shortcut_hints),
         (
             "grid: shrink to the smallest and back",
             grid_shrink_and_grow,

@@ -160,6 +160,14 @@ impl App {
     fn layout_changed(&self) {
         self.sync_widgets();
         self.save_layout();
+        self.note_picked();
+    }
+
+    /// Tell the top bar's shortcuts about the widget being worked on: whether it is pinned.
+    fn note_picked(&self) {
+        let ui = self.ui();
+        let id = ui.get_settings_id();
+        ui.set_settings_pinned(id != 0 && self.layout.borrow().is_pinned(id as u32));
     }
 
     fn set_preview(&self, p: Option<(u32, crate::layout::Reflow)>) {
@@ -395,6 +403,7 @@ impl App {
         }
         ui.set_settings_id(id as i32);
         self.refresh_settings();
+        self.note_picked();
     }
 
     /// `s` in a widget: open its settings, or say it has none.

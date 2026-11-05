@@ -169,6 +169,52 @@ export struct SettingRow {
     placeholder: string,
 }
 
+// A keyboard shortcut for the top bar: the keys, and what they do. No keys: a plain note.
+export struct KeyHint {
+    key: string,
+    does: string,
+}
+
+// One shortcut as the top bar shows it: the keys on a cap, then what they do.
+component KeyChip inherits Rectangle {
+    in property <KeyHint> hint;
+    width: cap.width + (cap.width > 0 ? 6px : 0px) + label.preferred-width;
+    cap := Rectangle {
+        x: 0px;
+        y: (parent.height - self.height) / 2;
+        height: 22px;
+        width: root.hint.key == "" ? 0px : keys-text.preferred-width + 12px;
+        visible: root.hint.key != "";
+        border-radius: 5px;
+        border-width: 1px;
+        border-color: Theme.border;
+        background: Theme.subtle;
+        keys-text := Text {
+            accessible-role: none;
+            text: root.hint.key;
+            color: Theme.text;
+            font-size: Theme.font-small;
+            font-weight: 600;
+            x: 0px;
+            y: 0px;
+            width: parent.width;
+            height: parent.height;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+    label := Text {
+        x: cap.width + (cap.width > 0 ? 6px : 0px);
+        y: 0px;
+        width: self.preferred-width;
+        height: parent.height;
+        text: root.hint.does;
+        color: root.hint.key == "" ? Theme.accent : Theme.dim;
+        font-size: Theme.font-body;
+        vertical-alignment: center;
+    }
+}
+
 // One segment of the sidebar's tab bar.
 component Segment inherits Rectangle {
     in property <string> label;
@@ -461,6 +507,8 @@ export component Dash inherits Window {
     // open in a card in the middle of the screen, if it has any.
     in-out property <int> settings-id;
     in property <string> settings-title;
+    // The widget being worked on is pinned.
+    in property <bool> settings-pinned;
     in property <[SettingRow]> setting-rows;
     in property <string> toast;
     in property <bool> toast-shown;
@@ -648,6 +696,77 @@ export component Dash inherits Window {
     callback size-widget(int, int, bool);
     // What sizing made of the widget, for the status line ("Volume 3×2").
     in-out property <string> size-note;
+    // The shortcuts the top bar shows in edit mode, for what the keys do just now.
+    out property <[KeyHint]> edit-hints:
+        root.drag-mode == DragMode.carry ? [
+            { key: "Click", does: "place it" },
+            { key: "Esc", does: "cancel" },
+        ]
+        : root.adjust-id != 0 ? [
+            { key: "Drag", does: "move" },
+            { key: "Edge or corner", does: "resize" },
+            { key: "◯ ▢", does: "shape" },
+            { key: "Esc", does: "done" },
+        ]
+        : !root.editing ? []
+        : Nav.mode == NavMode.hints ? [
+            { key: "Type a label", does: "pick that widget" },
+            { key: "Backspace", does: "take a letter back" },
+            { key: "f", does: "cancel" },
+        ]
+        : !keys.has-focus ? [
+            { key: "Enter", does: "save" },
+            { key: "Esc", does: "discard" },
+            { key: "Tab", does: "leave the field" },
+        ]
+        : root.settings-id != 0 && root.cfg-open && root.side-keys ? [
+            { key: "j k", does: "row" },
+            { key: "h l", does: "change" },
+            { key: "Enter", does: "toggle or type" },
+            { key: "Backspace", does: "reset" },
+            { key: "Tab", does: "next row" },
+            { key: "w a s d", does: "back to the widgets" },
+            { key: "Esc", does: "close" },
+        ]
+        : root.side-keys ? [
+            { key: "Tab", does: "next tab" },
+            { key: "j k", does: "row" },
+            { key: "h l", does: "change" },
+            { key: "Enter", does: "press" },
+            { key: "Backspace", does: "reset" },
+            { key: "f", does: "pick a widget" },
+            { key: "w a s d", does: "to the widgets" },
+            { key: "Esc", does: "done" },
+        ]
+        : root.settings-id != 0 && root.settings-pinned ? [
+            { key: "", does: root.settings-title + " is pinned" },
+            { key: "p", does: "unpin" },
+            { key: "w a s d", does: "pick another" },
+            { key: "Tab", does: "settings" },
+            { key: "x", does: "remove" },
+            { key: "Esc", does: "let go" },
+        ]
+        : root.settings-id != 0 ? [
+            { key: "", does: root.size-note != "" ? root.size-note : root.settings-title },
+            { key: "h j k l", does: "size" },
+            { key: "Shift", does: "from the other side" },
+            { key: "Ctrl + h j k l", does: "move" },
+            { key: "w a s d", does: "pick another" },
+            { key: "o", does: "shape" },
+            { key: "p", does: "pin" },
+            { key: "x", does: "remove" },
+            { key: "Tab", does: "settings" },
+            { key: "Esc", does: "let go" },
+        ]
+        : [
+            { key: "f", does: "pick a widget" },
+            { key: "w a s d", does: "nearest widget" },
+            { key: "Tab", does: "sidebar" },
+            { key: "Drag", does: "move" },
+            { key: "Edge", does: "resize" },
+            { key: "Click", does: "settings" },
+            { key: "Esc", does: "done" },
+        ];
     callback toggle-shape(int);
     // Pin a widget so that it stays where it is, or let go of it.
     callback toggle-pin(int);
@@ -1112,19 +1231,27 @@ export component Dash inherits Window {
             padding-right: root.width - root.avail-w + root.grid-x + Theme.gap;
             padding-top: 6px;
             spacing: 8px;
-            Text {
-                text: root.drag-mode == DragMode.carry ? "Click where it should go · Esc cancels"
-                    : root.adjust-id != 0 ? "Drag to move, edges and corners to resize, ◯/▢ to change shape · click outside or Esc when done"
-                    : root.editing && root.settings-id != 0 && root.cfg-open && root.side-keys ? "j k h l Enter row · Backspace resets · w a s d back to the widgets · Ctrl+h j k l moves · Esc closes"
-                    : root.editing && root.settings-id != 0 ? (root.size-note != "" ? root.size-note + " · " : "") + "h j k l size (Shift: from the other side) · Ctrl+h j k l move · w a s d or arrows pick another · Tab settings · o shape · p pin · x remove · Esc lets go"
-                    : root.editing && root.side-keys ? "f picks a widget · w a s d picks the nearest · Tab sidebar tab · j k h l Enter row · Backspace resets · Esc done"
-                    : !root.editing ? "" : "Edit mode: drag to move (others make room), edges and corners to resize, click a widget for its settings"
-                    + (root.hidden-widgets > 0 ? "  ·  " + root.hidden-widgets + " widget(s) don't fit " + (root.grid-cols > 0 ? "the grid" : "this screen") : "");
-                color: Theme.dim;
+            // Shortcuts for what the keys do now. One that doesn't fit whole is left out.
+            strip := Rectangle {
+                horizontal-stretch: 1;
+                min-width: 0px;
+                clip: true;
+                HorizontalLayout {
+                    width: parent.width;
+                    height: parent.height;
+                    alignment: start;
+                    spacing: 16px;
+                    for hint in root.edit-hints: KeyChip {
+                        hint: hint;
+                        visible: self.x + self.width <= strip.width;
+                    }
+                }
+            }
+            if root.editing && root.hidden-widgets > 0: Text {
+                text: root.hidden-widgets + " widget(s) don't fit " + (root.grid-cols > 0 ? "the grid" : "this screen");
+                color: Theme.bad;
                 font-size: Theme.font-body;
                 vertical-alignment: center;
-                horizontal-stretch: 1;
-                overflow: elide;
             }
             if !root.editing: IconButton {
                 y: (parent.height - self.height) / 2 + 3px;
