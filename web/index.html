@@ -113,6 +113,18 @@
       #tip { animation-timing-function: steps(1, end); }
     }
   </style>
+  <script>
+    // Once running, the dashboard reports its own failures, but it can't if it never arrives. The
+    // failed preload of a link doesn't count: the loader still tries for itself after that.
+    addEventListener("error", (event) => {
+      const ours = event.target === window
+        ? event.filename.startsWith(location.origin)
+        : event.target.tagName === "SCRIPT";
+      if (ours && document.body.classList.contains("loading")) {
+        document.body.classList.add("failed");
+      }
+    }, true);
+  </script>
 </head>
 <body class="away loading">
   <canvas id="canvas" tabindex="0" aria-label="The niri-dash dashboard"></canvas>
@@ -121,8 +133,9 @@
       <h1>niri-dash</h1>
       <div class="while-loading"><p>Loading the dashboard…</p></div>
       <div class="if-failed">
-        <p>The dashboard could not start. It draws with WebGL 2, so this browser may have it turned
-          off. The browser's console says more.</p>
+        <p>The dashboard could not start. Its download may have been interrupted, or this browser
+          may have WebGL 2 turned off, which it draws with. The browser's console says more.</p>
+        <p><a href="">Try again</a></p>
       </div>
       <div class="once-loaded">
         <p>This is the desktop the dashboard covers. <kbd>Any key</kbd> or a click brings it
