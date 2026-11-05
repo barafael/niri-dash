@@ -81,6 +81,7 @@ export component WidgetFrame inherits Rectangle {
     callback move-to(int, int, int);
     callback resize-to(int, int, int, int, int);
     callback toggle-shape(int);
+    callback toggle-pin(int);
     callback remove(int);
     // Open this widget's settings.
     callback configure(int);
@@ -165,7 +166,7 @@ export component WidgetFrame inherits Rectangle {
     property <PointerShape> shape: !editing ? PointerShape.normal
         : sizing ? resize-shape(pull-x, pull-y)
         : hover-x != 0 || hover-y != 0 ? resize-shape(hover-x, hover-y)
-        : mover.has-hover ? PointerShape.move
+        : mover.has-hover && !inst.pinned ? PointerShape.move
         : PointerShape.normal;
     changed shape => { root.cursor(root.shape); }
     // For screen readers and the tests: a group named after the widget, found by its id.
@@ -264,7 +265,8 @@ export component WidgetFrame inherits Rectangle {
             // Moved far enough to count as a drag rather than a click.
             property <bool> dragged;
             moved => {
-                if (self.pressed) {
+                // A pinned widget can't be dragged away.
+                if (self.pressed && !root.inst.pinned) {
                     root.dx += self.mouse-x - self.pressed-x;
                     root.dy += self.mouse-y - self.pressed-y;
                     if (abs(root.dx) > 4px || abs(root.dy) > 4px) {
@@ -324,7 +326,7 @@ export component WidgetFrame inherits Rectangle {
         y: h.y < 0 ? 0 : h.y > 0 ? root.height - self.height : root.corner;
         width: h.x == 0 ? max(0, root.width - 2 * root.corner) : h.y == 0 ? root.band : root.corner;
         height: h.y == 0 ? max(0, root.height - 2 * root.corner) : h.x == 0 ? root.band : root.corner;
-        enabled: root.editing;
+        enabled: root.editing && !root.inst.pinned;
         // Each handle clears only its own hover: the next one's can already have come in.
         changed has-hover => {
             if (self.has-hover) {
@@ -392,7 +394,7 @@ export component WidgetFrame inherits Rectangle {
         visible: self.opacity > 0.01;
         x: root.is-round ? (root.width - self.width) / 2 : root.width - Theme.gap - self.width - 12px;
         y: root.is-round ? (root.height - root.diameter) / 2 + 12px : Theme.gap + 12px;
-        width: 4px + 34px * ((root.inst.can-round ? 1 : 0) + (root.inst.has-settings ? 1 : 0) + 1);
+        width: 4px + 34px * ((root.inst.can-round ? 1 : 0) + (root.inst.has-settings ? 1 : 0) + 2);
         height: 34px;
         border-radius: min(self.height / 2, Theme.radius-small + 2px);
         background: Theme.panel;
@@ -414,8 +416,18 @@ export component WidgetFrame inherits Rectangle {
                     accessible-label: root.is-round ? "Make square" : "Make round";
                     icon: root.is-round ? Icons.square : Icons.circle;
                     size: 30px;
-                    enabled: root.editing;
+                    enabled: root.editing && !root.inst.pinned;
                     clicked => { root.toggle-shape(root.inst.id); }
+                }
+                IconButton {
+                    accessible-label: (root.inst.pinned ? "Unpin " : "Pin ") + root.inst.title;
+                    accessible-checkable: true;
+                    accessible-checked: root.inst.pinned;
+                    icon: Icons.lock;
+                    size: 30px;
+                    tint: root.inst.pinned ? Theme.accent : Theme.dim;
+                    enabled: root.editing;
+                    clicked => { root.toggle-pin(root.inst.id); }
                 }
                 IconButton {
                     accessible-label: "Remove " + root.inst.title;
@@ -426,6 +438,23 @@ export component WidgetFrame inherits Rectangle {
                     clicked => { root.remove(root.inst.id); }
                 }
             }
+        }
+    }
+
+    // A pinned widget wears a lock in edit mode, bottom right (bottom of the circle if round).
+    Rectangle {
+        opacity: root.edit-fade;
+        visible: root.inst.pinned && self.opacity > 0.01;
+        width: 24px;
+        height: 24px;
+        x: root.is-round ? (root.width - self.width) / 2 : root.width - Theme.gap - self.width - 12px;
+        y: root.is-round ? (root.height + root.diameter) / 2 - self.height - 12px : root.height - Theme.gap - self.height - 12px;
+        border-radius: self.height / 2;
+        background: Theme.accent;
+        Icon {
+            source: Icons.lock;
+            size: 14px;
+            tint: Theme.on-accent;
         }
     }
 }

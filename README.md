@@ -67,8 +67,33 @@ switches tabs, `j`/`k` move between rows, `h`/`l` step a value or flip a switch,
 presses (or starts typing in a text field), and Backspace puts a row back to its default. `f` and
 a label picks a widget and opens its settings; then Ctrl+`h`/`j`/`k`/`l` go to the next widget,
 Ctrl+Shift+`h`/`j`/`k`/`l` move it, Ctrl+`r` sizes it (`H`/`J`/`K`/`L` push a side out,
-`h`/`j`/`k`/`l` pull it in), `o` changes its shape and `x` removes it. Escape backs out a step at
+`h`/`j`/`k`/`l` pull it in), `o` changes its shape, `p` pins it and `x` removes it. Escape backs out a step at
 a time.
+
+A pinned widget (the lock in its toolbar, or `p`) stays where it is: nothing pushes it aside, Arrange
+lays the others out around it, and it can't be moved or resized until you unpin it. It is kept in
+config.kdl as `pinned=#true`.
+
+The sidebar's Arrange tab lays the widgets out by itself. Every widget has a size it looks best at,
+a smallest and a largest, and a group it belongs with (time, activity, media, system, devices,
+controls); a good layout keeps each close to its size and shape, fills the grid, and keeps a group
+together. Three algorithms try: `guillotine` finds the cheapest tree of cuts by dynamic programming
+and fills the grid exactly, `treemap` cuts greedily in proportion to the preferred areas, and
+`gravity` drops each widget in the first free spot and lets them grow into the gaps. A fourth,
+`neighbours`, cares about who sits next to whom: `src/affinity.rs` holds a matrix of how much each
+pair of widgets likes to be neighbours (volume and brightness, Wi-Fi and Bluetooth, the system load
+widgets) or not (session buttons and the window list), and an annealing search places the widgets
+so liked pairs touch and disliked ones don't. Widgets keep at least their preferred size and gaps
+are fine; "Lean to" tilts the whole towards the screen's edges (keeping the middle free) or its
+middle, and "Neighbour pull" and "Neighbour reach" tune the liking. The line under the buttons
+says how many liked pairs touch. Shuffle tries the next seed (another, equally valid order of the widgets), Tries keeps the best of several,
+and the rows below tune what a good layout is. Undo puts back what was there before the first run.
+Copy settings puts the current settings on the clipboard as a line for config.kdl, which becomes
+the starting point at the next start:
+
+```kdl
+autolayout algo="guillotine" order="group" seed=3 restarts=16 shrink=2.0 grow=0.6
+```
 
 The grid won't shrink past what its widgets need: a step that would leave no room for one shakes
 and says which, and nothing changes.

@@ -18,6 +18,7 @@ use std::time::Duration;
 use web_time::Instant;
 
 mod a11y;
+mod arrange;
 mod audio;
 mod clipboard;
 mod clock;
@@ -243,6 +244,7 @@ struct App {
     night: night_light::NightLight,
     mascots: mascots::Mascots,
     clipboard: clipboard::History,
+    arrange: arrange::Arrange,
     mixer: audio::Mixer,
     /// The media player's cover as last shown, and its image.
     media_art: RefCell<Option<(IconSrc, Option<Image>)>>,
@@ -494,6 +496,7 @@ fn wire(app: &Rc<App>, ui: &Dash) {
     ui.global::<UiShell>()
         .on_hide(move || a.pending.borrow_mut().push(Control::Hide));
     edit::wire(app, ui);
+    arrange::wire(app, ui);
     nav::wire(app, ui);
     look::wire(app, ui);
     clock::wire(app, ui);
@@ -543,6 +546,7 @@ fn build(
     let grid_controls = Rc::new(VecModel::<crate::SettingRow>::default());
     ui.set_grid_controls(ModelRc::from(grid_controls.clone()));
     let state = crate::state::load();
+    let arrange = arrange::Arrange::new(layout.autolayout.clone());
     let app = Rc::new(App {
         ui: ui.as_weak(),
         solo,
@@ -581,6 +585,7 @@ fn build(
         night: Default::default(),
         mascots: Default::default(),
         clipboard: Default::default(),
+        arrange,
         state: RefCell::new(state),
     });
     wire(&app, ui);

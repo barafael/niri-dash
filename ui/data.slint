@@ -5,7 +5,7 @@ export enum WidgetKind { clock, calendar, system-monitor, windows, claude-sessio
 export enum Shape { rect, round }
 
 // The sidebar's sections.
-export enum DrawerTab { widgets, colors, style, widget }
+export enum DrawerTab { widgets, colors, style, widget, arrange }
 // The pointer shape the platform layer should show.
 export enum PointerShape { normal, move, resize-ew, resize-ns, resize-nwse, resize-nesw }
 // The mascots (src/mascots.rs) and what they wear for a line.
@@ -55,6 +55,8 @@ export struct WidgetInst {
     // Whether this kind of widget has a round version.
     can-round: bool,
     has-settings: bool,
+    // Pinned: it stays where it is (see layout::Placed::pinned).
+    pinned: bool,
     opts: WidgetOpts,
     // Its label for keyboard navigation (`f`), and that split into the first letter and the rest.
     // Its label for keyboard navigation (the start of its name).

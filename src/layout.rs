@@ -65,6 +65,8 @@ impl Kind {
                 description: "Digital, or analog when round",
                 default_size: (4, 2),
                 min_size: (2, 1),
+                max_size: (6, 3),
+                group: Group::Time,
                 can_be_round: true,
                 starts_round: false,
                 settings: &[Hours, Seconds, Date, Zones],
@@ -75,6 +77,8 @@ impl Kind {
                 description: "Month view",
                 default_size: (4, 4),
                 min_size: (3, 3),
+                max_size: (6, 6),
+                group: Group::Time,
                 can_be_round: true,
                 starts_round: false,
                 settings: &[FirstDay, WeekNumbers],
@@ -85,6 +89,8 @@ impl Kind {
                 description: "CPU, memory, network, temperature",
                 default_size: (4, 3),
                 min_size: (2, 2),
+                max_size: (6, 5),
+                group: Group::System,
                 can_be_round: true,
                 starts_round: false,
                 settings: &[History, Cores],
@@ -95,6 +101,8 @@ impl Kind {
                 description: "Open windows by workspace; click to focus",
                 default_size: (5, 5),
                 min_size: (3, 2),
+                max_size: (8, 8),
+                group: Group::Activity,
                 can_be_round: false,
                 starts_round: false,
                 settings: &[],
@@ -105,6 +113,8 @@ impl Kind {
                 description: "Running Claude Code sessions; click to focus",
                 default_size: (4, 3),
                 min_size: (3, 2),
+                max_size: (6, 5),
+                group: Group::Activity,
                 can_be_round: true,
                 starts_round: false,
                 settings: &[],
@@ -115,6 +125,8 @@ impl Kind {
                 description: "Networks, connect, radio on/off",
                 default_size: (3, 4),
                 min_size: (2, 2),
+                max_size: (4, 6),
+                group: Group::Devices,
                 can_be_round: true,
                 starts_round: false,
                 settings: &[],
@@ -125,6 +137,8 @@ impl Kind {
                 description: "Devices, connect, adapter on/off",
                 default_size: (3, 3),
                 min_size: (2, 2),
+                max_size: (4, 5),
+                group: Group::Devices,
                 can_be_round: true,
                 starts_round: false,
                 settings: &[],
@@ -135,6 +149,8 @@ impl Kind {
                 description: "Charge, power profile; device batteries and sleep blockers when bigger",
                 default_size: (3, 2),
                 min_size: (2, 1),
+                max_size: (4, 3),
+                group: Group::System,
                 can_be_round: true,
                 starts_round: false,
                 settings: &[],
@@ -145,6 +161,8 @@ impl Kind {
                 description: "Speaker and microphone; outputs and apps when bigger",
                 default_size: (3, 3),
                 min_size: (2, 1),
+                max_size: (4, 4),
+                group: Group::Controls,
                 can_be_round: true,
                 starts_round: false,
                 settings: &[],
@@ -155,6 +173,8 @@ impl Kind {
                 description: "Screen backlight",
                 default_size: (3, 1),
                 min_size: (2, 1),
+                max_size: (4, 2),
+                group: Group::Controls,
                 can_be_round: true,
                 starts_round: false,
                 settings: &[],
@@ -165,6 +185,8 @@ impl Kind {
                 description: "Notification history",
                 default_size: (4, 5),
                 min_size: (3, 2),
+                max_size: (6, 10),
+                group: Group::Activity,
                 can_be_round: false,
                 starts_round: false,
                 settings: &[],
@@ -175,6 +197,8 @@ impl Kind {
                 description: "Status icons and their menus",
                 default_size: (4, 1),
                 min_size: (1, 1),
+                max_size: (8, 2),
+                group: Group::Controls,
                 can_be_round: false,
                 starts_round: false,
                 settings: &[],
@@ -185,6 +209,8 @@ impl Kind {
                 description: "Now playing (MPRIS)",
                 default_size: (5, 2),
                 min_size: (3, 1),
+                max_size: (6, 3),
+                group: Group::Media,
                 can_be_round: false,
                 starts_round: false,
                 settings: &[],
@@ -195,6 +221,8 @@ impl Kind {
                 description: "Lock, suspend, log out, power off",
                 default_size: (4, 1),
                 min_size: (3, 1),
+                max_size: (6, 2),
+                group: Group::Controls,
                 can_be_round: false,
                 starts_round: false,
                 settings: &[Lock, Suspend, Logout, Restart, PowerOff, Confirm],
@@ -205,6 +233,8 @@ impl Kind {
                 description: "Records what you copy while it's on the dashboard, in memory only",
                 default_size: (4, 4),
                 min_size: (3, 2),
+                max_size: (6, 8),
+                group: Group::Activity,
                 can_be_round: false,
                 starts_round: false,
                 settings: &[],
@@ -215,6 +245,8 @@ impl Kind {
                 description: "Now and the next days (Open-Meteo)",
                 default_size: (4, 2),
                 min_size: (2, 1),
+                max_size: (6, 4),
+                group: Group::Time,
                 can_be_round: true,
                 starts_round: false,
                 settings: &[Location, Units],
@@ -225,6 +257,8 @@ impl Kind {
                 description: "RAM and swap, history, biggest apps",
                 default_size: (4, 3),
                 min_size: (2, 2),
+                max_size: (5, 4),
+                group: Group::System,
                 can_be_round: true,
                 starts_round: false,
                 settings: &[History, TopApps],
@@ -235,6 +269,8 @@ impl Kind {
                 description: "Space per filesystem, read and write",
                 default_size: (4, 2),
                 min_size: (3, 1),
+                max_size: (6, 3),
+                group: Group::System,
                 can_be_round: true,
                 starts_round: false,
                 settings: &[HideSystem],
@@ -245,6 +281,8 @@ impl Kind {
                 description: "Download and upload, history",
                 default_size: (4, 2),
                 min_size: (2, 1),
+                max_size: (5, 3),
+                group: Group::System,
                 can_be_round: true,
                 starts_round: false,
                 settings: &[History],
@@ -255,6 +293,8 @@ impl Kind {
                 description: "GPU load, video memory, temperature",
                 default_size: (4, 2),
                 min_size: (2, 1),
+                max_size: (5, 3),
+                group: Group::System,
                 can_be_round: true,
                 starts_round: false,
                 settings: &[History],
@@ -265,6 +305,8 @@ impl Kind {
                 description: "Plan, 5-hour window, tokens today",
                 default_size: (4, 3),
                 min_size: (3, 2),
+                max_size: (5, 4),
+                group: Group::Activity,
                 can_be_round: true,
                 starts_round: false,
                 settings: &[],
@@ -275,6 +317,8 @@ impl Kind {
                 description: "Schraubi, Zolli or Verschnitti; says what you tell it",
                 default_size: (4, 2),
                 min_size: (3, 2),
+                max_size: (5, 4),
+                group: Group::Activity,
                 can_be_round: false,
                 starts_round: false,
                 settings: &[Character, Wildness, Interval, Command, Cowfile],
@@ -285,6 +329,8 @@ impl Kind {
                 description: "Current layout; click to switch, bigger shows all",
                 default_size: (2, 1),
                 min_size: (1, 1),
+                max_size: (3, 1),
+                group: Group::Controls,
                 can_be_round: true,
                 starts_round: false,
                 settings: &[],
@@ -295,6 +341,8 @@ impl Kind {
                 description: "Pick a pixel anywhere; hex copied, recent colors",
                 default_size: (3, 2),
                 min_size: (2, 1),
+                max_size: (4, 3),
+                group: Group::Controls,
                 can_be_round: true,
                 starts_round: false,
                 settings: &[],
@@ -305,6 +353,8 @@ impl Kind {
                 description: "Countdown with a ring; scroll to set, presets when bigger",
                 default_size: (3, 2),
                 min_size: (2, 1),
+                max_size: (4, 3),
+                group: Group::Time,
                 can_be_round: true,
                 starts_round: true,
                 settings: &[],
@@ -315,6 +365,8 @@ impl Kind {
                 description: "Laps; a seconds dial when round, the lap list when taller",
                 default_size: (3, 3),
                 min_size: (2, 1),
+                max_size: (4, 4),
+                group: Group::Time,
                 can_be_round: true,
                 starts_round: true,
                 settings: &[],
@@ -325,6 +377,8 @@ impl Kind {
                 description: "A note that keeps what you type; name it to have several",
                 default_size: (3, 3),
                 min_size: (2, 1),
+                max_size: (6, 6),
+                group: Group::Activity,
                 can_be_round: false,
                 starts_round: false,
                 settings: &[Note],
@@ -335,6 +389,8 @@ impl Kind {
                 description: "Who uses the microphone, camera or screen; stop screen sharing",
                 default_size: (3, 2),
                 min_size: (2, 1),
+                max_size: (4, 3),
+                group: Group::System,
                 can_be_round: true,
                 starts_round: false,
                 settings: &[],
@@ -345,6 +401,8 @@ impl Kind {
                 description: "Warmer screen colors for the evening",
                 default_size: (3, 1),
                 min_size: (2, 1),
+                max_size: (4, 2),
+                group: Group::Controls,
                 can_be_round: true,
                 starts_round: false,
                 settings: &[],
@@ -355,6 +413,8 @@ impl Kind {
                 description: "USB drives and SD cards: mount, open, eject",
                 default_size: (3, 2),
                 min_size: (2, 1),
+                max_size: (4, 4),
+                group: Group::Devices,
                 can_be_round: false,
                 starts_round: false,
                 settings: &[],
@@ -365,6 +425,8 @@ impl Kind {
                 description: "KDE Connect: battery, ring to find it, send files",
                 default_size: (3, 2),
                 min_size: (2, 1),
+                max_size: (4, 4),
+                group: Group::Devices,
                 can_be_round: true,
                 starts_round: false,
                 settings: &[],
@@ -381,10 +443,16 @@ pub struct KindInfo {
     pub title: &'static str,
     /// The line under the title in the widget picker, and the desktop entry's comment.
     pub description: &'static str,
-    /// (w, h) in cells of a new rectangular instance.
+    /// (w, h) in cells of a new rectangular instance. This is also the size the widget looks best
+    /// at, the one [`crate::autolayout`] aims for.
     pub default_size: (i32, i32),
     /// The smallest (w, h) a rectangular instance can be resized to.
     pub min_size: (i32, i32),
+    /// The (w, h) past which a rectangular instance only gets emptier, not more useful. Nothing
+    /// stops you from resizing beyond it; [`crate::autolayout`] avoids it.
+    pub max_size: (i32, i32),
+    /// What it belongs with: [`crate::autolayout`] keeps a group's widgets together.
+    pub group: Group,
     /// Whether a round version makes sense (lists don't fit in a circle).
     pub can_be_round: bool,
     /// Whether a new instance is round (at [`ROUND_SIZE`]), and one in config.kdl without a
@@ -399,6 +467,26 @@ pub struct KindInfo {
 
 /// The size of a round widget that doesn't give one.
 pub const ROUND_SIZE: i32 = 2;
+
+/// The largest round widget [`crate::autolayout`] makes.
+pub const ROUND_MAX: i32 = 3;
+
+/// Which widgets belong together on a dashboard. The order here is the order
+/// [`crate::autolayout`] lays the groups out in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Group {
+    /// Clocks, calendars, the weather and timers.
+    Time,
+    /// What is going on: windows, notifications, sessions, notes.
+    Activity,
+    Media,
+    /// The machine's health: load, memory, disks, battery.
+    System,
+    /// Radios and things plugged in.
+    Devices,
+    /// Sliders, switches and buttons.
+    Controls,
+}
 
 impl KindInfo {
     /// The shape a new instance (or one in config.kdl without a `shape`) has.
@@ -446,6 +534,10 @@ pub struct Placed {
     pub row: i32,
     pub w: i32,
     pub h: i32,
+    /// Pinned: it stays where it is. Nothing pushes it aside, [`crate::autolayout`] leaves it
+    /// alone and lays the others out around it, and it can't be moved or resized until it is
+    /// unpinned.
+    pub pinned: bool,
     /// Settings from the node's children (see `widget_settings`).
     pub settings: crate::widget_settings::Values,
     /// Index of the node this widget came from in the file's `layout` block.
@@ -505,6 +597,8 @@ pub struct Layout {
     /// `theme colorscheme="…" style="…" { radius 12 }`.
     pub style_overrides: Vec<(String, KdlValue)>,
     pub weather: WeatherConfig,
+    /// The settings the layout algorithms start with: the `autolayout` line, if there is one.
+    pub autolayout: crate::autolayout::Params,
     /// Takes effect on restart.
     pub renderer: RendererChoice,
     /// The `grid columns=… rows=…` the file sets, if any; without it the screen decides
@@ -523,10 +617,11 @@ const HEADER: &str = r#"// niri-dash layout.
 // The dashboard is a grid of square cells. `grid columns=16 rows=9` sets how many; the cells get
 // as big as fits the screen. Without a `grid` line there are as many 100 px cells as fit. Every
 // widget sits at a column and row (counting from 0) and spans `width` x `height` cells. Round
-// widgets are square: give them `size=N` and `shape="round"`. Widgets that don't fit a smaller
-// screen, or overlap one listed earlier, are hidden rather than moved. Changing the grid moves the
-// widgets that no longer fit. Edit mode won't make it too small for them; a grid set too small here
-// removes the ones there is no room for.
+// widgets are square: give them `size=N` and `shape="round"`. `pinned=#true` keeps a widget where
+// it is: nothing pushes it aside, and Arrange lays the others out around it. Widgets that don't fit
+// a smaller screen, or overlap one listed earlier, are hidden rather than moved. Changing the grid
+// moves the widgets that no longer fit. Edit mode won't make it too small for them; a grid set too
+// small here removes the ones there is no room for.
 //
 // Edit mode (the pencil, or right-click the background) writes changes back into this file and
 // keeps your comments. Changes you save here show up right away.
@@ -703,6 +798,9 @@ impl Layout {
             weather.fahrenheit =
                 node.get("units").and_then(|v| v.as_string()) == Some("fahrenheit");
         }
+        let autolayout = doc.get("autolayout").map_or_else(Default::default, |n| {
+            crate::autolayout::Params::from_node(n, &mut warnings)
+        });
         let renderer = match doc.get_arg("renderer").map(|v| v.as_string()) {
             None => RendererChoice::Auto,
             Some(Some(r)) if let Ok(r) = r.parse() => r,
@@ -773,6 +871,10 @@ impl Layout {
                     row,
                     w,
                     h,
+                    pinned: node
+                        .get("pinned")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false),
                     settings,
                     node: Some(i),
                 });
@@ -787,6 +889,7 @@ impl Layout {
             style: theme.style,
             style_overrides: theme.overrides,
             weather,
+            autolayout,
             renderer,
             grid,
             cols: grid.map_or(16, |g| g.0),
@@ -1054,6 +1157,7 @@ impl Layout {
                     row: 0,
                     w,
                     h,
+                    pinned: false,
                     settings: Default::default(),
                     node: None,
                 }
@@ -1092,6 +1196,9 @@ impl Layout {
         let Some(p) = self.get(id).cloned() else {
             return false;
         };
+        if p.pinned {
+            return false;
+        }
         match p.shape {
             Shape::Rect if !p.kind.info().can_be_round => false,
             Shape::Rect => {
@@ -1171,6 +1278,25 @@ impl Layout {
         self.widgets.retain(|w| w.id != id);
     }
 
+    /// Put widgets at the rectangles given (an arrangement, or what it replaced).
+    pub fn set_rects(&mut self, rects: &[(u32, Rect)]) {
+        for &(id, r) in rects {
+            if let Some(w) = self.get_mut(id) {
+                (w.col, w.row, w.w, w.h) = (r.col, r.row, r.w, r.h);
+            }
+        }
+    }
+
+    /// Move widgets out of the grid, to the right of it, where they are hidden but kept.
+    pub fn park(&mut self, ids: &[u32]) {
+        let col = self.cols;
+        for &id in ids {
+            if let Some(w) = self.get_mut(id) {
+                (w.col, w.row) = (col, 0);
+            }
+        }
+    }
+
     /// Add a widget at the first free spot, shrinking towards its minimum size if needed.
     pub fn add(&mut self, kind: Kind) -> Option<u32> {
         let id = self.next_id;
@@ -1207,6 +1333,7 @@ impl Layout {
                     row,
                     w,
                     h,
+                    pinned: false,
                     settings: Vec::new(),
                     node: None,
                 });
@@ -1437,6 +1564,11 @@ fn write_widget(node: &mut KdlNode, w: &Placed) {
     }
     set_int(node, "col", w.col);
     set_int(node, "row", w.row);
+    if w.pinned {
+        set_prop(node, "pinned", KdlValue::Bool(true));
+    } else {
+        remove_prop(node, "pinned");
+    }
     match w.shape {
         Shape::Round => {
             remove_prop(node, "width");
@@ -1468,7 +1600,7 @@ pub struct Rect {
 }
 
 impl Rect {
-    fn overlaps(&self, o: &Rect) -> bool {
+    pub fn overlaps(&self, o: &Rect) -> bool {
         self.col < o.col + o.w
             && o.col < self.col + self.w
             && self.row < o.row + o.h
@@ -1736,12 +1868,33 @@ impl Refit {
 }
 
 impl Layout {
+    /// The widgets other than `id` that can be pushed aside: not the pinned ones.
     fn others(&self, id: u32) -> Vec<(u32, Rect)> {
         self.visible()
             .into_iter()
-            .filter(|w| w.id != id)
+            .filter(|w| w.id != id && !w.pinned)
             .map(|w| (w.id, w.rect()))
             .collect()
+    }
+
+    /// Where the pinned widgets (but `id`) are: what nothing may be pushed onto.
+    pub fn pins(&self, id: u32) -> Vec<Rect> {
+        self.visible()
+            .into_iter()
+            .filter(|w| w.id != id && w.pinned)
+            .map(Placed::rect)
+            .collect()
+    }
+
+    pub fn is_pinned(&self, id: u32) -> bool {
+        self.get(id).is_some_and(|p| p.pinned)
+    }
+
+    /// Pin a widget, or let go of it; the new state.
+    pub fn toggle_pin(&mut self, id: u32) -> Option<bool> {
+        let p = self.get_mut(id)?;
+        p.pinned = !p.pinned;
+        Some(p.pinned)
     }
 
     fn in_bounds(&self, r: &Rect) -> bool {
@@ -1754,7 +1907,12 @@ impl Layout {
     /// directions; then try moving each one to its nearest free spot. The solution that moves
     /// the fewest cells wins; `prefer` (a direction, e.g. the drag direction) breaks ties.
     pub fn reflow(&self, id: u32, target: Rect, prefer: (i32, i32)) -> Option<Reflow> {
-        if !self.in_bounds(&target) {
+        if !self.in_bounds(&target) || self.is_pinned(id) {
+            return None;
+        }
+        // Pinned widgets are walls: not even a widget being placed goes through them.
+        let pins = self.pins(id);
+        if pins.iter().any(|r| r.overlaps(&target)) {
             return None;
         }
         let others = self.others(id);
@@ -1765,12 +1923,12 @@ impl Layout {
         dirs.sort_by_key(|d| if *d == prefer { 0 } else { 1 });
         let mut candidates: Vec<Vec<(u32, Rect)>> = dirs
             .iter()
-            .filter_map(|d| self.push(&others, target, *d))
+            .filter_map(|d| self.push(&others, &pins, target, *d))
             .collect();
-        candidates.extend(self.nearest_free(&others, target));
+        candidates.extend(self.nearest_free(&others, &pins, target));
         if candidates.is_empty() {
             // Crowded grid: nothing slides into place; search for a proper re-pack.
-            candidates.extend(self.repack(&others, target));
+            candidates.extend(self.repack(&others, &pins, target));
         }
         let orig = |id: u32| others.iter().find(|(o, _)| *o == id).map(|(_, r)| *r);
         // Cells moved, plus a stiff price for every cell a widget had to give up.
@@ -1800,7 +1958,12 @@ impl Layout {
     /// and if they can't be re-placed, also the next-nearest ones. Each set is re-packed by a
     /// bounded search that keeps widgets close to where they were; on a full grid it first tries
     /// an exact re-tiling, then lets displaced widgets shrink towards their minimum size.
-    fn repack(&self, others: &[(u32, Rect)], target: Rect) -> Option<Vec<(u32, Rect)>> {
+    fn repack(
+        &self,
+        others: &[(u32, Rect)],
+        pins: &[Rect],
+        target: Rect,
+    ) -> Option<Vec<(u32, Rect)>> {
         let deadline = web_time::Instant::now() + std::time::Duration::from_millis(25);
         let center = |r: &Rect| (2 * r.col + r.w, 2 * r.row + r.h);
         let tc = center(&target);
@@ -1844,6 +2007,7 @@ impl Layout {
                 })
                 .collect();
             let blocked: Vec<Rect> = std::iter::once(target)
+                .chain(pins.iter().copied())
                 .chain(order[k..].iter().map(|&i| others[i].1))
                 .collect();
             let free = total - blocked.iter().map(|r| r.w * r.h).sum::<i32>();
@@ -1871,7 +2035,7 @@ impl Layout {
             }
             let mut budget = 3000;
             if let Some(placed) = occ.pack_shrinking(&movable, &mut budget, deadline) {
-                return Some(self.regrow(target, merge(others, placed)));
+                return Some(self.regrow(target, pins, merge(others, placed)));
             }
         }
         None
@@ -1879,7 +2043,7 @@ impl Layout {
 
     /// After shrinking, let widgets grow back towards their original size into free space
     /// around them (never into anything else).
-    fn regrow(&self, target: Rect, mut pos: Vec<(u32, Rect)>) -> Vec<(u32, Rect)> {
+    fn regrow(&self, target: Rect, pins: &[Rect], mut pos: Vec<(u32, Rect)>) -> Vec<(u32, Rect)> {
         loop {
             let mut grew = false;
             for i in 0..pos.len() {
@@ -1890,6 +2054,9 @@ impl Layout {
                 }
                 let mut occ = Occupancy::new(self.cols, self.rows);
                 occ.set(&target, true);
+                for r in pins {
+                    occ.set(r, true);
+                }
                 for (j, (_, r)) in pos.iter().enumerate() {
                     if j != i {
                         occ.set(r, true);
@@ -1938,6 +2105,7 @@ impl Layout {
     fn push(
         &self,
         others: &[(u32, Rect)],
+        pins: &[Rect],
         target: Rect,
         d: (i32, i32),
     ) -> Option<Vec<(u32, Rect)>> {
@@ -1951,8 +2119,15 @@ impl Layout {
                     continue;
                 }
                 let mut r = pos[i].1;
-                // Step past every fixed rect it overlaps, along the push direction.
-                while let Some(f) = fixed.iter().find(|f| f.overlaps(&r)) {
+                // Step past every fixed rect it overlaps, along the push direction. A pinned
+                // widget in the way ends the push: nothing is shoved onto or over it.
+                loop {
+                    if pins.iter().any(|p| p.overlaps(&r)) {
+                        return None;
+                    }
+                    let Some(f) = fixed.iter().find(|f| f.overlaps(&r)) else {
+                        break;
+                    };
                     match d {
                         (0, 1) => r.row = f.row + f.h,
                         (0, -1) => r.row = f.row - r.h,
@@ -1973,7 +2148,12 @@ impl Layout {
     }
 
     /// Move each widget overlapping `target` to the free spot closest to where it was.
-    fn nearest_free(&self, others: &[(u32, Rect)], target: Rect) -> Option<Vec<(u32, Rect)>> {
+    fn nearest_free(
+        &self,
+        others: &[(u32, Rect)],
+        pins: &[Rect],
+        target: Rect,
+    ) -> Option<Vec<(u32, Rect)>> {
         let mut pos: Vec<(u32, Rect)> = others.to_vec();
         let mut displaced: Vec<usize> = (0..pos.len())
             .filter(|&i| pos[i].1.overlaps(&target))
@@ -1982,6 +2162,7 @@ impl Layout {
         displaced.sort_by_key(|&i| -(pos[i].1.w * pos[i].1.h));
         // Everything that stays put, plus the newcomer, plus displaced widgets once re-placed.
         let mut blocked: Vec<Rect> = std::iter::once(target)
+            .chain(pins.iter().copied())
             .chain(
                 pos.iter()
                     .enumerate()
@@ -2056,7 +2237,7 @@ impl Layout {
                     w: 0,
                     h: 0,
                 };
-                let mut pos = self.regrow(none, merge(&all, placed));
+                let mut pos = self.regrow(none, &[], merge(&all, placed));
                 pos.retain(|(id, _)| !shown.contains(id));
                 pos
             }
@@ -2198,6 +2379,7 @@ impl Layout {
             row,
             w,
             h,
+            pinned: false,
             settings: Vec::new(),
             node: None,
         });
@@ -2218,6 +2400,126 @@ mod tests {
 
     fn id_of(l: &Layout, kind: Kind) -> u32 {
         l.widgets.iter().find(|w| w.kind == kind).unwrap().id
+    }
+
+    #[test]
+    fn pinned_widgets_are_not_pushed_aside() {
+        let mut l = grid();
+        let windows = id_of(&l, Kind::Windows);
+        l.toggle_pin(windows);
+        let wall = l.get(windows).unwrap().rect();
+        // Dropping something onto it is refused outright.
+        let clock = id_of(&l, Kind::Clock);
+        assert!(!l.move_reflow(clock, wall.col, wall.row, (0, 1)));
+        // Everything else can be moved about as before, and never touches the wall.
+        let mut rng = 0x9E3779B9u32;
+        let mut next = |n: i32| {
+            rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+            ((rng >> 8) as i32).rem_euclid(n)
+        };
+        let ids: Vec<u32> = l
+            .widgets
+            .iter()
+            .map(|w| w.id)
+            .filter(|&i| i != windows)
+            .collect();
+        let mut moved = 0;
+        for _ in 0..400 {
+            let id = ids[next(ids.len() as i32) as usize];
+            let r = l.get(id).unwrap().rect();
+            let ok = if next(2) == 0 {
+                l.move_reflow(id, next(16), next(9), (0, 1))
+            } else {
+                l.resize_reflow(
+                    id,
+                    Rect {
+                        w: r.w + next(3) - 1,
+                        h: r.h + next(3) - 1,
+                        ..r
+                    },
+                )
+            };
+            moved += ok as i32;
+            assert_eq!(
+                l.get(windows).unwrap().rect(),
+                wall,
+                "the pinned widget moved"
+            );
+            assert_eq!(
+                l.visible().len(),
+                l.widgets.len(),
+                "a widget overlaps or fell off"
+            );
+        }
+        assert!(
+            moved > 50,
+            "only {moved} of 400 edits worked around the pin"
+        );
+    }
+
+    #[test]
+    fn a_pinned_widget_cannot_be_moved_resized_or_reshaped_until_unpinned() {
+        let mut l = grid();
+        let vol = id_of(&l, Kind::Volume);
+        let was = l.get(vol).unwrap().rect();
+        assert_eq!(l.toggle_pin(vol), Some(true));
+        assert!(!l.move_reflow(vol, was.col, was.row + 1, (0, 1)));
+        assert!(!l.resize_reflow(
+            vol,
+            Rect {
+                w: was.w + 1,
+                h: was.h + 1,
+                ..was
+            }
+        ));
+        assert!(!l.toggle_shape(vol));
+        assert_eq!(l.get(vol).unwrap().rect(), was);
+        assert_eq!(l.toggle_pin(vol), Some(false));
+        assert!(l.toggle_shape(vol), "unpinned, it reshapes again");
+    }
+
+    #[test]
+    fn new_widgets_go_around_pinned_ones() {
+        let mut l = grid();
+        for w in l.widgets.clone() {
+            l.toggle_pin(w.id);
+        }
+        let before: Vec<Rect> = l.widgets.iter().map(Placed::rect).collect();
+        // Everything is pinned: adding finds free cells or nothing, and never moves a pin.
+        let _ = l.add(Kind::Clock);
+        let _ = l.add_at(Kind::Calendar, 0, 0);
+        let after: Vec<Rect> = l
+            .widgets
+            .iter()
+            .take(before.len())
+            .map(Placed::rect)
+            .collect();
+        assert_eq!(before, after);
+        assert_eq!(l.visible().len(), l.widgets.len());
+    }
+
+    #[test]
+    fn pinned_is_kept_in_config_kdl() {
+        let mut l = grid();
+        let clock = id_of(&l, Kind::Clock);
+        l.toggle_pin(clock);
+        let out = l.render();
+        // (The comments at the top of the file mention it too: look at the widgets.)
+        let body = &out[out.find("\nlayout {").expect("a layout block")..];
+        assert_eq!(body.matches("pinned=#true").count(), 1, "{out}");
+        let (mut back, warnings) = Layout::parse(&out).unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(
+            back.widgets
+                .iter()
+                .filter(|w| w.pinned)
+                .map(|w| w.kind)
+                .collect::<Vec<_>>(),
+            [Kind::Clock]
+        );
+        back.toggle_pin(id_of(&back, Kind::Clock));
+        let text = back.render();
+        assert!(!text[text.find("\nlayout {").unwrap()..].contains("pinned="));
     }
 
     #[test]

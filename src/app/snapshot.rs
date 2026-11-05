@@ -19,6 +19,7 @@ use std::time::{Duration, Instant};
 pub enum Tab {
     Colors,
     Style,
+    Arrange,
 }
 
 #[derive(clap::Args, Clone)]
@@ -41,6 +42,9 @@ pub struct Args {
     /// Open this sidebar tab.
     #[arg(long, value_enum, requires = "edit")]
     tab: Option<Tab>,
+    /// Lay the widgets out by themselves (with config.kdl's `autolayout` settings) first.
+    #[arg(long, requires = "edit")]
+    arrange: bool,
     /// Open the settings of the N-th widget in config.kdl (counting from 0).
     #[arg(long, value_name = "N", requires = "edit")]
     configure: Option<usize>,
@@ -168,6 +172,7 @@ pub fn run(args: &Args, solo: Option<Kind>) -> Result<()> {
         match args.tab {
             Some(Tab::Colors) => ui.set_drawer_tab(crate::DrawerTab::Colors),
             Some(Tab::Style) => ui.set_drawer_tab(crate::DrawerTab::Style),
+            Some(Tab::Arrange) => ui.set_drawer_tab(crate::DrawerTab::Arrange),
             None => {}
         }
         let id = args
@@ -192,6 +197,10 @@ pub fn run(args: &Args, solo: Option<Kind>) -> Result<()> {
         if args.incremental {
             render_into(&mut pixels, pw as usize, false);
         }
+    }
+    if args.arrange {
+        // Once the grid is the screen's.
+        app.arrange_now();
     }
     // As on show: the keyboard goes to the dashboard (or to a standalone app's widget).
     window.dispatch_event(WindowEvent::WindowActiveChanged(true));

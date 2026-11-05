@@ -702,9 +702,10 @@ fn pointer_editing(issues: &mut Issues) {
     }
     issues.check(&h, "pointer: resizing from the corner");
 
-    // The toolbar, top right of a card: settings, shape (if it can be round), remove.
+    // The toolbar, top right of a card: settings (if it has any), shape (if it can be round), pin,
+    // remove.
     let toolbar = |h: &Harness, t: &Tile, nth: usize| {
-        let buttons = 1
+        let buttons = 2
             + usize::from(testing::can_be_round(&t.kind))
             + usize::from(!testing::setting_labels(&t.kind).is_empty());
         let (rx, ry) = h.cell_origin((t.col + t.w) as f32, t.row as f32);
@@ -737,7 +738,21 @@ fn pointer_editing(issues: &mut Issues) {
     issues.check(&h, "pointer: the shape button");
     let clip = id_of(&h, "clipboard");
     let k0 = tile(&h, clip).unwrap();
+    // The clipboard has neither settings nor a round shape: the lock first, then remove.
     let (x, y) = toolbar(&h, &k0, 0);
+    h.click(x, y);
+    h.settle(200);
+    let locked = h
+        .ui()
+        .get_widgets()
+        .iter()
+        .find(|w| w.id == clip as i32)
+        .is_some_and(|w| w.pinned);
+    if !locked {
+        issues.add("pointer: the toolbar's lock didn't pin the clipboard");
+    }
+    issues.check(&h, "pointer: the lock button");
+    let (x, y) = toolbar(&h, &k0, 1);
     h.click(x, y);
     h.settle(200);
     if tile(&h, clip).is_some() {
@@ -1221,8 +1236,12 @@ fn keyboard_editing(issues: &mut Issues) {
     let tab = |h: &Harness| h.ui().get_drawer_tab();
     use niri_dash::DrawerTab as T;
     h.press("tab");
-    if tab(&h) != T::Colors {
+    if tab(&h) != T::Arrange {
         issues.add(format!("keyboard: Tab from Widgets went to {:?}", tab(&h)));
+    }
+    h.press("tab");
+    if tab(&h) != T::Colors {
+        issues.add(format!("keyboard: Tab from Arrange went to {:?}", tab(&h)));
     }
     h.press("tab");
     if tab(&h) != T::Style {
@@ -1297,7 +1316,8 @@ fn keyboard_editing(issues: &mut Issues) {
     }
     issues.check(&h, "keyboard: adding from the palette");
 
-    // Colors: another scheme.
+    // Colors (past Arrange): another scheme.
+    h.press("tab");
     h.press("tab");
     let schemes: Vec<_> = h.ui().get_colorschemes().iter().collect();
     if schemes.len() > 1 {
@@ -1684,6 +1704,236 @@ fn sidebar_follows(issues: &mut Issues) {
 }
 
 // ------------------------------------------------------------------------------------------
+// The Arrange tab.
+
+/// Every algorithm lays the widgets out without losing or overlapping any, undo puts the old
+/// layout back, the settings copy as a line config.kdl reads, and the rows follow the algorithm.
+fn arrange_tab(issues: &mut Issues) {
+    let rects = |h: &Harness| -> Vec<(u32, i32, i32, i32, i32)> {
+        h.tiles()
+            .iter()
+            .map(|t| (t.id, t.col, t.row, t.w, t.h))
+            .collect()
+    };
+    for (config, name) in [(MIXED, "mixed"), (PACKED, "packed")] {
+        let mut h = dashboard(config);
+        h.press("ctrl+e");
+        h.ui().set_drawer_tab(niri_dash::DrawerTab::Arrange);
+        h.pump();
+        let before = rects(&h);
+        let mut row_counts = Vec::new();
+        for round in 0..4 {
+            row_counts.push(h.ui().get_arrange_rows().row_count());
+            h.ui().invoke_arrange_now();
+            h.pump();
+            issues.check(&h, &format!("arrange: {name}, algorithm {round}"));
+            let lost = h.tiles().iter().filter(|t| !t.visible).count();
+            if lost > 0 && name == "mixed" {
+                issues.add(format!(
+                    "arrange: {name}, algorithm {round} lost {lost} widgets"
+                ));
+            }
+            if h.ui().get_arrange_result().is_empty() {
+                issues.add("arrange: no summary under the buttons");
+            }
+            // The next algorithm.
+            h.ui().invoke_arrange_step(0, 1);
+            h.pump();
+        }
+        if row_counts.iter().collect::<BTreeSet<_>>().len() < 2 {
+            issues.add(format!(
+                "arrange: the rows don't follow the algorithm: {row_counts:?}"
+            ));
+        }
+        if !h.ui().get_arrange_can_undo() {
+            issues.add("arrange: nothing to undo after arranging");
+        }
+        h.ui().invoke_arrange_undo();
+        h.pump();
+        if rects(&h) != before {
+            issues.add(format!("arrange: undo didn't bring {name} back as it was"));
+        }
+        if h.ui().get_arrange_can_undo() {
+            issues.add("arrange: still something to undo after undoing");
+        }
+        issues.check(&h, &format!("arrange: {name}, undone"));
+
+        // Shuffling steps the seed and arranges again.
+        let seed = |h: &Harness| {
+            h.ui()
+                .get_arrange_rows()
+                .iter()
+                .find(|r| r.label == "Seed")
+                .map(|r| r.value.to_string())
+        };
+        h.ui().invoke_arrange_shuffle();
+        h.pump();
+        if seed(&h).as_deref() != Some("1") {
+            issues.add(format!("arrange: shuffle left the seed at {:?}", seed(&h)));
+        }
+        issues.check(&h, &format!("arrange: {name}, shuffled"));
+
+        // Copy: a toast, and a line config.kdl reads back.
+        h.ui().invoke_arrange_copy();
+        h.pump();
+        if !toast(&h).contains("Copied") {
+            issues.add(format!("arrange: copying said {:?}", toast(&h)));
+        }
+        // Reset puts a setting back.
+        let seed_row = h
+            .ui()
+            .get_arrange_rows()
+            .iter()
+            .find(|r| r.label == "Seed")
+            .map(|r| r.index);
+        if let Some(i) = seed_row {
+            h.ui().invoke_arrange_reset(i);
+            h.pump();
+            if seed(&h).as_deref() != Some("0") {
+                issues.add("arrange: resetting the seed left it changed");
+            }
+        }
+    }
+
+    // Keyboard: on the tab the first stop is the Arrange button, Enter presses it.
+    let mut h = dashboard(MIXED);
+    h.press("ctrl+e");
+    h.ui().set_drawer_tab(niri_dash::DrawerTab::Arrange);
+    h.pump();
+    let before = rects(&h);
+    h.press("tab");
+    h.press("enter");
+    h.pump();
+    issues.check(&h, "arrange: Enter on the Arrange button");
+    if h.ui().get_arrange_result().is_empty() && rects(&h) == before {
+        issues.add("arrange: Enter on the first stop didn't arrange");
+    }
+}
+
+// ------------------------------------------------------------------------------------------
+// Pinning.
+
+/// A pinned widget can't be moved, resized or pushed, the others work around it, Arrange leaves
+/// it where it is, `p` toggles it, and config.kdl remembers.
+fn pinning(issues: &mut Issues) {
+    let rect = |h: &Harness, id: u32| tile(h, id).map(|t| (t.col, t.row, t.w, t.h));
+    let pinned = |h: &Harness, id: u32| {
+        h.ui()
+            .get_widgets()
+            .iter()
+            .find(|w| w.id == id as i32)
+            .map(|w| w.pinned)
+    };
+    let mut h = dashboard(MIXED);
+    h.press("ctrl+e");
+    let clock = id_of(&h, "clock");
+    let calendar = id_of(&h, "calendar");
+    let was = rect(&h, clock);
+
+    h.ui().invoke_toggle_pin(clock as i32);
+    h.pump();
+    issues.check(&h, "pin: the clock");
+    if pinned(&h, clock) != Some(true) {
+        issues.add("pin: the toolbar's lock didn't pin the clock");
+    }
+    let layout_block = |h: &Harness| {
+        let t = h.config_text();
+        t.find("\nlayout {")
+            .map_or(String::new(), |i| t[i..].to_string())
+    };
+    if !layout_block(&h).contains("pinned=#true") {
+        issues.add("pin: config.kdl doesn't say the clock is pinned");
+    }
+
+    // It stays: dragged away, shrunk, reshaped, or run over by another widget.
+    h.ui().invoke_move_widget(clock as i32, 6, 6);
+    h.pump();
+    if rect(&h, clock) != was || !toast(&h).contains("Pinned") {
+        issues.add(format!(
+            "pin: dragging a pinned clock gave {:?} and {:?}",
+            rect(&h, clock),
+            toast(&h)
+        ));
+    }
+    h.ui().invoke_resize_widget(clock as i32, 0, 0, 2, 1);
+    h.ui().invoke_toggle_shape(clock as i32);
+    h.pump();
+    if rect(&h, clock) != was {
+        issues.add("pin: a pinned clock was resized or reshaped");
+    }
+    h.ui().invoke_move_widget(calendar as i32, 0, 0);
+    h.pump();
+    if !toast(&h).contains("pinned") {
+        issues.add(format!(
+            "pin: dropping onto a pinned clock said {:?}",
+            toast(&h)
+        ));
+    }
+    if rect(&h, clock) != was {
+        issues.add("pin: dropping onto the clock moved it");
+    }
+    issues.check(&h, "pin: refused edits");
+
+    // Others still move, around it: push the calendar's neighbours about.
+    for (c, r) in [(0, 3), (1, 2), (0, 2)] {
+        h.ui().invoke_move_widget(calendar as i32, c, r);
+        h.pump();
+        if rect(&h, clock) != was {
+            issues.add(format!(
+                "pin: moving the calendar to {c},{r} shoved the clock"
+            ));
+        }
+        issues.check(&h, "pin: moving others");
+    }
+
+    // Arrange keeps it, whatever the algorithm.
+    h.ui().set_drawer_tab(niri_dash::DrawerTab::Arrange);
+    for algo in 0..3 {
+        h.ui().invoke_arrange_now();
+        h.pump();
+        if rect(&h, clock) != was {
+            issues.add(format!(
+                "pin: Arrange (algorithm {algo}) moved the pinned clock"
+            ));
+        }
+        if !h.ui().get_arrange_result().contains("1 pinned") {
+            issues.add(format!(
+                "pin: the result line says {:?}",
+                h.ui().get_arrange_result()
+            ));
+        }
+        issues.check(
+            &h,
+            &format!("pin: arranged around the clock, algorithm {algo}"),
+        );
+        h.ui().invoke_arrange_step(0, 1);
+        h.pump();
+    }
+
+    // The keyboard: p on the widget being worked on lets go, and pins again.
+    h.ui().invoke_configure_widget(clock as i32);
+    h.press("p");
+    if pinned(&h, clock) != Some(false) {
+        issues.add("pin: p didn't unpin the clock");
+    }
+    if layout_block(&h).contains("pinned=") {
+        issues.add("pin: config.kdl still says pinned after unpinning");
+    }
+    h.press("p");
+    if pinned(&h, clock) != Some(true) {
+        issues.add("pin: p didn't pin the clock again");
+    }
+    h.press("p");
+    // Unpinned, it moves again.
+    h.ui().invoke_move_widget(clock as i32, 5, 7);
+    h.pump();
+    if rect(&h, clock) == was {
+        issues.add("pin: the clock wouldn't move after being unpinned");
+    }
+    issues.check(&h, "pin: unpinned and moved");
+}
+
+// ------------------------------------------------------------------------------------------
 
 type Scenario = (&'static str, fn(&mut Issues));
 
@@ -1727,6 +1977,8 @@ fn main() {
             grid_shrink_and_grow,
         ),
         ("sidebar: follows its widget", sidebar_follows),
+        ("arrange: algorithms, undo, copy", arrange_tab),
+        ("pin: widgets that stay put", pinning),
     ];
     let only = std::env::var("NIRI_DASH_EDIT_ONLY").unwrap_or_default();
     let scenarios: Vec<_> = scenarios

@@ -46,6 +46,7 @@ pub(super) fn character(p: &Placed, us: bool) -> crate::mascots::Character {
 
 fn to_inst(p: &Placed, us: bool) -> WidgetInst {
     WidgetInst {
+        pinned: p.pinned,
         has_settings: !p.kind.info().settings.is_empty(),
         opts: to_opts(p, us),
         can_round: p.kind.info().can_be_round,
@@ -111,9 +112,27 @@ impl App {
         for (w, hint) in new.iter_mut().zip(hints) {
             w.hint = hint.into();
         }
-        let same_ids = self.widgets.row_count() == new.len()
-            && self.widgets.iter().zip(&new).all(|(a, b)| a.id == b.id);
-        if same_ids {
+        // Widgets that stay keep their rows (and so glide to their new places); only the ones
+        // that come or go are removed or added. Both lists are in file order.
+        let mut i = 0;
+        while i < self.widgets.row_count() {
+            if new
+                .iter()
+                .any(|n| self.widgets.row_data(i).is_some_and(|o| o.id == n.id))
+            {
+                i += 1;
+            } else {
+                self.widgets.remove(i);
+            }
+        }
+        for (i, w) in new.iter().enumerate() {
+            if self.widgets.row_data(i).is_none_or(|o| o.id != w.id) {
+                self.widgets.insert(i, w.clone());
+            }
+        }
+        if self.widgets.row_count() == new.len()
+            && self.widgets.iter().zip(&new).all(|(a, b)| a.id == b.id)
+        {
             set_if_changed(&self.widgets, new, |a, b| a == b);
         } else {
             self.widgets.set_vec(new);
@@ -149,6 +168,18 @@ impl App {
         }
     }
 
+    /// Why widget `id` can't go to `target`, for the toast.
+    fn refusal(&self, id: u32, target: crate::layout::Rect) -> &'static str {
+        let l = self.layout.borrow();
+        if l.is_pinned(id) {
+            "Pinned: unpin it first (p)"
+        } else if l.pins(id).iter().any(|r| r.overlaps(&target)) {
+            "A pinned widget is in the way"
+        } else {
+            "No room there"
+        }
+    }
+
     /// Put widget `id` at `target` from the keyboard, pushing others aside (`prefer`: the way
     /// it went).
     fn place_by_key(&self, id: u32, target: crate::layout::Rect, prefer: (i32, i32)) {
@@ -157,7 +188,7 @@ impl App {
         if placed {
             self.layout_changed();
         } else {
-            self.toast("No room there");
+            self.toast(self.refusal(id, target));
         }
     }
 
@@ -462,7 +493,18 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
             a.layout_changed();
         } else {
             a.sync_widgets();
-            a.toast("No room there");
+            let target = a
+                .layout
+                .borrow()
+                .get(id as u32)
+                .map(|p| crate::layout::Rect {
+                    col: c,
+                    row: r,
+                    ..p.rect()
+                });
+            if let Some(target) = target {
+                a.toast(a.refusal(id as u32, target));
+            }
         }
     });
     let a = app.clone();
@@ -502,6 +544,8 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     ui.on_toggle_shape(move |id| {
         if a.layout.borrow_mut().toggle_shape(id as u32) {
             a.layout_changed();
+        } else if a.layout.borrow().is_pinned(id as u32) {
+            a.toast("Pinned: unpin it first (p)");
         } else {
             let round = a
                 .layout
@@ -512,6 +556,18 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
                 "No room to make this widget rectangular here"
             } else {
                 "No room to make this widget round here"
+            });
+        }
+    });
+    let a = app.clone();
+    ui.on_toggle_pin(move |id| {
+        let toggled = a.layout.borrow_mut().toggle_pin(id as u32);
+        if let Some(pinned) = toggled {
+            a.layout_changed();
+            a.toast(if pinned {
+                "Pinned: it stays where it is"
+            } else {
+                "Unpinned"
             });
         }
     });

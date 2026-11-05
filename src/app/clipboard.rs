@@ -132,11 +132,16 @@ impl App {
 
     /// Put `text` on the clipboard.
     pub(super) fn copy_text(&self, text: &str) {
+        self.copy_text_as(text, &format!("Copied {text}"));
+    }
+
+    /// Put `text` on the clipboard and say `toast`, for text too long or odd to quote.
+    pub(super) fn copy_text_as(&self, text: &str, toast: &str) {
         let clip = Clip {
             kind: clipboard::ClipKind::Text,
             data: Arc::new(text.as_bytes().to_vec()),
         };
-        self.copy(clip, &format!("Copied {text}"));
+        self.copy(clip, toast);
     }
 
     /// Put `clip` on the clipboard and say so in a toast.

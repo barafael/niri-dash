@@ -461,6 +461,11 @@ export component Dash inherits Window {
     in property <int> grid-rows;
     // The Columns and Rows steppers in the Widgets tab.
     in property <[SettingRow]> grid-controls;
+    // The Arrange tab: the settings of the layout algorithm, what the last run made of them, and
+    // whether there is a layout to go back to.
+    in property <[SettingRow]> arrange-rows;
+    in property <string> arrange-result;
+    in property <bool> arrange-can-undo;
     // How often each of them refused a step (there was no room left for some widget).
     in-out property <int> grid-refusals-cols;
     in-out property <int> grid-refusals-rows;
@@ -617,6 +622,14 @@ export component Dash inherits Window {
     // Step the grid's columns (index 0) or rows (1) by +1/-1; back to the automatic grid.
     callback grid-step(int, int);
     callback grid-auto();
+    // Lay the widgets out by themselves; the same with the next shuffle; put back what it
+    // replaced; step (+1/-1) or reset one of the settings; copy them as a line of config.kdl.
+    callback arrange-now();
+    callback arrange-shuffle();
+    callback arrange-undo();
+    callback arrange-step(int, int);
+    callback arrange-reset(int);
+    callback arrange-copy();
     callback move-widget(int, int, int);
     // Widget id and where it goes: column, row, width, height.
     callback resize-widget(int, int, int, int, int);
@@ -625,6 +638,8 @@ export component Dash inherits Window {
     callback nudge-widget(int, int);
     callback reshape-widget(int, int, bool);
     callback toggle-shape(int);
+    // Pin a widget so that it stays where it is, or let go of it.
+    callback toggle-pin(int);
     callback remove-widget(int);
     // Live reflow while dragging: others move out of the way; false if there is no room.
     callback preview-move(int, int, int) -> bool;
@@ -664,7 +679,9 @@ export component Dash inherits Window {
     // schemes, the folder button. Style: the presets, "Reset all" (when adjusted), the
     // adjustments, the folder button. A widget's tab: its settings.
     property <int> k-adjust: root.styles.length + (root.style-customized ? 1 : 0);
+    // Arrange: "Arrange" and "Shuffle", the settings, "Copy" and "Undo".
     property <int> side-count: root.drawer-tab == DrawerTab.widgets ? 3 + root.palette.length
+        : root.drawer-tab == DrawerTab.arrange ? root.arrange-rows.length + 4
         : root.drawer-tab == DrawerTab.colors ? root.colorschemes.length + 1
         : root.drawer-tab == DrawerTab.style ? root.k-adjust + root.style-rows.length + 1
         : root.setting-rows.length;
@@ -682,16 +699,19 @@ export component Dash inherits Window {
         }
     }
     function side-tab(d: int) {
-        let n = root.settings-id != 0 ? 4 : 3;
-        let i = root.drawer-tab == DrawerTab.widgets ? 0 : root.drawer-tab == DrawerTab.colors ? 1
-            : root.drawer-tab == DrawerTab.style ? 2 : 3;
+        let n = root.settings-id != 0 ? 5 : 4;
+        let i = root.drawer-tab == DrawerTab.widgets ? 0 : root.drawer-tab == DrawerTab.arrange ? 1
+            : root.drawer-tab == DrawerTab.colors ? 2 : root.drawer-tab == DrawerTab.style ? 3 : 4;
         let j = mod(i + d + n, n);
-        root.drawer-tab = j == 0 ? DrawerTab.widgets : j == 1 ? DrawerTab.colors : j == 2 ? DrawerTab.style : DrawerTab.widget;
+        root.drawer-tab = j == 0 ? DrawerTab.widgets : j == 1 ? DrawerTab.arrange : j == 2 ? DrawerTab.colors
+            : j == 3 ? DrawerTab.style : DrawerTab.widget;
     }
     // h/l on stop i: step it down or up (a switch flips).
     function side-step(i: int, d: int) {
         if (root.drawer-tab == DrawerTab.widgets && i < 2) {
             root.grid-step(i, d);
+        } else if (root.drawer-tab == DrawerTab.arrange && i >= 2 && i - 2 < root.arrange-rows.length) {
+            root.arrange-step(root.arrange-rows[i - 2].index, d);
         } else if (root.drawer-tab == DrawerTab.style && i >= root.k-adjust && i - root.k-adjust < root.style-rows.length) {
             root.style-step(root.style-rows[i - root.k-adjust].key, d);
         } else if (root.drawer-tab == DrawerTab.widget && i < root.setting-rows.length
@@ -706,6 +726,18 @@ export component Dash inherits Window {
                 root.add-widget(root.palette[i - 2].kind);
             } else if (i == 2 + root.palette.length) {
                 root.reset-layout();
+            }
+        } else if (root.drawer-tab == DrawerTab.arrange) {
+            if (i == 0) {
+                root.arrange-now();
+            } else if (i == 1) {
+                root.arrange-shuffle();
+            } else if (i - 2 < root.arrange-rows.length) {
+                root.arrange-step(root.arrange-rows[i - 2].index, 1);
+            } else if (i - 2 == root.arrange-rows.length) {
+                root.arrange-copy();
+            } else {
+                root.arrange-undo();
             }
         } else if (root.drawer-tab == DrawerTab.colors) {
             if (i < root.colorschemes.length) {
@@ -737,6 +769,8 @@ export component Dash inherits Window {
     function side-reset(i: int) {
         if (root.drawer-tab == DrawerTab.widgets && i < 2) {
             root.grid-auto();
+        } else if (root.drawer-tab == DrawerTab.arrange && i >= 2 && i - 2 < root.arrange-rows.length) {
+            root.arrange-reset(root.arrange-rows[i - 2].index);
         } else if (root.drawer-tab == DrawerTab.style && i >= root.k-adjust && i - root.k-adjust < root.style-rows.length) {
             root.style-reset(root.style-rows[i - root.k-adjust].key);
         } else if (root.drawer-tab == DrawerTab.widget && i < root.setting-rows.length) {
@@ -786,6 +820,10 @@ export component Dash inherits Window {
         }
         if (target != 0 && e.text == "o") {
             root.toggle-shape(target);
+            return true;
+        }
+        if (target != 0 && e.text == "p") {
+            root.toggle-pin(target);
             return true;
         }
         if (target != 0 && (e.text == "x" || e.text == Key.Delete)) {
@@ -1149,6 +1187,7 @@ export component Dash inherits Window {
                 move-to(id, c, r) => { root.move-widget(id, c, r); }
                 resize-to(id, c, r, ww, hh) => { root.resize-widget(id, c, r, ww, hh); }
                 toggle-shape(id) => { root.toggle-shape(id); }
+                toggle-pin(id) => { root.toggle-pin(id); }
                 selected: root.editing && root.settings-id == w.id && root.drawer-tab == DrawerTab.widget;
                 configure(id) => {
                     root.adjust-id = 0;
@@ -1170,7 +1209,8 @@ export component Dash inherits Window {
                     }
                 }
                 grab(id, px, py, ox, oy) => {
-                    if (root.drag-mode == DragMode.none) {
+                    // A pinned widget isn't picked up.
+                    if (root.drag-mode == DragMode.none && !w.pinned) {
                         if (!root.editing) {
                             root.adjust-id = id;
                         }
@@ -1274,6 +1314,7 @@ export component Dash inherits Window {
                         spacing: 3px;
                         for tab in [
                             { id: DrawerTab.widgets, label: "Widgets" },
+                            { id: DrawerTab.arrange, label: "Arrange" },
                             { id: DrawerTab.colors, label: "Colors" },
                             { id: DrawerTab.style, label: "Style" },
                         ]: Segment {
@@ -1410,6 +1451,90 @@ export component Dash inherits Window {
                                         }
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+                if root.drawer-tab == DrawerTab.arrange: arrange-side := SideList {
+                    vertical-stretch: 1;
+                    content-height: arrange-list.preferred-height;
+                    arrange-list := VerticalLayout {
+                        width: parent.width;
+                        spacing: 6px;
+                        HorizontalLayout {
+                            spacing: 6px;
+                            height: 34px;
+                            TextButton {
+                                horizontal-stretch: 1;
+                                text: "Arrange";
+                                accessible-description: "Lay the widgets out by themselves";
+                                primary: true;
+                                icon: Icons.sparkle;
+                                has-icon: true;
+                                kfocus: root.side-on(DrawerTab.arrange, 0);
+                                changed kfocus => {
+                                    if (self.kfocus) { arrange-side.reveal(self.absolute-position.y, self.height); }
+                                }
+                                clicked => { root.arrange-now(); }
+                            }
+                            TextButton {
+                                horizontal-stretch: 1;
+                                text: "Shuffle";
+                                accessible-description: "Arrange again with the next seed";
+                                icon: Icons.refresh;
+                                has-icon: true;
+                                kfocus: root.side-on(DrawerTab.arrange, 1);
+                                changed kfocus => {
+                                    if (self.kfocus) { arrange-side.reveal(self.absolute-position.y, self.height); }
+                                }
+                                clicked => { root.arrange-shuffle(); }
+                            }
+                        }
+                        Muted {
+                            height: 34px;
+                            wrap: word-wrap;
+                            vertical-alignment: top;
+                            text: root.arrange-result;
+                        }
+                        for v[i] in root.arrange-rows: SettingControl {
+                            kfocus: root.side-on(DrawerTab.arrange, 2 + i);
+                            revealed(y, h) => { arrange-side.reveal(y, h); }
+                            kind: v.kind;
+                            label: v.label;
+                            value: v.value;
+                            modified: v.changed;
+                            can-dec: v.can-dec;
+                            can-inc: v.can-inc;
+                            step(d) => { root.arrange-step(v.index, d); }
+                            reset => { root.arrange-reset(v.index); }
+                        }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            height: 34px;
+                            TextButton {
+                                horizontal-stretch: 1;
+                                text: "Copy settings";
+                                accessible-description: "Copy the settings as a line for config.kdl";
+                                icon: Icons.clipboard;
+                                has-icon: true;
+                                kfocus: root.side-on(DrawerTab.arrange, 2 + root.arrange-rows.length);
+                                changed kfocus => {
+                                    if (self.kfocus) { arrange-side.reveal(self.absolute-position.y, self.height); }
+                                }
+                                clicked => { root.arrange-copy(); }
+                            }
+                            TextButton {
+                                horizontal-stretch: 1;
+                                text: "Undo";
+                                accessible-description: "Put the widgets back where they were";
+                                icon: Icons.reset;
+                                has-icon: true;
+                                enabled: root.arrange-can-undo;
+                                kfocus: root.side-on(DrawerTab.arrange, 3 + root.arrange-rows.length);
+                                changed kfocus => {
+                                    if (self.kfocus) { arrange-side.reveal(self.absolute-position.y, self.height); }
+                                }
+                                clicked => { root.arrange-undo(); }
                             }
                         }
                     }
