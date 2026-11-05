@@ -1,8 +1,7 @@
 //! Running Claude Code sessions, from the files Claude Code keeps in `~/.claude/sessions/<pid>.json`,
-//! matched to their niri window by walking up the process tree.
+//! matched to their window by walking up the process tree.
 
 use super::{Ctx, Dedup, Trigger, strip_spinner};
-use crate::Compositor;
 pub use crate::claude::{Session, State, Status};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -69,12 +68,19 @@ fn sessions_dir() -> PathBuf {
         .join("sessions")
 }
 
-fn fetch(compositor: Compositor) -> State {
+/// Whether there can be sessions at all, before asking the compositor about windows for them.
+fn any_session_files() -> bool {
+    std::fs::read_dir(sessions_dir()).is_ok_and(|rd| {
+        rd.flatten()
+            .any(|e| e.path().extension().is_some_and(|x| x == "json"))
+    })
+}
+
+/// The sessions, given each window by the pid of its process: (window id, title).
+fn fetch(windows: &HashMap<i32, (u64, String)>) -> State {
     let Ok(rd) = std::fs::read_dir(sessions_dir()) else {
         return State::default();
     };
-    // pid -> (window id, title)
-    let windows: HashMap<i32, (u64, String)> = crate::compositor::windows_by_pid(compositor);
     let now_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
@@ -173,8 +179,12 @@ pub fn start(ctx: Ctx) {
     ctx.poll_events(trigger, Duration::from_secs(30), move || {
         let (c, sent) = (c.clone(), sent.clone());
         async move {
-            let compositor = c.compositor();
-            if let Ok(state) = tokio::task::spawn_blocking(move || fetch(compositor)).await
+            let windows = if any_session_files() {
+                crate::compositor::windows_by_pid(&c).await
+            } else {
+                HashMap::new()
+            };
+            if let Ok(state) = tokio::task::spawn_blocking(move || fetch(&windows)).await
                 && sent.changed(&state)
             {
                 c.send(crate::claude::Event::Sessions(state));

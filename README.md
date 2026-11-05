@@ -105,8 +105,8 @@ Start `niri-dash` at login (System Settings → Autostart), and bind a key to `n
 (System Settings → Keyboard → Shortcuts → Add New → Command or Script).
 
 Plasma keeps showing notifications; the notification widget pauses its pop-ups. Night light,
-keyboard layouts, the color picker and logging out go through Plasma. The window list, focusing
-windows and noticing screen sharing need niri.
+keyboard layouts, the color picker, logging out and going to a Claude session's window go through
+Plasma. The window list and noticing screen sharing need niri.
 
 `niri-dash --help` lists the other commands: `inhibit`, `dnd`, `night-light`, `say`, ….
 
