@@ -21,11 +21,14 @@ cp "$root/assets/config.kdl" "$home/config/niri-dash/config.kdl"
 export NIRI_DASH_HOME=$home
 export LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
 
+# A 1920x1080 screen at scale 1: big enough for the default grid with the edit sidebar open.
+width=1920
+height=1080
+
 snap() {
     name=$1
     shift
-    # A 1920x1080 screen at scale 1: big enough for the default grid with the edit sidebar open.
-    "$bin" snapshot --mock --width 1920 --height 1080 --scale 1 "$@" "$out/$name.png"
+    "$bin" snapshot --mock --width "$width" --height "$height" --scale 1 "$@" "$out/$name.png"
 }
 
 snap dashboard
@@ -34,7 +37,14 @@ snap edit-colors --edit --tab colors
 snap edit-style --edit --tab style
 snap edit-arrange --edit --tab arrange
 snap widget-settings --edit --configure 0
+snap edit-arranged --edit --tab arrange --arrange
 
 # The keyboard: `f` labels every widget; `f`, `c`, `a`, `e` goes into the calendar and expands it.
 snap keys-labels --events "key:f"
 snap keys-expanded --events "key:f;key:c;key:a;key:e"
+
+# The portrait layout (assets/config-portrait.kdl), on a screen taller than wide.
+cp "$root/assets/config-portrait.kdl" "$home/config/niri-dash/config.kdl"
+width=1080
+height=1920
+snap portrait

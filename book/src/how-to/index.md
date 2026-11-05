@@ -6,5 +6,6 @@ options behind a step, follow its link to the [reference](../reference/index.md)
 | Topic | Guides |
 |---|---|
 | Install and start | [Install from source](install.md) · [Start with niri](start-with-niri.md) · [Start on KDE Plasma](start-on-plasma.md) · [Run a widget as its own app](standalone-apps.md) |
-| Looks | [Change the color scheme or style](change-theme.md) |
-| Widgets | [Set the weather location](weather-location.md) · [Turn clipboard history on and off](clipboard.md) · [Make the mascot say something](mascot-say.md) |
+| Layout | [Rearrange widgets automatically](arrange.md) · [Pin a widget](pin-a-widget.md) · [Use a portrait layout](portrait-layout.md) · [Reset your configuration](reset.md) |
+| Looks | [Change the color scheme or style](change-theme.md) · [Write your own color scheme](write-a-color-scheme.md) |
+| Widgets | [Set the weather location](weather-location.md) · [Turn clipboard history on and off](clipboard.md) · [Make the mascot say something](mascot-say.md) · [Use a different cow](cow.md) · [Run a script when the sleep timer fires](sleep-script.md) |
