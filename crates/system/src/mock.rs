@@ -471,17 +471,18 @@ fn demo_wifi() -> wifi::State {
         active,
         ..Default::default()
     };
-    let mut s = wifi::State::default();
-    s.available = true;
-    s.enabled = true;
-    s.ssid = "Lighthouse".into();
-    s.signal = 78;
-    s.networks = vec![
-        net("Lighthouse", 78, wifi::Security::Personal, true),
-        net("Harbour Café", 54, wifi::Security::Open, false),
-        net("FRITZ!Box 7590 QX", 31, wifi::Security::Personal, false),
-    ];
-    s
+    wifi::State {
+        available: true,
+        enabled: true,
+        ssid: "Lighthouse".into(),
+        signal: 78,
+        networks: vec![
+            net("Lighthouse", 78, wifi::Security::Personal, true),
+            net("Harbour Café", 54, wifi::Security::Open, false),
+            net("FRITZ!Box 7590 QX", 31, wifi::Security::Personal, false),
+        ],
+        ..Default::default()
+    }
 }
 
 fn demo_bluetooth() -> bluetooth::State {
