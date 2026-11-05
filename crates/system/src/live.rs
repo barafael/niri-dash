@@ -3,14 +3,14 @@
 
 use super::{
     Capabilities, Event, Feed, Senders, Started, audio, bluetooth, brightness, clipboard, color,
-    drives, host, keyboard, mascot, media, night_light, notifications, phones, power, privacy,
-    session, tray, wayland, weather, wifi, windows,
+    host, keyboard, mascot, night_light, notifications, power, privacy, session, tray, wayland,
+    weather, wifi, windows,
 };
 use crate::compositor;
 use crate::sources::{
-    self, Ctx, audio::Audio, bluetooth::Bluetooth, brightness::Brightness, inhibit::Inhibit,
-    kdeconnect::KdeConnect, media::Media, notifications::Notifications, tray::Tray, udisks::Drives,
-    weather::Weather, wifi::Wifi,
+    self, Ctx, Mailbox, Next, audio::Audio, bluetooth::Bluetooth, brightness::Brightness,
+    inhibit::Inhibit, kdeconnect::KdeConnect, media::Media, notifications::Notifications,
+    tray::Tray, udisks::Drives, weather::Weather, wifi::Wifi,
 };
 use smithay_client_toolkit::reexports::calloop::channel::Sender;
 use smithay_client_toolkit::reexports::client::Connection;
@@ -119,14 +119,14 @@ fn start(
             ctx: base(),
         }),
         tray: run(TrayActor(Tray::start(feed(Feed::Tray)))),
-        media: run(MediaActor(Media::start(feed(Feed::Media)))),
+        media: run(Media::start(feed(Feed::Media))),
         power: run(PowerActor {
             inhibit: Inhibit::start(feed(Feed::Inhibit)),
             ctx: base(),
         }),
         session: run(SessionActor { ctx: base() }),
-        drives: run(DrivesActor(Drives::start(feed(Feed::Drives)))),
-        phones: run(PhonesActor(KdeConnect::start(feed(Feed::Phone)))),
+        drives: run(Drives::start(feed(Feed::Drives))),
+        phones: run(KdeConnect::start(feed(Feed::Phone))),
         weather: run(WeatherActor(Weather::start(
             feed(Feed::Weather),
             locale.chrono,
@@ -142,7 +142,7 @@ fn start(
 
 /// An actor: its data, and what it does with each command. The loop ends when every sender is
 /// gone, and hands the actor back.
-trait Actor: Sized + Send + 'static {
+pub(crate) trait Actor: Sized + Send + 'static {
     type Command: Send + 'static;
 
     fn handle(&mut self, cmd: Self::Command);
@@ -157,6 +157,35 @@ trait Actor: Sized + Send + 'static {
             }
             self
         }
+    }
+}
+
+/// An actor with tasks of its own, which send it what they find. Commands and findings are handled
+/// one at a time, so its data needs no lock; its tasks end when its loop does.
+pub(crate) trait Stateful: Sized + Send + 'static {
+    type Command: Send + 'static;
+    type Inner: Send + 'static;
+
+    fn mailbox(&mut self) -> &mut Mailbox<Self::Inner>;
+    fn on_command(&mut self, cmd: Self::Command);
+    fn on_inner(&mut self, inner: Self::Inner);
+}
+
+impl<T: Stateful> Actor for T {
+    type Command = T::Command;
+
+    fn handle(&mut self, cmd: T::Command) {
+        self.on_command(cmd);
+    }
+
+    async fn event_loop(mut self, mut rx: UnboundedReceiver<T::Command>) -> Self {
+        while let Some(next) = self.mailbox().next(&mut rx).await {
+            match next {
+                Next::Inner(inner) => self.on_inner(inner),
+                Next::Command(cmd) => self.on_command(cmd),
+            }
+        }
+        self
     }
 }
 
@@ -391,21 +420,6 @@ impl Actor for TrayActor {
     }
 }
 
-struct MediaActor(Media);
-
-impl Actor for MediaActor {
-    type Command = media::Command;
-
-    fn handle(&mut self, cmd: media::Command) {
-        use media::Command::*;
-        match cmd {
-            PlayPause => self.0.play_pause(),
-            Next => self.0.next(),
-            Previous => self.0.previous(),
-        }
-    }
-}
-
 struct PowerActor {
     inhibit: Inhibit,
     ctx: Ctx,
@@ -438,36 +452,6 @@ impl Actor for SessionActor {
             Logout => s::logout(&self.ctx),
             Reboot => s::reboot(&self.ctx),
             Poweroff => s::poweroff(&self.ctx),
-        }
-    }
-}
-
-struct DrivesActor(Drives);
-
-impl Actor for DrivesActor {
-    type Command = drives::Command;
-
-    fn handle(&mut self, cmd: drives::Command) {
-        use drives::Command::*;
-        match cmd {
-            Mount(block) => self.0.mount(block),
-            Unmount(block) => self.0.unmount(block),
-            Eject(drive) => self.0.eject(drive),
-            EjectAll => self.0.eject_all(),
-            Open(mount) => self.0.open(mount),
-        }
-    }
-}
-
-struct PhonesActor(KdeConnect);
-
-impl Actor for PhonesActor {
-    type Command = phones::Command;
-
-    fn handle(&mut self, cmd: phones::Command) {
-        match cmd {
-            phones::Command::Ring(id) => self.0.ring(id),
-            phones::Command::SendFiles(id) => self.0.send_files(id),
         }
     }
 }

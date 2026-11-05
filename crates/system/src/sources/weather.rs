@@ -1,14 +1,13 @@
 //! Weather from Open-Meteo (no API key). The location comes from config.kdl, or defaults to the
 //! city of the system time zone. Fetched at most every 15 minutes, and only while visible.
-#![allow(clippy::disallowed_types)] // Still to be moved over to an actor.
 
 use super::Ctx;
 use crate::weather::WeatherConfig;
 pub use crate::weather::{Day, State, describe};
 use chrono::NaiveDate;
 use serde::Deserialize;
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use tokio::sync::watch;
 
 /// "Europe/Berlin" -> "Berlin", from /etc/localtime or $TZ.
 pub fn timezone_city() -> Option<String> {
@@ -207,67 +206,85 @@ fn fetch(cfg: &WeatherConfig, locale: chrono::Locale) -> Result<State, Error> {
     })
 }
 
-#[derive(Clone)]
+/// How long weather that was fetched is good for.
+const FRESH: Duration = Duration::from_secs(15 * 60);
+
+/// Whether it's time to fetch: weather stays good for a while, unless it's for another place.
+/// A fetch that failed is tried again on the next poll.
+#[derive(Default)]
+struct Gate {
+    cfg: WeatherConfig,
+    fetched: Option<Instant>,
+}
+
+impl Gate {
+    fn due(&mut self, cfg: &WeatherConfig, now: Instant) -> bool {
+        if self.cfg != *cfg {
+            self.cfg = cfg.clone();
+            self.fetched = None;
+        }
+        self.fetched
+            .is_none_or(|t| now.saturating_duration_since(t) >= FRESH)
+    }
+}
+
 pub struct Weather {
-    cfg: Arc<Mutex<(WeatherConfig, Option<Instant>)>>,
+    cfg: watch::Sender<WeatherConfig>,
     ctx: Ctx,
 }
 
 impl Weather {
     pub fn start(ctx: Ctx, locale: chrono::Locale) -> Self {
-        let me = Self {
-            cfg: Default::default(),
-            ctx: ctx.clone(),
-        };
-        let m = me.clone();
-        ctx.poll(Duration::from_secs(30), move || {
-            let m = m.clone();
-            async move {
-                let cfg = {
-                    let Ok(g) = m.cfg.lock() else { return };
-                    if g.1
-                        .is_some_and(|t| t.elapsed() < Duration::from_secs(15 * 60))
-                    {
-                        return;
+        let cfg = watch::Sender::new(WeatherConfig::default());
+        let current = cfg.subscribe();
+        let mut ticks = ctx.ticks(Default::default());
+        let c = ctx.clone();
+        // One at a time, here rather than from the actor: a refresh comes with every action
+        // anywhere, and the weather service doesn't like being asked in parallel.
+        ctx.spawn(async move {
+            let mut gate = Gate::default();
+            ticks.ready().await;
+            loop {
+                let asked = current.borrow().clone();
+                if gate.due(&asked, Instant::now()) {
+                    let cfg = asked.clone();
+                    let result = tokio::task::spawn_blocking(move || fetch(&cfg, locale)).await;
+                    // The location may have changed while fetching: then this result is stale, and
+                    // the fetch for the new one is already queued.
+                    if *current.borrow() == asked {
+                        let state = match result {
+                            Ok(Ok(s)) => {
+                                gate.fetched = Some(Instant::now());
+                                s
+                            }
+                            Ok(Err(e)) => State {
+                                error: e.to_string(),
+                                ..Default::default()
+                            },
+                            Err(e) => State {
+                                error: e.to_string(),
+                                ..Default::default()
+                            },
+                        };
+                        c.send(crate::weather::Event::State(state));
                     }
-                    g.0.clone()
-                };
-                let asked = cfg.clone();
-                let result = tokio::task::spawn_blocking(move || fetch(&cfg, locale)).await;
-                // The location may have changed while fetching: then this result is stale, and
-                // the fetch for the new one is already queued.
-                if m.cfg.lock().map_or(true, |g| g.0 != asked) {
-                    return;
                 }
-                let state = match result {
-                    Ok(Ok(s)) => {
-                        if let Ok(mut g) = m.cfg.lock() {
-                            g.1 = Some(Instant::now());
-                        }
-                        s
-                    }
-                    Ok(Err(e)) => State {
-                        error: e.to_string(),
-                        ..Default::default()
-                    },
-                    Err(e) => State {
-                        error: e.to_string(),
-                        ..Default::default()
-                    },
-                };
-                m.ctx.send(crate::weather::Event::State(state));
+                ticks.next(Duration::from_secs(30)).await;
             }
         });
-        me
+        Self { cfg, ctx }
     }
 
     /// Use a new location; refetches on the next poll if it changed.
     pub fn configure(&self, cfg: WeatherConfig) {
-        if let Ok(mut g) = self.cfg.lock()
-            && g.0 != cfg
-        {
-            *g = (cfg, None);
-            drop(g);
+        let changed = self.cfg.send_if_modified(|current| {
+            let changed = *current != cfg;
+            if changed {
+                *current = cfg;
+            }
+            changed
+        });
+        if changed {
             self.ctx.refresh();
         }
     }
@@ -277,6 +294,57 @@ impl Weather {
 mod tests {
     use super::*;
     use crate::weather::Icon;
+
+    fn place(name: &str) -> WeatherConfig {
+        WeatherConfig {
+            location: Some(name.into()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn fetched_weather_is_good_for_a_while() {
+        let now = Instant::now();
+        let mut gate = Gate::default();
+        let here = place("Hamburg");
+        assert!(gate.due(&here, now), "never fetched");
+        gate.fetched = Some(now);
+        assert!(!gate.due(&here, now + FRESH - Duration::from_secs(1)));
+        assert!(gate.due(&here, now + FRESH));
+    }
+
+    #[test]
+    fn another_place_is_due_right_away() {
+        let now = Instant::now();
+        let mut gate = Gate::default();
+        assert!(gate.due(&place("Hamburg"), now));
+        gate.fetched = Some(now);
+        assert!(gate.due(&place("Lisbon"), now));
+    }
+
+    /// A failed fetch doesn't set `fetched`, so it stays due.
+    #[test]
+    fn a_failure_stays_due() {
+        let now = Instant::now();
+        let mut gate = Gate::default();
+        let here = place("Hamburg");
+        assert!(gate.due(&here, now));
+        assert!(gate.due(&here, now + Duration::from_secs(30)));
+    }
+
+    #[tokio::test]
+    async fn configuring_the_same_place_refreshes_nothing() {
+        let (ctx, _events) = crate::sources::testing::ctx();
+        let weather = Weather::start(ctx.clone(), chrono::Locale::POSIX);
+        let mut refreshes = ctx.wake.subscribe();
+        weather.configure(WeatherConfig::default());
+        assert!(!refreshes.has_changed().unwrap());
+        weather.configure(place("Hamburg"));
+        assert!(refreshes.has_changed().unwrap());
+        refreshes.mark_unchanged();
+        weather.configure(place("Hamburg"));
+        assert!(!refreshes.has_changed().unwrap());
+    }
 
     #[test]
     fn http_errors_are_short() {

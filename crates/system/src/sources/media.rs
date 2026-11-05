@@ -1,10 +1,9 @@
 //! Now playing, from MPRIS players on the session bus.
-#![allow(clippy::disallowed_types)] // Still to be moved over to an actor.
 
-use super::{Ctx, Dedup, IconSrc, Trigger, prop, prop_str};
+use super::{Ctx, Dedup, IconSrc, Mailbox, Trigger, prop, prop_str};
+use crate::live::Stateful;
 pub use crate::media::State;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use zbus::Connection;
 use zbus::zvariant::OwnedValue;
@@ -89,17 +88,19 @@ async fn fetch(conn: &Connection) -> Result<Option<State>> {
     Ok(players.into_iter().next())
 }
 
-#[derive(Clone)]
 pub struct Media {
     ctx: Ctx,
-    current: Arc<Mutex<String>>,
-    sent: Arc<Dedup<Option<State>>>,
+    mailbox: Mailbox<Option<State>>,
+    /// The bus name of the player shown, which the buttons go to.
+    current: String,
+    sent: Dedup<Option<State>>,
 }
 
 impl Media {
     pub fn start(ctx: Ctx) -> Self {
-        let me = Self {
+        let mut me = Self {
             ctx: ctx.clone(),
+            mailbox: Default::default(),
             current: Default::default(),
             sent: Default::default(),
         };
@@ -122,47 +123,38 @@ impl Media {
         for rule in [props, names].into_iter().flatten() {
             ctx.on_dbus_signals(false, rule, Duration::from_millis(100), trigger.clone());
         }
-        let m = me.clone();
-        ctx.poll_on(trigger, move || {
-            let m = m.clone();
-            async move {
-                let r = async { fetch(&m.conn().await?).await }.await;
+        let mut ticks = ctx.ticks(trigger);
+        let (c, found) = (ctx.clone(), me.mailbox.sender());
+        me.mailbox.spawn(&ctx, async move {
+            ticks.ready().await;
+            loop {
+                let r = async { fetch(&c.bus(false).await?).await }.await;
                 let state = r.unwrap_or_else(|e| {
                     log::debug!("media: {e}");
                     None
                 });
-                if let Ok(mut c) = m.current.lock() {
-                    *c = state
-                        .as_ref()
-                        .map(|s| s.bus_name.clone())
-                        .unwrap_or_default();
-                }
                 let playing = state.as_ref().is_some_and(|s| s.playing);
-                if m.sent.changed(&state) {
-                    m.ctx.send(crate::media::Event::State(state));
-                }
-                if playing {
-                    Duration::from_secs(1)
-                } else {
-                    Duration::from_secs(60)
-                }
+                let _ = found.send(state);
+                ticks
+                    .next(if playing {
+                        Duration::from_secs(1)
+                    } else {
+                        Duration::from_secs(60)
+                    })
+                    .await;
             }
         });
         me
     }
 
-    async fn conn(&self) -> Result<Connection> {
-        Ok(self.ctx.bus(false).await?)
-    }
-
     fn call(&self, method: &'static str) {
-        let me = self.clone();
-        let name = self.current.lock().map(|c| c.clone()).unwrap_or_default();
+        let ctx = self.ctx.clone();
+        let name = self.current.clone();
         self.ctx.act("Media", async move {
             if name.is_empty() {
                 return Err(Error::NoPlayer);
             }
-            let conn = me.conn().await?;
+            let conn = ctx.bus(false).await?;
             player_proxy(&conn, &name)
                 .await?
                 .call_method(method, &())
@@ -170,14 +162,94 @@ impl Media {
             Ok(())
         });
     }
+}
 
-    pub fn play_pause(&self) {
-        self.call("PlayPause");
+impl Stateful for Media {
+    type Command = crate::media::Command;
+    type Inner = Option<State>;
+
+    fn mailbox(&mut self) -> &mut Mailbox<Option<State>> {
+        &mut self.mailbox
     }
-    pub fn next(&self) {
-        self.call("Next");
+
+    fn on_command(&mut self, cmd: crate::media::Command) {
+        use crate::media::Command::*;
+        match cmd {
+            PlayPause => self.call("PlayPause"),
+            Next => self.call("Next"),
+            Previous => self.call("Previous"),
+        }
     }
-    pub fn previous(&self) {
-        self.call("Previous");
+
+    fn on_inner(&mut self, state: Option<State>) {
+        self.current = state
+            .as_ref()
+            .map(|s| s.bus_name.clone())
+            .unwrap_or_default();
+        if self.sent.changed(&state) {
+            self.ctx.send(crate::media::Event::State(state));
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::live::Actor;
+    use crate::sources::testing::{ctx, reported, settle};
+    use crate::{Event, media};
+    use tokio::sync::mpsc::unbounded_channel;
+
+    fn player(name: &str) -> Option<State> {
+        Some(State {
+            bus_name: name.into(),
+            title: "Clair de lune".into(),
+            ..Default::default()
+        })
+    }
+
+    #[tokio::test]
+    async fn a_player_found_is_reported_once_and_remembered() {
+        let (ctx, events) = ctx();
+        let me = Media::start(ctx);
+        let found = me.mailbox.sender();
+        let _ = found.send(player("org.mpris.MediaPlayer2.a"));
+        let _ = found.send(player("org.mpris.MediaPlayer2.a"));
+        let (commands, inbox) = unbounded_channel();
+        drop(commands);
+        let me = me.event_loop(inbox).await;
+        assert_eq!(me.current, "org.mpris.MediaPlayer2.a");
+        let seen = reported(events);
+        assert_eq!(seen.len(), 1);
+        assert!(matches!(
+            seen[0],
+            Event::Media(media::Event::State(Some(_)))
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_player_gone_is_forgotten() {
+        let (ctx, _events) = ctx();
+        let mut me = Media::start(ctx);
+        me.on_inner(player("org.mpris.MediaPlayer2.a"));
+        me.on_inner(None);
+        assert_eq!(me.current, "");
+    }
+
+    #[tokio::test]
+    async fn the_buttons_say_so_when_there_is_no_player() {
+        let (ctx, events) = ctx();
+        let me = Media::start(ctx);
+        let (commands, inbox) = unbounded_channel();
+        let _ = commands.send(media::Command::PlayPause);
+        drop(commands);
+        me.event_loop(inbox).await;
+        settle().await;
+        let seen = reported(events);
+        assert!(
+            matches!(&seen[..], [Event::Toast(t)] if t.starts_with("Media")),
+            "{} reports",
+            seen.len()
+        );
     }
 }

@@ -32,7 +32,9 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::Duration;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio::sync::watch;
+use tokio::task::JoinSet;
 use zbus::zvariant::{OwnedValue, Value};
 
 pub use crate::text::{clean_label, locale, one_line, strip_spinner, unescape_entities};
@@ -114,6 +116,67 @@ impl<T: PartialEq + Clone> Dedup<T> {
         }
         *last = Some(v.clone());
         true
+    }
+}
+
+/// What an actor gets next: see [`Mailbox::next`].
+pub enum Next<I, C> {
+    Inner(I),
+    Command(C),
+}
+
+/// The private side of a stateful actor (see `Stateful` in `live.rs`): where the tasks it started
+/// send what they find, and those tasks, which end with it.
+pub struct Mailbox<I> {
+    tx: UnboundedSender<I>,
+    rx: UnboundedReceiver<I>,
+    tasks: JoinSet<()>,
+}
+
+impl<I> Default for Mailbox<I> {
+    fn default() -> Self {
+        let (tx, rx) = unbounded_channel();
+        Self {
+            tx,
+            rx,
+            tasks: JoinSet::new(),
+        }
+    }
+}
+
+impl<I: Send + 'static> Mailbox<I> {
+    /// Where a task sends what it found.
+    pub fn sender(&self) -> UnboundedSender<I> {
+        self.tx.clone()
+    }
+
+    /// Start a task, unless `ctx` is dormant.
+    pub fn spawn<F>(&mut self, ctx: &Ctx, task: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        if !ctx.dormant {
+            self.tasks.spawn_on(task, &ctx.rt);
+        }
+    }
+
+    /// The next thing to do; `None` when the last command sender is gone. What the actor's tasks
+    /// found comes first, so a command acts on what was found before it: it can't overtake a state
+    /// already on its way and find nothing to act on.
+    pub async fn next<C>(&mut self, commands: &mut UnboundedReceiver<C>) -> Option<Next<I, C>> {
+        loop {
+            tokio::select! {
+                biased;
+                // Never ends: this holds a sender itself.
+                Some(inner) = self.rx.recv() => return Some(Next::Inner(inner)),
+                command = commands.recv() => return command.map(Next::Command),
+                Some(done) = self.tasks.join_next(), if !self.tasks.is_empty() => {
+                    if let Err(e) = done {
+                        log::warn!("a task of an actor failed: {e}");
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -249,21 +312,6 @@ impl Ctx {
             trigger: trigger.0.subscribe(),
             _keep: trigger,
         }
-    }
-
-    /// Run `f` every `period` while the dashboard is visible, and right away on `refresh()`.
-    pub fn poll<F, Fut>(&self, period: Duration, mut f: F)
-    where
-        F: FnMut() -> Fut + Send + 'static,
-        Fut: Future<Output = ()> + Send,
-    {
-        self.poll_on(Trigger::default(), move || {
-            let fut = f();
-            async move {
-                fut.await;
-                period
-            }
-        });
     }
 
     /// Run `f` when `trigger` fires (and on show), with a slow fallback poll in case an event
@@ -742,11 +790,50 @@ mod ticks_tests {
         let c = ctx().live_if(false);
         c.set_visible(true);
         let (tx, count) = watch::channel(0u32);
-        c.poll(Duration::from_secs(1), move || {
+        c.poll_events(Trigger::default(), Duration::from_secs(1), move || {
             tx.send_modify(|n| *n += 1);
             async {}
         });
         settle().await;
         assert_eq!(*count.borrow(), 0);
+    }
+}
+
+/// For the tests of what sources do: a dormant context (its pollers don't start, so nothing goes
+/// near a real bus) and a way to read what it reported.
+#[cfg(test)]
+pub(crate) mod testing {
+    use super::*;
+    use smithay_client_toolkit::reexports::calloop::{EventLoop, channel};
+
+    pub fn ctx() -> (Ctx, channel::Channel<Event>) {
+        let (tx, rx) = channel::channel();
+        let ctx = Ctx::new(tx, tokio::runtime::Handle::current(), Compositor::Other);
+        (ctx.live_if(false), rx)
+    }
+
+    /// Everything reported so far.
+    pub fn reported(rx: channel::Channel<Event>) -> Vec<Event> {
+        let mut event_loop = EventLoop::<Vec<Event>>::try_new().unwrap();
+        event_loop
+            .handle()
+            .insert_source(rx, |ev, _, seen| {
+                if let channel::Event::Msg(e) = ev {
+                    seen.push(e);
+                }
+            })
+            .unwrap();
+        let mut seen = Vec::new();
+        event_loop
+            .dispatch(Some(Duration::ZERO), &mut seen)
+            .unwrap();
+        seen
+    }
+
+    /// Lets spawned work (`act`, say) finish, as far as it can without a clock.
+    pub async fn settle() {
+        for _ in 0..32 {
+            tokio::task::yield_now().await;
+        }
     }
 }

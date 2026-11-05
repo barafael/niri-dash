@@ -1,12 +1,11 @@
 //! USB drives and SD cards through UDisks2 on the system bus: what is plugged in, mounting,
 //! unmounting and ejecting.
-#![allow(clippy::disallowed_types)] // Still to be moved over to an actor.
 
 use super::perf::human_bytes;
-use super::{Ctx, Dedup, Trigger, prop, prop_str, signals_from};
+use super::{Ctx, Dedup, Mailbox, Trigger, prop, prop_str, signals_from};
 pub use crate::drives::{Drive, State, Volume};
+use crate::live::Stateful;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use zbus::Connection;
 use zbus::fdo::ObjectManagerProxy;
@@ -237,21 +236,22 @@ async fn call(conn: &Connection, path: &str, iface: &str, method: &str) -> Resul
     Ok(())
 }
 
-#[derive(Clone)]
 pub struct Drives {
     ctx: Ctx,
-    last: Arc<Mutex<State>>,
-    sent: Arc<Dedup<State>>,
+    mailbox: Mailbox<State>,
+    /// What was found last, which ejecting goes by.
+    last: State,
+    sent: Dedup<State>,
 }
 
 impl Drives {
     pub fn start(ctx: Ctx) -> Self {
-        let me = Self {
+        let mut me = Self {
             ctx: ctx.clone(),
+            mailbox: Default::default(),
             last: Default::default(),
             sent: Default::default(),
         };
-        let m = me.clone();
         let trigger = Trigger::default();
         ctx.on_dbus_signals(
             true,
@@ -259,40 +259,36 @@ impl Drives {
             Duration::from_millis(300),
             trigger.clone(),
         );
-        ctx.poll_events(trigger, Duration::from_secs(30), move || {
-            let m = m.clone();
-            async move { m.refresh().await }
+        let mut ticks = ctx.ticks(trigger);
+        let (c, found) = (ctx.clone(), me.mailbox.sender());
+        me.mailbox.spawn(&ctx, async move {
+            ticks.ready().await;
+            loop {
+                let state = match async { fetch(&c.bus(true).await?).await }.await {
+                    Ok(drives) => State {
+                        available: true,
+                        drives,
+                    },
+                    Err(e) => {
+                        log::debug!("udisks: {e}");
+                        State::default()
+                    }
+                };
+                let _ = found.send(state);
+                ticks.next(Duration::from_secs(30)).await;
+            }
         });
         me
     }
 
-    async fn refresh(&self) {
-        let state = match async { fetch(&self.ctx.bus(true).await?).await }.await {
-            Ok(drives) => State {
-                available: true,
-                drives,
-            },
-            Err(e) => {
-                log::debug!("udisks: {e}");
-                State::default()
-            }
-        };
-        if let Ok(mut l) = self.last.lock() {
-            *l = state.clone();
-        }
-        if self.sent.changed(&state) {
-            self.ctx.send(crate::drives::Event::State(state));
-        }
-    }
-
-    pub fn mount(&self, block: String) {
+    fn mount(&self, block: String) {
         let ctx = self.ctx.clone();
         self.ctx.act("Mount", async move {
             call(&ctx.bus(true).await?, &block, FILESYSTEM, "Mount").await
         });
     }
 
-    pub fn unmount(&self, block: String) {
+    fn unmount(&self, block: String) {
         let ctx = self.ctx.clone();
         self.ctx.act("Unmount", async move {
             call(&ctx.bus(true).await?, &block, FILESYSTEM, "Unmount").await
@@ -301,13 +297,8 @@ impl Drives {
 
     /// Unmount everything on the drive, lock what was unlocked, then power it off (or eject the
     /// medium), so it is safe to pull.
-    pub fn eject(&self, drive: String) {
-        let Some(d) = self
-            .last
-            .lock()
-            .ok()
-            .and_then(|l| l.drives.iter().find(|d| d.path == drive).cloned())
-        else {
+    fn eject(&self, drive: &str) {
+        let Some(d) = self.last.drives.iter().find(|d| d.path == drive).cloned() else {
             return;
         };
         let ctx = self.ctx.clone();
@@ -331,19 +322,14 @@ impl Drives {
         });
     }
 
-    pub fn eject_all(&self) {
-        let drives: Vec<String> = self
-            .last
-            .lock()
-            .map(|l| l.drives.iter().map(|d| d.path.clone()).collect())
-            .unwrap_or_default();
-        for d in drives {
-            self.eject(d);
+    fn eject_all(&self) {
+        for d in &self.last.drives {
+            self.eject(&d.path);
         }
     }
 
     /// Open a mounted volume in the file manager.
-    pub fn open(&self, mount: String) {
+    fn open(&self, mount: String) {
         self.ctx.act("Open", async move {
             super::spawn_detached("xdg-open", &[&mount])?;
             Ok::<_, Error>(())
@@ -351,9 +337,74 @@ impl Drives {
     }
 }
 
+impl Stateful for Drives {
+    type Command = crate::drives::Command;
+    type Inner = State;
+
+    fn mailbox(&mut self) -> &mut Mailbox<State> {
+        &mut self.mailbox
+    }
+
+    fn on_command(&mut self, cmd: crate::drives::Command) {
+        use crate::drives::Command::*;
+        match cmd {
+            Mount(block) => self.mount(block),
+            Unmount(block) => self.unmount(block),
+            Eject(drive) => self.eject(&drive),
+            EjectAll => self.eject_all(),
+            Open(mount) => self.open(mount),
+        }
+    }
+
+    fn on_inner(&mut self, state: State) {
+        self.last = state.clone();
+        if self.sent.changed(&state) {
+            self.ctx.send(crate::drives::Event::State(state));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::live::Actor;
+    use crate::sources::testing::{ctx, reported, settle};
+    use tokio::sync::mpsc::unbounded_channel;
+
+    fn found(available: bool) -> State {
+        State {
+            available,
+            drives: Vec::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn what_is_found_is_reported_once_and_remembered() {
+        let (ctx, events) = ctx();
+        let me = Drives::start(ctx);
+        let tx = me.mailbox.sender();
+        let _ = tx.send(found(true));
+        let _ = tx.send(found(true));
+        let (commands, inbox) = unbounded_channel();
+        drop(commands);
+        let me = me.event_loop(inbox).await;
+        assert!(me.last.available);
+        assert_eq!(reported(events).len(), 1);
+    }
+
+    /// Nothing known about that drive: nothing to do, and no bus to go to.
+    #[tokio::test]
+    async fn ejecting_an_unknown_drive_does_nothing() {
+        let (ctx, events) = ctx();
+        let me = Drives::start(ctx);
+        let (commands, inbox) = unbounded_channel();
+        let _ = commands.send(crate::drives::Command::Eject("/no/such/drive".into()));
+        let _ = commands.send(crate::drives::Command::EjectAll);
+        drop(commands);
+        me.event_loop(inbox).await;
+        settle().await;
+        assert!(reported(events).is_empty());
+    }
 
     fn block(path: &str, drive: &str, label: &str, device: &str) -> BlockInfo {
         BlockInfo {
