@@ -8,8 +8,10 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use strum::{AsRefStr, EnumIter, EnumString, IntoEnumIterator, IntoStaticStr};
 
-/// A widget type. Its name ([`Kind::name`]) is what config.kdl uses.
+/// A widget type. Its name ([`Kind::name`]) is what config.kdl uses, and what the command line
+/// takes (`niri-dash app wifi`), so a typo there gets a "similar value" hint from clap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, EnumString, AsRefStr, IntoStaticStr)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(clap::ValueEnum))]
 #[strum(serialize_all = "kebab-case")]
 pub enum Kind {
     Clock,
@@ -2423,6 +2425,19 @@ mod tests {
         // A second save with no changes is byte-identical.
         let mut again = back.clone();
         assert_eq!(again.render(), out);
+    }
+
+    /// The command line takes the names config.kdl does: one list, not two.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn the_command_line_takes_the_config_names() {
+        use clap::ValueEnum;
+        let cli: Vec<String> = Kind::value_variants()
+            .iter()
+            .map(|k| k.to_possible_value().unwrap().get_name().to_string())
+            .collect();
+        let config: Vec<&str> = Kind::iter().map(Kind::name).collect();
+        assert_eq!(cli, config);
     }
 
     #[test]
