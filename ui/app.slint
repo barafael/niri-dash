@@ -59,6 +59,7 @@ component TrayMenu inherits Rectangle {
                 height: e.separator ? 9px : 32px;
                 border-radius: Theme.radius-small;
                 background: !e.separator && e.enabled && !e.header && (mt.has-hover || i == Tray.menu-cursor) ? Theme.hover : transparent;
+                animate background { duration: 100ms * Theme.motion; }
                 border-width: i == Tray.menu-cursor ? 2px : 0px;
                 border-color: Theme.accent;
                 if e.separator: Rectangle {
@@ -367,6 +368,7 @@ component ChoiceCard inherits Rectangle {
     }
     border-radius: Theme.radius-small;
     background: root.current ? Theme.accent-soft : touch.has-hover || root.kfocus ? Theme.hover : Theme.card-raised;
+    animate background { duration: 100ms * Theme.motion; }
     border-width: root.kfocus ? 2px : root.current ? 1px : 0px;
     border-color: Theme.accent;
     HorizontalLayout {
@@ -1372,6 +1374,7 @@ export component Dash inherits Window {
                                 accessible-action-default => { root.add-widget(p.kind); }
                                 border-radius: Theme.radius-small;
                                 background: pt.pressed ? Theme.pressed : pt.has-hover || entry.kfocus ? Theme.hover : Theme.card-raised;
+                                animate background { duration: 100ms * Theme.motion; }
                                 border-width: entry.kfocus ? 2px : 0px;
                                 border-color: Theme.accent;
                                 HorizontalLayout {

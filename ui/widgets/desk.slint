@@ -229,6 +229,7 @@ export component NotificationsWidget inherits Rectangle {
                     height: self.preferred-height;
                     border-radius: Theme.radius-small;
                     background: ta.has-hover || self.kfocus ? Theme.card-raised.brighter(0.15) : Theme.card-raised;
+                    animate background { duration: 100ms * Theme.motion; }
                     border-width: self.kfocus ? 2px : n.urgent ? 1px : 0;
                     border-color: self.kfocus ? Theme.accent : Theme.bad;
                     ta := TouchArea {
@@ -394,6 +395,7 @@ export component TrayWidget inherits Rectangle {
         border-radius: Theme.radius-small;
         property <bool> kfocus: keys.on && keys.cursor == i;
         background: ta.pressed ? Theme.pressed : ta.has-hover || self.kfocus ? Theme.hover : transparent;
+        animate background { duration: 100ms * Theme.motion; }
         border-width: self.kfocus ? 2px : 0px;
         border-color: Theme.accent;
         visible: self.y + self.height <= root.height + 1px;
@@ -661,6 +663,7 @@ export component ClaudeSessionsWidget inherits Rectangle {
             width: 100%;
             height: 100%;
             value: Claude.sessions.length == 0 ? 0 : Claude.busy / Claude.sessions.length;
+            glide: 400ms * Theme.motion;
             thickness: max(6px, root.width * 0.06);
         }
         VerticalLayout {

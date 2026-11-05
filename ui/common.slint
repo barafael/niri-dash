@@ -148,7 +148,10 @@ export component Ring inherits Rectangle {
     accessible-value: Math.round(clamp(root.value, 0, 1) * 100) + "%";
     accessible-value-minimum: 0;
     accessible-value-maximum: 100;
+    // Gauges glide to a new value; a knob under the pointer, which glides by itself, says 0.
+    in property <duration> glide: 0ms;
     property <float> v: clamp(value, 0, 0.9999);
+    animate v { duration: root.glide; easing: ease-out; }
     property <float> r: 50 - (thickness / self.width) * 50 - 0.5;
     Path {
         width: 100%;
@@ -196,6 +199,9 @@ export component Bar inherits Rectangle {
         width: parent.width * clamp(root.value, 0, 1);
         border-radius: parent.border-radius;
         background: root.high-is-bad && root.value > 0.9 ? Theme.bad : root.tint;
+        // New readings slide in rather than jump.
+        animate width { duration: 300ms * Theme.motion; easing: ease-out; }
+        animate background { duration: 200ms * Theme.motion; }
     }
 }
 
@@ -218,6 +224,7 @@ export component RoundGauge inherits Rectangle {
         width: 100%;
         height: 100%;
         value: root.value;
+        glide: 400ms * Theme.motion;
         thickness: max(6px, root.width * 0.06);
         tint: root.high-is-bad && root.value > 0.9 ? Theme.bad : root.tint;
     }
@@ -226,6 +233,7 @@ export component RoundGauge inherits Rectangle {
         width: 76%;
         height: 76%;
         value: root.inner;
+        glide: 400ms * Theme.motion;
         thickness: max(5px, root.width * 0.05);
         tint: root.inner-tint;
     }

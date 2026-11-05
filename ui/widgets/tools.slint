@@ -135,6 +135,7 @@ component CopyText inherits Rectangle {
     height: 24px;
     border-radius: min(6px, Theme.radius-small);
     background: touch.pressed ? Theme.pressed : touch.has-hover || kfocus ? Theme.hover : transparent;
+    animate background { duration: 100ms * Theme.motion; }
     border-width: kfocus ? 2px : 0px;
     border-color: Theme.accent;
     Text {
