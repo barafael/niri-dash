@@ -4,6 +4,7 @@
 //!
 //! Names come from the devices themselves and can claim anything; they are cleaned of
 //! invisible characters before they are shown, and pairing prompts show the address too.
+#![allow(clippy::disallowed_types)] // Still to be moved over to an actor.
 
 mod agent;
 

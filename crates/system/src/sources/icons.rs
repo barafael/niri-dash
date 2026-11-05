@@ -1,4 +1,5 @@
 //! Icon lookup: freedesktop icon themes, and app ids to desktop-file icons.
+#![allow(clippy::disallowed_types)] // Still to be moved over to an actor.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

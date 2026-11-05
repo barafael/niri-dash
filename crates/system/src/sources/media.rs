@@ -1,4 +1,5 @@
 //! Now playing, from MPRIS players on the session bus.
+#![allow(clippy::disallowed_types)] // Still to be moved over to an actor.
 
 use super::{Ctx, Dedup, IconSrc, Trigger, prop, prop_str};
 pub use crate::media::State;

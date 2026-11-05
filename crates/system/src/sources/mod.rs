@@ -7,6 +7,7 @@ pub mod bluetooth;
 pub mod brightness;
 pub mod claude;
 pub mod claude_usage;
+pub mod connector;
 pub mod icons;
 pub mod inhibit;
 pub mod kde;
@@ -30,9 +31,8 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{Notify, watch};
+use tokio::sync::watch;
 use zbus::zvariant::{OwnedValue, Value};
 
 pub use crate::text::{clean_label, locale, one_line, strip_spinner, unescape_entities};
@@ -40,21 +40,64 @@ pub use crate::{Compositor, Event, IconSrc, clipboard, keyboard};
 
 /// Wakes one source early, e.g. when a change event says its data is stale. If the source is
 /// busy, the wake-up is kept for when it's done.
-#[derive(Clone, Default)]
-pub struct Trigger(Arc<Notify>);
+#[derive(Clone)]
+pub struct Trigger(watch::Sender<u64>);
+
+impl Default for Trigger {
+    fn default() -> Self {
+        Self(watch::Sender::new(0))
+    }
+}
 
 impl Trigger {
     pub fn fire(&self) {
-        self.0.notify_one();
+        self.0.send_modify(|n| *n = n.wrapping_add(1));
+    }
+}
+
+/// The rhythm of a poller, as a loop it owns: `ticks.ready().await`, then a fetch and
+/// `ticks.next(period).await` over and over. Only runs while the dashboard is visible, wakes early
+/// on `refresh()` and on its trigger, and counts those that come in during a fetch.
+pub struct Ticks {
+    ctx: Ctx,
+    wake: watch::Receiver<u64>,
+    trigger: watch::Receiver<u64>,
+    /// Keeps `trigger` open, for a source that gave its only one away.
+    _keep: Trigger,
+}
+
+impl Ticks {
+    /// Wait for the first run.
+    pub async fn ready(&mut self) {
+        // Hidden: sleep until shown (which also refreshes) rather than waking to check.
+        self.ctx.until_visible(true).await;
+        self.wake.mark_unchanged();
+    }
+
+    /// The run is over: wait for the next, `period` from now at the latest.
+    pub async fn next(&mut self, period: Duration) {
+        // Bursts of change events (a volume scroll is one per step) arrive faster than a fetch is
+        // worth; ones that come in meanwhile are folded into the next run.
+        tokio::time::sleep(MIN_POLL_GAP).await;
+        tokio::select! {
+            _ = tokio::time::sleep(period) => {}
+            _ = self.wake.changed() => {}
+            _ = self.trigger.changed() => {}
+        }
+        self.wake.mark_unchanged();
+        self.trigger.mark_unchanged();
+        self.ready().await;
     }
 }
 
 /// The last value a source sent, to skip sending the same again. Every update replaces the UI's
 /// models and redraws, and with the GPU renderer every frame makes niri recomposite the whole
 /// screen, so refreshes that change nothing (most of them) shouldn't reach the UI.
+#[allow(clippy::disallowed_types)] // Until every poller owns its own.
 pub struct Dedup<T>(std::sync::Mutex<Option<T>>);
 
 impl<T> Default for Dedup<T> {
+    #[allow(clippy::disallowed_types)]
     fn default() -> Self {
         Self(std::sync::Mutex::new(None))
     }
@@ -87,10 +130,23 @@ pub fn signals_from(sender: &'static str) -> zbus::MatchRule<'static> {
 }
 
 /// One connection per bus for the signal watchers, made on first use and dropped when it fails.
-#[derive(Default)]
+#[derive(Clone)]
 struct Buses {
-    system: tokio::sync::Mutex<Option<zbus::Connection>>,
-    session: tokio::sync::Mutex<Option<zbus::Connection>>,
+    system: connector::Connector<zbus::Connection, zbus::Error>,
+    session: connector::Connector<zbus::Connection, zbus::Error>,
+}
+
+impl Buses {
+    fn new(rt: &tokio::runtime::Handle) -> Self {
+        Self {
+            system: connector::Connector::new(rt, zbus::Connection::system),
+            session: connector::Connector::new(rt, zbus::Connection::session),
+        }
+    }
+
+    fn of(&self, system: bool) -> &connector::Connector<zbus::Connection, zbus::Error> {
+        if system { &self.system } else { &self.session }
+    }
 }
 
 #[derive(Clone)]
@@ -98,8 +154,9 @@ pub struct Ctx {
     tx: Sender<Event>,
     /// Whether the dashboard is up; watchers and pollers wait on this rather than waking to check.
     visible: watch::Sender<bool>,
-    wake: Arc<Notify>,
-    buses: Arc<Buses>,
+    /// Counts `refresh()`es, which wake every poller.
+    wake: watch::Sender<u64>,
+    buses: Buses,
     /// A dormant context starts nothing: a source built with it stays idle (standalone apps
     /// only run the sources their widget shows).
     dormant: bool,
@@ -113,8 +170,8 @@ impl Ctx {
         Self {
             tx,
             visible: watch::Sender::new(false),
-            wake: Arc::new(Notify::new()),
-            buses: Default::default(),
+            wake: watch::Sender::new(0),
+            buses: Buses::new(&rt),
             dormant: false,
             rt,
             compositor,
@@ -165,32 +222,12 @@ impl Ctx {
 
     /// The shared system or session bus connection.
     pub async fn bus(&self, system: bool) -> zbus::Result<zbus::Connection> {
-        let slot = if system {
-            &self.buses.system
-        } else {
-            &self.buses.session
-        };
-        let mut slot = slot.lock().await;
-        if let Some(c) = slot.as_ref() {
-            return Ok(c.clone());
-        }
-        let c = if system {
-            zbus::Connection::system().await?
-        } else {
-            zbus::Connection::session().await?
-        };
-        *slot = Some(c.clone());
-        Ok(c)
+        self.buses.of(system).get().await
     }
 
     /// Forget a bus connection that failed, so the next `bus` call reconnects.
-    async fn drop_bus(&self, system: bool) {
-        let slot = if system {
-            &self.buses.system
-        } else {
-            &self.buses.session
-        };
-        *slot.lock().await = None;
+    fn drop_bus(&self, system: bool) {
+        self.buses.of(system).reset();
     }
 
     /// The runtime the sources run on.
@@ -200,7 +237,18 @@ impl Ctx {
 
     /// Wake every poller now.
     pub fn refresh(&self) {
-        self.wake.notify_waiters();
+        self.wake.send_modify(|n| *n = n.wrapping_add(1));
+    }
+
+    /// The rhythm of a poller woken by `trigger` too: see [`Ticks`]. A poller on a dormant context
+    /// has no business running, so start it with [`Ctx::spawn`].
+    pub fn ticks(&self, trigger: Trigger) -> Ticks {
+        Ticks {
+            ctx: self.clone(),
+            wake: self.wake.subscribe(),
+            trigger: trigger.0.subscribe(),
+            _keep: trigger,
+        }
     }
 
     /// Run `f` every `period` while the dashboard is visible, and right away on `refresh()`.
@@ -241,24 +289,12 @@ impl Ctx {
         F: FnMut() -> Fut + Send + 'static,
         Fut: Future<Output = Duration> + Send,
     {
-        if self.dormant {
-            return;
-        }
-        let ctx = self.clone();
-        self.rt.spawn(async move {
+        let mut ticks = self.ticks(trigger);
+        self.spawn(async move {
+            ticks.ready().await;
             loop {
-                // Hidden: sleep until shown (which also refreshes) rather than waking to check.
-                ctx.until_visible(true).await;
-                let woken = ctx.wake.notified();
                 let period = f().await;
-                // Bursts of change events (a volume scroll is one per step) arrive faster than a
-                // fetch is worth; ones that come in meanwhile are folded into the next run.
-                tokio::time::sleep(MIN_POLL_GAP).await;
-                tokio::select! {
-                    _ = tokio::time::sleep(period) => {}
-                    _ = woken => {}
-                    _ = trigger.0.notified() => {}
-                }
+                ticks.next(period).await;
             }
         });
     }
@@ -300,7 +336,7 @@ impl Ctx {
                 };
                 if let Err(e) = result {
                     log::debug!("dbus watch {rule}: {e}");
-                    ctx.drop_bus(system).await;
+                    ctx.drop_bus(system);
                 }
                 tokio::time::sleep(Duration::from_secs(10)).await;
             }
@@ -553,4 +589,164 @@ pub fn which(program: &str) -> Option<PathBuf> {
             .map(|p| p.join(program))
             .find(|p| p.is_file())
     })
+}
+
+#[cfg(test)]
+mod ticks_tests {
+    use super::*;
+    use smithay_client_toolkit::reexports::calloop::channel;
+    use tokio::time::{Instant, advance};
+
+    const LONG: Duration = Duration::from_secs(60);
+
+    fn ctx() -> Ctx {
+        let (tx, rx) = channel::channel();
+        // Nothing here sends; the receiver only has to outlive the test's sends, of which there
+        // are none.
+        drop(rx);
+        Ctx::new(tx, tokio::runtime::Handle::current(), Compositor::Other)
+    }
+
+    /// Lets everything that can run, run, without the clock moving.
+    async fn settle() {
+        for _ in 0..16 {
+            tokio::task::yield_now().await;
+        }
+    }
+
+    /// Runs `ticks` as a poller would, counting runs in a watch channel.
+    fn runs(mut ticks: Ticks, period: Duration) -> watch::Receiver<u32> {
+        let (tx, rx) = watch::channel(0u32);
+        tokio::spawn(async move {
+            ticks.ready().await;
+            loop {
+                tx.send_modify(|n| *n += 1);
+                ticks.next(period).await;
+            }
+        });
+        rx
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn waits_for_the_dashboard_to_show() {
+        let c = ctx();
+        let count = runs(c.ticks(Trigger::default()), LONG);
+        settle().await;
+        assert_eq!(*count.borrow(), 0);
+        c.set_visible(true);
+        settle().await;
+        assert_eq!(*count.borrow(), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn stops_while_hidden() {
+        let c = ctx();
+        c.set_visible(true);
+        let count = runs(c.ticks(Trigger::default()), Duration::from_secs(1));
+        settle().await;
+        assert_eq!(*count.borrow(), 1);
+        c.set_visible(false);
+        advance(LONG).await;
+        settle().await;
+        // The wait that was under way ends, and then it sleeps until shown.
+        assert_eq!(*count.borrow(), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn runs_again_after_the_period() {
+        let c = ctx();
+        c.set_visible(true);
+        let count = runs(c.ticks(Trigger::default()), LONG);
+        settle().await;
+        // The gap comes first; the period's timer only starts after it.
+        advance(MIN_POLL_GAP).await;
+        settle().await;
+        advance(LONG - Duration::from_secs(1)).await;
+        settle().await;
+        assert_eq!(*count.borrow(), 1);
+        advance(Duration::from_secs(2)).await;
+        settle().await;
+        assert_eq!(*count.borrow(), 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_refresh_wakes_it_after_the_gap() {
+        let c = ctx();
+        c.set_visible(true);
+        let count = runs(c.ticks(Trigger::default()), LONG);
+        settle().await;
+        c.refresh();
+        settle().await;
+        assert_eq!(*count.borrow(), 1, "the gap comes first");
+        advance(MIN_POLL_GAP).await;
+        settle().await;
+        assert_eq!(*count.borrow(), 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_trigger_wakes_it_after_the_gap() {
+        let c = ctx();
+        c.set_visible(true);
+        let trigger = Trigger::default();
+        let count = runs(c.ticks(trigger.clone()), LONG);
+        settle().await;
+        trigger.fire();
+        advance(MIN_POLL_GAP).await;
+        settle().await;
+        assert_eq!(*count.borrow(), 2);
+    }
+
+    /// A refresh or trigger during a fetch counts: what was fetched may be stale already.
+    #[tokio::test(start_paused = true)]
+    async fn wakes_during_a_fetch_are_kept() {
+        let c = ctx();
+        c.set_visible(true);
+        let trigger = Trigger::default();
+        let mut ticks = c.ticks(trigger.clone());
+        ticks.ready().await;
+        // The fetch is running.
+        c.refresh();
+        let start = Instant::now();
+        ticks.next(LONG).await;
+        assert_eq!(start.elapsed(), MIN_POLL_GAP, "the refresh was lost");
+        // Another fetch.
+        trigger.fire();
+        let start = Instant::now();
+        ticks.next(LONG).await;
+        assert_eq!(start.elapsed(), MIN_POLL_GAP, "the trigger was lost");
+    }
+
+    /// Several wakes fold into one run.
+    #[tokio::test(start_paused = true)]
+    async fn wakes_are_folded() {
+        let c = ctx();
+        c.set_visible(true);
+        let trigger = Trigger::default();
+        let mut ticks = c.ticks(trigger.clone());
+        ticks.ready().await;
+        c.refresh();
+        trigger.fire();
+        trigger.fire();
+        ticks.next(LONG).await;
+        let start = Instant::now();
+        ticks.next(LONG).await;
+        assert_eq!(
+            start.elapsed(),
+            MIN_POLL_GAP + LONG,
+            "woke again for nothing"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_dormant_context_starts_no_poller() {
+        let c = ctx().live_if(false);
+        c.set_visible(true);
+        let (tx, count) = watch::channel(0u32);
+        c.poll(Duration::from_secs(1), move || {
+            tx.send_modify(|n| *n += 1);
+            async {}
+        });
+        settle().await;
+        assert_eq!(*count.borrow(), 0);
+    }
 }

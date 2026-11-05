@@ -4,6 +4,7 @@
 //! On Plasma it doesn't try: Plasma shows the notifications and keeps their history. Do not
 //! disturb then pauses Plasma's pop-ups through the server's `Inhibit`, and our own messages (a
 //! timer going off) are sent to Plasma as notifications.
+#![allow(clippy::disallowed_types)] // Still to be moved over to an actor.
 
 use super::{Ctx, IconSrc, icons, osd::Osd, prop, unescape_entities};
 pub use crate::notifications::{Dnd, Notification, State};

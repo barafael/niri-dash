@@ -1,5 +1,6 @@
 //! USB drives and SD cards through UDisks2 on the system bus: what is plugged in, mounting,
 //! unmounting and ejecting.
+#![allow(clippy::disallowed_types)] // Still to be moved over to an actor.
 
 use super::perf::human_bytes;
 use super::{Ctx, Dedup, Trigger, prop, prop_str, signals_from};

@@ -3,6 +3,7 @@
 //! `~/.claude/projects`. Like ccusage, usage is grouped into 5-hour windows (each starts at the
 //! hour of its first message), and every message is counted once (by message and request id).
 //! The plan's actual limits aren't stored locally, so this shows usage, not a percentage of them.
+#![allow(clippy::disallowed_types)] // Still to be moved over to an actor.
 
 use super::{Ctx, Dedup};
 pub use crate::claude::Usage as State;

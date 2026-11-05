@@ -1,0 +1,14 @@
+# The system is actors: each owns its data, and they talk over channels. No locks around shared
+# state. (A file still being moved over says so with an `allow` at its top.)
+disallowed-types = [
+    { path = "std::sync::Mutex", reason = "an actor owns its data: use channels" },
+    { path = "std::sync::RwLock", reason = "an actor owns its data: use channels" },
+    { path = "tokio::sync::Mutex", reason = "an actor owns its data: use channels" },
+    { path = "tokio::sync::RwLock", reason = "an actor owns its data: use channels" },
+    { path = "tokio::sync::OnceCell", reason = "a Connector makes a connection on first use" },
+    { path = "tokio::sync::Notify", reason = "wake with a channel: a Trigger, or a message" },
+    { path = "std::sync::atomic::AtomicBool", reason = "an actor owns its data: use channels" },
+    { path = "std::sync::atomic::AtomicU32", reason = "an actor owns its data: use channels" },
+    { path = "std::sync::atomic::AtomicU64", reason = "an actor owns its data: use channels" },
+    { path = "std::sync::atomic::AtomicUsize", reason = "an actor owns its data: use channels" },
+]

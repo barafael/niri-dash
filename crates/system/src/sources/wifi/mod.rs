@@ -1,5 +1,6 @@
 //! Wi-Fi through NetworkManager's D-Bus API. Besides listing and joining networks it registers
 //! a secret agent, so NetworkManager asks the widget when a network needs a (new) password.
+#![allow(clippy::disallowed_types)] // Still to be moved over to an actor.
 
 mod agent;
 pub mod nm;

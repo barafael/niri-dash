@@ -1,5 +1,6 @@
 //! Phones paired through KDE Connect (its daemon on the session bus): battery, ringing a lost
 //! phone, sending files to it.
+#![allow(clippy::disallowed_types)] // Still to be moved over to an actor.
 
 use super::{Ctx, Dedup, Trigger, prop, prop_str, signals_from};
 pub use crate::phones::{Phone, State};

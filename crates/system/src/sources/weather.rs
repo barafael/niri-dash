@@ -1,5 +1,6 @@
 //! Weather from Open-Meteo (no API key). The location comes from config.kdl, or defaults to the
 //! city of the system time zone. Fetched at most every 15 minutes, and only while visible.
+#![allow(clippy::disallowed_types)] // Still to be moved over to an actor.
 
 use super::Ctx;
 use crate::weather::WeatherConfig;

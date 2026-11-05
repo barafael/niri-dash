@@ -2,6 +2,7 @@
 //! "timer done", "screen sharing started". Without swayosd installed (or its server running)
 //! nothing is shown; the dashboard keeps the notification history either way. On Plasma they go to
 //! Plasma's own on-screen display instead.
+#![allow(clippy::disallowed_types)] // Still to be moved over to an actor.
 
 use super::{Ctx, one_line, run, which};
 use std::sync::{Arc, Mutex};

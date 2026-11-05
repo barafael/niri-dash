@@ -1,6 +1,7 @@
 //! KDE Plasma's own services on the session bus, for what niri does over its IPC: keyboard layouts
 //! (KWin's `org.kde.keyboard`), the logout prompt, KWin's color picker and night light, and
 //! Plasma's on-screen messages.
+#![allow(clippy::disallowed_types)] // Still to be moved over to an actor.
 
 use super::{Ctx, Dedup, Trigger, keyboard, prop};
 pub use crate::night_light::NightLightState;
