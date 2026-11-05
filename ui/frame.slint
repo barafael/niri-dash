@@ -9,6 +9,7 @@ import { WindowsWidget, ClaudeSessionsWidget, NotificationsWidget, TrayWidget, M
 import { MascotWidget } from "widgets/mascot.slint";
 import { KeyboardLayoutWidget, ColorPickerWidget, TimerWidget, StopwatchWidget, NotesWidget, ClipboardWidget } from "widgets/tools.slint";
 import { PrivacyWidget, RemovableDrivesWidget, PhoneWidget } from "widgets/devices.slint";
+import { SleepTimerWidget } from "widgets/sleep.slint";
 
 // A widget's content, picked by kind; fills its parent.
 export component WidgetBody inherits Rectangle {
@@ -47,6 +48,7 @@ export component WidgetBody inherits Rectangle {
     if root.inst.kind == WidgetKind.night-light: NightLightWidget { round: root.round; nav: root.nav; }
     if root.inst.kind == WidgetKind.removable-drives: RemovableDrivesWidget { nav: root.nav; }
     if root.inst.kind == WidgetKind.phone: PhoneWidget { round: root.round; nav: root.nav; }
+    if root.inst.kind == WidgetKind.sleep-timer: SleepTimerWidget { round: root.round; nav: root.nav; }
 }
 
 // One placed widget. Positions are grid cells; while dragging, (dx, dy) / (pulled-x, pulled-y)

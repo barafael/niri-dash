@@ -6,7 +6,7 @@
 use crate::{
     Capabilities, Compositor, Event, EventSender, IconSrc, Inboxes, audio, bluetooth, brightness,
     claude, clipboard, color, drives, host, keyboard, mascot, media, night_light, notifications,
-    perf, phones, power, privacy, session, tray, weather, wifi, windows,
+    perf, phones, power, privacy, session, sleep, tray, weather, wifi, windows,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use crate::{Started, channels};
@@ -50,6 +50,7 @@ pub enum Received {
     NightLight(night_light::Command),
     Mascot(mascot::Command),
     Clipboard(clipboard::Command),
+    Sleep(sleep::Command),
 }
 
 impl Inboxes {
@@ -77,6 +78,7 @@ impl Inboxes {
             Some(c) = self.night_light.recv() => Received::NightLight(c),
             Some(c) = self.mascot.recv() => Received::Mascot(c),
             Some(c) = self.clipboard.recv() => Received::Clipboard(c),
+            Some(c) = self.sleep.recv() => Received::Sleep(c),
             else => return None,
         })
     }
@@ -95,6 +97,7 @@ impl MockSystem {
         compositor: Compositor::Niri,
         clipboard: true,
         gamma: true,
+        simulated: false,
     };
 
     pub fn new(demo: Demo, events: EventSender) -> Self {
@@ -251,6 +254,17 @@ impl MockSystem {
             R::Mascot(mascot::Command::Run { id, .. }) => {
                 // Nothing printed: the mascot says something of its own.
                 self.send(mascot::Event::Output { id, stdout: None });
+            }
+            R::Sleep(sleep::Command::Detect { .. }) => {
+                // A laptop that can suspend and hibernate, and a script of its own.
+                use sleep::Mode::*;
+                self.send(sleep::Event::Modes(vec![
+                    Suspend, Hibernate, Poweroff, RunScript,
+                ]));
+            }
+            R::Sleep(sleep::Command::Run { mode, .. }) => {
+                // The mock sleeps through nothing: it only says it did.
+                self.send(sleep::Event::Done { mode, error: None });
             }
             _ => {}
         }

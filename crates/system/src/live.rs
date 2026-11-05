@@ -4,7 +4,7 @@
 use super::{
     Capabilities, Event, Feed, Senders, Started, audio, bluetooth, brightness, clipboard, color,
     drives, host, keyboard, mascot, media, night_light, notifications, phones, power, privacy,
-    session, tray, wayland, weather, wifi, windows,
+    session, sleep, tray, wayland, weather, wifi, windows,
 };
 use crate::compositor;
 use crate::sources::{
@@ -60,6 +60,7 @@ pub fn live(events: Sender<Event>, opts: Options) -> std::io::Result<Started> {
                 compositor,
                 clipboard: wayland.as_ref().is_some_and(|w| w.has_clipboard),
                 gamma: wayland.as_ref().is_some_and(|w| w.has_gamma),
+                simulated: false,
             };
             let (host_tx, host_rx) = unbounded_channel();
             let senders = {
@@ -137,6 +138,10 @@ fn start(
         }),
         mascot: run(MascotActor { ctx: base() }),
         clipboard: run(ClipboardActor(wayland.map(|w| w.clipboard))),
+        sleep: run(SleepActor {
+            awake: sources::sleep::Awake::start(base()),
+            ctx: base(),
+        }),
     }
 }
 
@@ -546,5 +551,24 @@ impl Actor for MascotActor {
             };
             c.send(mascot::Event::Output { id, stdout });
         });
+    }
+}
+
+struct SleepActor {
+    awake: sources::sleep::Awake,
+    ctx: Ctx,
+}
+
+impl Actor for SleepActor {
+    type Command = sleep::Command;
+
+    fn handle(&mut self, cmd: sleep::Command) {
+        match cmd {
+            sleep::Command::Detect { script } => sources::sleep::detect(&self.ctx, script),
+            sleep::Command::Run { mode, script } => {
+                sources::sleep::perform(&self.ctx, mode, script)
+            }
+            sleep::Command::KeepAwake(on) => self.awake.set(on),
+        }
     }
 }

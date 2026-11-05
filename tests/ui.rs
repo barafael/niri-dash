@@ -6,7 +6,7 @@
 
 use niri_dash::testing::{Element, Harness};
 use niri_dash::{Control, testing};
-use niri_dash_system::{Demo, bluetooth, brightness, clipboard, color, session, tray, wifi};
+use niri_dash_system::{Demo, bluetooth, brightness, clipboard, color, session, sleep, tray, wifi};
 use slint::{ComponentHandle, Model};
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
@@ -414,6 +414,160 @@ fn cursor_stays_in_sight_as_a_list_grows() {
     );
 }
 
+fn sl(h: &Harness) -> niri_dash::Sleep<'_> {
+    h.ui().global::<niri_dash::Sleep>()
+}
+
+/// The sleep timer asks which modes the machine offers, and arms, pauses, nudges and gives up on
+/// a countdown from the keyboard, as sleepy's window does.
+fn sleep_timer_keys() {
+    let mut h = testing::Harness::new(
+        "grid columns=16 rows=9\nlayout {\n    sleep-timer col=0 row=0 width=4 height=3\n}\n",
+    );
+    assert!(matches!(
+        h.inbox.sleep.try_recv(),
+        Ok(sleep::Command::Detect { script }) if script.ends_with("niri-dash/sleep.sh")
+    ));
+    h.send(sleep::Event::Modes(vec![
+        sleep::Mode::Suspend,
+        sleep::Mode::Hibernate,
+    ]));
+    let status = |h: &Harness| sl(h).get_status();
+    let headline = |h: &Harness| sl(h).get_headline().to_string();
+    assert_eq!(sl(&h).get_modes().row_count(), 2);
+    assert_eq!(sl(&h).get_echo(), "→ in 30m");
+    // A field that is no when says why, and refuses to arm.
+    sl(&h).invoke_edited("soon".into());
+    assert_eq!(
+        sl(&h).get_problem(),
+        "not a duration; try 45s, 30 min, 1h30m"
+    );
+    sl(&h).invoke_arm();
+    assert_eq!(status(&h), niri_dash::SleepStatus::Idle);
+    sl(&h).invoke_edited("90 min".into());
+    assert_eq!(sl(&h).get_echo(), "→ in 1h 30m");
+    enter(&mut h, "Sleep timer");
+    // d: the dry run; a: the screen stays on.
+    h.key("d");
+    assert!(sl(&h).get_dry_run());
+    h.key("a");
+    assert!(sl(&h).get_keep_awake());
+    // j to the mode, l to the next; Enter arms with it.
+    h.key("j");
+    h.key("l");
+    assert_eq!(sl(&h).get_selected(), 1);
+    h.special(slint::platform::Key::Return);
+    assert_eq!(status(&h), niri_dash::SleepStatus::Armed);
+    assert!(
+        headline(&h).starts_with("hibernate in 1h 30m, at "),
+        "{}",
+        headline(&h)
+    );
+    // Holding the screen is the system's to do, while it counts.
+    assert!(matches!(
+        h.inbox.sleep.try_recv(),
+        Ok(sleep::Command::KeepAwake(true))
+    ));
+    h.key("-");
+    assert!(
+        headline(&h).starts_with("hibernate in 1h 29m"),
+        "{}",
+        headline(&h)
+    );
+    h.key("+");
+    h.key("+");
+    assert!(
+        headline(&h).starts_with("hibernate in 1h 30m"),
+        "no more than it was armed with: {}",
+        headline(&h)
+    );
+    h.key(" ");
+    assert_eq!(status(&h), niri_dash::SleepStatus::Paused);
+    assert_eq!(headline(&h), "paused, 1h 30m left");
+    h.key(" ");
+    assert_eq!(status(&h), niri_dash::SleepStatus::Armed);
+    // Escape saves the machine, and lets go of the screen.
+    h.special(slint::platform::Key::Escape);
+    assert_eq!(status(&h), niri_dash::SleepStatus::Idle);
+    assert!(matches!(
+        h.inbox.sleep.try_recv(),
+        Ok(sleep::Command::KeepAwake(false))
+    ));
+    assert!(h.inbox.sleep.try_recv().is_err(), "nothing was run");
+}
+
+/// Tall enough, the modes are a list, and the highlight follows the cursor down it.
+fn sleep_timer_lists_modes() {
+    let mut h = testing::Harness::new(
+        "grid columns=16 rows=9\nlayout {\n    sleep-timer col=0 row=0 width=4 height=5\n}\n",
+    );
+    h.send(sleep::Event::Modes(vec![
+        sleep::Mode::Suspend,
+        sleep::Mode::Hibernate,
+        sleep::Mode::Poweroff,
+    ]));
+    enter(&mut h, "Sleep timer");
+    h.key("j");
+    assert_eq!(sl(&h).get_selected(), 0);
+    h.key("j");
+    h.key("j");
+    assert_eq!(sl(&h).get_selected(), 2);
+    h.key("k");
+    assert_eq!(sl(&h).get_selected(), 1);
+    h.special(slint::platform::Key::Return);
+    assert_eq!(sl(&h).get_status(), niri_dash::SleepStatus::Armed);
+    assert!(sl(&h).get_headline().starts_with("hibernate in 30m"));
+}
+
+/// A countdown that runs out starts the mode once, or for a dry run says what it would have done.
+fn sleep_timer_fires() {
+    let mut h = testing::Harness::new(
+        "grid columns=16 rows=9\nlayout {\n    sleep-timer col=0 row=0 width=4 height=4\n}\n",
+    );
+    h.send(sleep::Event::Modes(vec![sleep::Mode::Suspend]));
+    sl(&h).invoke_edited("1s".into());
+    sl(&h).invoke_arm();
+    let mut asked = None;
+    // The countdown is counted on real time, a quarter second at a time.
+    for _ in 0..40 {
+        h.settle(100);
+        while let Ok(c) = h.inbox.sleep.try_recv() {
+            if let sleep::Command::Run { mode, .. } = c {
+                asked = Some(mode);
+            }
+        }
+        if asked.is_some() {
+            break;
+        }
+    }
+    assert_eq!(asked, Some(sleep::Mode::Suspend));
+    assert_eq!(sl(&h).get_status(), niri_dash::SleepStatus::Fired);
+    assert_eq!(sl(&h).get_headline(), "time! suspend the machine…");
+    // The system's answer, when it fails, is the line under the headline.
+    h.send(sleep::Event::Done {
+        mode: sleep::Mode::Suspend,
+        error: Some("suspend refused: busy".into()),
+    });
+    assert_eq!(sl(&h).get_outcome(), "suspend refused: busy");
+    // A dry run does nothing but say so.
+    sl(&h).invoke_abort();
+    sl(&h).invoke_toggle_dry_run();
+    sl(&h).invoke_arm();
+    for _ in 0..40 {
+        h.settle(100);
+        if sl(&h).get_status() == niri_dash::SleepStatus::Fired {
+            break;
+        }
+    }
+    assert_eq!(
+        sl(&h).get_outcome(),
+        "dry run: would have run systemctl suspend"
+    );
+    while let Ok(c) = h.inbox.sleep.try_recv() {
+        assert!(!matches!(c, sleep::Command::Run { .. }), "a dry run ran it");
+    }
+}
+
 fn main() {
     // The dashboard's config, state and notes go somewhere disposable; dates in a fixed locale.
     let dir = std::env::temp_dir().join(format!("niri-dash-ui-{}", std::process::id()));
@@ -463,6 +617,9 @@ fn main() {
             "keyboard survives its field going away",
             keyboard_survives_its_field_going_away,
         ),
+        ("sleep timer: keys", sleep_timer_keys),
+        ("sleep timer: lists modes", sleep_timer_lists_modes),
+        ("sleep timer: fires", sleep_timer_fires),
     ];
     let mut failed = Vec::new();
     for (name, scenario) in scenarios {

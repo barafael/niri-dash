@@ -16,9 +16,9 @@ mod wifi;
 mod world;
 
 use crate::{
-    Event, EventSender, Inboxes, MockSystem, Received, Started, audio, brightness, channels,
+    Capabilities, Event, EventSender, Inboxes, MockSystem, Received, Started, audio, brightness, channels,
     claude, clipboard, color, drives, host, keyboard, mascot, media, night_light, notifications,
-    perf, phones, power, privacy, session, tray, weather, windows,
+    perf, phones, power, privacy, session, sleep, tray, weather, windows,
 };
 use art::Icons;
 use std::time::Duration;
@@ -40,7 +40,10 @@ pub fn simulated(events: EventSender) -> std::io::Result<Started> {
         .spawn(move || rt.block_on(Sim::new(now(), events).event_loop(inboxes)))?;
     Ok(Started {
         senders,
-        caps: MockSystem::CAPS,
+        caps: Capabilities {
+            simulated: true,
+            ..MockSystem::CAPS
+        },
     })
 }
 
@@ -54,7 +57,10 @@ pub fn simulated(events: EventSender) -> std::io::Result<Started> {
     });
     Ok(Started {
         senders,
-        caps: MockSystem::CAPS,
+        caps: Capabilities {
+            simulated: true,
+            ..MockSystem::CAPS
+        },
     })
 }
 
@@ -488,6 +494,22 @@ impl Sim {
                 // Nothing printed: the mascot says something of its own.
                 self.send(mascot::Event::Output { id, stdout: None });
             }
+            R::Sleep(sleep::Command::Detect { .. }) => {
+                use sleep::Mode::*;
+                self.send(sleep::Event::Modes(vec![
+                    Suspend,
+                    Hibernate,
+                    HybridSleep,
+                    SuspendThenHibernate,
+                    Poweroff,
+                    RunScript,
+                ]));
+            }
+            R::Sleep(sleep::Command::Run { mode, .. }) => {
+                self.toast(format!("This is only a demo: won't {}", mode.firing()));
+                self.send(sleep::Event::Done { mode, error: None });
+            }
+            R::Sleep(sleep::Command::KeepAwake(_)) => {}
             R::Clipboard(clipboard::Command::Set(clip)) => copy(&clip),
             R::Clipboard(clipboard::Command::Record(on)) => {
                 if on && !self.recording {
@@ -674,6 +696,31 @@ mod tests {
             drain(rx)
                 .iter()
                 .any(|e| matches!(e, Event::Toast(t) if t.contains("demo")))
+        );
+    }
+
+    #[test]
+    fn the_sleep_timer_offers_modes_and_only_pretends_to_sleep() {
+        let (mut sim, rx) = sim();
+        sim.handle(Received::Sleep(sleep::Command::Detect {
+            script: "sleep.sh".into(),
+        }));
+        sim.handle(Received::Sleep(sleep::Command::Run {
+            mode: sleep::Mode::Hibernate,
+            script: "sleep.sh".into(),
+        }));
+        let seen = drain(rx);
+        assert!(seen.iter().any(|e| matches!(
+            e,
+            Event::Sleep(sleep::Event::Modes(m)) if m.contains(&sleep::Mode::Poweroff)
+        )));
+        assert!(
+            seen.iter()
+                .any(|e| matches!(e, Event::Toast(t) if t.contains("demo")))
+        );
+        assert!(
+            seen.iter()
+                .any(|e| matches!(e, Event::Sleep(sleep::Event::Done { error: None, .. })))
         );
     }
 

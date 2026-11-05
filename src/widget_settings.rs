@@ -51,6 +51,11 @@ pub enum Opt {
     Interval,
     Command,
     Cowfile,
+    // Sleep timer.
+    SleepWhen,
+    SleepScript,
+    DryRun,
+    KeepAwake,
 }
 
 /// What kind of value a setting takes, and how it is edited.
@@ -98,6 +103,10 @@ impl Opt {
             Opt::Interval => "New remark every",
             Opt::Command => "Lines from command",
             Opt::Cowfile => "Cow file",
+            Opt::SleepWhen => "Starts with",
+            Opt::SleepScript => "Script to run",
+            Opt::DryRun => "Dry run",
+            Opt::KeepAwake => "Keep the screen on",
         }
     }
 
@@ -136,6 +145,13 @@ impl Opt {
             Opt::Cowfile => Ty::Text {
                 placeholder: "e.g. tux, or a path (the cow only)",
             },
+            Opt::SleepWhen => Ty::Text {
+                placeholder: "30 min (or 45s, 1h30m, 23:45)",
+            },
+            Opt::SleepScript => Ty::Text {
+                placeholder: "sleep.sh next to config.kdl",
+            },
+            Opt::DryRun | Opt::KeepAwake => Ty::Toggle,
         }
     }
 
@@ -166,6 +182,8 @@ impl Opt {
             Opt::Interval => KdlValue::Integer(45),
             Opt::Command => text(""),
             Opt::Cowfile => text(""),
+            Opt::SleepWhen | Opt::SleepScript => text(""),
+            Opt::DryRun | Opt::KeepAwake => KdlValue::Bool(false),
         }
     }
 

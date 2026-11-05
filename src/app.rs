@@ -39,6 +39,7 @@ mod notes;
 mod notifications;
 mod power;
 mod privacy;
+mod sleeper;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod snapshot;
 #[cfg(not(target_arch = "wasm32"))]
@@ -242,6 +243,7 @@ struct App {
     privacy: privacy::Privacy,
     night: night_light::NightLight,
     mascots: mascots::Mascots,
+    sleeper: sleeper::Sleeper,
     clipboard: clipboard::History,
     mixer: audio::Mixer,
     /// The media player's cover as last shown, and its image.
@@ -482,6 +484,7 @@ impl App {
             Event::Mascot(sys::mascot::Event::Output { id, stdout }) => {
                 self.mascot_output(id, stdout)
             }
+            Event::Sleep(e) => self.sleep_event(e),
         }
         None
     }
@@ -491,8 +494,14 @@ fn wire(app: &Rc<App>, ui: &Dash) {
     let a = app.clone();
     ui.on_close_requested(move || a.pending.borrow_mut().push(Control::Hide));
     let a = app.clone();
-    ui.global::<UiShell>()
-        .on_hide(move || a.pending.borrow_mut().push(Control::Hide));
+    // Clicking a window or a notification takes you to it and puts the dashboard away. In the demo
+    // there is nothing to go to (it only says so), and putting the dashboard away would look like
+    // the page reloading.
+    ui.global::<UiShell>().on_hide(move || {
+        if !a.caps.simulated {
+            a.pending.borrow_mut().push(Control::Hide);
+        }
+    });
     edit::wire(app, ui);
     nav::wire(app, ui);
     look::wire(app, ui);
@@ -509,6 +518,7 @@ fn wire(app: &Rc<App>, ui: &Dash) {
     night_light::wire(app, ui);
     devices::wire(app, ui);
     mascots::wire(app, ui);
+    sleeper::wire(app, ui);
 }
 
 /// The dashboard on `system`. `visible`: it is up already (a snapshot renders without `show`).
@@ -580,6 +590,7 @@ fn build(
         privacy: Default::default(),
         night: Default::default(),
         mascots: Default::default(),
+        sleeper: Default::default(),
         clipboard: Default::default(),
         state: RefCell::new(state),
     });

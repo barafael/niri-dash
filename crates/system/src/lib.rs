@@ -31,6 +31,7 @@ pub mod power;
 pub mod privacy;
 pub mod session;
 mod sim;
+pub mod sleep;
 #[cfg(not(target_arch = "wasm32"))]
 mod sources;
 mod text;
@@ -125,6 +126,7 @@ pub struct Senders {
     pub night_light: UnboundedSender<night_light::Command>,
     pub mascot: UnboundedSender<mascot::Command>,
     pub clipboard: UnboundedSender<clipboard::Command>,
+    pub sleep: UnboundedSender<sleep::Command>,
 }
 
 /// The receiving ends of [`Senders`]: what the actors (or a test standing in for them) read.
@@ -149,6 +151,7 @@ pub struct Inboxes {
     pub night_light: UnboundedReceiver<night_light::Command>,
     pub mascot: UnboundedReceiver<mascot::Command>,
     pub clipboard: UnboundedReceiver<clipboard::Command>,
+    pub sleep: UnboundedReceiver<sleep::Command>,
 }
 
 /// A sender for every applet, and where each one's commands arrive.
@@ -179,7 +182,8 @@ pub fn channels() -> (Senders, Inboxes) {
         weather,
         night_light,
         mascot,
-        clipboard
+        clipboard,
+        sleep
     )
 }
 
@@ -197,6 +201,8 @@ pub struct Capabilities {
     pub clipboard: bool,
     /// We hold the gamma control (wlr-gamma-control) for night light.
     pub gamma: bool,
+    /// None of it is real (the demo in a browser): opening something by clicking it opens nothing.
+    pub simulated: bool,
 }
 
 impl Capabilities {
@@ -290,4 +296,5 @@ events! {
     Clipboard(clipboard),
     NightLight(night_light),
     Mascot(mascot),
+    Sleep(sleep),
 }

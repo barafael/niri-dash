@@ -43,6 +43,7 @@ pub enum Kind {
     NightLight,
     RemovableDrives,
     Phone,
+    SleepTimer,
 }
 
 impl Kind {
@@ -369,6 +370,16 @@ impl Kind {
                 starts_round: false,
                 settings: &[],
                 icon: "smartphone",
+            },
+            Kind::SleepTimer => &KindInfo {
+                title: "Sleep timer",
+                description: "Count down to suspend, hibernate or power off (like sleepy)",
+                default_size: (4, 3),
+                min_size: (3, 2),
+                can_be_round: true,
+                starts_round: false,
+                settings: &[SleepWhen, SleepScript, DryRun, KeepAwake],
+                icon: "system-suspend",
             },
         }
     }
@@ -2444,6 +2455,7 @@ mod tests {
                 "night-light",
                 "removable-drives",
                 "phone",
+                "sleep-timer",
             ]
         );
         assert_eq!(Kind::from_str_opt("perf"), None);

@@ -16,7 +16,7 @@ Clock, calendar, weather (Open-Meteo, no API key), windows by workspace, Wi-Fi, 
 battery and power profiles (with a switch that blocks sleep and screen locking), volume,
 brightness, night light, notifications, system tray, media player (MPRIS), session (lock,
 suspend, log out, …), clipboard history, CPU / memory / disks / network / GPU, keyboard layout,
-color picker, timer, stopwatch, sticky notes, privacy (who uses the microphone, camera or
+color picker, timer, stopwatch, sleep timer, sticky notes, privacy (who uses the microphone, camera or
 screen), removable drives, phone (KDE Connect), Claude Code sessions and usage, and a mascot
 that comments on your day.
 
@@ -27,6 +27,19 @@ Clipboard history is opt-in. niri-dash reads what you copy only while a clipboar
 your layout (add one in edit mode) or `niri-dash app clipboard` is running. The history stays in
 memory and skips what password managers mark secret. Removing the widget, or
 `niri-dash app clipboard --quit`, stops the recording and forgets the history.
+
+The sleep timer (`sleep-timer`) is [sleepy](https://github.com/barafael/sleepy) as a widget: count
+down to the moment the machine suspends, hibernates or powers off. The *when* is a duration
+(`45s`, `30 min`, `1h30m`) or a clock time (`23:45`, the next one to come); what isn't one is
+told off in red under the field. Only the modes logind says this machine can do are offered
+(suspend, hibernate, hybrid sleep, suspend then hibernate, power off), and a script of your own
+(`~/.config/niri-dash/sleep.sh`, or the widget's `sleep-script` setting) as a sixth. The
+countdown keeps running while the dashboard is hidden. Keys, once inside the widget: type in the
+field with Enter or `i` (Enter there arms), `j`/`k` or the arrows pick the mode, Enter arms,
+Space or `p` pauses and resumes, `+` and `-` move the deadline a minute, `d` or Ctrl+D is the
+dry run (count down for real, then only say what would have run), `a` keeps the screen on while
+it counts, and Escape gives up on the countdown before it leaves the widget. Its settings
+(`sleep-when`, `sleep-script`, `dry-run`, `keep-awake`) say where it starts.
 
 The mascot can also be a cow in the manner of `cowsay`: `character "cow"`, and `cowfile "tux"` for
 another animal. Cows are read from your own cowsay install (or from a path); a few of our own stand

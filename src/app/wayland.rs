@@ -49,6 +49,8 @@ fn feeds(kind: Kind) -> &'static [Feed] {
         Kind::NightLight => &[Feed::NightLight],
         Kind::RemovableDrives => &[Feed::Drives],
         Kind::Phone => &[Feed::Phone],
+        // The sleep timer's actor always runs; there is nothing to watch.
+        Kind::SleepTimer => &[],
     }
 }
 /// The pointer the UI asks for, as a cursor shape.

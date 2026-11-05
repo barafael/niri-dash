@@ -20,6 +20,7 @@ pub mod pipewire;
 pub mod power;
 pub mod privacy;
 pub mod session;
+pub mod sleep;
 pub mod tray;
 pub mod udisks;
 pub mod weather;

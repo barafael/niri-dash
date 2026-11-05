@@ -66,6 +66,7 @@ fn to_inst(p: &Placed, us: bool) -> WidgetInst {
 impl App {
     pub(super) fn sync_widgets(&self) {
         self.sync_mascots();
+        self.sync_sleep();
         self.sync_notes(false);
         self.sync_history();
         if let Some(kind) = self.solo {
