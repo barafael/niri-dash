@@ -131,9 +131,14 @@ fn start(
             feed(Feed::Weather),
             locale.chrono,
         ))),
-        night_light: run(NightLightActor {
-            kwin: kwin.then(|| sources::kde::NightLight::start(feed(Feed::NightLight))),
-            gamma: wayland.as_ref().map(|w| w.gamma.clone()),
+        night_light: run({
+            let mut mailbox = Mailbox::default();
+            NightLightActor {
+                kwin: kwin
+                    .then(|| sources::kde::NightLight::start(feed(Feed::NightLight), &mut mailbox)),
+                gamma: wayland.as_ref().map(|w| w.gamma.clone()),
+                mailbox,
+            }
         }),
         mascot: run(MascotActor { ctx: base() }),
         clipboard: run(ClipboardActor(wayland.map(|w| w.clipboard))),
@@ -472,12 +477,24 @@ struct NightLightActor {
     kwin: Option<sources::kde::NightLight>,
     /// The Wayland side's gamma tables; None without Wayland.
     gamma: Option<Sender<Option<u32>>>,
+    mailbox: Mailbox<sources::kde::NightLightInner>,
 }
 
-impl Actor for NightLightActor {
+impl Stateful for NightLightActor {
     type Command = night_light::Command;
+    type Inner = sources::kde::NightLightInner;
 
-    fn handle(&mut self, cmd: night_light::Command) {
+    fn mailbox(&mut self) -> &mut Mailbox<Self::Inner> {
+        &mut self.mailbox
+    }
+
+    fn on_inner(&mut self, inner: Self::Inner) {
+        if let Some(kwin) = &mut self.kwin {
+            kwin.on_inner(inner);
+        }
+    }
+
+    fn on_command(&mut self, cmd: night_light::Command) {
         match cmd {
             night_light::Command::Gamma(want) => {
                 if let Some(gamma) = &self.gamma {

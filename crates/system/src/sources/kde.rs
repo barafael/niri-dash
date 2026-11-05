@@ -1,14 +1,12 @@
 //! KDE Plasma's own services on the session bus, for what niri does over its IPC: keyboard layouts
 //! (KWin's `org.kde.keyboard`), the logout prompt, KWin's color picker and night light, and
 //! Plasma's on-screen messages.
-#![allow(clippy::disallowed_types)] // Still to be moved over to an actor.
 
-use super::{Ctx, Dedup, Trigger, keyboard, prop};
+use super::{Ctx, Dedup, Mailbox, Trigger, keyboard, prop};
 pub use crate::night_light::NightLightState;
 use std::collections::HashMap;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
+use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::watch;
 use zbus::zvariant::OwnedValue;
 
@@ -241,17 +239,93 @@ struct Pause {
     cookie: u32,
 }
 
-#[derive(Clone)]
+/// KWin's night light properties, as read.
+type Props = HashMap<String, OwnedValue>;
+
+/// What the night light's tasks tell it.
+pub enum NightLightInner {
+    /// KWin's state, for the widget.
+    Read(Result<Props>),
+    /// Whether we hold a pause now.
+    Held(bool),
+    /// KWin's state, to decide what a command means.
+    Decide {
+        cmd: crate::night_light::Cmd,
+        announce: bool,
+        read: Result<Props>,
+    },
+}
+
+/// What a command comes to.
+#[derive(Debug, PartialEq)]
+struct Decision {
+    text: &'static str,
+    /// Something got in the way: it shows as a toast even if not announcing.
+    problem: bool,
+    /// Whether we should want KWin's night light paused; `None` leaves that as it is.
+    pause: Option<bool>,
+}
+
+/// On lets KWin's schedule run, off pauses it. The temperature is KWin's (System Settings), so a
+/// temperature only turns it on.
+fn decide(cmd: crate::night_light::Cmd, s: NightLightState) -> Decision {
+    use crate::night_light::Cmd;
+    let want_on = match cmd {
+        Cmd::Toggle => !s.on(),
+        Cmd::On | Cmd::Kelvin(_) => true,
+        Cmd::Off => false,
+    };
+    let problem = |text| Decision {
+        text,
+        problem: true,
+        pause: None,
+    };
+    if !s.available {
+        problem("KWin's night light isn't available")
+    } else if !s.enabled {
+        problem("Night light is turned off in System Settings")
+    } else if want_on && s.inhibited && !s.paused_by_us {
+        problem("Night light is paused by another program")
+    } else {
+        Decision {
+            text: match (want_on, cmd) {
+                (true, Cmd::Kelvin(_)) => "Night light on · Plasma sets its warmth",
+                (true, _) => "Night light on",
+                (false, _) => "Night light paused",
+            },
+            problem: false,
+            pause: Some(!want_on),
+        }
+    }
+}
+
+/// KWin's night light right now.
+async fn read_props(ctx: &Ctx) -> Result<Props> {
+    let (dest, path, iface) = NIGHT_LIGHT;
+    let conn = ctx.bus(false).await?;
+    let p = zbus::fdo::PropertiesProxy::builder(&conn)
+        .destination(dest)?
+        .path(path)?
+        .build()
+        .await?;
+    let iface = iface.try_into().map_err(zbus::Error::from)?;
+    Ok(p.get_all(iface).await.map_err(zbus::Error::from)?)
+}
+
+/// KWin's night light: the part of the night light actor that is only there on Plasma.
 pub struct NightLight {
     ctx: Ctx,
+    /// Where tasks send what they found.
+    found: UnboundedSender<NightLightInner>,
     /// Whether we want KWin's night light paused.
     pause: watch::Sender<bool>,
     /// Whether we hold a pause right now.
-    ours: Arc<AtomicBool>,
+    ours: bool,
+    sent: Dedup<NightLightState>,
 }
 
 impl NightLight {
-    pub fn start(ctx: Ctx) -> Self {
+    pub fn start(ctx: Ctx, mailbox: &mut Mailbox<NightLightInner>) -> Self {
         let trigger = Trigger::default();
         let (dest, path, _) = NIGHT_LIGHT;
         ctx.on_dbus_signals(
@@ -260,29 +334,26 @@ impl NightLight {
             Duration::from_millis(100),
             trigger.clone(),
         );
-        let ours = Arc::new(AtomicBool::new(false));
         let me = Self {
             ctx: ctx.clone(),
+            found: mailbox.sender(),
             pause: watch::Sender::new(false),
-            ours: ours.clone(),
+            ours: false,
+            sent: Default::default(),
         };
-        let m = me.clone();
-        let sent = Arc::new(Dedup::default());
-        ctx.poll_events(trigger.clone(), Duration::from_secs(60), move || {
-            let (m, sent) = (m.clone(), sent.clone());
-            async move {
-                let state = m.state().await.unwrap_or_else(|e| {
-                    log::debug!("KWin night light: {e}");
-                    NightLightState::default()
-                });
-                if sent.changed(&state) {
-                    m.ctx.send(crate::night_light::Event::Kwin(state));
-                }
+        let mut ticks = ctx.ticks(trigger.clone());
+        let (c, found) = (ctx.clone(), mailbox.sender());
+        mailbox.spawn(&ctx, async move {
+            ticks.ready().await;
+            loop {
+                let _ = found.send(NightLightInner::Read(read_props(&c).await));
+                ticks.next(Duration::from_secs(60)).await;
             }
         });
+        // Taking and letting go of the pause, for the latest wish, one at a time.
         let mut rx = me.pause.subscribe();
-        let c = ctx.clone();
-        ctx.spawn(async move {
+        let (c, found) = (ctx.clone(), mailbox.sender());
+        mailbox.spawn(&ctx, async move {
             let mut held: Option<Pause> = None;
             loop {
                 let want = *rx.borrow_and_update();
@@ -298,7 +369,8 @@ impl NightLight {
                     log::warn!("KWin night light: {e}");
                     c.toast(format!("Night light: {e}"));
                 }
-                ours.store(held.is_some(), Ordering::Relaxed);
+                // Before the fetch this sets off, so that fetch reads as ours.
+                let _ = found.send(NightLightInner::Held(held.is_some()));
                 trigger.fire();
                 if rx.changed().await.is_err() {
                     return;
@@ -308,63 +380,68 @@ impl NightLight {
         me
     }
 
-    /// KWin's night light right now.
-    async fn state(&self) -> Result<NightLightState> {
-        let (dest, path, iface) = NIGHT_LIGHT;
-        let conn = self.ctx.bus(false).await?;
-        let p = zbus::fdo::PropertiesProxy::builder(&conn)
-            .destination(dest)?
-            .path(path)?
-            .build()
-            .await?;
-        let iface = iface.try_into().map_err(zbus::Error::from)?;
-        let props = p.get_all(iface).await.map_err(zbus::Error::from)?;
-        // A pause asked for but not taken yet counts as ours.
-        let ours = self.ours.load(Ordering::Relaxed) || *self.pause.borrow();
-        Ok(night_light_state(&props, ours))
+    /// Carry out `niri-dash night-light …` or a click on the widget. With `announce`, the result
+    /// shows on screen; otherwise only problems do, as a toast.
+    pub fn apply(&self, cmd: crate::night_light::Cmd, announce: bool) {
+        let (c, found) = (self.ctx.clone(), self.found.clone());
+        self.ctx.spawn(async move {
+            let read = read_props(&c).await;
+            let _ = found.send(NightLightInner::Decide {
+                cmd,
+                announce,
+                read,
+            });
+        });
     }
 
-    /// Carry out `niri-dash night-light …` or a click on the widget: on lets KWin's schedule run,
-    /// off pauses it. The temperature is KWin's (System Settings), so a temperature only turns it
-    /// on. With `announce`, the result shows on screen; otherwise only problems do, as a toast.
-    pub fn apply(&self, cmd: crate::night_light::Cmd, announce: bool) {
-        use crate::night_light::Cmd;
-        let me = self.clone();
-        self.ctx.spawn(async move {
-            let s = match me.state().await {
-                Ok(s) => s,
-                Err(e) => {
-                    me.ctx.toast(format!("Night light: {e}"));
-                    return;
+    /// `props` as the widget should see them. A pause asked for but not taken yet counts as ours.
+    fn state(&self, props: &Props) -> NightLightState {
+        night_light_state(props, self.ours || *self.pause.borrow())
+    }
+
+    pub fn on_inner(&mut self, inner: NightLightInner) {
+        match inner {
+            NightLightInner::Held(held) => self.ours = held,
+            NightLightInner::Read(read) => {
+                let state = read.map_or_else(
+                    |e| {
+                        log::debug!("KWin night light: {e}");
+                        NightLightState::default()
+                    },
+                    |props| self.state(&props),
+                );
+                if self.sent.changed(&state) {
+                    self.ctx.send(crate::night_light::Event::Kwin(state));
                 }
-            };
-            let want_on = match cmd {
-                Cmd::Toggle => !s.on(),
-                Cmd::On | Cmd::Kelvin(_) => true,
-                Cmd::Off => false,
-            };
-            let (text, problem) = if !s.available {
-                ("KWin's night light isn't available", true)
-            } else if !s.enabled {
-                ("Night light is turned off in System Settings", true)
-            } else if want_on && s.inhibited && !s.paused_by_us {
-                ("Night light is paused by another program", true)
-            } else {
-                me.pause.send_replace(!want_on);
-                match (want_on, cmd) {
-                    (true, Cmd::Kelvin(_)) => ("Night light on · Plasma sets its warmth", false),
-                    (true, _) => ("Night light on", false),
-                    (false, _) => ("Night light paused", false),
-                }
-            };
-            if announce {
-                if let Err(e) = show_osd(&me.ctx, text, "weather-clear-night").await {
-                    log::debug!("plasma osd: {e}");
-                }
-            } else if problem {
-                me.ctx.toast(text);
             }
-        });
+            NightLightInner::Decide {
+                cmd,
+                announce,
+                read,
+            } => {
+                let props = match read {
+                    Ok(props) => props,
+                    Err(e) => {
+                        self.ctx.toast(format!("Night light: {e}"));
+                        return;
+                    }
+                };
+                let decision = decide(cmd, self.state(&props));
+                if let Some(pause) = decision.pause {
+                    self.pause.send_replace(pause);
+                }
+                if announce {
+                    let c = self.ctx.clone();
+                    self.ctx.spawn(async move {
+                        if let Err(e) = show_osd(&c, decision.text, "weather-clear-night").await {
+                            log::debug!("plasma osd: {e}");
+                        }
+                    });
+                } else if decision.problem {
+                    self.ctx.toast(decision.text);
+                }
+            }
+        }
     }
 }
 
@@ -425,5 +502,122 @@ mod tests {
         assert_eq!(s.temperature, 4200);
         props.insert("inhibited".into(), OwnedValue::from(true));
         assert!(!night_light_state(&props, true).on());
+    }
+
+    fn kwin(enabled: bool, inhibited: bool, paused_by_us: bool) -> NightLightState {
+        NightLightState {
+            available: true,
+            enabled,
+            inhibited,
+            paused_by_us,
+            temperature: 4200,
+        }
+    }
+
+    #[test]
+    fn what_commands_come_to() {
+        use crate::night_light::Cmd;
+        let on = kwin(true, false, false);
+        let paused = kwin(true, true, true);
+        // (command, state, resulting pause wish)
+        for (cmd, state, pause) in [
+            (Cmd::Toggle, on, true),
+            (Cmd::Off, on, true),
+            (Cmd::On, on, false),
+            (Cmd::Toggle, paused, false),
+            (Cmd::On, paused, false),
+            (Cmd::Kelvin(4000), paused, false),
+        ] {
+            let d = decide(cmd, state);
+            assert_eq!(d.pause, Some(pause), "{cmd:?} on {state:?}");
+            assert!(!d.problem);
+        }
+    }
+
+    #[test]
+    fn what_gets_in_the_way() {
+        use crate::night_light::Cmd;
+        let gone = NightLightState {
+            available: false,
+            ..kwin(true, false, false)
+        };
+        let off_in_settings = kwin(false, false, false);
+        let paused_by_another = kwin(true, true, false);
+        for (cmd, state) in [
+            (Cmd::On, gone),
+            (Cmd::Off, gone),
+            (Cmd::On, off_in_settings),
+            (Cmd::On, paused_by_another),
+            (Cmd::Toggle, paused_by_another),
+        ] {
+            let d = decide(cmd, state);
+            assert!(d.problem, "{cmd:?} on {state:?}");
+            assert_eq!(d.pause, None, "must leave the pause alone");
+        }
+        // Turning off what another program paused is no problem: we pause it too.
+        assert_eq!(decide(Cmd::Off, paused_by_another).pause, Some(true));
+    }
+
+    fn props(inhibited: bool) -> Props {
+        let mut props = HashMap::new();
+        for (k, v) in [
+            ("available", true),
+            ("enabled", true),
+            ("inhibited", inhibited),
+        ] {
+            props.insert(k.to_string(), OwnedValue::from(v));
+        }
+        props
+    }
+
+    fn night_light(ctx: Ctx) -> (NightLight, Mailbox<NightLightInner>) {
+        let mut mailbox = Mailbox::default();
+        (NightLight::start(ctx, &mut mailbox), mailbox)
+    }
+
+    /// The pause we hold shows as ours in what the widget gets, and a read that says the same again
+    /// isn't reported again.
+    #[tokio::test]
+    async fn a_pause_held_reads_as_ours() {
+        let (ctx, events) = crate::sources::testing::ctx();
+        let (mut me, _mailbox) = night_light(ctx);
+        me.on_inner(NightLightInner::Held(true));
+        me.on_inner(NightLightInner::Read(Ok(props(true))));
+        me.on_inner(NightLightInner::Read(Ok(props(true))));
+        let seen = crate::sources::testing::reported(events);
+        assert_eq!(seen.len(), 1);
+        let crate::Event::NightLight(crate::night_light::Event::Kwin(s)) = seen[0] else {
+            panic!("reported something else");
+        };
+        assert!(s.paused_by_us);
+    }
+
+    /// A pause asked for but not taken yet counts as ours: the switch doesn't flicker.
+    #[tokio::test]
+    async fn a_pause_asked_for_reads_as_ours() {
+        let (ctx, _events) = crate::sources::testing::ctx();
+        let (mut me, _mailbox) = night_light(ctx);
+        me.on_inner(NightLightInner::Decide {
+            cmd: crate::night_light::Cmd::Off,
+            announce: false,
+            read: Ok(props(false)),
+        });
+        assert!(*me.pause.borrow());
+        assert!(me.state(&props(true)).paused_by_us);
+    }
+
+    /// When we could not even read KWin's state, nothing changes and it says why.
+    #[tokio::test]
+    async fn a_read_that_failed_only_says_so() {
+        let (ctx, events) = crate::sources::testing::ctx();
+        let (mut me, _mailbox) = night_light(ctx);
+        me.on_inner(NightLightInner::Decide {
+            cmd: crate::night_light::Cmd::Off,
+            announce: true,
+            read: Err(zbus::Error::Failure("gone".into()).into()),
+        });
+        assert!(!*me.pause.borrow());
+        let seen = crate::sources::testing::reported(events);
+        assert!(matches!(&seen[..], [crate::Event::Toast(t)] if t.contains("gone")));
     }
 }
