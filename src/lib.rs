@@ -17,6 +17,8 @@ slint::include_modules!();
 mod affinity;
 mod app;
 mod autolayout;
+#[cfg(test)]
+mod book;
 #[cfg(not(target_arch = "wasm32"))]
 mod cli;
 mod cowfile;

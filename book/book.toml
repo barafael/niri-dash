@@ -1,0 +1,12 @@
+[book]
+title = "niri-dash manual"
+authors = ["niri-dash contributors"]
+description = "How to install, use and configure niri-dash."
+language = "en"
+src = "src"
+
+[output.html]
+git-repository-url = "https://github.com/barafael/niri-dash"
+edit-url-template = "https://github.com/barafael/niri-dash/edit/main/book/{path}"
+default-theme = "light"
+preferred-dark-theme = "navy"
