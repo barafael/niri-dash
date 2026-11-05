@@ -420,7 +420,7 @@ fn describe(app: &App) -> String {
     match place(app) {
         Place::Closed => "closed".into(),
         Place::Edit => "editing".into(),
-        Place::Off => "nothing entered".into(),
+        Place::Off => format!("nothing entered [focus {}]", app.focus_description()),
         Place::Hints => format!("hints, typed {:?}", n.get_typed().as_str()),
         Place::Widget => {
             let name = kind_name(app);

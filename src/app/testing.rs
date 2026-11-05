@@ -12,7 +12,7 @@ use super::a11y::bridge::{Request, TreeSink};
 use super::{App, Input, build};
 use crate::layout::{Layout, Loaded};
 use crate::{Control, Dash};
-use niri_dash_system::{Event, Inboxes, MockSystem, Started, channels};
+use niri_dash_system::{Demo, Event, Inboxes, MockSystem, Started, channels};
 use slint::platform::software_renderer::PremultipliedRgbaColor;
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
 use slint::platform::{Key, Platform, PointerEventButton, WindowAdapter, WindowEvent};
@@ -28,9 +28,24 @@ struct TestPlatform;
 thread_local! {
     /// The window made last, the dashboard's, to render it.
     static WINDOW: RefCell<Option<Rc<MinimalSoftwareWindow>>> = const { RefCell::new(None) };
+    /// When the harness started, for the clock Slint's timers and animations run on.
+    static STARTED: std::time::Instant = std::time::Instant::now();
+    /// A clock that only moves when told to ([`Harness::stress`]), or None for the real one.
+    static CLOCK: std::cell::Cell<Option<Duration>> = const { std::cell::Cell::new(None) };
+    /// How far the real clock is behind where a stress run took the other one: time never goes
+    /// back.
+    static AHEAD: std::cell::Cell<Duration> = const { std::cell::Cell::new(Duration::ZERO) };
 }
 
 impl Platform for TestPlatform {
+    /// What Slint's timers (a button that disarms after a while) and animations run on. A stress
+    /// run moves it by hand, a fixed time per key: its keys come far faster than a person's, and
+    /// on the real clock the same keys would find a timer run out or an animation half done
+    /// depending on how fast the machine was.
+    fn duration_since_start(&self) -> Duration {
+        clock_now()
+    }
+
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
         let window = MinimalSoftwareWindow::new(RepaintBufferType::ReusedBuffer);
         WINDOW.with(|w| *w.borrow_mut() = Some(window.clone()));
@@ -80,7 +95,21 @@ pub struct Harness {
     width: usize,
     /// How many events the dashboard has been handed.
     delivered: Rc<std::cell::Cell<u64>>,
+    /// The mock system of [`Harness::with_mock`] and where its commands wait. It answers here, on
+    /// the harness's own thread, whenever the dashboard takes a turn: on a thread of its own it
+    /// would answer when the machine let it, and the same keys wouldn't give the same run.
+    mock: Option<(MockSystem, Inboxes)>,
 }
+
+/// The time Slint's timers and animations run on.
+fn clock_now() -> Duration {
+    CLOCK
+        .with(|c| c.get())
+        .unwrap_or_else(|| STARTED.with(|s| s.elapsed()) + AHEAD.with(|a| a.get()))
+}
+
+/// How long a person takes over a key, on the clock a stress run keeps.
+const KEY_TIME: Duration = Duration::from_millis(120);
 
 /// The window of a harness, unless it is told another size: a large screen.
 const SIZE: (u32, u32) = (1706, 1066);
@@ -108,8 +137,13 @@ impl Harness {
     /// every widget at its minimum has little room.
     pub fn with_mock_sized(config: &str, size: (u32, u32)) -> Self {
         let (events, events_rx) = super::loop_channel::<Event>();
-        let system = niri_dash_system::mock(events).expect("starting the mock system");
+        let (senders, commands) = channels();
+        let system = Started {
+            senders,
+            caps: MockSystem::CAPS,
+        };
         let mut me = Self::on(config, system, channels().1, size);
+        me.mock = Some((MockSystem::new(Demo::new(), events), commands));
         me.listen(events_rx);
         // The mock sends what it has once the dashboard is up.
         me.app.set_visible(true);
@@ -154,6 +188,7 @@ impl Harness {
             pixels: vec![PremultipliedRgbaColor::default(); (size.0 * size.1) as usize],
             width: size.0 as usize,
             delivered: Default::default(),
+            mock: None,
         };
         me.listen(events_rx);
         me.listen_inputs(inputs);
@@ -306,7 +341,24 @@ impl Harness {
     ) -> Result<super::stress::Monkey, super::stress::Failure> {
         let mut pace = super::stress::Pace::new(rate);
         let mut frames = super::stress::Pace::new(10.0);
+        // From here on, time passes by the key, not by the clock.
+        let start = clock_now();
+        CLOCK.with(|c| c.set(Some(start)));
+        let result = self.stress_keys(monkey, ops, &mut pace, &mut frames);
+        let end = CLOCK.with(|c| c.take()).unwrap_or(start);
+        AHEAD.with(|a| a.set(end.saturating_sub(STARTED.with(|s| s.elapsed()))));
+        result
+    }
+
+    fn stress_keys(
+        &mut self,
+        mut monkey: super::stress::Monkey,
+        ops: u64,
+        pace: &mut super::stress::Pace,
+        frames: &mut super::stress::Pace,
+    ) -> Result<super::stress::Monkey, super::stress::Failure> {
         while monkey.done() < ops {
+            CLOCK.with(|c| c.set(c.get().map(|t| t + KEY_TIME)));
             // The dashboard's loop runs on between keys.
             while !pace.due() {
                 self.turn();
@@ -314,15 +366,7 @@ impl Harness {
             }
             self.quieten();
             monkey.step(&self.app, self.ui.window())?;
-            // Answers from the mock system's thread, if they come quickly.
-            let until = std::time::Instant::now() + Duration::from_millis(2);
-            loop {
-                self.turn();
-                if std::time::Instant::now() >= until {
-                    break;
-                }
-                std::thread::sleep(Duration::from_micros(200));
-            }
+            self.turn();
             if frames.due() {
                 self.render();
             }
@@ -348,12 +392,24 @@ impl Harness {
 
     /// Deliver what is pending and run Slint's timers and animations once.
     pub fn pump(&mut self) {
+        self.answer_mock();
         let _ = self
             .event_loop
             .dispatch(Some(Duration::ZERO), &mut self.controls);
         slint::platform::update_timers_and_animations();
+        self.answer_mock();
         self.app.keep_keyboard();
         self.app.access_sync(false);
+    }
+
+    /// The mock system takes the commands that wait for it.
+    fn answer_mock(&mut self) {
+        if let Some((mock, commands)) = &mut self.mock {
+            while let Some(command) = commands.try_next() {
+                let kept = mock.handle(command);
+                mock.received.push(kept);
+            }
+        }
     }
 
     /// The controls (hide, show, …) the dashboard asked of its surface since the last call, in

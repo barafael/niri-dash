@@ -183,6 +183,22 @@ impl App {
         all
     }
 
+    /// What has the keyboard, for the log of a stress run.
+    pub(super) fn focus_description(&self) -> String {
+        let ui = self.ui();
+        let focus = WindowInner::from_pub(ui.window())
+            .focus_item
+            .borrow()
+            .upgrade();
+        match focus {
+            None => "nothing".into(),
+            Some(item) => {
+                let at = nearest_accessible(item.clone());
+                format!("{} {:?}", speak(&at), item.geometry())
+            }
+        }
+    }
+
     /// Have everything made and laid out, as drawing a frame would. Slint does this lazily: a list
     /// that grew has no new rows until something looks, and nothing moves until then.
     pub(super) fn lay_out(&self) {

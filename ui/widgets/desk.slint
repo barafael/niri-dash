@@ -34,6 +34,8 @@ export component WindowsWidget inherits Rectangle {
                     text: w.title;
                 }
                 if !w.header: Row {
+                    // Narrow, the row keeps the title and the close button.
+                    property <bool> narrow: self.width < 240px;
                     accessible-label: w.title != "" ? w.title : w.app != "" ? w.app : "Window";
                     accessible-value: w.focused ? "focused" : w.urgent ? "urgent" : "";
                     height: parent.height - 2px;
@@ -48,9 +50,9 @@ export component WindowsWidget inherits Rectangle {
                     }
                     middle-clicked => { Windows.close(w.id); }
                     HorizontalLayout {
-                        padding-left: 8px;
+                        padding-left: parent.narrow ? 4px : 8px;
                         padding-right: 4px;
-                        spacing: 8px;
+                        spacing: parent.narrow ? 4px : 8px;
                         if w.has-icon: Image {
                             y: (parent.height - self.height) / 2;
                             source: w.icon;
@@ -71,9 +73,10 @@ export component WindowsWidget inherits Rectangle {
                                 font-size: Theme.font-body;
                                 color: w.urgent ? Theme.warn : Theme.text;
                                 overflow: elide;
+                                min-width: 0px;
                             }
                         }
-                        Muted {
+                        if !parent.narrow: Muted {
                             max-width: 120px;
                             text: w.app;
                         }

@@ -492,6 +492,9 @@ export component WifiWidget inherits Rectangle {
                     }
                 }
                 for n[i] in Wifi.networks: Row {
+                    // Narrow, the row keeps the name and its buttons; narrower, not even the signal.
+                    property <bool> narrow: self.width < 150px;
+                    property <bool> tiny: self.width < 135px;
                     accessible-label: n.ssid;
                     accessible-value: (n.active ? "connected, " : n.key == Wifi.connecting ? "joining, " : n.known ? "saved, " : "")
                         + "signal " + n.signal + "%, " + (n.tag != "" ? n.tag : n.secure ? "secured" : "open");
@@ -507,10 +510,10 @@ export component WifiWidget inherits Rectangle {
                         }
                     }
                     HorizontalLayout {
-                        padding-left: 10px;
+                        padding-left: parent.narrow ? 6px : 10px;
                         padding-right: 2px;
-                        spacing: 8px;
-                        SignalBars {
+                        spacing: parent.narrow ? 4px : 8px;
+                        if !parent.tiny: SignalBars {
                             y: (parent.height - self.height) / 2;
                             signal: n.signal;
                             tint: n.active ? Theme.accent : Theme.text;
@@ -522,16 +525,17 @@ export component WifiWidget inherits Rectangle {
                             font-weight: n.known ? 600 : 400;
                             vertical-alignment: center;
                             overflow: elide;
+                            min-width: 0px;
                             horizontal-stretch: 1;
                         }
-                        if n.key == Wifi.connecting: Muted {
+                        if n.key == Wifi.connecting && !parent.narrow: Muted {
                             text: "joining…";
                         }
-                        if n.tag != "": Muted {
+                        if n.tag != "" && !parent.narrow: Muted {
                             text: n.tag;
                             color: n.secure ? Theme.dim : Theme.warn;
                         }
-                        if n.secure: Icon {
+                        if n.secure && !parent.narrow: Icon {
                             y: (parent.height - self.height) / 2;
                             source: Icons.lock-small;
                             size: 14px;
@@ -1072,6 +1076,9 @@ component BtRow inherits Row {
     selected: root.device.connected;
     enabled: !root.device.busy;
     kfocus-part: root.kfocus-details;
+    // Narrow, the row keeps the name and the way into the details; the rest is in what a screen
+    // reader says.
+    property <bool> narrow: self.width < 150px;
     HorizontalLayout {
         padding-left: 10px;
         padding-right: 2px;
@@ -1087,16 +1094,17 @@ component BtRow inherits Row {
             font-size: Theme.font-body;
             vertical-alignment: center;
             overflow: elide;
+            min-width: 0px;
             horizontal-stretch: 1;
         }
-        Muted {
+        if !root.narrow: Muted {
             text: root.device.busy ? "…"
                 : root.device.blocked ? "blocked"
                 : !root.device.paired && root.device.connected ? "not paired"
                 : root.device.battery >= 0 ? root.device.battery + "%" : "";
             color: (!root.device.paired && root.device.connected) || root.device.blocked ? Theme.warn : Theme.dim;
         }
-        if root.device.signal >= 0: SignalBars {
+        if root.device.signal >= 0 && !root.narrow: SignalBars {
             y: (parent.height - self.height) / 2;
             signal: root.device.signal * 25;
         }

@@ -29,6 +29,31 @@ shrink now: the Security choice with tighter padding, the profile names by being
 Twelve seeds of 6000 keys are clean with the command line's window (`niri-dash stress --headless
 --rate 0 --ops 6000 --seed N`), and `tests/stress.rs` covers seeds 1 to 5 on two screen sizes.
 
+## Why the stress test failed one run in four
+
+The same seed gave several different runs. Comparing the transcripts of repeated runs
+(`NIRI_DASH_STRESS_LOG=1`, `NIRI_DASH_STRESS_SEEDS=2`, `NIRI_DASH_STRESS_SCREEN=small`) found where
+two runs first differ, and each time the cause was time:
+
+- **The mock system answered on a thread of its own.** Its replies landed between keys when the
+  machine let them, so the same keys met different states. The harness now answers the mock's
+  commands itself, in each turn (`Harness::with_mock`).
+- **Slint's timers and animations ran on the clock, and keys came far faster than a person's.** A
+  "Press again to confirm" button disarms after a while; a card takes 180 ms to fade; a tile takes
+  as long to resize. Whether a key found them done depended on the machine's speed. A stress run now
+  keeps its own clock for Slint (`TestPlatform::duration_since_start`) and moves it 120 ms per key.
+  With that, eight runs of one seed are identical down to the last line.
+- **A real bug that only the first change exposed:** the settings card kept its text fields while it
+  faded out, and Tab could take the keyboard into the invisible "Location" field. The fields are
+  disabled unless the card is up.
+- **Two real layout bugs that were now the same every time:** a list didn't scroll to keep the
+  cursor's row in sight when its widget was resized, and a row (Windows, Wi-Fi, Bluetooth) at the
+  minimum widget size on a small screen was wider than the widget. Narrow rows drop their extras.
+
+What is left of the real clock: the app's own `Instant::now()` (a slider's hold time, the hide
+animation of a real surface). They haven't shown up in a run, and a transcript diff is how to find
+them if they do.
+
 ## What the run does not cover
 
 The stress monkey only presses keys. The pointer is exercised only by the scripted scenarios in

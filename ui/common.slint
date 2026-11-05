@@ -695,14 +695,25 @@ export component ScrollList inherits Rectangle {
     // Scroll just enough to show what sits at window position `y`, `h` high (a row the
     // keyboard cursor moved to).
     public function reveal(y: length, h: length) {
-        let top = y - flick.absolute-position.y;
+        // Where it is in the content, so a later change of size can bring it back into view.
+        root.shown-y = y - flick.absolute-position.y - flick.content-y;
+        root.shown-h = h;
+        root.keep-in-view();
+    }
+    // What the keyboard cursor last asked to see, in the content's own coordinates.
+    property <length> shown-y;
+    property <length> shown-h;
+    function keep-in-view() {
+        let top = root.shown-y + flick.content-y;
         let lowest = min(0px, flick.height - flick.content-height);
         if (top < 0px) {
             flick.content-y = clamp(flick.content-y - top, lowest, 0px);
-        } else if (top + h > flick.height) {
-            flick.content-y = clamp(flick.content-y - (top + h - flick.height), lowest, 0px);
+        } else if (top + root.shown-h > flick.height) {
+            flick.content-y = clamp(flick.content-y - (top + root.shown-h - flick.height), lowest, 0px);
         }
     }
+    // The widget was resized under the cursor: its row stays in sight.
+    changed height => { root.keep-in-view(); }
     flick := Flickable {
         x: 0;
         width: root.width - root.gutter;

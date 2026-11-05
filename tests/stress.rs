@@ -34,15 +34,18 @@ fn main() {
     let config = default_config();
     let mut failed = 0;
     let screens: [(&str, (u32, u32)); 2] = [("large", (1706, 1066)), ("small", (1280, 800))];
+    let only_screen = std::env::var("NIRI_DASH_STRESS_SCREEN").ok();
+    let verbose = std::env::var_os("NIRI_DASH_STRESS_LOG").is_some();
     let runs: Vec<(u64, &str, (u32, u32))> = seeds
         .iter()
         .flat_map(|&seed| screens.iter().map(move |&(name, size)| (seed, name, size)))
+        .filter(|(_, name, _)| only_screen.as_deref().is_none_or(|o| o == *name))
         .collect();
     for &(seed, screen, size) in &runs {
         let seed_name = format!("{seed} on a {screen} screen");
         let run = std::panic::catch_unwind(AssertUnwindSafe(|| {
             Harness::with_mock_sized(&config, size)
-                .stress(Monkey::new(seed, false).keep_going(), ops, 0.0)
+                .stress(Monkey::new(seed, verbose).keep_going(), ops, 0.0)
                 .map(|monkey| (monkey.summary(), monkey.finish()))
         }));
         let run = run.map(|r| match r {

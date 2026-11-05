@@ -54,6 +54,75 @@ pub enum Received {
 }
 
 impl Inboxes {
+    /// A command that is waiting, of whichever applet, without waiting for one. For a test that
+    /// answers on its own thread, in step with what it does.
+    pub fn try_next(&mut self) -> Option<Received> {
+        if let Ok(c) = self.host.try_recv() {
+            return Some(Received::Host(c));
+        }
+        if let Ok(c) = self.windows.try_recv() {
+            return Some(Received::Windows(c));
+        }
+        if let Ok(c) = self.keyboard.try_recv() {
+            return Some(Received::Keyboard(c));
+        }
+        if let Ok(c) = self.privacy.try_recv() {
+            return Some(Received::Privacy(c));
+        }
+        if let Ok(c) = self.color.try_recv() {
+            return Some(Received::Color(c));
+        }
+        if let Ok(c) = self.wifi.try_recv() {
+            return Some(Received::Wifi(c));
+        }
+        if let Ok(c) = self.bluetooth.try_recv() {
+            return Some(Received::Bluetooth(c));
+        }
+        if let Ok(c) = self.audio.try_recv() {
+            return Some(Received::Audio(c));
+        }
+        if let Ok(c) = self.brightness.try_recv() {
+            return Some(Received::Brightness(c));
+        }
+        if let Ok(c) = self.notifications.try_recv() {
+            return Some(Received::Notifications(c));
+        }
+        if let Ok(c) = self.tray.try_recv() {
+            return Some(Received::Tray(c));
+        }
+        if let Ok(c) = self.media.try_recv() {
+            return Some(Received::Media(c));
+        }
+        if let Ok(c) = self.power.try_recv() {
+            return Some(Received::Power(c));
+        }
+        if let Ok(c) = self.session.try_recv() {
+            return Some(Received::Session(c));
+        }
+        if let Ok(c) = self.drives.try_recv() {
+            return Some(Received::Drives(c));
+        }
+        if let Ok(c) = self.phones.try_recv() {
+            return Some(Received::Phones(c));
+        }
+        if let Ok(c) = self.weather.try_recv() {
+            return Some(Received::Weather(c));
+        }
+        if let Ok(c) = self.night_light.try_recv() {
+            return Some(Received::NightLight(c));
+        }
+        if let Ok(c) = self.mascot.try_recv() {
+            return Some(Received::Mascot(c));
+        }
+        if let Ok(c) = self.clipboard.try_recv() {
+            return Some(Received::Clipboard(c));
+        }
+        if let Ok(c) = self.sleep.try_recv() {
+            return Some(Received::Sleep(c));
+        }
+        None
+    }
+
     /// The next command of any applet; None when every sender is gone. Each applet's commands
     /// keep their order; between applets there is none.
     pub async fn next(&mut self) -> Option<Received> {
@@ -142,7 +211,7 @@ impl MockSystem {
 
     /// Do what the real system would, as far as the dashboard can tell; returns the command to
     /// keep.
-    fn handle(&mut self, cmd: Received) -> Received {
+    pub fn handle(&mut self, cmd: Received) -> Received {
         use Received as R;
         let d = &mut self.demo;
         match cmd {

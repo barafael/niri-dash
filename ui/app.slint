@@ -223,6 +223,9 @@ component SettingControl inherits Rectangle {
     // Under the keyboard cursor; a change of `edit-tick` then puts the keyboard in the text field.
     in property <bool> kfocus;
     in property <int> edit-tick;
+    // Whether the row can be used at all. A card that is fading out still has its rows, and Tab
+    // would take the keyboard into a text field nobody can see.
+    in property <bool> live: true;
     callback revealed(length, length);
     changed kfocus => {
         if (self.kfocus) {
@@ -331,6 +334,7 @@ component SettingControl inherits Rectangle {
                 }
             }
             field := LineEdit {
+                enabled: root.live;
                 accessible-label: root.label;
                 text: root.value;
                 // Left without Enter: what was typed is dropped, not left showing as if saved.
@@ -1774,6 +1778,7 @@ export component Dash inherits Window {
                             width: parent.width;
                             spacing: 6px;
                             for v[i] in root.setting-rows: SettingControl {
+                                live: card-layer.up;
                                 kfocus: root.cfg-on(i);
                                 edit-tick: root.side-edit-tick;
                                 revealed(y, h) => { cfg-side.reveal(y, h); }
