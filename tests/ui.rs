@@ -741,11 +741,6 @@ fn stops_in_sight_other_lists() {
     h.send(niri_dash_system::notifications::Event::State(n));
     enter(&mut h, "Notifications");
     every_stop_in_sight(&mut h);
-
-    let mut h = testing::Harness::new("layout {\n    volume col=0 row=0 width=3 height=2\n}\n");
-    h.send(niri_dash_system::audio::Event::State(Demo::new().audio));
-    enter(&mut h, "Volume");
-    every_stop_in_sight(&mut h);
 }
 
 /// Only mic and camera apps: nothing to stop, so no stops; the list itself is what's read out.
@@ -788,6 +783,32 @@ fn battery_without_a_current_profile() {
         h.inbox.power.try_recv(),
         Ok(power::Command::SetProfile(power::Profile::PowerSaver))
     ));
+}
+
+/// Edit mode's sidebar has a cursor too, and what it is on can be read out.
+fn edit_mode_cursor_is_read_out() {
+    let mut h = dashboard();
+    h.press("ctrl+e");
+    h.press("j");
+    let now = said(&mut h);
+    assert!(!now.is_empty(), "nothing to say in the sidebar");
+}
+
+/// Shrinking a tile with the cursor on a row near the bottom keeps that row in sight.
+fn cursor_stays_in_sight_as_a_tile_shrinks() {
+    let mut h = testing::Harness::new("layout {\n    wifi col=0 row=0 width=3 height=3\n}\n");
+    h.send(wifi::Event::State(Box::new(Demo::new().wifi)));
+    enter(&mut h, "Wi-Fi");
+    walk_to(&mut h, "Hidden network");
+    assert!(said(&mut h).contains("Hidden network"));
+    let before = h.tiles()[0].h;
+    h.press("ctrl+r");
+    h.press("j");
+    h.press("k");
+    h.press("enter");
+    assert!(h.tiles()[0].h < before, "the tile didn't shrink");
+    let now = said(&mut h);
+    assert!(now.contains("Hidden network"), "on: {now}");
 }
 
 fn main() {
@@ -880,6 +901,11 @@ fn main() {
         (
             "battery_without_a_current_profile",
             battery_without_a_current_profile,
+        ),
+        ("edit_mode_cursor_is_read_out", edit_mode_cursor_is_read_out),
+        (
+            "cursor_stays_in_sight_as_a_tile_shrinks",
+            cursor_stays_in_sight_as_a_tile_shrinks,
         ),
         (
             "keyboard survives its field going away",

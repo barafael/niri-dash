@@ -48,6 +48,12 @@ component KeyField inherits VerticalLayout {
             self.revealed(self.absolute-position.y, self.height);
         }
     }
+    // Made with the cursor already on it: a page opening.
+    init => {
+        if (self.kfocus) {
+            self.revealed(self.absolute-position.y, self.height);
+        }
+    }
     spacing: 2px;
     changed edit-tick => {
         if (self.kfocus) {
