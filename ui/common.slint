@@ -429,7 +429,7 @@ export component Slider inherits Rectangle {
             }
         }
         scroll-event(e) => {
-            root.value = clamp(root.value - (e.delta-y + e.delta-x) / 960px, 0, 1);
+            root.value = clamp(root.value + (e.delta-y + e.delta-x) / 960px, 0, 1);
             root.changed(root.value);
             accept
         }
@@ -555,7 +555,7 @@ export component RingKnob inherits Rectangle {
     TouchArea {
         clicked => { root.clicked(); }
         scroll-event(e) => {
-            root.value = clamp(root.value - (e.delta-y + e.delta-x) / 960px, 0, 1);
+            root.value = clamp(root.value + (e.delta-y + e.delta-x) / 960px, 0, 1);
             root.changed(root.value);
             accept
         }

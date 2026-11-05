@@ -227,7 +227,7 @@ component SleepBody inherits Rectangle {
                     double-clicked => { Sleep.abort(); }
                     scroll-event(e) => {
                         if (root.counting) {
-                            if (e.delta-y > 0) { Sleep.shorter(); } else { Sleep.longer(); }
+                            if (e.delta-y > 0) { Sleep.longer(); } else { Sleep.shorter(); }
                         }
                         accept
                     }
