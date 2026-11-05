@@ -8,6 +8,7 @@ Descriptions of what niri-dash has, and nothing else. For procedures see the
 | [Widgets](widgets/index.md) | Every widget: name, sizes, shapes, settings, defaults. |
 | [Keyboard](keyboard.md) | Every key, on the dashboard, inside widgets and in edit mode. |
 | [config.kdl](config.md) | The nodes of the configuration file. |
+| [Color scheme and style files](themes.md) | The file format of schemes and styles. |
 | [Command line](command-line.md) | Every command and flag. |
 | [Environment variables and files](environment.md) | Where niri-dash reads and writes, and what changes that. |
 | [KDE Plasma](plasma.md) | What differs from niri. |

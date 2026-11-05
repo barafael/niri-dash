@@ -22,7 +22,9 @@ export component WindowsWidget inherits Rectangle {
         }
         if !Windows.available: Empty {
             vertical-stretch: 1;
-            text: Desktop.niri ? "Not connected to niri" : "Window list " + Desktop.unavailable;
+            text: Desktop.niri ? "Not connected to niri"
+                : Desktop.plasma ? "KWin gives no window list: run niri-dash desktop-entries, then restart"
+                : "Window list " + Desktop.unavailable;
         }
         window-list := ScrollList {
             vertical-stretch: 1;

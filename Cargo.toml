@@ -6,7 +6,7 @@ description = "A fullscreen widget dashboard for niri: clock, calendar, windows,
 license = "MIT OR Apache-2.0"
 
 [workspace]
-members = [".", "crates/system"]
+members = [".", "crates/system", "xtask"]
 
 [workspace.dependencies]
 log = "0.4"

@@ -110,7 +110,28 @@ puts the current ones on the clipboard as such a line.
 | `placement` | `"off"`, `"edges"`, `"center"` |
 | `seed` | a number from 0 to 999 |
 | `restarts` | a number from 1 to 64 |
-| other keys | numbers, one per tuning row of the Arrange tab (`shrink` and `grow` are two of them). A number outside a row's range is clamped. |
+
+The other keys take numbers. Each is one row of the Arrange tab: Each is one row of the Arrange tab:
+
+| Key | Row in the Arrange tab | Only for |
+|---|---|---|
+| `jitter` | Shuffle | — |
+| `shrink` | Shrink cost | — |
+| `grow` | Grow cost | — |
+| `aspect` | Shape cost | — |
+| `overshoot` | Oversize cost | — |
+| `hole` | Round gap cost | — |
+| `max-grow` | Max growth | `gravity` |
+| `weight-exponent` | Area weight | `treemap` |
+| `cut-bias` | Cut bias | `treemap` |
+| `affinity` | Neighbour pull | `neighbours` |
+| `reach` | Neighbour reach | `neighbours` |
+| `edge` | Lean strength | `neighbours` |
+| `balance` | Centering | `neighbours` |
+| `effort` | Effort | `neighbours` |
+
+A number outside a row's range is clamped. What each one weighs is in
+[How Arrange chooses a layout](../explanation/arrange.md).
 
 A key that isn't known, or a value that doesn't fit, is warned about and ignored.
 

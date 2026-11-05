@@ -5,13 +5,15 @@
 //! a private session bus whose own accessibility bus and registry are started on demand, in a
 //! temporary runtime directory; only that second run publishes anything, and only because it was
 //! told it is on a private bus (`NIRI_DASH_PRIVATE_BUS`; the harness refuses to publish without
-//! it). If what it needs isn't installed (dbus-run-session, gdbus, python3 with libatspi's
-//! bindings, the at-spi bus launcher) it says so and passes.
+//! it). It starts programs (a bus, a screen reader's client), so it runs in the test box only
+//! (`cargo testbox test atspi`); anywhere else it says so and passes.
 //!
 //! Slint wants one thread and one platform per process, so this is a plain program
 //! (`harness = false`).
 
 mod bus;
+#[path = "../testbox/inside.rs"]
+mod inside;
 
 use niri_dash::testing::{Harness, Sandbox};
 use niri_dash_system::{Demo, brightness, wifi};
@@ -26,17 +28,26 @@ layout {
 }
 "#;
 
-const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/atspi_client.py");
+/// The screen reader's client, beside this program: the box has the test binaries and what they
+/// run, not the source tree (`cargo testbox` puts the file there).
+fn client() -> std::path::PathBuf {
+    std::env::current_exe()
+        .expect("this program's path")
+        .with_file_name("atspi_client.py")
+}
 
 fn main() {
+    if !inside::inside() {
+        inside::skipped("atspi");
+        return;
+    }
     if std::env::var_os("NIRI_DASH_PRIVATE_BUS").is_some() {
         return inner();
     }
+    // The box has what these need, so missing it is a failure, not a reason to skip.
     if let Some(what) = bus::missing(&[]) {
-        println!(
-            "test atspi: skipped, {what} isn't installed\n\ntest result: ok. 0 passed; 0 failed"
-        );
-        return;
+        println!("test atspi: FAILED, {what} isn't in the box\n\ntest result: FAILED");
+        std::process::exit(1);
     }
     if !bus::rerun_privately("atspi") {
         std::process::exit(1);
@@ -63,7 +74,7 @@ fn inner() {
         .map(|n| n.to_string_lossy().chars().take(6).collect::<String>())
         .unwrap_or_default();
     let mut client = Command::new("python3")
-        .arg(CLIENT)
+        .arg(client())
         .arg(&prefix)
         .stdout(Stdio::piped())
         .spawn()

@@ -43,7 +43,8 @@ Press `e` again. The calendar goes back to its place.
 
 Press Escape once. You are out of the calendar and back on the dashboard.
 
-Don't press Escape again: a second Escape puts the dashboard away.
+Don't press Escape again: a second Escape puts the dashboard away. (In the web version a key or a
+click brings it back.)
 
 ## 6. Open edit mode
 

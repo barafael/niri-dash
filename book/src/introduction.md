@@ -24,12 +24,10 @@ nothing and its data sources go quiet.
 
 | If you want to | Read | It contains |
 |---|---|---|
-| Learn by doing | [Tutorials](tutorials/first-dashboard.md) | A guided first session, in the browser, with nothing to break. |
+| Learn by doing | [Tutorials](tutorials/first-dashboard.md) | Two guided sessions, in the browser, with nothing to break. |
 | Get something done | [How-to guides](how-to/index.md) | Short procedures: install, start at login, change a setting. |
 | Look something up | [Reference](reference/index.md) | Every widget, key, setting and command, described and nothing else. |
 | Understand why | [Explanation](explanation/index.md) | How and why the dashboard behaves as it does. |
-
-Pages in grey in the sidebar are planned and not written yet.
 
 The manual describes the version in this repository. Where a page says a setting has a default,
 that is the default of the source it was built from.

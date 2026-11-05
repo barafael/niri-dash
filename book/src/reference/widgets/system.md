@@ -6,7 +6,7 @@ The machine's health: load, memory, disks, battery.
 
 {{#include ../widgets.generated.md:system-monitor}}
 
-## Battery and power {#battery}
+## Battery & power {#battery}
 
 {{#include ../widgets.generated.md:battery}}
 
@@ -32,4 +32,4 @@ The switch that blocks sleep and screen locking is the same as `niri-dash inhibi
 
 {{#include ../widgets.generated.md:privacy}}
 
-Shows who is using the microphone, the camera or the screen. Noticing screen sharing is not available on KDE Plasma.
+Shows who is using the microphone, the camera or the screen. On KDE Plasma the microphone and camera are shown, but screen sharing is not noticed.

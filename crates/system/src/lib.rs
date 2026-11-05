@@ -251,7 +251,8 @@ pub struct Capabilities {
     pub clipboard: bool,
     /// We hold the gamma control (wlr-gamma-control) for night light.
     pub gamma: bool,
-    /// The window list works, and focusing and closing windows.
+    /// The window list works, and focusing and closing windows. On niri always; on KWin only when
+    /// it let us bind its window management (see `niri-dash desktop-entries`).
     pub windows: bool,
     /// The keyboard layouts can be listed and switched.
     pub keyboard_layouts: bool,

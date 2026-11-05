@@ -1,6 +1,8 @@
 //! Desktop entries for the standalone apps (`niri-dash app <widget>`), so launchers list them as
 //! "Clock (niri-dash)" and so on. The window's app id matches the entry's file name, which is how
-//! launchers and niri connect a window to its entry (and how window rules can match it).
+//! launchers and niri connect a window to its entry (and how window rules can match it). On KDE
+//! Plasma the entries also let niri-dash see the window list: KWin gives that only to programs
+//! whose desktop file asks for it.
 
 use crate::layout::Kind;
 use std::path::{Path, PathBuf};
@@ -30,6 +32,10 @@ fn io_err(action: &'static str, path: &Path) -> impl FnOnce(std::io::Error) -> E
 
 /// Marks entries we wrote, so removing them never touches anything else.
 const MARKER: &str = "X-Niri-Dash-App";
+
+/// What KWin hands only to programs whose desktop file asks for it (matched by the program the
+/// entry's Exec runs, so every entry we write covers the dashboard too): the window list.
+const KWIN_INTERFACES: &str = "org_kde_plasma_window_management";
 
 pub fn app_id(kind: Kind) -> String {
     format!("niri-dash-{}", kind.name())
@@ -85,6 +91,7 @@ fn entry(kind: Kind, exec: &str) -> String {
          Categories=Utility;\n\
          StartupWMClass={id}\n\
          SingleMainWindow=true\n\
+         X-KDE-Wayland-Interfaces={KWIN_INTERFACES}\n\
          {MARKER}=true\n",
         name = name(kind),
         title = kind.info().title,

@@ -1,4 +1,4 @@
-//! Open windows by workspace (niri only).
+//! Open windows: by workspace on niri, in KWin's order on KDE Plasma.
 
 use crate::IconSrc;
 

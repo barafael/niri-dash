@@ -4,8 +4,8 @@
 //!
 //! Like `atspi.rs` it runs on a private session bus with its own accessibility bus (see
 //! `bus/mod.rs`), with Orca's settings in memory and its files in a temporary directory, so
-//! neither the session's Orca nor the user's settings are involved. It skips, and passes, where
-//! Orca or the rest of what that needs isn't installed.
+//! neither the session's Orca nor the user's settings are involved. It starts Orca and KWin, so it
+//! runs in the test box only (`cargo testbox test orca`); anywhere else it says so and passes.
 //!
 //! The dashboard's keyboard is driven from here (the harness has no compositor to type into); Orca
 //! hears about it only over the bus, as it would from the real thing. The transcript is printed.
@@ -14,6 +14,8 @@
 //! (`harness = false`).
 
 mod bus;
+#[path = "../testbox/inside.rs"]
+mod inside;
 
 use niri_dash::testing::{Harness, Sandbox};
 use niri_dash_system::{Demo, brightness, wifi};
@@ -31,14 +33,17 @@ layout {
 "#;
 
 fn main() {
+    if !inside::inside() {
+        inside::skipped("orca");
+        return;
+    }
     if std::env::var_os("NIRI_DASH_PRIVATE_BUS").is_some() {
         return inner();
     }
+    // The box has what these need, so missing it is a failure, not a reason to skip.
     if let Some(what) = bus::missing(&["orca", "kwin_wayland"]) {
-        println!(
-            "test orca: skipped, {what} isn't installed\n\ntest result: ok. 0 passed; 0 failed"
-        );
-        return;
+        println!("test orca: FAILED, {what} isn't in the box\n\ntest result: FAILED");
+        std::process::exit(1);
     }
     if !bus::rerun_privately("orca") {
         std::process::exit(1);

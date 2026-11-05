@@ -1,0 +1,30 @@
+# The test box: an Arch image (the same glibc as the development machine, so a test binary built
+# there runs in it) with what the tests that run system code need. `cargo testbox` builds it and
+# mounts the test binaries in; nothing else of the host is here.
+#
+#   system   mocks of NetworkManager, BlueZ and UPower on buses of their own (mocks.py)
+#   atspi    a private session bus and accessibility bus, and libatspi's Python bindings
+#   orca     Orca, and KWin as the display it needs
+FROM docker.io/library/archlinux:latest
+
+# -u: a partial upgrade leaves libraries the test binaries and the programs disagree about.
+RUN pacman -Syu --noconfirm --needed \
+        dbus glib2 python-dbusmock python-dbus python-gobject \
+        at-spi2-core orca kwin \
+        fontconfig freetype2 libxkbcommon wayland ttf-dejavu \
+    && pacman -Scc --noconfirm
+
+# KWin comes with a file capability (cap_sys_nice, for realtime scheduling), which the box's
+# dropped capabilities and no-new-privileges turn into a refusal to start it. It needs neither.
+RUN setcap -r /usr/bin/kwin_wayland
+
+# The marker that testbox/inside.rs looks for: this file is in the box and on no machine.
+RUN echo "niri-dash test box" > /etc/niri-dash-testbox
+
+COPY mocks.py /usr/local/bin/mocks.py
+RUN chmod +x /usr/local/bin/mocks.py
+
+# Nobody in the box runs as root: the tests need no more than a user's rights.
+RUN useradd --create-home --uid 1000 box
+USER box
+ENTRYPOINT ["/usr/local/bin/mocks.py"]

@@ -1,11 +1,14 @@
 //! What the system does through Wayland protocols rather than through the compositor's IPC: the
-//! clipboard (ext-/wlr-data-control) and night light's gamma tables (wlr-gamma-control). Its own
+//! clipboard (ext-/wlr-data-control), night light's gamma tables (wlr-gamma-control) and, on KWin,
+//! the window list (org_kde_plasma_window_management). Its own
 //! event queue on the dashboard's connection (one client, as far as the compositor can tell),
 //! dispatched on a thread of its own that owns all of it. Commands arrive over channels into
 //! that thread's event loop, which ends when they are all closed.
 
 mod clipboard;
 pub mod gamma;
+mod windows;
+pub use windows::by_pid as windows_by_pid;
 
 use super::{EventSender, clipboard as vocab};
 use smithay_client_toolkit::reexports::calloop::EventLoop;
@@ -31,6 +34,10 @@ pub struct Handles {
     pub has_clipboard: bool,
     /// The compositor offers wlr-gamma-control (and we asked for it).
     pub has_gamma: bool,
+    /// Focus and close the windows KWin lists.
+    pub windows: Sender<crate::windows::Command>,
+    /// KWin gives us its window list.
+    pub has_windows: bool,
 }
 
 /// The state the thread owns; Wayland events are dispatched to it.
@@ -42,6 +49,7 @@ pub struct Services {
     output_state: OutputState,
     clipboard: clipboard::Clipboard,
     gamma: gamma::Gamma,
+    windows: windows::Windows,
     events: EventSender,
     /// Command channels that are still open; the loop ends when none are.
     open: u8,
@@ -105,10 +113,11 @@ fn setup(
         output_state: OutputState::new(&globals, &qh),
         clipboard: clipboard::Clipboard::bind(&globals, &qh),
         gamma,
+        windows: windows::Windows::bind(&globals, &qh, kwin),
         conn: conn.clone(),
         qh,
         events,
-        open: 2,
+        open: 3,
     };
     WaylandSource::new(conn, queue)
         .insert(event_loop.handle())
@@ -134,11 +143,25 @@ fn setup(
             channel::Event::Closed => me.open -= 1,
         })
         .map_err(|e| err(&e))?;
+    let (windows_tx, windows_rx): (_, Channel<crate::windows::Command>) = channel::channel();
+    event_loop
+        .handle()
+        .insert_source(windows_rx, |ev, _, me| match ev {
+            channel::Event::Msg(cmd) => {
+                let events = me.events.clone();
+                me.windows.command(cmd, &events);
+                let _ = me.conn.flush();
+            }
+            channel::Event::Closed => me.open -= 1,
+        })
+        .map_err(|e| err(&e))?;
     let handles = Handles {
         clipboard: clipboard_tx,
         gamma: gamma_tx,
         has_clipboard: state.clipboard.available(),
         has_gamma: state.gamma.available(),
+        windows: windows_tx,
+        has_windows: state.windows.available(),
     };
     Ok((event_loop, state, handles))
 }

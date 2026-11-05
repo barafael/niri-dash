@@ -56,11 +56,13 @@ pub fn live(events: EventSender, opts: Options) -> std::io::Result<Started> {
                 },
                 None => None,
             };
-            let caps = Capabilities::for_compositor(
+            let mut caps = Capabilities::for_compositor(
                 compositor,
                 wayland.as_ref().is_some_and(|w| w.has_clipboard),
                 wayland.as_ref().is_some_and(|w| w.has_gamma),
             );
+            // KWin's window list is there only if it let us bind it.
+            caps.windows |= wayland.as_ref().is_some_and(|w| w.has_windows);
             let (host_tx, host_rx) = unbounded_channel();
             let senders = {
                 let _in_runtime = rt.enter();
@@ -106,7 +108,13 @@ fn start(
     let base = || ctx.clone();
     Senders {
         host,
-        windows: run(WindowsActor { ctx: base() }),
+        windows: run(WindowsActor {
+            ctx: base(),
+            kwin: wayland
+                .as_ref()
+                .filter(|w| w.has_windows)
+                .map(|w| w.windows.clone()),
+        }),
         keyboard: run(KeyboardActor { ctx: base() }),
         privacy: run(PrivacyActor { ctx: base() }),
         color: run(ColorActor { ctx: base() }),
@@ -211,6 +219,8 @@ impl Actor for Host {
 
 struct WindowsActor {
     ctx: Ctx,
+    /// KWin's window list lives on the Wayland thread.
+    kwin: Option<Sender<windows::Command>>,
 }
 
 impl Actor for WindowsActor {
@@ -218,6 +228,10 @@ impl Actor for WindowsActor {
 
     fn handle(&mut self, cmd: windows::Command) {
         use windows::Command::*;
+        if let Some(kwin) = &self.kwin {
+            let _ = kwin.send(cmd);
+            return;
+        }
         match cmd {
             Focus(id) => compositor::focus_window(&self.ctx, id),
             FocusPid(pid) => compositor::focus_pid(&self.ctx, pid),
