@@ -109,7 +109,7 @@ fn start(
         keyboard: run(KeyboardActor { ctx: base() }),
         privacy: run(PrivacyActor { ctx: base() }),
         color: run(ColorActor { ctx: base() }),
-        wifi: run(WifiActor(Wifi::start(feed(Feed::Wifi)))),
+        wifi: run(Wifi::start(feed(Feed::Wifi))),
         bluetooth: run(Bluetooth::start(feed(Feed::Bluetooth))),
         audio: run(AudioActor(Audio::start(feed(Feed::Audio)))),
         brightness: run(BrightnessActor(Brightness::start(feed(Feed::Brightness)))),
@@ -295,36 +295,6 @@ impl Actor for ColorActor {
             };
             ctx.send(color::Event::Picked(rgb));
         });
-    }
-}
-
-struct WifiActor(Wifi);
-
-impl Actor for WifiActor {
-    type Command = wifi::Command;
-
-    fn handle(&mut self, cmd: wifi::Command) {
-        use wifi::Command::*;
-        let w = &self.0;
-        match cmd {
-            Toggle => w.toggle(),
-            Rescan => w.rescan(),
-            Connect { key } => w.connect(key),
-            JoinHidden {
-                ssid,
-                security,
-                answer,
-            } => w.join_hidden(ssid, security, answer),
-            Answer { serial, answer } => w.answer(serial, answer),
-            CancelPrompt => w.cancel_prompt(),
-            Disconnect => w.disconnect(),
-            Forget { uuid } => w.forget(uuid),
-            SetAutoconnect { uuid, on } => w.set_autoconnect(uuid, on),
-            Select { key } => w.select(key),
-            Reveal { uuid } => w.reveal(uuid),
-            HideSecret => w.hide_secret(),
-            SignIn => w.sign_in(),
-        }
     }
 }
 
