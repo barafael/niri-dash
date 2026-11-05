@@ -37,6 +37,7 @@ mod mascots;
 mod night_light;
 mod notes;
 mod notifications;
+mod pomodoro;
 mod power;
 mod privacy;
 mod sleeper;
@@ -238,6 +239,7 @@ struct App {
     state: RefCell<crate::state::State>,
     clock: clock::ClockState,
     timers: timer::Timers,
+    pomo: pomodoro::Pomo,
     notes: notes::Notes,
     picker: color_picker::Picker,
     privacy: privacy::Privacy,
@@ -421,6 +423,7 @@ impl App {
     fn set_awake(&self, on: bool) {
         self.notes_awake(on);
         self.timers_awake(on);
+        self.pomodoro_awake(on);
         self.mascots_awake(on);
     }
 
@@ -513,6 +516,7 @@ fn wire(app: &Rc<App>, ui: &Dash) {
     clipboard::wire(app, ui);
     color_picker::wire(app, ui);
     timer::wire(app, ui);
+    pomodoro::wire(app, ui);
     notes::wire(app, ui);
     privacy::wire(app, ui);
     night_light::wire(app, ui);
@@ -585,6 +589,7 @@ fn build(
         media_art: Default::default(),
         clock: Default::default(),
         timers: timer::Timers::restored(&state),
+        pomo: pomodoro::Pomo::restored(&state),
         notes: Default::default(),
         picker: Default::default(),
         privacy: Default::default(),

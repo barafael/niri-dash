@@ -16,7 +16,7 @@ Clock, calendar, weather (Open-Meteo, no API key), windows by workspace, Wi-Fi, 
 battery and power profiles (with a switch that blocks sleep and screen locking), volume,
 brightness, night light, notifications, system tray, media player (MPRIS), session (lock,
 suspend, log out, …), clipboard history, CPU / memory / disks / network / GPU, keyboard layout,
-color picker, timer, stopwatch, sleep timer, sticky notes, privacy (who uses the microphone, camera or
+color picker, timer, stopwatch, pomodoro, sleep timer, sticky notes, privacy (who uses the microphone, camera or
 screen), removable drives, phone (KDE Connect), Claude Code sessions and usage, and a mascot
 that comments on your day.
 
@@ -40,6 +40,14 @@ Space or `p` pauses and resumes, `+` and `-` move the deadline a minute, `d` or 
 dry run (count down for real, then only say what would have run), `a` keeps the screen on while
 it counts, and Escape gives up on the countdown before it leaves the widget. Its settings
 (`sleep-when`, `sleep-script`, `dry-run`, `keep-awake`) say where it starts.
+
+The pomodoro (`pomodoro`) alternates focus sessions and breaks: 25 minutes, then 5, and after four
+sessions a long break of 15. A ring, or a bar, shows the part in hand, and a dot per session shows
+how far the round has come. Each part waits to be started unless `auto-start` is on; a notice and
+a sound say when one ends, even while the dashboard is hidden, and a part that is running survives
+a restart of the daemon. Space starts and pauses, `n` goes to the next part (a skipped focus
+session doesn't count), `r` starts the part over. Its settings are `focus-minutes`, `short-break`,
+`long-break`, `rounds` (sessions before the long break) and `auto-start`.
 
 The mascot can also be a cow in the manner of `cowsay`: `character "cow"`, and `cowfile "tux"` for
 another animal. Cows are read from your own cowsay install (or from a path); a few of our own stand

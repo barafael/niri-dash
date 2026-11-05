@@ -414,6 +414,50 @@ fn cursor_stays_in_sight_as_a_list_grows() {
     );
 }
 
+fn pm(h: &Harness) -> niri_dash::Pomodoro<'_> {
+    h.ui().global::<niri_dash::Pomodoro>()
+}
+
+/// The pomodoro starts, pauses, skips and starts over from the keyboard; a skipped focus session
+/// is no session done.
+fn pomodoro_keys() {
+    let mut h = testing::Harness::new(
+        "grid columns=16 rows=9\nlayout {\n    pomodoro col=0 row=0 width=4 height=3 shape=\"rect\"\n}\n",
+    );
+    assert_eq!(pm(&h).get_text(), "25:00");
+    assert_eq!(pm(&h).get_label(), "Focus");
+    assert_eq!((pm(&h).get_done(), pm(&h).get_rounds()), (0, 4));
+    enter(&mut h, "Pomodoro");
+    h.key(" ");
+    assert!(pm(&h).get_running());
+    h.key(" ");
+    assert!(pm(&h).get_paused() && !pm(&h).get_running());
+    // n: the next part, stopped, and not counted.
+    h.key("n");
+    assert_eq!(pm(&h).get_label(), "Short break");
+    assert!(pm(&h).get_on_break() && !pm(&h).get_paused() && !pm(&h).get_running());
+    assert_eq!(pm(&h).get_text(), "5:00");
+    assert_eq!(pm(&h).get_next(), "Next: focus, 25 min");
+    h.key("n");
+    assert_eq!(pm(&h).get_label(), "Focus");
+    assert_eq!(pm(&h).get_done(), 0);
+    h.key(" ");
+    assert!(pm(&h).get_running());
+    h.key("r");
+    assert!(!pm(&h).get_running() && !pm(&h).get_paused());
+    assert_eq!(pm(&h).get_text(), "25:00");
+}
+
+/// The widget's settings are the plan.
+fn pomodoro_follows_its_settings() {
+    let h = testing::Harness::new(
+        "grid columns=16 rows=9\nlayout {\n    pomodoro col=0 row=0 width=4 height=3 shape=\"rect\" {\n        focus-minutes 50\n        short-break 10\n        rounds 2\n    }\n}\n",
+    );
+    assert_eq!(pm(&h).get_text(), "50:00");
+    assert_eq!(pm(&h).get_rounds(), 2);
+    assert_eq!(pm(&h).get_next(), "Next: short break, 10 min");
+}
+
 fn sl(h: &Harness) -> niri_dash::Sleep<'_> {
     h.ui().global::<niri_dash::Sleep>()
 }
@@ -620,6 +664,11 @@ fn main() {
         ("sleep timer: keys", sleep_timer_keys),
         ("sleep timer: lists modes", sleep_timer_lists_modes),
         ("sleep timer: fires", sleep_timer_fires),
+        ("pomodoro: keys", pomodoro_keys),
+        (
+            "pomodoro: follows its settings",
+            pomodoro_follows_its_settings,
+        ),
     ];
     let mut failed = Vec::new();
     for (name, scenario) in scenarios {

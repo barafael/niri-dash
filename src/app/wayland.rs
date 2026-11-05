@@ -51,6 +51,8 @@ fn feeds(kind: Kind) -> &'static [Feed] {
         Kind::Phone => &[Feed::Phone],
         // The sleep timer's actor always runs; there is nothing to watch.
         Kind::SleepTimer => &[],
+        // Its notices are local ones, like the timer's.
+        Kind::Pomodoro => &[Feed::Notifications],
     }
 }
 /// The pointer the UI asks for, as a cursor shape.

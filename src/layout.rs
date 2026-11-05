@@ -44,6 +44,7 @@ pub enum Kind {
     RemovableDrives,
     Phone,
     SleepTimer,
+    Pomodoro,
 }
 
 impl Kind {
@@ -380,6 +381,16 @@ impl Kind {
                 starts_round: false,
                 settings: &[SleepWhen, SleepScript, DryRun, KeepAwake],
                 icon: "system-suspend",
+            },
+            Kind::Pomodoro => &KindInfo {
+                title: "Pomodoro",
+                description: "Focus sessions and breaks; a long break every few sessions",
+                default_size: (3, 2),
+                min_size: (2, 1),
+                can_be_round: true,
+                starts_round: true,
+                settings: &[FocusMinutes, ShortBreak, LongBreak, Rounds, AutoStart],
+                icon: "appointment-soon",
             },
         }
     }
@@ -2456,6 +2467,7 @@ mod tests {
                 "removable-drives",
                 "phone",
                 "sleep-timer",
+                "pomodoro",
             ]
         );
         assert_eq!(Kind::from_str_opt("perf"), None);

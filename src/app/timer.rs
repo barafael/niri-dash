@@ -11,7 +11,7 @@ use std::time::Duration;
 use web_time::{SystemTime, UNIX_EPOCH};
 
 /// Played when the timer goes off, if it's there.
-const ALARM_SOUND: &str = "/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga";
+pub(super) const ALARM_SOUND: &str = "/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga";
 
 /// The countdown and the stopwatch, shared by every timer widget.
 pub(super) struct Timers {

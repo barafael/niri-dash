@@ -17,6 +17,18 @@ pub struct State {
     /// Picked colors as "#rrggbb", newest first.
     pub colors: Vec<String>,
     pub night_light: NightLight,
+    pub pomodoro: Pomodoro,
+}
+
+/// Where the pomodoro stood: its part (0 focus, 1 short break, 2 long break), how many focus
+/// sessions of the round are done, and the end of the part if it was running.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Pomodoro {
+    pub phase: u8,
+    pub done: u32,
+    /// Unix milliseconds.
+    pub end: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]

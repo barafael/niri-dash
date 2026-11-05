@@ -40,6 +40,7 @@ pub(super) fn kind_to_ui(k: Kind) -> WidgetKind {
         Kind::ColorPicker => WidgetKind::ColorPicker,
         Kind::KeyboardLayout => WidgetKind::KeyboardLayout,
         Kind::SleepTimer => WidgetKind::SleepTimer,
+        Kind::Pomodoro => WidgetKind::Pomodoro,
     }
 }
 
