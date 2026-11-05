@@ -162,6 +162,8 @@ export global Calendar {
     callback shift(int);
     // Move the keyboard cursor by d days, turning the month as it leaves the one shown.
     callback move-day(int);
+    // Put the day under the keyboard cursor on the clipboard.
+    callback copy-day();
 }
 
 export struct NameValue {

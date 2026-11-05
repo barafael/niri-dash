@@ -44,7 +44,7 @@ the stops, Enter or Space presses, and `g`/`G` jump to the first or last item. L
 of their own: `d` closes a window or dismisses a notification, `r` rescans Wi-Fi, `t` turns it
 on and off, `m` mutes, `1`–`0` set a slider to 10–100 %, `x` ejects a drive, and so on. In the
 volume widget `j`/`k` make the slider under the cursor quieter and louder, and Tab goes to the
-next one. The calendar has a day cursor: `h`/`l` a day, `j`/`k` a week, `n`/`p` a month, `t` back to today.
+next one. The calendar has a day cursor: `h`/`l` a day, `j`/`k` a week, `n`/`p` a month, `t` back to today, `Ctrl+C` copies the day as `YYYY-MM-DD`.
 Enter on a text field types into it; Escape gets you out again.
 
 `e` blows the widget up in the middle of the dashboard (round widgets open into their full
