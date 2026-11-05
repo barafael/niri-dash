@@ -5,7 +5,7 @@ use super::{App, model, set_if_changed};
 use crate::layout::{Kind, Placed};
 use crate::nav::Dir;
 use crate::{Dash, PaletteItem, WidgetInst};
-use niri_dash_system::{Capabilities, Tell, weather};
+use niri_dash_system::{Capabilities, Compositor, Tell, weather};
 use slint::{ComponentHandle, Model};
 use std::rc::Rc;
 use strum::IntoEnumIterator;
@@ -469,10 +469,19 @@ impl App {
 /// usual), and whether it can't work here at all.
 fn caveat(caps: Capabilities, kind: Kind) -> Option<(String, bool)> {
     match kind {
+        // KWin offers the list to programs with a desktop entry that asks for it.
+        Kind::Windows if !caps.windows && caps.compositor == Compositor::Kwin => Some((
+            "Open windows (KWin gives no window list: run niri-dash desktop-entries)".into(),
+            true,
+        )),
         Kind::Windows if !caps.windows => Some((
             format!("Open windows by workspace ({})", caps.unavailable()),
             true,
         )),
+        // There are no workspaces to group them by.
+        Kind::Windows if caps.compositor == Compositor::Kwin => {
+            Some(("Open windows".into(), false))
+        }
         Kind::ClaudeSessions if !caps.windows => {
             Some(("Running Claude Code sessions".into(), false))
         }
@@ -725,7 +734,6 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use niri_dash_system::Compositor;
 
     fn said(compositor: Compositor, kind: Kind) -> Option<(String, bool)> {
         caveat(Capabilities::for_compositor(compositor, true, true), kind)
@@ -738,9 +746,23 @@ mod tests {
         assert_eq!(
             said(Compositor::Kwin, Kind::Windows),
             Some((
-                "Open windows by workspace (not available on KDE Plasma)".into(),
+                "Open windows (KWin gives no window list: run niri-dash desktop-entries)".into(),
                 true
             ))
+        );
+        assert_eq!(
+            said(Compositor::Other, Kind::Windows),
+            Some((
+                "Open windows by workspace (not available on this desktop)".into(),
+                true
+            ))
+        );
+        // Once KWin has let us bind the list.
+        let mut granted = Capabilities::for_compositor(Compositor::Kwin, true, true);
+        granted.windows = true;
+        assert_eq!(
+            caveat(granted, Kind::Windows),
+            Some(("Open windows".into(), false))
         );
         assert_eq!(
             said(Compositor::Kwin, Kind::Privacy),

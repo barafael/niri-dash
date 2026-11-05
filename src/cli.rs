@@ -118,7 +118,8 @@ enum Command {
         output: Option<PathBuf>,
     },
     /// Install desktop entries ("Clock (niri-dash)", …) that launch the standalone apps, into
-    /// ~/.local/share/applications.
+    /// ~/.local/share/applications. On KDE Plasma they also give niri-dash the window list: run
+    /// this once, then restart niri-dash.
     DesktopEntries {
         /// Remove them instead.
         #[arg(long)]

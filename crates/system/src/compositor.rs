@@ -109,6 +109,8 @@ pub fn switch_layout(ctx: &Ctx, to: keyboard::Switch) {
     }
 }
 
+// Focusing and closing on KWin goes through the Wayland thread, which holds its window list: the
+// system's window actor sends those commands there instead of calling these.
 pub fn focus_window(ctx: &Ctx, id: u64) {
     if ctx.compositor() == Compositor::Niri {
         niri::focus(ctx, id);
@@ -137,8 +139,10 @@ pub fn stop_cast(ctx: &Ctx, session_id: u64) {
 /// Every window by the pid of its process: (window id, title). Empty where windows aren't known.
 /// Blocks (niri's socket is synchronous).
 pub fn windows_by_pid(compositor: Compositor) -> HashMap<i32, (u64, String)> {
-    if compositor != Compositor::Niri {
-        return HashMap::new();
+    match compositor {
+        Compositor::Niri => {}
+        Compositor::Kwin => return crate::wayland::windows_by_pid(),
+        Compositor::Other => return HashMap::new(),
     }
     match niri::request(niri_ipc::Request::Windows) {
         Ok(niri_ipc::Response::Windows(ws)) => ws

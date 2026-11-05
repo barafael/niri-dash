@@ -1,9 +1,10 @@
 //! A minimal org.freedesktop.Notifications server that keeps a history for the dashboard. It only
 //! claims the bus name if nobody else has it, so a running mako/dunst/swaync wins.
 //!
-//! On Plasma it doesn't try: Plasma shows the notifications and keeps their history. Do not
-//! disturb then pauses Plasma's pop-ups through the server's `Inhibit`, and our own messages (a
-//! timer going off) are sent to Plasma as notifications.
+//! On Plasma it doesn't try: Plasma shows the notifications. Do not disturb then pauses Plasma's
+//! pop-ups through the server's `Inhibit`, and our own messages (a timer going off) are sent to
+//! Plasma as notifications. The history is a copy kept by listening in on the session bus (a bus
+//! monitor), from the time we start: Plasma doesn't give its own out.
 
 use super::{Ctx, IconSrc, icons, osd::Osd, prop, unescape_entities};
 pub use crate::notifications::{Dnd, Notification, State};
@@ -156,6 +157,37 @@ fn resolve_icon(app_icon: &str, hints: &HashMap<String, OwnedValue>) -> IconSrc 
     IconSrc::None
 }
 
+/// The `["key", "label", …]` list of a notification's actions as (key, label) pairs.
+fn pairs(actions: &[String]) -> Vec<(String, String)> {
+    actions
+        .chunks(2)
+        .filter(|c| c.len() == 2)
+        .map(|c| (c[0].clone(), c[1].clone()))
+        .collect()
+}
+
+/// A notification as the history keeps it.
+fn entry(
+    id: u32,
+    app: String,
+    app_icon: &str,
+    summary: String,
+    body: &str,
+    actions: Vec<(String, String)>,
+    hints: &HashMap<String, OwnedValue>,
+) -> Notification {
+    Notification {
+        id,
+        app,
+        summary,
+        body: strip_markup(body),
+        icon: resolve_icon(app_icon, hints),
+        actions,
+        urgent: prop::<u8>(hints, "urgency") == Some(2),
+        time: chrono::Local::now(),
+    }
+}
+
 #[zbus::interface(name = "org.freedesktop.Notifications")]
 impl Server {
     #[allow(clippy::too_many_arguments)]
@@ -171,13 +203,8 @@ impl Server {
         _expire_timeout: i32,
     ) -> u32 {
         let urgent = prop::<u8>(&hints, "urgency") == Some(2);
-        let icon = resolve_icon(&app_icon, &hints);
         let popup_icon = osd_icon(&app_icon, &hints, urgent);
-        let actions = actions
-            .chunks(2)
-            .filter(|c| c.len() == 2)
-            .map(|c| (c[0].clone(), c[1].clone()))
-            .collect();
+        let actions = pairs(&actions);
         let (id, popup) = {
             let mut store = self.store.lock().expect("store poisoned");
             store.expire();
@@ -200,16 +227,9 @@ impl Server {
                 store.missed += 1;
                 None
             };
-            store.push(Notification {
-                id,
-                app: app_name,
-                summary,
-                body: strip_markup(&body),
-                icon,
-                actions,
-                urgent,
-                time: chrono::Local::now(),
-            });
+            store.push(entry(
+                id, app_name, &app_icon, summary, &body, actions, &hints,
+            ));
             (id, popup)
         };
         if let Some(text) = popup {
@@ -289,7 +309,9 @@ impl Notifications {
         };
         let m = me.clone();
         if me.plasma {
+            let watcher = me.clone();
             ctx.spawn(async move { m.pause_plasma().await });
+            ctx.spawn(async move { watcher.watch_plasma().await });
             return me;
         }
         ctx.spawn(async move {
@@ -317,6 +339,137 @@ impl Notifications {
             }
         });
         me
+    }
+
+    /// On Plasma: keep a history by listening in on the notifications other programs send to
+    /// Plasma. A bus monitor sees every `Notify` call and its reply (which holds the id Plasma
+    /// gave it) and every `NotificationClosed`, without owning the name.
+    async fn watch_plasma(&self) {
+        match self.monitor().await {
+            Ok(()) => log::warn!("notification monitor: the bus closed it"),
+            Err(e) => log::warn!("notification history: {e}"),
+        }
+        if let Ok(mut s) = self.store.lock() {
+            s.server = false;
+        }
+        publish(&self.ctx, &self.store);
+    }
+
+    async fn monitor(&self) -> zbus::Result<()> {
+        use futures_util::StreamExt;
+        use zbus::message::Type;
+        // A monitor can't send, so it has a connection of its own.
+        let conn = zbus::Connection::session().await?;
+        let rules = [
+            "type='method_call',interface='org.freedesktop.Notifications',member='Notify'",
+            "type='method_return',sender='org.freedesktop.Notifications'",
+            "type='signal',interface='org.freedesktop.Notifications',member='NotificationClosed'",
+        ]
+        .map(zbus::MatchRule::try_from);
+        let rules = rules.into_iter().collect::<zbus::Result<Vec<_>>>()?;
+        zbus::fdo::MonitoringProxy::new(&conn)
+            .await?
+            .become_monitor(&rules, 0)
+            .await?;
+        log::info!("keeping Plasma's notifications in the history");
+        if let Ok(mut s) = self.store.lock() {
+            s.server = true;
+        }
+        publish(&self.ctx, &self.store);
+
+        /// A `Notify` call whose reply we are waiting for: (its serial, who called, what).
+        type Pending = (u32, String, u32, Notification);
+        let mut pending: Vec<Pending> = Vec::new();
+        let mut stream = zbus::MessageStream::from(&conn);
+        while let Some(msg) = stream.next().await {
+            let Ok(msg) = msg else { continue };
+            let header = msg.header();
+            match header.message_type() {
+                Type::MethodCall => {
+                    let Ok((app, replaces, app_icon, summary, body, _actions, hints, _)) =
+                        msg.body().deserialize::<(
+                            String,
+                            u32,
+                            String,
+                            String,
+                            String,
+                            Vec<String>,
+                            HashMap<String, OwnedValue>,
+                            i32,
+                        )>()
+                    else {
+                        continue;
+                    };
+                    // Plasma has no use for actions we can't invoke: they are not offered.
+                    let item = entry(0, app, &app_icon, summary, &body, Vec::new(), &hints);
+                    let sender = header.sender().map(|s| s.to_string()).unwrap_or_default();
+                    pending.push((header.primary().serial_num().get(), sender, replaces, item));
+                    // A reply that never comes (the call failed) must not pile up.
+                    if pending.len() > 32 {
+                        pending.remove(0);
+                    }
+                }
+                Type::MethodReturn => {
+                    let Some(serial) = header.reply_serial() else {
+                        continue;
+                    };
+                    let dest = header
+                        .destination()
+                        .map(|d| d.to_string())
+                        .unwrap_or_default();
+                    let Some(at) = pending
+                        .iter()
+                        .position(|(s, from, ..)| *s == serial.get() && *from == dest)
+                    else {
+                        continue;
+                    };
+                    let (_, _, replaces, mut item) = pending.remove(at);
+                    let Ok(id) = msg.body().deserialize::<u32>() else {
+                        continue;
+                    };
+                    item.id = id;
+                    log::debug!(
+                        "plasma notification {id} from {}: {}",
+                        item.app,
+                        item.summary
+                    );
+                    if let Ok(mut store) = self.store.lock() {
+                        store.expire();
+                        let replacing = replaces != 0 && store.items.iter().any(|n| n.id == id);
+                        // Plasma showed no pop-up (do not disturb) for what is new.
+                        if !replacing && store.dnd.active(chrono::Local::now()) && !item.urgent {
+                            store.missed += 1;
+                        }
+                        store.push(item);
+                    }
+                    publish(&self.ctx, &self.store);
+                }
+                Type::Signal => {
+                    let Ok((id, reason)) = msg.body().deserialize::<(u32, u32)>() else {
+                        continue;
+                    };
+                    // Expiring or being cut short leaves it in Plasma's history; dismissing it
+                    // or the program withdrawing it takes it out.
+                    if matches!(reason, 2 | 3) {
+                        let removed = self.store.lock().is_ok_and(|mut s| {
+                            let before = s.items.len();
+                            s.items.retain(|n| n.id != id);
+                            s.items.len() != before
+                        });
+                        if removed {
+                            publish(&self.ctx, &self.store);
+                        }
+                    }
+                }
+                Type::Error => {
+                    // The call failed: nothing was shown.
+                    if let Some(serial) = header.reply_serial() {
+                        pending.retain(|(s, ..)| *s != serial.get());
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     async fn serve(&self) -> zbus::Result<bool> {

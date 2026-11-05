@@ -6,13 +6,13 @@ What is going on: windows, notifications, sessions, notes.
 
 {{#include ../widgets.generated.md:windows}}
 
-Click a window to focus it. Not available on KDE Plasma.
+Click a window to focus it. On KDE Plasma the list is flat, and needs `niri-dash desktop-entries` run once (see [KDE Plasma](../plasma.md)).
 
 ## Claude sessions {#claude-sessions}
 
 {{#include ../widgets.generated.md:claude-sessions}}
 
-Click a session to focus its window. Focusing the window is not available on KDE Plasma.
+Click a session to focus its window. On KDE Plasma this works when the window list does (see [KDE Plasma](../plasma.md)).
 
 ## Notifications {#notifications}
 
@@ -20,7 +20,7 @@ Click a session to focus its window. Focusing the window is not available on KDE
 
 The bell pauses pop-ups; `niri-dash dnd` does the same from the command line. Notifications are kept without a pop-up while paused.
 
-On Plasma, which keeps showing notifications of its own, this pauses Plasma's pop-ups.
+On Plasma, which keeps showing notifications of its own, this pauses Plasma's pop-ups. The history there is a copy of what Plasma was sent since niri-dash started, without action buttons.
 
 ## Clipboard history {#clipboard}
 

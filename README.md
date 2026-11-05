@@ -75,7 +75,7 @@ binds {
 
 Start `niri-dash` at login (System Settings → Autostart), and bind a key to `niri-dash toggle`
 (System Settings → Keyboard → Shortcuts → Add New → Command or Script). Some widgets don't work on
-Plasma: the manual lists which.
+Plasma: the manual lists which. Run `niri-dash desktop-entries` once for the window list.
 
 `niri-dash --help` lists the other commands.
 

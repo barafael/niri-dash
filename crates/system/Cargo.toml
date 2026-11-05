@@ -26,10 +26,11 @@ harness = false
 dirs.workspace = true
 notify.workspace = true
 
-# wayland: the clipboard and night light, on the dashboard's connection
+# wayland: the clipboard, night light and (on KWin) the window list, on the dashboard's connection
 smithay-client-toolkit.workspace = true
 wayland-protocols.workspace = true
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+wayland-protocols-plasma = { version = "0.3", features = ["client"] }
 
 # data sources
 niri-ipc = "26.4"

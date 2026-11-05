@@ -48,7 +48,7 @@ With no command, `niri-dash` is `niri-dash daemon`. `niri-dash --help` lists the
 | Command | Does |
 |---|---|
 | `window-rules [-o, --output <FILE>]` | Prints niri window rules for the standalone apps (floating, focused, the center third of the screen), for `include` from niri's config. With `--output`, writes them to the file. niri only. |
-| `desktop-entries [--remove]` | Installs desktop entries such as "Clock (niri-dash)" that launch the standalone apps, into `~/.local/share/applications`. `--remove` removes them. |
+| `desktop-entries [--remove]` | Installs desktop entries such as "Clock (niri-dash)" that launch the standalone apps, into `~/.local/share/applications`. On KDE Plasma they also let niri-dash see the window list. `--remove` removes them. |
 
 ## Development commands
 

@@ -5,6 +5,9 @@
    `Exec=niri-dash daemon` into `~/.config/autostart`.
 2. Bind a key to `niri-dash toggle`. In System Settings, open **Keyboard** → **Shortcuts** →
    **Add New** → **Command or Script**.
+3. Run `niri-dash desktop-entries` once, and restart niri-dash. KWin gives the window list only to
+   programs whose desktop file asks for it, and these entries do. Without it the windows widget
+   and focusing a Claude session's window are not available.
 
 Some widgets and commands don't work on Plasma, and a few go through Plasma instead. See
 [KDE Plasma](../reference/plasma.md) for the list.
