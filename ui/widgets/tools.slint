@@ -409,7 +409,7 @@ component TimerBody inherits Rectangle {
             }
             scroll-event(e) => {
                 if (!root.sw) {
-                    Countdown.adjust(e.delta-y > 0 ? -1 : 1);
+                    Countdown.adjust(e.delta-y > 0 ? 1 : -1);
                 }
                 accept
             }
