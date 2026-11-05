@@ -93,12 +93,7 @@ pub struct MockSystem {
 
 impl MockSystem {
     /// It runs under niri, with everything there is.
-    pub const CAPS: Capabilities = Capabilities {
-        compositor: Compositor::Niri,
-        clipboard: true,
-        gamma: true,
-        simulated: false,
-    };
+    pub const CAPS: Capabilities = Capabilities::for_compositor(Compositor::Niri, true, true);
 
     pub fn new(demo: Demo, events: EventSender) -> Self {
         Self {
@@ -646,15 +641,14 @@ fn demo_weather() -> weather::State {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Tell, channels};
-    use smithay_client_toolkit::reexports::calloop::{EventLoop, channel};
+    use crate::{EventSender, Tell, channels};
 
     /// Commands queued before the loop runs, then the senders dropped: the loop answers them
     /// all and stops. Each applet's commands keep their order; between applets there is none
     /// (they are separate channels, as with the live system's actors).
     #[tokio::test]
     async fn answers_and_records() {
-        let (events_tx, events_rx) = channel::channel();
+        let (events_tx, events_rx) = EventSender::channel();
         let (tx, inbox) = channels();
         tx.brightness.tell(brightness::Command::Set(0.3));
         tx.brightness.tell(brightness::Command::Set(0.6));
@@ -668,19 +662,7 @@ mod tests {
         assert_eq!(mock.demo.brightness, 0.6);
         assert!(mock.demo.audio.muted);
 
-        let mut event_loop = EventLoop::<Vec<Event>>::try_new().unwrap();
-        event_loop
-            .handle()
-            .insert_source(events_rx, |ev, _, seen| {
-                if let channel::Event::Msg(e) = ev {
-                    seen.push(e);
-                }
-            })
-            .unwrap();
-        let mut seen = Vec::new();
-        event_loop
-            .dispatch(Some(std::time::Duration::ZERO), &mut seen)
-            .unwrap();
+        let seen: Vec<Event> = events_rx.try_iter().collect();
         let levels: Vec<f32> = seen
             .iter()
             .filter_map(|e| match e {

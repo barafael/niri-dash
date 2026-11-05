@@ -54,6 +54,8 @@ export component TextButton inherits Rectangle {
     in property <bool> danger;
     in property <bool> enabled: true;
     in property <bool> kfocus;
+    // Tight padding, for a row of choices that must fit in a narrow widget.
+    in property <bool> compact;
     callback clicked();
     accessible-role: button;
     accessible-label: root.text;
@@ -63,15 +65,15 @@ export component TextButton inherits Rectangle {
     height: 30px;
     border-width: kfocus ? 2px : 0px;
     border-color: primary ? Theme.text : Theme.accent;
-    min-width: label.preferred-width + (has-icon ? 44px : 24px);
+    min-width: label.preferred-width + (has-icon ? 44px : compact ? 8px : 24px);
     border-radius: min(self.height / 2, Theme.radius-small);
     background: danger ? (touch.has-hover ? Theme.bad.with-alpha(0.33) : Theme.bad.with-alpha(0.2))
         : primary ? (touch.pressed ? Theme.accent.darker(0.2) : touch.has-hover ? Theme.accent.brighter(0.1) : Theme.accent)
         : (touch.pressed ? Theme.pressed : touch.has-hover ? Theme.hover : Theme.card-raised);
     opacity: enabled ? 1 : 0.45;
     HorizontalLayout {
-        padding-left: 12px;
-        padding-right: 12px;
+        padding-left: root.compact ? 4px : 12px;
+        padding-right: root.compact ? 4px : 12px;
         spacing: 6px;
         alignment: center;
         if root.has-icon: Icon {
@@ -83,6 +85,8 @@ export component TextButton inherits Rectangle {
         label := Text {
             text: root.text;
             vertical-alignment: center;
+            // A compact button gives way when the row is too narrow, rather than overflowing.
+            overflow: root.compact ? TextOverflow.elide : TextOverflow.clip;
             font-size: Theme.font-body;
             color: root.primary ? Theme.on-accent : root.danger ? Theme.bad : Theme.text;
         }
@@ -588,6 +592,9 @@ export component Row inherits Rectangle {
     in property <bool> enabled: true;
     // Under the keyboard cursor. A Row in a ScrollList scrolls into view through `revealed`.
     in property <bool> kfocus;
+    // Under the keyboard cursor on a part of the row (its close button): the row scrolls into
+    // view for that too.
+    in property <bool> kfocus-part;
     out property <bool> hovered: touch.has-hover;
     callback clicked();
     callback middle-clicked();
@@ -605,9 +612,14 @@ export component Row inherits Rectangle {
             self.revealed(self.absolute-position.y, self.height);
         }
     }
+    changed kfocus-part => {
+        if (self.kfocus-part) {
+            self.revealed(self.absolute-position.y, self.height);
+        }
+    }
     // The list changed around it (a section appeared above): the cursor stays in sight.
     changed y => {
-        if (self.kfocus) {
+        if (self.kfocus || self.kfocus-part) {
             self.revealed(self.absolute-position.y, self.height);
         }
     }
@@ -695,6 +707,9 @@ export component ScrollList inherits Rectangle {
         x: 0;
         width: root.width - root.gutter;
         height: root.height;
+        // Only up and down: a row too wide for the list would otherwise make the whole column
+        // wider than its view, and shift it sideways, out from under the scrollbar and the cursor.
+        content-width: self.width;
         content-height: column.preferred-height;
         column := VerticalLayout {
             width: flick.width;

@@ -8,7 +8,7 @@
 //! The dashboard reads and writes its config and state under the XDG directories, which the test
 //! points somewhere disposable before the first harness.
 
-use super::a11y::bridge::{Request, Sink};
+use super::a11y::bridge::{Request, TreeSink};
 use super::{App, Input, build};
 use crate::layout::{Layout, Loaded};
 use crate::{Control, Dash};
@@ -50,7 +50,7 @@ pub enum AccessEvent {
 /// A screen reader's sink that only writes down what it gets.
 struct Recorder(Rc<RefCell<Vec<AccessEvent>>>);
 
-impl Sink for Recorder {
+impl TreeSink for Recorder {
     fn update(&mut self, update: accesskit::TreeUpdate) {
         self.0.borrow_mut().push(AccessEvent::Update(update));
     }
@@ -66,22 +66,24 @@ pub struct Harness {
     app: Rc<App>,
     /// Where the dashboard's commands arrive.
     pub inbox: Inboxes,
-    events: channel::Sender<Event>,
+    events: niri_dash_system::EventSender,
     event_loop: EventLoop<'static, Vec<Control>>,
     /// Controls (show, hide) the dashboard asked for, in answer to events.
     controls: Vec<Control>,
     /// Where the dashboard's own requests (a screen reader's) are sent.
-    input: channel::Sender<Input>,
+    input: niri_dash_system::Sink<Input>,
     /// What a screen reader was given since the last look.
     access_log: Rc<RefCell<Vec<AccessEvent>>>,
     window: Rc<MinimalSoftwareWindow>,
     pixels: Vec<PremultipliedRgbaColor>,
+    /// The window's width in pixels.
+    width: usize,
     /// How many events the dashboard has been handed.
     delivered: Rc<std::cell::Cell<u64>>,
 }
 
-const WIDTH: u32 = 1706;
-const HEIGHT: u32 = 1066;
+/// The window of a harness, unless it is told another size: a large screen.
+const SIZE: (u32, u32) = (1706, 1066);
 
 impl Harness {
     /// The dashboard with the widgets `config` (config.kdl's text) lays out, up and on screen as
@@ -92,16 +94,22 @@ impl Harness {
             senders,
             caps: MockSystem::CAPS,
         };
-        Self::on(config, system, inbox)
+        Self::on(config, system, inbox, SIZE)
     }
 
     /// The dashboard on the mock system, which answers what it is told with made-up data (as
     /// `niri-dash snapshot --mock` shows). [`Harness::inbox`] stays empty: the mock gets the
     /// commands.
     pub fn with_mock(config: &str) -> Self {
-        let (events, events_rx) = channel::channel::<Event>();
+        Self::with_mock_sized(config, SIZE)
+    }
+
+    /// [`Harness::with_mock`] on a window of `size` pixels. A small one has small cells, so
+    /// every widget at its minimum has little room.
+    pub fn with_mock_sized(config: &str, size: (u32, u32)) -> Self {
+        let (events, events_rx) = super::loop_channel::<Event>();
         let system = niri_dash_system::mock(events).expect("starting the mock system");
-        let mut me = Self::on(config, system, channels().1);
+        let mut me = Self::on(config, system, channels().1, size);
         me.listen(events_rx);
         // The mock sends what it has once the dashboard is up.
         me.app.set_visible(true);
@@ -109,7 +117,7 @@ impl Harness {
         me
     }
 
-    fn on(config: &str, system: Started, inbox: Inboxes) -> Self {
+    fn on(config: &str, system: Started, inbox: Inboxes, size: (u32, u32)) -> Self {
         // Already set by an earlier harness, which is fine.
         let _ = slint::platform::set_platform(Box::new(TestPlatform));
         let ui = Dash::new().expect("creating the UI");
@@ -117,7 +125,7 @@ impl Harness {
         let window = WINDOW
             .with(|w| w.borrow().clone())
             .expect("the dashboard's window");
-        ui.window().set_size(PhysicalSize::new(WIDTH, HEIGHT));
+        ui.window().set_size(PhysicalSize::new(size.0, size.1));
         let (layout, warnings) = Layout::parse(config).expect("a config that parses");
         let loaded = Loaded {
             layout,
@@ -125,8 +133,8 @@ impl Harness {
             broken: false,
             text: config.to_string(),
         };
-        let (events, events_rx) = channel::channel::<Event>();
-        let (input_tx, inputs) = channel::channel::<Input>();
+        let (events, events_rx) = super::loop_channel::<Event>();
+        let (input_tx, inputs) = super::loop_channel::<Input>();
         let app = build(&ui, system, input_tx.clone(), None, loaded, true);
         // As on show: the keyboard goes to the dashboard, nothing entered.
         ui.window()
@@ -143,7 +151,8 @@ impl Harness {
             input: input_tx,
             access_log: Default::default(),
             window,
-            pixels: vec![PremultipliedRgbaColor::default(); (WIDTH * HEIGHT) as usize],
+            pixels: vec![PremultipliedRgbaColor::default(); (size.0 * size.1) as usize],
+            width: size.0 as usize,
             delivered: Default::default(),
         };
         me.listen(events_rx);
@@ -254,7 +263,7 @@ impl Harness {
 
     /// Draw what changed since the last frame, as the daemon would.
     pub fn render(&mut self) {
-        crate::shell::render_into(&self.window, &mut self.pixels, WIDTH as usize, false);
+        crate::shell::render_into(&self.window, &mut self.pixels, self.width, false);
     }
 
     /// One turn of the dashboard's loop in a stress run: what is pending, and the controls it

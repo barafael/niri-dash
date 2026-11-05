@@ -50,7 +50,7 @@ export component PrivacyWidget inherits Rectangle {
                 size: root.dot;
             }
             // Screen sharing is only known from niri.
-            if Desktop.niri: PrivacyDot {
+            if Desktop.screencast: PrivacyDot {
                 icon: Icons.screen-share;
                 label: "Screen sharing";
                 on: Privacy.screen;
@@ -85,7 +85,7 @@ export component PrivacyWidget inherits Rectangle {
                 on: Privacy.camera;
                 size: 24px;
             }
-            if Desktop.niri: PrivacyDot {
+            if Desktop.screencast: PrivacyDot {
                 y: (parent.height - self.height) / 2;
                 icon: Icons.screen-share;
                 label: "Screen sharing";
@@ -95,7 +95,7 @@ export component PrivacyWidget inherits Rectangle {
         }
         if !root.any: Empty {
             vertical-stretch: 1;
-            text: Desktop.niri ? "Nothing uses the microphone, camera or screen" : "Nothing uses the microphone or camera";
+            text: Desktop.screencast ? "Nothing uses the microphone, camera or screen" : "Nothing uses the microphone or camera";
         }
         if root.any: ScrollList {
             vertical-stretch: 1;

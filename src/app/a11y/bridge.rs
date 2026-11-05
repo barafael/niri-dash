@@ -17,8 +17,8 @@ use accesskit::{Action, ActionRequest, ActivationHandler, TreeUpdate};
 use i_slint_core::item_tree::{ItemRc, ParentItemTraversalMode};
 use i_slint_core::items::FocusReason;
 use i_slint_core::window::WindowInner;
+use niri_dash_system::Sink as Wake;
 use slint::ComponentHandle;
-use smithay_client_toolkit::reexports::calloop::channel::Sender;
 use std::time::{Duration, Instant};
 
 /// The id of the widget that holds `item` (a tile says `widget-<id>`), if one does.
@@ -47,7 +47,7 @@ pub(in crate::app) enum Request {
 }
 
 /// Where the tree goes.
-pub(in crate::app) trait Sink {
+pub(in crate::app) trait TreeSink {
     fn update(&mut self, update: TreeUpdate);
     /// Whether the window has the keyboard: a screen reader reads out the focus only while it does.
     fn window_focus(&mut self, focused: bool);
@@ -56,7 +56,7 @@ pub(in crate::app) trait Sink {
 /// The sink that publishes on the accessibility bus.
 pub(in crate::app) struct Unix(accesskit_unix::Adapter);
 
-impl Sink for Unix {
+impl TreeSink for Unix {
     fn update(&mut self, update: TreeUpdate) {
         self.0.update_if_active(|| update);
     }
@@ -68,7 +68,7 @@ impl Sink for Unix {
 
 /// What `accesskit_unix` calls, on its own thread: it only passes the news on.
 #[derive(Clone)]
-struct Handlers(Sender<Input>);
+struct Handlers(Wake<Input>);
 
 impl Handlers {
     fn tell(&self, request: Request) {
@@ -98,7 +98,7 @@ impl accesskit::DeactivationHandler for Handlers {
 
 /// A sink on the session's accessibility bus. It costs a thread that sleeps until a screen
 /// reader turns up; nothing is built before that.
-pub(in crate::app) fn unix(input: Sender<Input>) -> Box<dyn Sink> {
+pub(in crate::app) fn unix(input: Wake<Input>) -> Box<dyn TreeSink> {
     let h = Handlers(input);
     Box::new(Unix(accesskit_unix::Adapter::new(h.clone(), h.clone(), h)))
 }
@@ -110,7 +110,7 @@ const EVERY: Duration = Duration::from_millis(40);
 /// What the dashboard knows of the screen reader.
 #[derive(Default)]
 pub(in crate::app) struct Access {
-    sink: Option<Box<dyn Sink>>,
+    sink: Option<Box<dyn TreeSink>>,
     /// A screen reader is listening.
     active: bool,
     /// What it was last given, so that an unchanged tree isn't sent again.
@@ -124,7 +124,7 @@ pub(in crate::app) struct Access {
 
 impl App {
     /// Hand over where the tree goes. Nothing is built until a screen reader asks.
-    pub(in crate::app) fn access_attach(&self, sink: Box<dyn Sink>) {
+    pub(in crate::app) fn access_attach(&self, sink: Box<dyn TreeSink>) {
         let mut a = self.access.borrow_mut();
         *a = Access {
             sink: Some(sink),

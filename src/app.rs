@@ -59,6 +59,20 @@ use wayland::{Input, renderer_override, set_platform, start_system, stress_windo
 #[cfg(not(target_arch = "wasm32"))]
 pub use wayland::{run, run_app};
 
+/// A channel into a calloop event loop: the sink to send to, and the source to insert in the loop.
+/// The loop wakes when something is sent.
+#[cfg(not(target_arch = "wasm32"))]
+fn loop_channel<T: Send + 'static>() -> (
+    sys::Sink<T>,
+    smithay_client_toolkit::reexports::calloop::channel::Channel<T>,
+) {
+    let (tx, rx) = smithay_client_toolkit::reexports::calloop::channel::channel();
+    (
+        sys::Sink::new(move |value| tx.send(value).map_err(|_| sys::Closed)),
+        rx,
+    )
+}
+
 /// Where the dashboard appears: a layer surface or a window on Wayland, a canvas in a browser. It
 /// comes and goes; the UI stays alive in between.
 trait Surface {
@@ -535,8 +549,7 @@ fn wire(app: &Rc<App>, ui: &Dash) {
 fn build(
     ui: &Dash,
     system: Started,
-    #[cfg(not(target_arch = "wasm32"))]
-    input: smithay_client_toolkit::reexports::calloop::channel::Sender<Input>,
+    #[cfg(not(target_arch = "wasm32"))] input: sys::Sink<Input>,
     solo: Option<Kind>,
     config: Loaded,
     visible: bool,
@@ -545,9 +558,11 @@ fn build(
     theme::install_bundled();
     ui.set_solo(solo.is_some());
     let desktop = ui.global::<crate::Desktop>();
-    desktop.set_niri(caps.niri());
-    desktop.set_plasma(caps.kwin());
-    if !caps.has_windows() {
+    desktop.set_screencast(caps.screencast);
+    desktop.set_niri(caps.compositor == sys::Compositor::Niri);
+    desktop.set_plasma(caps.compositor == sys::Compositor::Kwin);
+    desktop.set_unavailable(caps.unavailable().into());
+    if !caps.windows {
         ui.global::<crate::Windows>().set_available(false);
     }
 

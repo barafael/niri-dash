@@ -7,7 +7,7 @@
 mod clipboard;
 pub mod gamma;
 
-use super::{Event, clipboard as vocab};
+use super::{EventSender, clipboard as vocab};
 use smithay_client_toolkit::reexports::calloop::EventLoop;
 use smithay_client_toolkit::reexports::calloop::channel::{self, Channel, Sender};
 use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
@@ -42,7 +42,7 @@ pub struct Services {
     output_state: OutputState,
     clipboard: clipboard::Clipboard,
     gamma: gamma::Gamma,
-    events: channel::Sender<Event>,
+    events: EventSender,
     /// Command channels that are still open; the loop ends when none are.
     open: u8,
 }
@@ -52,7 +52,7 @@ pub struct Services {
 /// own here (only for what the log says).
 pub fn start(
     conn: Connection,
-    events: channel::Sender<Event>,
+    events: EventSender,
     with_gamma: bool,
     kwin: bool,
 ) -> std::io::Result<Handles> {
@@ -86,7 +86,7 @@ pub fn start(
 
 fn setup(
     conn: Connection,
-    events: channel::Sender<Event>,
+    events: EventSender,
     with_gamma: bool,
     kwin: bool,
 ) -> std::io::Result<(EventLoop<'static, Services>, Services, Handles)> {

@@ -16,9 +16,9 @@ mod wifi;
 mod world;
 
 use crate::{
-    Capabilities, Event, EventSender, Inboxes, MockSystem, Received, Started, audio, brightness, channels,
-    claude, clipboard, color, drives, host, keyboard, mascot, media, night_light, notifications,
-    perf, phones, power, privacy, session, sleep, tray, weather, windows,
+    Capabilities, Event, EventSender, Inboxes, MockSystem, Received, Started, audio, brightness,
+    channels, claude, clipboard, color, drives, host, keyboard, mascot, media, night_light,
+    notifications, perf, phones, power, privacy, session, sleep, tray, weather, windows,
 };
 use art::Icons;
 use std::time::Duration;
@@ -538,30 +538,17 @@ fn phone_name(id: &str) -> &'static str {
 mod tests {
     use super::*;
     use crate::{Tell, bluetooth as bt, wifi as w};
-    use smithay_client_toolkit::reexports::calloop::{EventLoop, channel};
+    use std::sync::mpsc::Receiver;
 
     const T: f64 = 1_800_000_000.0;
 
     /// Everything reported so far.
-    fn drain(rx: channel::Channel<Event>) -> Vec<Event> {
-        let mut event_loop = EventLoop::<Vec<Event>>::try_new().unwrap();
-        event_loop
-            .handle()
-            .insert_source(rx, |ev, _, seen| {
-                if let channel::Event::Msg(e) = ev {
-                    seen.push(e);
-                }
-            })
-            .unwrap();
-        let mut seen = Vec::new();
-        event_loop
-            .dispatch(Some(Duration::ZERO), &mut seen)
-            .unwrap();
-        seen
+    fn drain(rx: Receiver<Event>) -> Vec<Event> {
+        rx.try_iter().collect()
     }
 
-    fn sim() -> (Sim, channel::Channel<Event>) {
-        let (tx, rx) = channel::channel();
+    fn sim() -> (Sim, Receiver<Event>) {
+        let (tx, rx) = EventSender::channel();
         (Sim::new(T, tx), rx)
     }
 
@@ -628,7 +615,7 @@ mod tests {
         sim.tick(T + 1000.0);
         assert!(!drain(rx).iter().any(clip));
 
-        let (tx, rx) = channel::channel();
+        let (tx, rx) = EventSender::channel();
         sim.events = tx;
         sim.t = T + 1000.0;
         sim.handle(Received::Clipboard(clipboard::Command::Record(true)));
@@ -637,7 +624,7 @@ mod tests {
         // What was there when it started, and what came since.
         assert!(seen.iter().filter(|e| clip(e)).count() > 5);
 
-        let (tx, rx) = channel::channel();
+        let (tx, rx) = EventSender::channel();
         sim.events = tx;
         sim.handle(Received::Clipboard(clipboard::Command::Record(false)));
         sim.tick(T + 3000.0);
@@ -659,7 +646,7 @@ mod tests {
         // The same moment again changes nothing.
         let before = drain(rx);
         assert!(!before.is_empty());
-        let (tx, rx) = channel::channel();
+        let (tx, rx) = EventSender::channel();
         sim.events = tx;
         sim.tick(sim.t);
         assert!(drain(rx).is_empty());

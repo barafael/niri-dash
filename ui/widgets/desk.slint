@@ -22,7 +22,7 @@ export component WindowsWidget inherits Rectangle {
         }
         if !Windows.available: Empty {
             vertical-stretch: 1;
-            text: Desktop.niri ? "Not connected to niri" : "Window list needs niri";
+            text: Desktop.niri ? "Not connected to niri" : "Window list " + Desktop.unavailable;
         }
         window-list := ScrollList {
             vertical-stretch: 1;
@@ -40,6 +40,7 @@ export component WindowsWidget inherits Rectangle {
                     width: parent.width;
                     selected: w.focused;
                     kfocus: keys.on && keys.cursor == i && keys.sub == 0;
+                    kfocus-part: keys.on && keys.cursor == i && keys.sub == 1;
                     revealed(y, h) => { window-list.reveal(y, h); }
                     clicked => {
                         Windows.focus(w.id);
