@@ -13,7 +13,6 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use web_time::Instant;
 
@@ -232,7 +231,8 @@ struct App {
     /// config.kdl doesn't parse, so edits aren't saved over it.
     config_broken: Cell<bool>,
     /// Files the watcher checks for changes (config.kdl and the active theme).
-    watched: Arc<Mutex<Vec<PathBuf>>>,
+    /// Tells the config watcher which files to watch.
+    watched: std::sync::mpsc::Sender<Vec<PathBuf>>,
     /// What the daemon keeps across restarts (do not disturb, the timer, picked colors).
     state: RefCell<crate::state::State>,
     clock: clock::ClockState,
@@ -543,6 +543,8 @@ fn build(
     let grid_controls = Rc::new(VecModel::<crate::SettingRow>::default());
     ui.set_grid_controls(ModelRc::from(grid_controls.clone()));
     let state = crate::state::load();
+    #[cfg_attr(target_arch = "wasm32", allow(unused_variables))]
+    let (watched, watched_paths) = std::sync::mpsc::channel();
     let app = Rc::new(App {
         ui: ui.as_weak(),
         solo,
@@ -570,7 +572,7 @@ fn build(
         claude_windows: Default::default(),
         last_written: RefCell::new(text),
         config_broken: Cell::new(broken),
-        watched: Default::default(),
+        watched,
         mixer: Default::default(),
         media_art: Default::default(),
         clock: Default::default(),
@@ -592,7 +594,7 @@ fn build(
         app.toast(&warnings.join("; "));
     }
     #[cfg(not(target_arch = "wasm32"))]
-    config::watch_config(app.watched.clone(), input);
+    config::watch_config(watched_paths, input);
     if visible {
         app.set_awake(true);
     }

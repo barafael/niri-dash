@@ -219,7 +219,7 @@ impl Inhibit {
         let c = ctx.clone();
         let mut ticks = ctx.ticks(Default::default());
         ctx.spawn(async move {
-            let sent = Dedup::default();
+            let mut sent = Dedup::default();
             ticks.ready().await;
             loop {
                 let list = blockers(&c).await.unwrap_or_else(|e| {

@@ -4,12 +4,9 @@ use super::App;
 use niri_dash_system::{Tell, weather};
 #[cfg(not(target_arch = "wasm32"))]
 use {
-    super::wayland::Input,
-    crate::layout::Layout,
-    smithay_client_toolkit::reexports::calloop::channel::Sender,
-    std::path::PathBuf,
-    std::sync::{Arc, Mutex},
-    std::time::Duration,
+    super::wayland::Input, crate::layout::Layout,
+    smithay_client_toolkit::reexports::calloop::channel::Sender, std::path::PathBuf,
+    std::sync::mpsc::Receiver, std::time::Duration,
 };
 
 impl App {
@@ -73,7 +70,7 @@ impl App {
 /// symlinks, so a symlinked dotfile counts as its target). The list of files changes with the
 /// theme, which goes through config.kdl, so the watches are re-synced after every event.
 #[cfg(not(target_arch = "wasm32"))]
-pub(super) fn watch_config(paths: Arc<Mutex<Vec<PathBuf>>>, input: Sender<Input>) {
+pub(super) fn watch_config(paths: Receiver<Vec<PathBuf>>, input: Sender<Input>) {
     use notify::{RecursiveMode, Watcher};
     use std::collections::HashSet;
     fn resolve(p: &std::path::Path) -> PathBuf {
@@ -99,8 +96,12 @@ pub(super) fn watch_config(paths: Arc<Mutex<Vec<PathBuf>>>, input: Sender<Input>
                 }
             };
             let mut dirs: HashSet<PathBuf> = HashSet::new();
+            let mut list: Vec<PathBuf> = Vec::new();
             loop {
-                let list = paths.lock().map(|p| p.clone()).unwrap_or_default();
+                // The newest list counts.
+                while let Ok(newer) = paths.try_recv() {
+                    list = newer;
+                }
                 let targets: Vec<PathBuf> = list.iter().map(|p| resolve(p)).collect();
                 let want: HashSet<PathBuf> = targets
                     .iter()

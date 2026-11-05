@@ -144,7 +144,7 @@ impl Tray {
             let cl = client.clone();
             let c2 = c.clone();
             tokio::spawn(async move {
-                let sent = Dedup::default();
+                let mut sent = Dedup::default();
                 let mut icons = Icons::default();
                 let mut publish = || {
                     let items = snapshot(&cl, &mut icons);

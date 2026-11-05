@@ -137,7 +137,7 @@ struct Sent {
 }
 
 impl Sent {
-    fn windows(&self, ctx: &Ctx, windows: WindowsState) {
+    fn windows(&mut self, ctx: &Ctx, windows: WindowsState) {
         if self.windows.changed(&windows) {
             ctx.send(crate::windows::Event::State(windows));
         }
@@ -151,12 +151,12 @@ pub fn start(ctx: Ctx) {
     std::thread::Builder::new()
         .name("niri-events".into())
         .spawn(move || {
-            let sent = Sent::default();
+            let mut sent = Sent::default();
             let mut icons = Icons::default();
             let mut warned = false;
             loop {
                 // Warn once; niri may simply not be running (yet).
-                if let Err(e) = stream(&ctx, &sent, &mut icons) {
+                if let Err(e) = stream(&ctx, &mut sent, &mut icons) {
                     if warned {
                         log::debug!("niri event stream: {e}");
                     } else {
@@ -173,7 +173,7 @@ pub fn start(ctx: Ctx) {
         .expect("spawning niri thread");
 }
 
-fn stream(ctx: &Ctx, sent: &Sent, icons: &mut Icons) -> Result<()> {
+fn stream(ctx: &Ctx, sent: &mut Sent, icons: &mut Icons) -> Result<()> {
     let mut socket = Socket::connect().map_err(Error::Connect)?;
     let reply = socket.send(Request::EventStream)?;
     reply.map_err(Error::Refused)?;

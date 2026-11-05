@@ -116,7 +116,7 @@ pub fn start_keyboard(ctx: Ctx) {
     let c = ctx.clone();
     let mut ticks = ctx.ticks(trigger);
     ctx.spawn(async move {
-        let sent = Dedup::default();
+        let mut sent = Dedup::default();
         ticks.ready().await;
         loop {
             let layouts = fetch_layouts(&c)

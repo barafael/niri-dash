@@ -169,7 +169,6 @@ enum AgentReply {
 #[derive(Debug, PartialEq)]
 enum Effect {
     Publish(Box<State>),
-    Toast(String),
     /// Wake the pollers, which is how what changed here reaches the widget.
     Refresh,
     SetEnabled(bool),
@@ -857,7 +856,6 @@ impl Wifi {
         let forget = move || forgotten.send_modify(|n| *n = n.wrapping_add(1));
         match effect {
             Effect::Publish(state) => self.ctx.send(crate::wifi::Event::State(state)),
-            Effect::Toast(text) => self.ctx.toast(text),
             Effect::Refresh => self.ctx.refresh(),
             Effect::SetEnabled(on) => {
                 self.ctx.act("Wi-Fi", async move {

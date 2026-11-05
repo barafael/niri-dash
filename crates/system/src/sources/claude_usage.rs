@@ -332,7 +332,7 @@ pub fn start(ctx: Ctx) {
     let c = ctx.clone();
     let mut ticks = ctx.ticks(Default::default());
     ctx.spawn(async move {
-        let sent = Dedup::default();
+        let mut sent = Dedup::default();
         let mut scanner = Scanner::default();
         ticks.ready().await;
         loop {

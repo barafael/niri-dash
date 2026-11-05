@@ -96,26 +96,21 @@ impl Ticks {
 /// The last value a source sent, to skip sending the same again. Every update replaces the UI's
 /// models and redraws, and with the GPU renderer every frame makes niri recomposite the whole
 /// screen, so refreshes that change nothing (most of them) shouldn't reach the UI.
-#[allow(clippy::disallowed_types)] // Until every poller owns its own.
-pub struct Dedup<T>(std::sync::Mutex<Option<T>>);
+pub struct Dedup<T>(Option<T>);
 
 impl<T> Default for Dedup<T> {
-    #[allow(clippy::disallowed_types)]
     fn default() -> Self {
-        Self(std::sync::Mutex::new(None))
+        Self(None)
     }
 }
 
 impl<T: PartialEq + Clone> Dedup<T> {
     /// Whether `v` differs from the last value seen; remembers it if so.
-    pub fn changed(&self, v: &T) -> bool {
-        let Ok(mut last) = self.0.lock() else {
-            return true;
-        };
-        if last.as_ref() == Some(v) {
+    pub fn changed(&mut self, v: &T) -> bool {
+        if self.0.as_ref() == Some(v) {
             return false;
         }
-        *last = Some(v.clone());
+        self.0 = Some(v.clone());
         true
     }
 }
@@ -313,39 +308,6 @@ impl Ctx {
             trigger: trigger.0.subscribe(),
             _keep: trigger,
         }
-    }
-
-    /// Run `f` when `trigger` fires (and on show), with a slow fallback poll in case an event
-    /// is missed.
-    pub fn poll_events<F, Fut>(&self, trigger: Trigger, fallback: Duration, mut f: F)
-    where
-        F: FnMut() -> Fut + Send + 'static,
-        Fut: Future<Output = ()> + Send,
-    {
-        self.poll_on(trigger, move || {
-            let fut = f();
-            async move {
-                fut.await;
-                fallback
-            }
-        });
-    }
-
-    /// Like `poll`, but also runs right away whenever `trigger` fires (a change event), and `f`
-    /// returns how long to wait until the next fallback poll.
-    pub fn poll_on<F, Fut>(&self, trigger: Trigger, mut f: F)
-    where
-        F: FnMut() -> Fut + Send + 'static,
-        Fut: Future<Output = Duration> + Send,
-    {
-        let mut ticks = self.ticks(trigger);
-        self.spawn(async move {
-            ticks.ready().await;
-            loop {
-                let period = f().await;
-                ticks.next(period).await;
-            }
-        });
     }
 
     /// Fire `trigger` whenever a D-Bus signal matching `rule` arrives; signals within `settle` of
@@ -787,16 +749,24 @@ mod ticks_tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn a_dormant_context_starts_no_poller() {
+    async fn a_dormant_context_starts_no_task() {
         let c = ctx().live_if(false);
-        c.set_visible(true);
         let (tx, count) = watch::channel(0u32);
-        c.poll_events(Trigger::default(), Duration::from_secs(1), move || {
+        let mut mailbox = Mailbox::<()>::default();
+        mailbox.spawn(&c, async move {
             tx.send_modify(|n| *n += 1);
-            async {}
         });
         settle().await;
         assert_eq!(*count.borrow(), 0);
+    }
+
+    #[test]
+    fn dedup_says_when_it_changed() {
+        let mut sent = Dedup::default();
+        assert!(sent.changed(&1), "the first is news");
+        assert!(!sent.changed(&1));
+        assert!(sent.changed(&2));
+        assert!(sent.changed(&1));
     }
 }
 

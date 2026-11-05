@@ -3,7 +3,7 @@
 
 use super::{
     Capabilities, Event, Feed, Senders, Started, audio, brightness, clipboard, color, host,
-    keyboard, mascot, night_light, power, privacy, session, tray, wayland, weather, wifi, windows,
+    keyboard, mascot, night_light, power, privacy, session, tray, wayland, weather, windows,
 };
 use crate::compositor;
 use crate::sources::{
