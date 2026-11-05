@@ -130,7 +130,7 @@ Start `niri-dash` at login (System Settings → Autostart), and bind a key to `n
 
 Plasma keeps showing notifications; the notification widget pauses its pop-ups. Night light,
 keyboard layouts, the color picker and logging out go through Plasma. The window list, focusing
-windows and noticing screen sharing need niri.
+windows and noticing screen sharing are not available on Plasma.
 
 `niri-dash --help` lists the other commands: `inhibit`, `dnd`, `night-light`, `say`, ….
 
