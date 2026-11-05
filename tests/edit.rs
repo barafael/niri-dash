@@ -1062,6 +1062,74 @@ fn pointer_long_press(issues: &mut Issues) {
         issues.add("pointer: Escape after a long press left edit mode on");
     }
 
+    // From any state: the keyboard's hints, an entered widget, a blown-up one, or another
+    // widget already open for adjusting all give way to the held widget.
+    {
+        let mut h = dashboard(MIXED);
+        h.settle(300);
+        let cal = id_of(&h, "calendar");
+        let c0 = tile(&h, cal).unwrap();
+        let on_cal = h.cell_origin(c0.col as f32 + 2.0, c0.row as f32 + 3.0);
+        let hold = |h: &mut Harness| {
+            h.down(on_cal.0, on_cal.1, PointerEventButton::Left);
+            h.settle(700);
+            h.up(on_cal.0, on_cal.1, PointerEventButton::Left);
+            h.settle(100);
+        };
+        let nav = |h: &Harness| h.ui().global::<Nav>().get_mode();
+        let other = h
+            .ui()
+            .get_widgets()
+            .iter()
+            .map(|w| w.id)
+            .find(|&i| i != cal as i32)
+            .unwrap();
+        for (what, setup) in [
+            ("the hints", vec!["f"]),
+            ("an entered widget", vec!["f", "ca"]),
+            ("a blown-up widget", vec!["f", "ca", "e"]),
+        ] {
+            h.ui().set_adjust_id(0);
+            for k in &setup {
+                if k.len() > 1 && !k.contains('+') {
+                    for c in k.chars() {
+                        h.press(&c.to_string());
+                    }
+                } else {
+                    h.press(k);
+                }
+            }
+            h.settle(200);
+            if nav(&h) == NavMode::Off {
+                issues.add(format!("pointer: couldn't get into {what} to hold from it"));
+            }
+            let before = h.ui().global::<Nav>().get_expanded_id();
+            hold(&mut h);
+            if h.ui().get_adjust_id() != cal as i32 {
+                issues.add(format!(
+                    "pointer: a long press from {what} didn't open the widget (expanded {before}, adjust now {}, cal {cal})",
+                    h.ui().get_adjust_id()
+                ));
+            }
+            if nav(&h) != NavMode::Off {
+                issues.add(format!(
+                    "pointer: a long press from {what} left keyboard navigation on"
+                ));
+            }
+            issues.check(&h, &format!("pointer: a long press from {what}"));
+            h.press("esc");
+        }
+        // Another widget open for adjusting: this one takes over.
+        h.ui().set_adjust_id(other);
+        h.settle(100);
+        hold(&mut h);
+        if h.ui().get_adjust_id() != cal as i32 {
+            issues.add(
+                "pointer: a long press while another widget was open didn't switch to the held one",
+            );
+        }
+    }
+
     // On a control: the same, and the control doesn't get the click. The session widget is all
     // buttons, and its lock button asks the surface to hide.
     let mut h = dashboard(MIXED);
@@ -1476,13 +1544,14 @@ fn keyboard_editing(issues: &mut Issues) {
         issues.add("keyboard: after a text field's Enter, the sidebar's keys don't work");
     }
 
-    // Moving it: pushes others aside; sizing it; the next widget.
+    // Moving it (Ctrl+l) pushes others aside, and puts the keys on the widgets: h j k l size it
+    // (Shift from the other side), w a s d go to the next widget.
     let c0 = tile(&h, clock).unwrap();
-    h.press("ctrl+shift+L");
+    h.press("ctrl+l");
     let c1 = tile(&h, clock).unwrap();
     if (c1.col, c1.row) != (c0.col + 1, c0.row) {
         issues.add(format!(
-            "keyboard: Ctrl+Shift+L moved the clock from {},{} to {},{} ({})",
+            "keyboard: Ctrl+l moved the clock from {},{} to {},{} ({})",
             c0.col,
             c0.row,
             c1.col,
@@ -1491,31 +1560,56 @@ fn keyboard_editing(issues: &mut Issues) {
         ));
     }
     issues.check(&h, "keyboard: moving the clock");
-    h.press("ctrl+r");
-    h.press("L");
+    h.press("l");
     let c2 = tile(&h, clock).unwrap();
-    if c2.w != c1.w + 1 {
+    if c2.w != c1.w + 1 || c2.col != c1.col {
         issues.add(format!(
-            "keyboard: sizing mode's L made the clock {}x{} from {}x{}",
-            c2.w, c2.h, c1.w, c1.h
+            "keyboard: l made the clock {}x{} at {} from {}x{} at {}",
+            c2.w, c2.h, c2.col, c1.w, c1.h, c1.col
         ));
     }
     h.press("h");
     if tile(&h, clock).unwrap().w != c1.w {
-        issues.add("keyboard: sizing mode's h didn't pull the side back in");
+        issues.add("keyboard: h didn't narrow it again");
     }
-    h.press("enter");
-    issues.check(&h, "keyboard: sizing the clock");
-    // Sizing is over: L is no longer a push.
-    let w = tile(&h, clock).unwrap().w;
+    // Shift sizes from the left side: the right edge stays.
+    let right = c1.col + c1.w;
     h.press("L");
-    if tile(&h, clock).unwrap().w != w {
-        issues.add("keyboard: Enter didn't end sizing mode");
+    let c3 = tile(&h, clock).unwrap();
+    if c3.w != c1.w + 1 || c3.col + c3.w != right {
+        issues.add(format!(
+            "keyboard: L made the clock {}x{} at {} (right edge was {right})",
+            c3.w, c3.h, c3.col
+        ));
     }
-    h.press("ctrl+j");
+    h.press("H");
+    if tile(&h, clock).unwrap().w != c1.w {
+        issues.add("keyboard: H didn't narrow it from the left");
+    }
+    h.press("j");
+    let c4 = tile(&h, clock).unwrap();
+    if c4.h != c1.h + 1 {
+        issues.add(format!(
+            "keyboard: j didn't make the clock taller ({} from {})",
+            c4.h, c1.h
+        ));
+    }
+    h.press("k");
+    if tile(&h, clock).unwrap().h != c1.h {
+        issues.add("keyboard: k didn't make it shorter again");
+    }
+    if !h.ui().get_size_note().contains('×') {
+        issues.add("keyboard: sizing didn't say how big the widget is");
+    }
+    issues.check(&h, "keyboard: sizing the clock");
+    // There is no sizing mode: it is the same keys a moment later.
+    if h.ui().get_settings_id() != clock as i32 {
+        issues.add("keyboard: sizing let go of the clock");
+    }
+    h.press("s");
     let next = h.ui().get_settings_id();
     if next == clock as i32 || next == 0 {
-        issues.add("keyboard: Ctrl+J in edit mode didn't go to the widget below");
+        issues.add("keyboard: s in edit mode didn't go to the widget below");
     }
     issues.check(&h, "keyboard: the widget below");
 

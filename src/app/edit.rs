@@ -208,23 +208,51 @@ impl App {
         self.place_by_key(id, target, (dc, dr));
     }
 
-    /// The keyboard's sizing mode: push widget `id`'s `edge` out a cell, or pull it in.
-    fn reshape(&self, id: u32, edge: Dir, grow: bool) {
-        let target = {
-            let l = self.layout.borrow();
-            let Some(p) = l.get(id) else { return };
-            crate::nav::resized(
-                p.rect(),
-                edge,
-                grow,
-                p.shape == crate::layout::Shape::Round,
-                p.min_size(),
-            )
-        };
-        // At its smallest, shrinking does nothing.
-        if let Some(target) = target {
-            self.place_by_key(id, target, edge.step());
+    /// The keyboard's sizing mode: `key` (h narrower, l wider, k shorter, j taller) changes widget
+    /// `id` by a cell, from its right or bottom side, or from the left or top one when `flip`ped.
+    /// A widget that can't grow that way grows the other way instead.
+    fn size_by(&self, id: u32, key: Dir, flip: bool) {
+        let (first, second) = crate::nav::size_edges(key, flip);
+        let grow = second.is_some();
+        let mut refused = None;
+        for edge in std::iter::once(first).chain(second) {
+            let target = {
+                let l = self.layout.borrow();
+                let Some(p) = l.get(id) else { return };
+                crate::nav::resized(
+                    p.rect(),
+                    edge,
+                    grow,
+                    p.shape == crate::layout::Shape::Round,
+                    p.min_size(),
+                )
+            };
+            // At its smallest, shrinking does nothing.
+            let Some(target) = target else { return };
+            self.set_preview(None);
+            if self
+                .layout
+                .borrow_mut()
+                .place_reflow(id, target, edge.step())
+            {
+                self.layout_changed();
+                self.size_note(id);
+                return;
+            }
+            refused.get_or_insert(target);
         }
+        if let Some(target) = refused {
+            self.toast(self.refusal(id, target));
+        }
+    }
+
+    /// Tell the status line how big the widget is now.
+    fn size_note(&self, id: u32) {
+        let note = self.layout.borrow().get(id).map(|p| {
+            let r = p.rect();
+            format!("{} {}×{}", p.kind.info().title, r.w, r.h)
+        });
+        self.ui().set_size_note(note.unwrap_or_default().into());
     }
 
     /// The main direction of a move, used to prefer pushing others that way.
@@ -542,9 +570,9 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
         }
     });
     let a = app.clone();
-    ui.on_reshape_widget(move |id, edge, grow| {
-        if let Some(edge) = Dir::from_index(edge) {
-            a.reshape(id as u32, edge, grow);
+    ui.on_size_widget(move |id, key, flip| {
+        if let Some(key) = Dir::from_index(key) {
+            a.size_by(id as u32, key, flip);
         }
     });
     let a = app.clone();

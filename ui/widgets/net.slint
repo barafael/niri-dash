@@ -1,7 +1,6 @@
-import { LineEdit } from "std-widgets.slint";
 import { Theme, Icons } from "../theme.slint";
 import { Wifi, Bluetooth, BtDevice, DeviceKind } from "../data.slint";
-import { Icon, IconButton, TextButton, Switch, Header, Row, SectionLabel, Muted, Empty, SignalBars, ScrollList, RoundFace, NavScope } from "../common.slint";
+import { SilentTextField, Icon, IconButton, TextButton, Switch, Header, Row, SectionLabel, Muted, Empty, SignalBars, ScrollList, RoundFace, NavScope } from "../common.slint";
 
 // A row of choices, one of them picked (security type, EAP method).
 component Choice inherits HorizontalLayout {
@@ -59,10 +58,9 @@ component KeyField inherits VerticalLayout {
             field.focus();
         }
     }
-    field := LineEdit {
-        // A LineEdit's accessible value is its text, a password too, and can't be told apart
+    field := SilentTextField {
+        // The field's accessible value is its text, a password too, and can't be told apart
         // from it. So it stays out of the accessibility tree; the underline speaks for it.
-        accessible-role: none;
         input-type: root.input-type;
         placeholder-text: root.placeholder;
         accepted => { root.accepted(); }

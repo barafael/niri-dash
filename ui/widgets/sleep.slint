@@ -1,7 +1,6 @@
-import { LineEdit } from "std-widgets.slint";
 import { Theme, Icons } from "../theme.slint";
 import { Nav, NavMode } from "../data.slint";
-import { Icon, IconButton, TextButton, Switch, Header, Row, Muted, Bar, Ring, NavScope } from "../common.slint";
+import { SilentTextField, Icon, IconButton, TextButton, Switch, Header, Row, Muted, Bar, Ring, NavScope } from "../common.slint";
 
 export enum SleepStatus { idle, armed, paused, fired }
 
@@ -57,11 +56,10 @@ component WhenField inherits VerticalLayout {
             field.focus();
         }
     }
-    field := LineEdit {
+    field := SilentTextField {
         height: 32px;
-        // A LineEdit's accessible value is its text and can't be left out of the tree
+        // The field's accessible value is its text and can't be left out of the tree
         // selectively; the underline speaks for it.
-        accessible-role: none;
         placeholder-text: "45s, 30 min, 1h30m, 23:45";
         text <=> Sleep.when;
         edited(t) => { Sleep.edited(t); }
@@ -227,7 +225,7 @@ component SleepBody inherits Rectangle {
                     double-clicked => { Sleep.abort(); }
                     scroll-event(e) => {
                         if (root.counting) {
-                            if (e.delta-y > 0) { Sleep.shorter(); } else { Sleep.longer(); }
+                            if (e.delta-y > 0) { Sleep.longer(); } else { Sleep.shorter(); }
                         }
                         accept
                     }

@@ -1,4 +1,5 @@
-//! Long press: a press held still on a widget opens it on its own for adjusting, as on Plasma.
+//! Long press: a press held still on a widget opens it on its own for adjusting, as on Plasma,
+//! whatever else the dashboard was doing (see `hold-widget` in app.slint).
 //!
 //! It works anywhere on the widget, controls included, and those only hear of it if it comes to
 //! something. The UI can't do this itself: an element sees no press its children took. So the
@@ -86,10 +87,20 @@ impl App {
         let Some(position) = self.hold.at.take() else {
             return;
         };
-        let Some(id) = self.widget_at(position) else {
+        let ui = self.ui();
+        // A blown-up widget is the only one on show, and not where the grid has it.
+        let nav = ui.global::<crate::Nav>();
+        let expanded = nav.get_expanded_id();
+        let blown_up =
+            expanded > 0 && nav.get_mode() == crate::NavMode::Widget && !ui.get_editing();
+        let id = if blown_up {
+            Some(expanded as u32)
+        } else {
+            self.widget_at(position)
+        };
+        let Some(id) = id else {
             return;
         };
-        let ui = self.ui();
         if !ui.invoke_hold_widget(id as i32) {
             return;
         }
@@ -97,6 +108,11 @@ impl App {
         // it lands on the widget's drag handle: the same press goes on to move the widget.
         let window = ui.window();
         window.dispatch_event(WindowEvent::PointerExited);
+        // A blown-up widget shrinks back to its place, away from the pointer: there is nothing
+        // under it to go on dragging, and pressing the backdrop would only put it down again.
+        if blown_up {
+            return;
+        }
         window.dispatch_event(WindowEvent::PointerMoved { position });
         window.dispatch_event(WindowEvent::PointerPressed {
             position,

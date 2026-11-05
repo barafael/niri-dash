@@ -153,12 +153,13 @@ const WIDGET: &[(u32, &str)] = &[
     (2, "ctrl+k"),
     (2, "ctrl+l"),
     (2, "ctrl+right"),
-    // Moving the widget, and sizing mode with its keys.
+    (2, "w"),
+    (2, "d"),
+    // Moving the widget, and sizing it in edit mode.
     (2, "ctrl+shift+H"),
     (2, "ctrl+shift+J"),
     (1, "ctrl+shift+K"),
     (1, "ctrl+shift+L"),
-    (2, "ctrl+r"),
     (2, "shift+J"),
     (1, "shift+L"),
     (2, "f"),
@@ -461,9 +462,6 @@ fn check(app: &App) -> Result<(), String> {
         NavMode::Hints if !typed.is_empty() && !hints.iter().any(|h| h.starts_with(&typed)) => {
             return Err(format!("typed {typed:?} starts no hint label"));
         }
-        NavMode::Off | NavMode::Hints if n.get_sizing() => {
-            return Err("sizing with no widget entered".into());
-        }
         NavMode::Off if !typed.is_empty() => {
             return Err(format!("typed {typed:?} left over with the hints down"));
         }
@@ -479,8 +477,8 @@ fn check(app: &App) -> Result<(), String> {
         if n.get_mode() != NavMode::Off {
             return Err("closed with a widget still entered or the hints up".into());
         }
-        if n.get_sizing() || n.get_expanded_id() != 0 {
-            return Err("closed while sizing or with a widget expanded".into());
+        if n.get_expanded_id() != 0 {
+            return Err("closed with a widget expanded".into());
         }
     }
     Ok(())

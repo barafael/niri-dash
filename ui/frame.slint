@@ -241,7 +241,7 @@ export component WidgetFrame inherits Rectangle {
         border-radius: root.shows-round ? self.width / 2 : Theme.radius;
         // Expanded it stands over the others: solid, so they don't show through.
         background: root.expanded ? Theme.card.with-alpha(1) : Theme.card.transparentize(1 - Theme.card-opacity);
-        border-width: root.entered && Nav.sizing ? 3px : root.selected || root.entered ? max(2px, Theme.border-width * 1px) : Theme.border-width * 1px;
+        border-width: root.selected || root.entered ? max(2px, Theme.border-width * 1px) : Theme.border-width * 1px;
         border-color: root.sizing && !root.t-ok ? Theme.bad : root.selected || root.entered ? Theme.accent : root.editing ? Theme.accent.with-alpha(root.moving || root.sizing ? 0.9 : 0.35) : Theme.border;
         animate border-color { duration: 160ms * Theme.motion; }
         clip: true;

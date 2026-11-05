@@ -169,7 +169,6 @@ impl App {
                     Some(id) if !ui.get_editing() => {
                         let nav = ui.global::<Nav>();
                         nav.set_expanded_id(0);
-                        nav.set_sizing(false);
                         nav.set_active_id(id);
                         nav.set_mode(NavMode::Widget);
                         nav.set_tick(nav.get_tick() + 1);

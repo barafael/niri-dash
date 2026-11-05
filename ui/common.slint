@@ -429,7 +429,7 @@ export component Slider inherits Rectangle {
             }
         }
         scroll-event(e) => {
-            root.value = clamp(root.value - (e.delta-y + e.delta-x) / 960px, 0, 1);
+            root.value = clamp(root.value + (e.delta-y + e.delta-x) / 960px, 0, 1);
             root.changed(root.value);
             accept
         }
@@ -555,7 +555,7 @@ export component RingKnob inherits Rectangle {
     TouchArea {
         clicked => { root.clicked(); }
         scroll-event(e) => {
-            root.value = clamp(root.value - (e.delta-y + e.delta-x) / 960px, 0, 1);
+            root.value = clamp(root.value + (e.delta-y + e.delta-x) / 960px, 0, 1);
             root.changed(root.value);
             accept
         }
@@ -898,4 +898,81 @@ export component NavScope inherits FocusScope {
         self.letter(e.text, self.cursor) ? accept : reject
     }
     @children
+}
+
+// A one-line text field in the theme's colors (std-widgets' LineEdit takes its selection and focus
+// ring from the system palette, which is blue whatever the theme). Scrolls to keep the cursor in
+// view. This one is not in the screen reader's tree: use it where something beside it speaks for
+// the field (the underline under the keyboard cursor), or take `TextField`.
+export component SilentTextField inherits Rectangle {
+    in-out property <string> text <=> input.text;
+    in property <string> placeholder-text;
+    in property <InputType> input-type: InputType.text;
+    in property <bool> enabled: true;
+    out property <bool> focused: input.has-focus;
+    callback accepted(string);
+    callback edited(string);
+    min-height: 28px;
+    preferred-height: 32px;
+    border-radius: Theme.radius-small;
+    background: Theme.subtle;
+    border-width: 1px;
+    border-color: input.has-focus ? Theme.accent : Theme.border;
+    opacity: root.enabled ? 1 : 0.5;
+    forward-focus: input;
+    flick := Flickable {
+        x: Theme.pad-tight;
+        width: parent.width - 2 * Theme.pad-tight;
+        height: parent.height;
+        content-width: max(self.width, input.preferred-width + 2px);
+        input := TextInput {
+            accessible-role: none;
+            x: 0;
+            width: max(flick.width, self.preferred-width + 2px);
+            height: flick.height;
+            vertical-alignment: center;
+            single-line: true;
+            wrap: no-wrap;
+            enabled: root.enabled;
+            input-type: root.input-type;
+            font-size: Theme.font-body;
+            color: Theme.text;
+            selection-background-color: Theme.accent-soft;
+            selection-foreground-color: Theme.text;
+            accepted => { root.accepted(self.text); }
+            edited => { root.edited(self.text); }
+            cursor-position-changed(cpos) => {
+                if (cpos.x + flick.content-x < 0px) {
+                    flick.content-x = -cpos.x;
+                } else if (cpos.x + flick.content-x > flick.width - 2px) {
+                    flick.content-x = min(0px, flick.width - cpos.x - 2px);
+                }
+            }
+        }
+    }
+    Text {
+        x: flick.x;
+        width: flick.width;
+        height: parent.height;
+        vertical-alignment: center;
+        text: input.text == "" && input.preedit-text == "" ? root.placeholder-text : "";
+        font-size: Theme.font-body;
+        color: Theme.faint;
+        overflow: elide;
+    }
+}
+
+// The same, read out as a text field with its label, text and placeholder.
+export component TextField inherits SilentTextField {
+    // What the field is for.
+    in property <string> label;
+    accessible-role: text-input;
+    accessible-label: root.label;
+    accessible-value <=> root.text;
+    accessible-placeholder-text: root.placeholder-text;
+    accessible-enabled: root.enabled;
+    accessible-action-set-value(v) => {
+        root.text = v;
+        root.edited(v);
+    }
 }

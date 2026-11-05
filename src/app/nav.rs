@@ -26,7 +26,6 @@ impl App {
         let n = ui.global::<Nav>();
         n.set_typed("".into());
         n.set_expanded_id(0);
-        n.set_sizing(false);
         if self.solo.is_some() {
             n.set_active_id(ui.get_solo_inst().id);
             n.set_mode(NavMode::Widget);
