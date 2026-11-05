@@ -528,7 +528,8 @@ export component PhoneWidget inherits Rectangle {
             }
         }
     }
-    // r rings the phone, s sends it files; with all of them listed, j/k pick one.
+    // r rings the phone, u uploads files to it (s is the settings, everywhere); with all of them
+    // listed, j/k pick one.
     keys := NavScope {
         accessible-label: "Phone";
         active: root.nav;
@@ -542,7 +543,7 @@ export component PhoneWidget inherits Rectangle {
                 Phones.ring(p.id);
                 return true;
             }
-            if (t == "s" && p.can-share) {
+            if (t == "u" && p.can-share) {
                 Phones.send(p.id);
                 return true;
             }

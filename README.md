@@ -61,7 +61,8 @@ next one. The calendar has a day cursor: `h`/`l` a day, `j`/`k` a week, `n`/`p` 
 Enter on a text field types into it; Escape gets you out again.
 
 `e` blows the widget up in the middle of the dashboard (round widgets open into their full
-form); `e` or Escape puts it back. Ctrl+Shift+`h`/`j`/`k`/`l` move the widget a cell, pushing
+form); `e` or Escape puts it back. `s` opens the widget's settings (the same card as in edit mode,
+below). Ctrl+Shift+`h`/`j`/`k`/`l` move the widget a cell, pushing
 the others aside. Ctrl+`r` sizes it: `H`/`J`/`K`/`L` push that side out a cell, `h`/`j`/`k`/`l`
 pull it in; Enter, Escape or Ctrl+`r` again when done. Ctrl+`h`/`j`/`k`/`l` (or `H`/`J`/`K`/`L`)
 go to the neighbouring widget, Escape leaves the widget, and a second Escape closes the
@@ -71,12 +72,14 @@ dashboard. A standalone app starts inside its widget.
 
 The pencil in the corner (or a right-click on the background) opens edit mode: drag widgets
 around (the others make room), resize them from any edge or corner, click one for its settings, and add
-new ones from the sidebar. The sidebar also sets the grid's columns and rows, the color scheme
+new ones from the sidebar. A widget's settings open in a card in the middle of the screen (the
+gear in its corner, a click on it, or `s` from inside it); Escape or a click outside closes it.
+The sidebar also sets the grid's columns and rows, the color scheme
 (gruvbox, catppuccin, nord, dracula, rose-pine, everforest, solarized, …) and the style:
 corners, spacing, fonts, animation speed, frosted glass.
 
 All of it works from the keyboard too (Ctrl+E opens and closes edit mode). In the sidebar, Tab
-switches tabs, `j`/`k` move between rows, `h`/`l` step a value or flip a switch, Enter or Space
+switches tabs (in the settings card, it steps through the rows), `j`/`k` move between rows, `h`/`l` step a value or flip a switch, Enter or Space
 presses (or starts typing in a text field), and Backspace puts a row back to its default. `f` and
 a label picks a widget and opens its settings; then Ctrl+`h`/`j`/`k`/`l` go to the next widget,
 Ctrl+Shift+`h`/`j`/`k`/`l` move it, Ctrl+`r` sizes it (`H`/`J`/`K`/`L` push a side out,

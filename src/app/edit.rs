@@ -327,18 +327,32 @@ impl App {
         }
     }
 
-    /// Open a widget's settings in the sidebar (entering edit mode if needed).
+    /// Open a widget's settings card (entering edit mode if needed).
     pub(super) fn configure_widget(&self, id: u32) {
         let ui = self.ui();
         if !ui.get_editing() {
             self.set_editing(true);
         }
         ui.set_settings_id(id as i32);
-        ui.set_drawer_tab(crate::DrawerTab::Widget);
         self.refresh_settings();
     }
 
-    /// Rebuild the sidebar rows for the widget whose settings are open.
+    /// `s` in a widget: open its settings, or say it has none.
+    fn open_settings(&self, id: u32) {
+        let (title, any) = {
+            let layout = self.layout.borrow();
+            let Some(p) = layout.get(id) else { return };
+            let info = p.kind.info();
+            (info.title, !info.settings.is_empty())
+        };
+        if any {
+            self.configure_widget(id);
+        } else {
+            self.toast(&format!("{title} has no settings"));
+        }
+    }
+
+    /// Rebuild the rows of the card for the widget whose settings are open.
     pub(super) fn refresh_settings(&self) {
         use crate::widget_settings::{Ty, get};
         let ui = self.ui();
@@ -348,9 +362,6 @@ impl App {
         let Some(p) = (id != 0).then(|| layout.get(id as u32)).flatten() else {
             if id != 0 {
                 ui.set_settings_id(0);
-                if ui.get_drawer_tab() == crate::DrawerTab::Widget {
-                    ui.set_drawer_tab(crate::DrawerTab::Widgets);
-                }
             }
             return;
         };
@@ -525,6 +536,8 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     });
     let a = app.clone();
     ui.on_configure_widget(move |id| a.configure_widget(id as u32));
+    let a = app.clone();
+    ui.on_open_settings(move |id| a.open_settings(id as u32));
     let a = app.clone();
     ui.on_setting_step(move |index, delta| {
         a.change_setting(index, |opt, cur| Some(opt.step(cur, delta)))

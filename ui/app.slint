@@ -450,7 +450,8 @@ export component Dash inherits Window {
     // A single widget opened for moving/resizing with a double click (0 = none).
     in-out property <int> adjust-id;
     in-out property <DrawerTab> drawer-tab;
-    // The widget whose settings the sidebar shows (0 = none), its name and its settings.
+    // The widget being worked on in edit mode (0 = none), its name and its settings. Its settings
+    // open in a card in the middle of the screen, if it has any.
     in-out property <int> settings-id;
     in property <string> settings-title;
     in property <[SettingRow]> setting-rows;
@@ -499,9 +500,6 @@ export component Dash inherits Window {
         if (!self.editing) {
             self.cursor = PointerShape.normal;
             self.settings-id = 0;
-            if (self.drawer-tab == DrawerTab.widget) {
-                self.drawer-tab = DrawerTab.widgets;
-            }
         }
         self.adjust-id = 0;
     }
@@ -641,6 +639,8 @@ export component Dash inherits Window {
     callback open-themes-folder();
     // Widget settings: open a widget's, step one (+1/-1, toggles flip), set a text one, reset one.
     callback configure-widget(int);
+    // `s` in a widget: its settings, or a word that it has none.
+    callback open-settings(int);
     callback setting-step(int, int);
     callback setting-text(int, string);
     callback setting-reset(int);
@@ -661,16 +661,26 @@ export component Dash inherits Window {
     in-out property <bool> side-keys;
     property <int> side-edit-tick;
     property <bool> edit-sizing;
-    // Stops: Widgets: the grid's columns and rows, the palette, "Reset" (the layout). Colors: the
-    // schemes, the folder button. Style: the presets, "Reset all" (when adjusted), the
-    // adjustments, the folder button. A widget's tab: its settings.
+    // Stops: with the settings card open, its rows. Otherwise Widgets: the grid's columns and rows,
+    // the palette, "Reset" (the layout). Colors: the schemes, the folder button. Style: the presets,
+    // "Reset all" (when adjusted), the adjustments, the folder button.
     property <int> k-adjust: root.styles.length + (root.style-customized ? 1 : 0);
-    property <int> side-count: root.drawer-tab == DrawerTab.widgets ? 3 + root.palette.length
+    // The settings card is open: the widget being worked on has settings to show.
+    property <bool> cfg-open: root.editing && root.settings-id != 0 && root.setting-rows.length > 0;
+    property <int> side-count: root.cfg-open ? root.setting-rows.length
+        : root.drawer-tab == DrawerTab.widgets ? 3 + root.palette.length
         : root.drawer-tab == DrawerTab.colors ? root.colorschemes.length + 1
-        : root.drawer-tab == DrawerTab.style ? root.k-adjust + root.style-rows.length + 1
-        : root.setting-rows.length;
+        : root.k-adjust + root.style-rows.length + 1;
     function side-on(tab: DrawerTab, i: int) -> bool {
-        root.editing && root.side-keys && root.drawer-tab == tab && root.side-cursor == i
+        root.editing && root.side-keys && !root.cfg-open && root.drawer-tab == tab && root.side-cursor == i
+    }
+    function cfg-on(i: int) -> bool {
+        root.cfg-open && root.side-keys && root.side-cursor == i
+    }
+    changed settings-id => {
+        // Other rows: start at the top, and a text field of the one that went lets go.
+        self.side-cursor = 0;
+        keys.focus();
     }
     changed drawer-tab => {
         self.side-cursor = 0;
@@ -683,26 +693,38 @@ export component Dash inherits Window {
         }
     }
     function side-tab(d: int) {
-        let n = root.settings-id != 0 ? 4 : 3;
-        let i = root.drawer-tab == DrawerTab.widgets ? 0 : root.drawer-tab == DrawerTab.colors ? 1
-            : root.drawer-tab == DrawerTab.style ? 2 : 3;
-        let j = mod(i + d + n, n);
-        root.drawer-tab = j == 0 ? DrawerTab.widgets : j == 1 ? DrawerTab.colors : j == 2 ? DrawerTab.style : DrawerTab.widget;
+        if (root.cfg-open) {
+            // The card has no tabs: Tab steps through its rows.
+            root.side-cursor = mod(root.side-cursor + d + root.side-count, root.side-count);
+            return;
+        }
+        let i = root.drawer-tab == DrawerTab.widgets ? 0 : root.drawer-tab == DrawerTab.colors ? 1 : 2;
+        let j = mod(i + d + 3, 3);
+        root.drawer-tab = j == 0 ? DrawerTab.widgets : j == 1 ? DrawerTab.colors : DrawerTab.style;
     }
     // h/l on stop i: step it down or up (a switch flips).
     function side-step(i: int, d: int) {
-        if (root.drawer-tab == DrawerTab.widgets && i < 2) {
+        if (root.cfg-open) {
+            if (i < root.setting-rows.length && root.setting-rows[i].kind != RowKind.text) {
+                root.setting-step(root.setting-rows[i].index, d);
+            }
+        } else if (root.drawer-tab == DrawerTab.widgets && i < 2) {
             root.grid-step(i, d);
         } else if (root.drawer-tab == DrawerTab.style && i >= root.k-adjust && i - root.k-adjust < root.style-rows.length) {
             root.style-step(root.style-rows[i - root.k-adjust].key, d);
-        } else if (root.drawer-tab == DrawerTab.widget && i < root.setting-rows.length
-            && root.setting-rows[i].kind != RowKind.text) {
-            root.setting-step(root.setting-rows[i].index, d);
         }
     }
     // Enter or Space on stop i.
     function side-activate(i: int) {
-        if (root.drawer-tab == DrawerTab.widgets) {
+        if (root.cfg-open) {
+            if (i < root.setting-rows.length) {
+                if (root.setting-rows[i].kind == RowKind.text) {
+                    root.side-edit-tick += 1;
+                } else {
+                    root.setting-step(root.setting-rows[i].index, 1);
+                }
+            }
+        } else if (root.drawer-tab == DrawerTab.widgets) {
             if (i >= 2 && i - 2 < root.palette.length) {
                 root.add-widget(root.palette[i - 2].kind);
             } else if (i == 2 + root.palette.length) {
@@ -726,22 +748,18 @@ export component Dash inherits Window {
             } else {
                 root.open-themes-folder();
             }
-        } else if (i < root.setting-rows.length) {
-            if (root.setting-rows[i].kind == RowKind.text) {
-                root.side-edit-tick += 1;
-            } else {
-                root.setting-step(root.setting-rows[i].index, 1);
-            }
         }
     }
     // Backspace on stop i: back to the default.
     function side-reset(i: int) {
-        if (root.drawer-tab == DrawerTab.widgets && i < 2) {
+        if (root.cfg-open) {
+            if (i < root.setting-rows.length) {
+                root.setting-reset(root.setting-rows[i].index);
+            }
+        } else if (root.drawer-tab == DrawerTab.widgets && i < 2) {
             root.grid-auto();
         } else if (root.drawer-tab == DrawerTab.style && i >= root.k-adjust && i - root.k-adjust < root.style-rows.length) {
             root.style-reset(root.style-rows[i - root.k-adjust].key);
-        } else if (root.drawer-tab == DrawerTab.widget && i < root.setting-rows.length) {
-            root.setting-reset(root.setting-rows[i].index);
         }
     }
     // The keys of edit mode; true if one was used.
@@ -891,6 +909,9 @@ export component Dash inherits Window {
                     Nav.expanded-id = 0;
                 } else if (Nav.mode != NavMode.off && !root.solo) {
                     root.nav-off();
+                } else if (root.editing && root.settings-id != 0) {
+                    // The card closes, and the widget is let go.
+                    root.settings-id = 0;
                 } else if (root.editing) {
                     root.set-editing(false);
                 } else {
@@ -986,6 +1007,11 @@ export component Dash inherits Window {
                     // Everything else waits until sizing is done.
                     return accept;
                 }
+                // s opens the widget's settings, in every widget.
+                if (e.text == "s" && !e.modifiers.control && !e.modifiers.alt && !e.modifiers.meta) {
+                    root.open-settings(Nav.active-id);
+                    return accept;
+                }
                 // e blows the widget up in the middle of the dashboard, and back.
                 if (e.text == "e" && !e.modifiers.control && !e.modifiers.alt && !e.modifiers.meta) {
                     Nav.expanded-id = Nav.expanded-id == Nav.active-id ? 0 : Nav.active-id;
@@ -1049,7 +1075,9 @@ export component Dash inherits Window {
                     : root.drag-mode == DragMode.carry ? "Click where it should go · Esc cancels"
                     : root.adjust-id != 0 ? "Drag to move, edges and corners to resize, ◯/▢ to change shape · click outside or Esc when done"
                     : root.edit-sizing ? "Sizing: H J K L push a side out, h j k l pull it in · Enter or Esc when done"
-                    : root.editing && root.side-keys ? "f picks a widget · Ctrl+h j k l next widget · Ctrl+Shift+h j k l moves · Ctrl+R sizes · o shape · x removes · Tab sidebar tab · j k h l Enter row · Backspace resets · Esc done"
+                    : root.cfg-open ? "j k h l Enter row · Backspace resets · Ctrl+h j k l next widget · Ctrl+Shift+h j k l moves · Ctrl+R sizes · o shape · x removes · Esc closes"
+                    : root.editing && root.settings-id != 0 ? "Ctrl+h j k l next widget · Ctrl+Shift+h j k l moves · Ctrl+R sizes · o shape · x removes · f picks another · Esc lets go"
+                    : root.editing && root.side-keys ? "f picks a widget · Tab sidebar tab · j k h l Enter row · Backspace resets · Esc done"
                     : !root.editing ? "" : "Edit mode: drag to move (others make room), edges and corners to resize, click a widget for its settings"
                     + (root.hidden-widgets > 0 ? "  ·  " + root.hidden-widgets + " widget(s) don't fit " + (root.grid-cols > 0 ? "the grid" : "this screen") : "");
                 color: Theme.dim;
@@ -1150,7 +1178,7 @@ export component Dash inherits Window {
                 move-to(id, c, r) => { root.move-widget(id, c, r); }
                 resize-to(id, c, r, ww, hh) => { root.resize-widget(id, c, r, ww, hh); }
                 toggle-shape(id) => { root.toggle-shape(id); }
-                selected: root.editing && root.settings-id == w.id && root.drawer-tab == DrawerTab.widget;
+                selected: root.editing && root.settings-id == w.id;
                 configure(id) => {
                     root.adjust-id = 0;
                     root.configure-widget(id);
@@ -1281,12 +1309,6 @@ export component Dash inherits Window {
                             label: tab.label;
                             active: root.drawer-tab == tab.id;
                             clicked => { root.drawer-tab = tab.id; }
-                        }
-                        // The selected widget's own settings, named after it.
-                        if root.settings-id != 0: Segment {
-                            label: root.settings-title;
-                            active: root.drawer-tab == DrawerTab.widget;
-                            clicked => { root.drawer-tab = DrawerTab.widget; }
                         }
                     }
                 }
@@ -1474,33 +1496,6 @@ export component Dash inherits Window {
                         }
                     }
                 }
-                if root.drawer-tab == DrawerTab.widget: settings-side := SideList {
-                    vertical-stretch: 1;
-                    content-height: settings-list.preferred-height;
-                    settings-list := VerticalLayout {
-                        width: parent.width;
-                        spacing: 6px;
-                        for v[i] in root.setting-rows: SettingControl {
-                            kfocus: root.side-on(DrawerTab.widget, i);
-                            edit-tick: root.side-edit-tick;
-                            revealed(y, h) => { settings-side.reveal(y, h); }
-                            kind: v.kind;
-                            label: v.label;
-                            value: v.value;
-                            on: v.on;
-                            modified: v.changed;
-                            can-dec: v.can-dec;
-                            can-inc: v.can-inc;
-                            placeholder: v.placeholder;
-                            step(d) => { root.setting-step(v.index, d); }
-                            reset => { root.setting-reset(v.index); }
-                            text-entered(text) => {
-                                root.setting-text(v.index, text);
-                                keys.focus();
-                            }
-                        }
-                    }
-                }
                 if root.drawer-tab == DrawerTab.style: style-side := SideList {
                     vertical-stretch: 1;
                     content-height: style-list.preferred-height;
@@ -1577,6 +1572,105 @@ export component Dash inherits Window {
                             }
                             clicked => { root.open-themes-folder(); }
                         }
+                    }
+                }
+            }
+        }
+
+
+        // A widget's settings, in a card in the middle of the screen (over the space the sidebar
+        // leaves), with everything else faded back. A click outside, or Escape, closes it. It steps
+        // aside while a key is sizing the widget or the hints are up, so the widgets can be seen.
+        card-layer := Rectangle {
+            property <bool> up: root.cfg-open && !root.edit-sizing && Nav.mode != NavMode.hints;
+            property <float> shift: self.up ? 1 : 0;
+            animate shift { duration: 180ms * Theme.motion; easing: cubic-bezier(0.2, 0.9, 0.3, 1.0); }
+            visible: self.shift > 0.001;
+            z: 300;
+            opacity: self.shift;
+            Rectangle {
+                background: Theme.backdrop.with-alpha(0.6);
+                TouchArea {
+                    clicked => { root.settings-id = 0; }
+                }
+            }
+            card := Rectangle {
+                property <length> pad: 18px;
+                property <length> head-h: 40px;
+                property <length> foot-h: 30px;
+                width: min(480px, parent.width - 48px);
+                // As tall as the rows, up to the screen less some room around.
+                property <length> body-h: min(settings-list.preferred-height, max(120px, root.height - 220px));
+                height: self.pad * 2 + self.head-h + 8px + self.body-h + 8px + self.foot-h;
+                x: (root.avail-w - self.width) / 2;
+                y: (root.height - self.height) / 2 + (1 - card-layer.shift) * 18px;
+                border-radius: Theme.radius;
+                background: Theme.panel;
+                border-width: 1px;
+                border-color: Theme.border;
+                drop-shadow-blur: 30px;
+                drop-shadow-color: Theme.shadow;
+                accessible-role: tab-panel;
+                accessible-label: root.settings-title + " settings";
+                TouchArea { }
+                VerticalLayout {
+                    padding: card.pad;
+                    spacing: 8px;
+                    HorizontalLayout {
+                        height: card.head-h;
+                        spacing: 8px;
+                        Text {
+                            text: root.settings-title;
+                            color: Theme.text;
+                            font-size: Theme.font-title;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                            overflow: elide;
+                        }
+                        IconButton {
+                            y: (parent.height - self.height) / 2;
+                            icon: Icons.close;
+                            accessible-label: "Close settings";
+                            size: 32px;
+                            tint: Theme.dim;
+                            clicked => { root.settings-id = 0; }
+                        }
+                    }
+                    cfg-side := SideList {
+                        height: card.body-h;
+                        content-height: settings-list.preferred-height;
+                        settings-list := VerticalLayout {
+                            width: parent.width;
+                            spacing: 6px;
+                            for v[i] in root.setting-rows: SettingControl {
+                                kfocus: root.cfg-on(i);
+                                edit-tick: root.side-edit-tick;
+                                revealed(y, h) => { cfg-side.reveal(y, h); }
+                                kind: v.kind;
+                                label: v.label;
+                                value: v.value;
+                                on: v.on;
+                                modified: v.changed;
+                                can-dec: v.can-dec;
+                                can-inc: v.can-inc;
+                                placeholder: v.placeholder;
+                                step(d) => { root.setting-step(v.index, d); }
+                                reset => { root.setting-reset(v.index); }
+                                text-entered(text) => {
+                                    root.setting-text(v.index, text);
+                                    keys.focus();
+                                }
+                            }
+                        }
+                    }
+                    Text {
+                        height: card.foot-h;
+                        text: "j k h l Enter · Backspace resets · Ctrl+h j k l next widget · Esc closes";
+                        color: Theme.dim;
+                        font-size: Theme.font-small;
+                        vertical-alignment: center;
+                        overflow: elide;
                     }
                 }
             }

@@ -723,6 +723,12 @@ fn pointer_editing(issues: &mut Issues) {
     if h.ui().get_settings_id() != sysmon as i32 {
         issues.add("pointer: the toolbar's settings button didn't open the widget's settings");
     }
+    // The card is in the way of the other buttons until it is closed: Escape closes it.
+    h.press("esc");
+    h.settle(200);
+    if h.ui().get_settings_id() != 0 || !h.ui().get_editing() {
+        issues.add("pointer: Escape didn't close the settings card and stay in edit mode");
+    }
     let (x, y) = toolbar(&h, &s0, 1);
     h.click(x, y);
     h.settle(200);
@@ -1373,8 +1379,14 @@ fn keyboard_editing(issues: &mut Issues) {
     if mode(&h) != NavMode::Off {
         issues.add("keyboard: picking a widget in edit mode entered it");
     }
-    if h.ui().get_settings_id() != clock as i32 || tab(&h) != T::Widget {
+    if h.ui().get_settings_id() != clock as i32 || rows(&h).is_empty() {
         issues.add("keyboard: picking the clock in edit mode didn't open its settings");
+    }
+    if tab(&h) != T::Widgets {
+        issues.add(format!(
+            "keyboard: opening the clock's settings left the sidebar's tab for {:?}",
+            tab(&h)
+        ));
     }
 
     // Its settings: a stepper, a switch, the text field. (Time format, Seconds, Date, Zones.)
@@ -1637,9 +1649,9 @@ fn grid_shrink_and_grow(issues: &mut Issues) {
 }
 
 // ------------------------------------------------------------------------------------------
-// The sidebar follows the widgets.
+// The settings card follows the widgets.
 
-/// The settings tab belongs to one widget: it closes when that widget goes, follows it when it
+/// The settings card belongs to one widget: it closes when that widget goes, follows it when it
 /// moves or changes shape, and a removed widget's hint label is gone.
 fn sidebar_follows(issues: &mut Issues) {
     let mut h = dashboard(PACKED);
@@ -1662,9 +1674,6 @@ fn sidebar_follows(issues: &mut Issues) {
     if h.ui().get_settings_id() != 0 {
         issues.add("sidebar: settings stay open for a removed widget");
     }
-    if h.ui().get_drawer_tab() == niri_dash::DrawerTab::Widget {
-        issues.add("sidebar: still on the removed widget's tab");
-    }
     // Packed: adding has nowhere to go and says so.
     let n = h.tiles().len();
     for _ in 0..3 {
@@ -1681,6 +1690,77 @@ fn sidebar_follows(issues: &mut Issues) {
     h.ui().invoke_reset_layout();
     h.pump();
     issues.check(&h, "sidebar: reset the layout");
+}
+
+
+// ------------------------------------------------------------------------------------------
+// The settings card.
+
+/// `s` in a widget opens its settings in the card; Tab steps through its rows; Escape closes the
+/// card first and edit mode after.
+fn settings_card_keys(issues: &mut Issues) {
+    let mut h = dashboard(MIXED);
+    let clock = id_of(&h, "clock");
+    h.press("f");
+    type_label(&mut h, "clock");
+    if h.ui().get_editing() {
+        issues.add("card: entering the clock opened edit mode");
+    }
+    h.press("s");
+    if !h.ui().get_editing() || h.ui().get_settings_id() != clock as i32 {
+        issues.add(format!(
+            "card: s in the clock didn't open its settings (editing {}, open {})",
+            h.ui().get_editing(),
+            h.ui().get_settings_id()
+        ));
+    }
+    if rows(&h).is_empty() {
+        issues.add("card: the clock's settings have no rows");
+    }
+    issues.check(&h, "card: s in the clock");
+
+    // Tab goes down the rows: the second one is Seconds, a switch that Space flips.
+    let labels = testing::setting_labels("clock");
+    let at = labels.iter().position(|l| *l == "Seconds").unwrap();
+    for _ in 0..at {
+        h.press("tab");
+    }
+    let was = rows(&h)[at].on;
+    h.press("space");
+    if rows(&h)[at].on == was {
+        issues.add("card: Tab to the Seconds row and Space didn't flip it");
+    }
+    if h.ui().get_drawer_tab() != niri_dash::DrawerTab::Widgets {
+        issues.add("card: Tab in the card switched the sidebar's tabs");
+    }
+
+    // Escape: the card, then edit mode.
+    h.press("esc");
+    if h.ui().get_settings_id() != 0 || !h.ui().get_editing() {
+        issues.add("card: the first Escape should close the card and stay in edit mode");
+    }
+    h.press("esc");
+    if h.ui().get_editing() {
+        issues.add("card: the second Escape didn't leave edit mode");
+    }
+    issues.check(&h, "card: Escape twice");
+
+    // A widget without settings says so, and stays out of edit mode.
+    let none = h
+        .tiles()
+        .into_iter()
+        .find(|t| testing::setting_labels(&t.kind).is_empty());
+    if let Some(t) = none {
+        h.press("f");
+        type_label(&mut h, &t.kind);
+        h.press("s");
+        if h.ui().get_editing() {
+            issues.add(format!("card: s in {} (no settings) opened edit mode", t.kind));
+        }
+        if !toast(&h).contains("no settings") {
+            issues.add(format!("card: s in {} said {:?}", t.kind, toast(&h)));
+        }
+    }
 }
 
 // ------------------------------------------------------------------------------------------
@@ -1779,6 +1859,7 @@ fn main() {
             grid_shrink_and_grow,
         ),
         ("sidebar: follows its widget", sidebar_follows),
+        ("card: s opens it, Escape closes it", settings_card_keys),
         (
             "resize: pushed widgets come back when it shrinks",
             resize_gives_room_back,
