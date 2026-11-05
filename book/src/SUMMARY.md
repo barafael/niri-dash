@@ -5,7 +5,7 @@
 # Tutorials
 
 - [Your first dashboard](tutorials/first-dashboard.md)
-- [Your own layout]()
+- [Your own layout](tutorials/own-layout.md)
 
 # How-to guides
 
@@ -46,9 +46,9 @@
 # Explanation
 
 - [Explanation](explanation/index.md)
-  - [How the dashboard shows and hides]()
-  - [The keyboard model]()
-  - [What clipboard history records]()
-  - [Renderers: GPU and software]()
-  - [How Arrange chooses a layout]()
-  - [The simulated system]()
+  - [How the dashboard shows and hides](explanation/show-and-hide.md)
+  - [The keyboard model](explanation/keyboard-model.md)
+  - [What clipboard history records](explanation/clipboard.md)
+  - [Renderers: GPU and software](explanation/renderers.md)
+  - [How Arrange chooses a layout](explanation/arrange.md)
+  - [The simulated system](explanation/simulated-system.md)
