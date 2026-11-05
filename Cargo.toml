@@ -59,6 +59,11 @@ slint = { version = "1.18", default-features = false, features = [
     "software-renderer-systemfonts",
 ] }
 
+# Screen readers: the dashboard's accessible tree, published over AT-SPI (src/app/a11y). The
+# accesskit version is the one i-slint-core's own text accessibility uses.
+accesskit = "0.24"
+accesskit_unix = { version = "0.22", default-features = false, features = ["tokio"] }
+
 # wayland
 smithay-client-toolkit.workspace = true
 wayland-client = "0.31"
@@ -100,6 +105,9 @@ web-sys = { version = "0.3", features = [
     "Window",
 ] }
 
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+accesskit_consumer = "0.38"
+
 # Slint wants one thread and one platform per process: the UI tests are one plain program.
 [[test]]
 name = "ui"
@@ -115,6 +123,14 @@ harness = false
 
 [[test]]
 name = "edit"
+harness = false
+
+[[test]]
+name = "access"
+harness = false
+
+[[test]]
+name = "atspi"
 harness = false
 
 [build-dependencies]

@@ -8,6 +8,7 @@
 //! The dashboard reads and writes its config and state under the XDG directories, which the test
 //! points somewhere disposable before the first harness.
 
+use super::a11y::bridge::{Request, Sink};
 use super::{App, Input, build};
 use crate::layout::{Layout, Loaded};
 use crate::{Control, Dash};
@@ -37,6 +38,28 @@ impl Platform for TestPlatform {
     }
 }
 
+/// What a screen reader would have been given, as [`Harness::access_events`] returns it.
+#[derive(Debug, Clone)]
+pub enum AccessEvent {
+    /// A tree, or a change to it (always the whole tree, so that ids stay put).
+    Update(accesskit::TreeUpdate),
+    /// Whether the window has the keyboard.
+    WindowFocus(bool),
+}
+
+/// A screen reader's sink that only writes down what it gets.
+struct Recorder(Rc<RefCell<Vec<AccessEvent>>>);
+
+impl Sink for Recorder {
+    fn update(&mut self, update: accesskit::TreeUpdate) {
+        self.0.borrow_mut().push(AccessEvent::Update(update));
+    }
+
+    fn window_focus(&mut self, focused: bool) {
+        self.0.borrow_mut().push(AccessEvent::WindowFocus(focused));
+    }
+}
+
 /// The dashboard, built as the daemon builds it, on channels instead of the system.
 pub struct Harness {
     ui: Dash,
@@ -47,8 +70,10 @@ pub struct Harness {
     event_loop: EventLoop<'static, Vec<Control>>,
     /// Controls (show, hide) the dashboard asked for, in answer to events.
     controls: Vec<Control>,
-    /// The config watcher's end; kept so it has somewhere to send.
-    _inputs: channel::Channel<Input>,
+    /// Where the dashboard's own requests (a screen reader's) are sent.
+    input: channel::Sender<Input>,
+    /// What a screen reader was given since the last look.
+    access_log: Rc<RefCell<Vec<AccessEvent>>>,
     window: Rc<MinimalSoftwareWindow>,
     pixels: Vec<PremultipliedRgbaColor>,
     /// How many events the dashboard has been handed.
@@ -102,7 +127,7 @@ impl Harness {
         };
         let (events, events_rx) = channel::channel::<Event>();
         let (input_tx, inputs) = channel::channel::<Input>();
-        let app = build(&ui, system, input_tx, None, loaded, true);
+        let app = build(&ui, system, input_tx.clone(), None, loaded, true);
         // As on show: the keyboard goes to the dashboard, nothing entered.
         ui.window()
             .dispatch_event(WindowEvent::WindowActiveChanged(true));
@@ -115,14 +140,31 @@ impl Harness {
             events,
             event_loop: EventLoop::try_new().expect("an event loop"),
             controls: Vec::new(),
-            _inputs: inputs,
+            input: input_tx,
+            access_log: Default::default(),
             window,
             pixels: vec![PremultipliedRgbaColor::default(); (WIDTH * HEIGHT) as usize],
             delivered: Default::default(),
         };
         me.listen(events_rx);
+        me.listen_inputs(inputs);
         me.pump();
         me
+    }
+
+    /// Answer what the dashboard sends itself: here, a screen reader's requests.
+    fn listen_inputs(&mut self, inputs: channel::Channel<Input>) {
+        let a = self.app.clone();
+        self.event_loop
+            .handle()
+            .insert_source(inputs, move |ev, _, controls: &mut Vec<Control>| {
+                if let channel::Event::Msg(i) = ev
+                    && let Some(c) = a.handle_input(i)
+                {
+                    controls.push(c);
+                }
+            })
+            .expect("inserting the input source");
     }
 
     /// Show what arrives on `events`.
@@ -152,6 +194,57 @@ impl Harness {
     /// would find it.
     pub fn element(&self, label: &str, role: &str) -> Option<Element> {
         self.app.element(label, role)
+    }
+
+    /// A screen reader that only writes down what it is given (see [`Harness::access_events`]),
+    /// not yet listening: [`Harness::access_activate`] is it arriving.
+    pub fn access_connect(&mut self) {
+        self.access_log.borrow_mut().clear();
+        self.app
+            .access_attach(Box::new(Recorder(self.access_log.clone())));
+    }
+
+    /// Publish on the accessibility bus for real, as the daemon does. Only for `tests/atspi.rs`,
+    /// which runs under a private session bus of its own: it says so with
+    /// `NIRI_DASH_PRIVATE_BUS`, and without it this refuses, so that no test can reach the
+    /// session's bus by mistake.
+    pub fn access_connect_unix(&mut self) {
+        assert!(
+            std::env::var_os("NIRI_DASH_PRIVATE_BUS").is_some(),
+            "refusing to use the session's accessibility bus from a test"
+        );
+        self.app
+            .access_attach(super::a11y::bridge::unix(self.input.clone()));
+    }
+
+    /// The screen reader arrives, asking for the tree.
+    pub fn access_activate(&mut self) {
+        self.access_send(Request::Activated);
+    }
+
+    /// The screen reader leaves.
+    pub fn access_deactivate(&mut self) {
+        self.access_send(Request::Deactivated);
+    }
+
+    /// The screen reader asks an element for something.
+    pub fn access_do(&mut self, request: accesskit::ActionRequest) {
+        self.access_send(Request::Action(request));
+    }
+
+    fn access_send(&mut self, request: Request) {
+        let _ = self.input.send(Input::Access(request));
+        self.pump();
+    }
+
+    /// What the screen reader was given since the last call, in order.
+    pub fn access_events(&mut self) -> Vec<AccessEvent> {
+        std::mem::take(&mut *self.access_log.borrow_mut())
+    }
+
+    /// The dashboard as the tree a screen reader's adapter is given.
+    pub fn access_tree(&self) -> accesskit::TreeUpdate {
+        self.app.access_tree()
     }
 
     /// Everything in the window a screen reader could read out.
@@ -251,6 +344,7 @@ impl Harness {
             .dispatch(Some(Duration::ZERO), &mut self.controls);
         slint::platform::update_timers_and_animations();
         self.app.keep_keyboard();
+        self.app.access_sync(false);
     }
 
     /// The controls (hide, show, …) the dashboard asked of its surface since the last call, in
