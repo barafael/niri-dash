@@ -6,6 +6,10 @@
 //! Nothing on the system changes: the mock stands in for it, and the dashboard's files go to a
 //! temporary directory.
 //!
+//! Each seed runs on a large screen and on a small one (1280 by 800), where the cells are small
+//! and every widget at its minimum size has little room: that is where lists stop following the
+//! cursor and buttons end up past a widget's edge.
+//!
 //! `NIRI_DASH_STRESS_SEEDS=1,2,3` picks the seeds, `NIRI_DASH_STRESS_OPS=2000` the keys per seed.
 
 use niri_dash::testing::{Harness, Monkey, Sandbox, default_config};
@@ -25,13 +29,19 @@ fn main() {
     let seeds: Vec<u64> = std::env::var("NIRI_DASH_STRESS_SEEDS")
         .ok()
         .map(|s| s.split(',').filter_map(|n| n.trim().parse().ok()).collect())
-        .unwrap_or_else(|| vec![1, 2, 3]);
-    let ops = env_or("NIRI_DASH_STRESS_OPS", 500);
+        .unwrap_or_else(|| vec![1, 2, 3, 4, 5]);
+    let ops = env_or("NIRI_DASH_STRESS_OPS", 3000);
     let config = default_config();
     let mut failed = 0;
-    for &seed in &seeds {
+    let screens: [(&str, (u32, u32)); 2] = [("large", (1706, 1066)), ("small", (1280, 800))];
+    let runs: Vec<(u64, &str, (u32, u32))> = seeds
+        .iter()
+        .flat_map(|&seed| screens.iter().map(move |&(name, size)| (seed, name, size)))
+        .collect();
+    for &(seed, screen, size) in &runs {
+        let seed_name = format!("{seed} on a {screen} screen");
         let run = std::panic::catch_unwind(AssertUnwindSafe(|| {
-            Harness::with_mock(&config)
+            Harness::with_mock_sized(&config, size)
                 .stress(Monkey::new(seed, false).keep_going(), ops, 0.0)
                 .map(|monkey| (monkey.summary(), monkey.finish()))
         }));
@@ -40,21 +50,21 @@ fn main() {
             Ok((_, Err(failure))) | Err(failure) => Err(failure),
         });
         match run {
-            Ok(Ok(summary)) => println!("test seed {seed} ... ok: {summary}"),
+            Ok(Ok(summary)) => println!("test seed {seed_name} ... ok: {summary}"),
             Ok(Err(failure)) => {
                 failed += 1;
-                println!("test seed {seed} ... FAILED\n{failure}");
+                println!("test seed {seed_name} ... FAILED\n{failure}");
             }
             Err(_) => {
                 failed += 1;
-                println!("test seed {seed} ... FAILED: panicked");
+                println!("test seed {seed_name} ... FAILED: panicked");
             }
         }
     }
     println!(
         "\ntest result: {}. {} passed; {failed} failed",
         if failed == 0 { "ok" } else { "FAILED" },
-        seeds.len() - failed
+        runs.len() - failed
     );
     if failed > 0 {
         std::process::exit(1);

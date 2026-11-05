@@ -1692,7 +1692,6 @@ fn sidebar_follows(issues: &mut Issues) {
     issues.check(&h, "sidebar: reset the layout");
 }
 
-
 // ------------------------------------------------------------------------------------------
 // The settings card.
 
@@ -1755,7 +1754,10 @@ fn settings_card_keys(issues: &mut Issues) {
         type_label(&mut h, &t.kind);
         h.press("s");
         if h.ui().get_editing() {
-            issues.add(format!("card: s in {} (no settings) opened edit mode", t.kind));
+            issues.add(format!(
+                "card: s in {} (no settings) opened edit mode",
+                t.kind
+            ));
         }
         if !toast(&h).contains("no settings") {
             issues.add(format!("card: s in {} said {:?}", t.kind, toast(&h)));

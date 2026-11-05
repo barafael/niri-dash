@@ -205,6 +205,8 @@ export component BatteryWidget inherits Rectangle {
             spacing: 4px;
             height: 30px;
             for p in Power.profiles: Rectangle {
+                // Narrow, they share what there is and the names are cut short.
+                min-width: 0px;
                 accessible-role: radio-button;
                 accessible-label: p == PowerProfile.power-saver ? "Saver" : p == PowerProfile.balanced ? "Balanced" : "Performance";
                 accessible-checkable: true;
@@ -219,6 +221,8 @@ export component BatteryWidget inherits Rectangle {
                 border-color: Theme.text;
                 Text {
                     text: p == PowerProfile.power-saver ? "Saver" : p == PowerProfile.balanced ? "Balanced" : "Performance";
+                    horizontal-alignment: center;
+                    overflow: elide;
                     font-size: Theme.font-small;
                     color: parent.current ? Theme.on-accent : Theme.text;
                 }

@@ -43,7 +43,7 @@ export component KeyboardLayoutWidget inherits Rectangle {
                 text: KeyboardLayouts.available ? root.cur.name
                     : Desktop.niri ? "niri isn't reachable"
                     : Desktop.plasma ? "Plasma's keyboard layouts aren't reachable"
-                    : "Needs niri or Plasma";
+                    : "Keyboard layouts " + Desktop.unavailable;
                 horizontal-alignment: center;
                 font-size: Theme.font-small;
                 color: Theme.dim;
@@ -746,6 +746,7 @@ export component ClipboardWidget inherits Rectangle {
                     height: parent.height - 3px;
                     selected: c.index == 0;
                     kfocus: keys.on && keys.cursor == i && keys.sub == 0;
+                    kfocus-part: keys.on && keys.cursor == i && keys.sub == 1;
                     revealed(y, h) => { clip-list.reveal(y, h); }
                     clicked => { Clipboard.copy(c.index); }
                     HorizontalLayout {

@@ -11,11 +11,20 @@ component Choice inherits HorizontalLayout {
     in property <string> label;
     // Under the keyboard cursor (h/l pick).
     in property <bool> kfocus;
+    // The keyboard cursor came here: its position in the window and height.
+    callback revealed(length, length);
+    changed kfocus => {
+        if (self.kfocus) {
+            self.revealed(self.absolute-position.y, self.height);
+        }
+    }
     spacing: 4px;
     for o[i] in root.options: TextButton {
         accessible-label: root.label + ": " + o;
         accessible-value: i == root.picked ? "selected" : "";
         text: o;
+        compact: true;
+        min-width: 0px;
         primary: i == root.picked;
         kfocus: root.kfocus && i == root.picked;
         horizontal-stretch: 1;
@@ -37,6 +46,13 @@ component KeyField inherits VerticalLayout {
     in property <int> edit-tick;
     in-out property <string> text <=> field.text;
     callback accepted();
+    // The keyboard cursor came here: its position in the window and height.
+    callback revealed(length, length);
+    changed kfocus => {
+        if (self.kfocus) {
+            self.revealed(self.absolute-position.y, self.height);
+        }
+    }
     spacing: 2px;
     changed edit-tick => {
         if (self.kfocus) {
@@ -77,6 +93,18 @@ component ServerCheck inherits VerticalLayout {
     in property <bool> kfocus-field;
     in property <bool> kfocus-switch;
     in property <int> edit-tick;
+    // The keyboard cursor came here: its position in the window and height.
+    callback revealed(length, length);
+    changed kfocus-field => {
+        if (self.kfocus-field) {
+            self.revealed(self.absolute-position.y, self.height);
+        }
+    }
+    changed kfocus-switch => {
+        if (self.kfocus-switch) {
+            self.revealed(self.absolute-position.y, self.height);
+        }
+    }
     spacing: 6px;
     if !root.insecure: KeyField {
         label: "Server domain";
@@ -413,10 +441,10 @@ export component WifiWidget inherits Rectangle {
                     horizontal-stretch: 1;
                 }
             }
-            Muted {
+            // Not just hidden when empty: a hidden element still takes its room in a layout.
+            if Wifi.status != "": Muted {
                 text: Wifi.status;
                 color: Wifi.failed ? Theme.bad : Theme.dim;
-                visible: Wifi.status != "";
                 wrap: word-wrap;
             }
             if root.asking: WifiPasswordPrompt {
@@ -469,6 +497,7 @@ export component WifiWidget inherits Rectangle {
                         + "signal " + n.signal + "%, " + (n.tag != "" ? n.tag : n.secure ? "secured" : "open");
                     selected: n.active;
                     kfocus: root.kf(0, root.k-net + i) && keys.sub == 0;
+                    kfocus-part: root.kf(0, root.k-net + i) && keys.sub != 0;
                     revealed(y, h) => { net-list.reveal(y, h); }
                     clicked => {
                         if (n.active) {
@@ -717,7 +746,7 @@ export component WifiWidget inherits Rectangle {
                 }
             }
             // A network that doesn't broadcast its name.
-            if Wifi.available && Wifi.enabled && root.page == 2: ScrollList {
+            if Wifi.available && Wifi.enabled && root.page == 2: hidden-list := ScrollList {
                 vertical-stretch: 1;
                 VerticalLayout {
                     spacing: 6px;
@@ -727,24 +756,28 @@ export component WifiWidget inherits Rectangle {
                         focus-first: true;
                         kfocus: root.kf(2, 0);
                         edit-tick: root.edit-tick;
+                        revealed(y, h) => { hidden-list.reveal(y, h); }
                     }
                     Choice {
                         label: "Security";
                         options: ["Open", "WPA", "802.1X"];
                         picked <=> root.hidden-security;
                         kfocus: root.kf(2, 1);
+                        revealed(y, h) => { hidden-list.reveal(y, h); }
                     }
                     if root.hidden-security == 2: Choice {
                         label: "Method";
                         options: ["PEAP", "TTLS"];
                         picked <=> root.hidden-method;
                         kfocus: root.kf(2, root.k-method);
+                        revealed(y, h) => { hidden-list.reveal(y, h); }
                     }
                     if root.hidden-security == 2: KeyField {
                         placeholder: "User name";
                         text <=> root.hidden-identity;
                         kfocus: root.kf(2, root.k-ident);
                         edit-tick: root.edit-tick;
+                        revealed(y, h) => { hidden-list.reveal(y, h); }
                     }
                     // Bound both ways: what is sent is what the field shows.
                     if root.hidden-security != 0: KeyField {
@@ -753,6 +786,7 @@ export component WifiWidget inherits Rectangle {
                         text <=> root.hidden-password;
                         kfocus: root.kf(2, root.k-pass);
                         edit-tick: root.edit-tick;
+                        revealed(y, h) => { hidden-list.reveal(y, h); }
                         accepted => { root.join-hidden(); }
                     }
                     if root.hidden-security == 2: ServerCheck {
@@ -761,9 +795,16 @@ export component WifiWidget inherits Rectangle {
                         kfocus-field: root.kf(2, root.k-domain);
                         kfocus-switch: root.kf(2, root.k-insecure);
                         edit-tick: root.edit-tick;
+                        revealed(y, h) => { hidden-list.reveal(y, h); }
                     }
                     HorizontalLayout {
                         alignment: end;
+                        property <bool> kf: root.kf(2, root.k-join);
+                        changed kf => {
+                            if (self.kf) {
+                                hidden-list.reveal(self.absolute-position.y, self.height);
+                            }
+                        }
                         TextButton {
                             text: "Join";
                             primary: true;
@@ -1030,6 +1071,7 @@ component BtRow inherits Row {
         : "";
     selected: root.device.connected;
     enabled: !root.device.busy;
+    kfocus-part: root.kfocus-details;
     HorizontalLayout {
         padding-left: 10px;
         padding-right: 2px;
