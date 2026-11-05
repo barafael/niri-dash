@@ -152,16 +152,15 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     let c = cow.clone();
     ui.global::<crate::Mascots>()
         .on_cow_art(move |name, eyes, tongue| c(&name).draw(&eyes, &tongue).into());
-    ui.global::<crate::Mascots>().on_cow_size(move |name| {
-        let (width, lines) = cow(&name).size();
-        crate::CowSize {
-            width: width as i32,
-            lines: lines as i32,
-        }
-    });
     ui.global::<crate::Mascots>()
-        .on_cow_bubble(|text, cols, rows| {
-            crate::mascots::cow_bubble(&text, cols.max(0) as usize, rows.max(0) as usize).into()
+        .on_cow_scene(|art, text, width, height| {
+            let scene = crate::mascots::cow_scene(&art, &text, width, height);
+            crate::CowScene {
+                text: scene.text.into(),
+                font: scene.font,
+                width: scene.width,
+                height: scene.height,
+            }
         });
     let a = Rc::downgrade(app);
     app.mascots

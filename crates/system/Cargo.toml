@@ -16,6 +16,11 @@ png.workspace = true
 tokio = { version = "1", features = ["sync", "macros"] }
 qrcode = { version = "0.14.1", default-features = false }
 
+# Needs the container in tests/system, which turns radios off and on.
+[[test]]
+name = "live"
+harness = false
+
 # The real system: none of this exists in a browser.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 dirs.workspace = true

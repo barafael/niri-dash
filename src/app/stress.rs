@@ -540,6 +540,7 @@ impl Sandbox {
         let dir = Self(dir);
         // SAFETY: called first thing, while this is the only thread.
         unsafe {
+            std::env::set_var("NIRI_DASH_HOME", &dir.0);
             for (var, sub) in [
                 ("XDG_CONFIG_HOME", "config"),
                 ("XDG_STATE_HOME", "state"),

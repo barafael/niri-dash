@@ -49,6 +49,10 @@ fn feeds(kind: Kind) -> &'static [Feed] {
         Kind::NightLight => &[Feed::NightLight],
         Kind::RemovableDrives => &[Feed::Drives],
         Kind::Phone => &[Feed::Phone],
+        // The sleep timer's actor always runs; there is nothing to watch.
+        Kind::SleepTimer => &[],
+        // Its notices are local ones, like the timer's.
+        Kind::Pomodoro => &[Feed::Notifications],
     }
 }
 /// The pointer the UI asks for, as a cursor shape.
@@ -137,7 +141,7 @@ impl App {
     }
 }
 
-fn control_server(listener: UnixListener, tx: channel::Sender<Input>) {
+fn control_server(listener: UnixListener, tx: sys::Sink<Input>) {
     std::thread::Builder::new()
         .name("control".into())
         .spawn(move || {
@@ -236,7 +240,7 @@ pub fn run_app(kind: Kind) -> Result<()> {
 /// runs on the mock system's made-up data instead, and `NIRI_DASH_SIM=1` on the web version's
 /// simulated system.
 pub(super) fn start_system(
-    events: channel::Sender<Event>,
+    events: sys::EventSender,
     solo: Option<Kind>,
     wayland: Option<Connection>,
 ) -> Result<Started> {
@@ -305,8 +309,8 @@ fn serve(
     config: Loaded,
     mut stress: Option<&mut stress::Run>,
 ) -> Result<()> {
-    let (events_tx, events) = channel::channel::<Event>();
-    let (input_tx, inputs) = channel::channel::<Input>();
+    let (events_tx, events) = super::loop_channel::<Event>();
+    let (input_tx, inputs) = super::loop_channel::<Input>();
     let conn = Connection::connect_to_env()?;
     let keep = stress.is_some();
     let system = if keep {

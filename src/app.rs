@@ -38,8 +38,10 @@ mod mascots;
 mod night_light;
 mod notes;
 mod notifications;
+mod pomodoro;
 mod power;
 mod privacy;
+mod sleeper;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod snapshot;
 #[cfg(not(target_arch = "wasm32"))]
@@ -57,6 +59,20 @@ pub mod web;
 use wayland::{Input, renderer_override, set_platform, start_system, stress_window};
 #[cfg(not(target_arch = "wasm32"))]
 pub use wayland::{run, run_app};
+
+/// A channel into a calloop event loop: the sink to send to, and the source to insert in the loop.
+/// The loop wakes when something is sent.
+#[cfg(not(target_arch = "wasm32"))]
+fn loop_channel<T: Send + 'static>() -> (
+    sys::Sink<T>,
+    smithay_client_toolkit::reexports::calloop::channel::Channel<T>,
+) {
+    let (tx, rx) = smithay_client_toolkit::reexports::calloop::channel::channel();
+    (
+        sys::Sink::new(move |value| tx.send(value).map_err(|_| sys::Closed)),
+        rx,
+    )
+}
 
 /// Where the dashboard appears: a layer surface or a window on Wayland, a canvas in a browser. It
 /// comes and goes; the UI stays alive in between.
@@ -238,11 +254,13 @@ struct App {
     state: RefCell<crate::state::State>,
     clock: clock::ClockState,
     timers: timer::Timers,
+    pomo: pomodoro::Pomo,
     notes: notes::Notes,
     picker: color_picker::Picker,
     privacy: privacy::Privacy,
     night: night_light::NightLight,
     mascots: mascots::Mascots,
+    sleeper: sleeper::Sleeper,
     clipboard: clipboard::History,
     arrange: arrange::Arrange,
     mixer: audio::Mixer,
@@ -421,6 +439,7 @@ impl App {
     fn set_awake(&self, on: bool) {
         self.notes_awake(on);
         self.timers_awake(on);
+        self.pomodoro_awake(on);
         self.mascots_awake(on);
     }
 
@@ -484,6 +503,7 @@ impl App {
             Event::Mascot(sys::mascot::Event::Output { id, stdout }) => {
                 self.mascot_output(id, stdout)
             }
+            Event::Sleep(e) => self.sleep_event(e),
         }
         None
     }
@@ -493,8 +513,14 @@ fn wire(app: &Rc<App>, ui: &Dash) {
     let a = app.clone();
     ui.on_close_requested(move || a.pending.borrow_mut().push(Control::Hide));
     let a = app.clone();
-    ui.global::<UiShell>()
-        .on_hide(move || a.pending.borrow_mut().push(Control::Hide));
+    // Clicking a window or a notification takes you to it and puts the dashboard away. In the demo
+    // there is nothing to go to (it only says so), and putting the dashboard away would look like
+    // the page reloading.
+    ui.global::<UiShell>().on_hide(move || {
+        if !a.caps.simulated {
+            a.pending.borrow_mut().push(Control::Hide);
+        }
+    });
     edit::wire(app, ui);
     arrange::wire(app, ui);
     nav::wire(app, ui);
@@ -507,19 +533,20 @@ fn wire(app: &Rc<App>, ui: &Dash) {
     clipboard::wire(app, ui);
     color_picker::wire(app, ui);
     timer::wire(app, ui);
+    pomodoro::wire(app, ui);
     notes::wire(app, ui);
     privacy::wire(app, ui);
     night_light::wire(app, ui);
     devices::wire(app, ui);
     mascots::wire(app, ui);
+    sleeper::wire(app, ui);
 }
 
 /// The dashboard on `system`. `visible`: it is up already (a snapshot renders without `show`).
 fn build(
     ui: &Dash,
     system: Started,
-    #[cfg(not(target_arch = "wasm32"))]
-    input: smithay_client_toolkit::reexports::calloop::channel::Sender<Input>,
+    #[cfg(not(target_arch = "wasm32"))] input: sys::Sink<Input>,
     solo: Option<Kind>,
     config: Loaded,
     visible: bool,
@@ -528,9 +555,11 @@ fn build(
     theme::install_bundled();
     ui.set_solo(solo.is_some());
     let desktop = ui.global::<crate::Desktop>();
-    desktop.set_niri(caps.niri());
-    desktop.set_plasma(caps.kwin());
-    if !caps.has_windows() {
+    desktop.set_screencast(caps.screencast);
+    desktop.set_niri(caps.compositor == sys::Compositor::Niri);
+    desktop.set_plasma(caps.compositor == sys::Compositor::Kwin);
+    desktop.set_unavailable(caps.unavailable().into());
+    if !caps.windows {
         ui.global::<crate::Windows>().set_available(false);
     }
 
@@ -579,11 +608,13 @@ fn build(
         media_art: Default::default(),
         clock: Default::default(),
         timers: timer::Timers::restored(&state),
+        pomo: pomodoro::Pomo::restored(&state),
         notes: Default::default(),
         picker: Default::default(),
         privacy: Default::default(),
         night: Default::default(),
         mascots: Default::default(),
+        sleeper: Default::default(),
         clipboard: Default::default(),
         arrange,
         state: RefCell::new(state),

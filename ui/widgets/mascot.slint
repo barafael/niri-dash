@@ -9,7 +9,7 @@
 
 import { NavScope } from "../common.slint";
 import { Theme } from "../theme.slint";
-import { WidgetOpts, Mascots, MascotLine, Character, Outfit, CowSize } from "../data.slint";
+import { WidgetOpts, Mascots, MascotLine, Character, Outfit, CowScene } from "../data.slint";
 
 struct Art {
     body: image,
@@ -282,7 +282,8 @@ component FigureMascot inherits Rectangle {
     }
 }
 
-// The cow, in the manner of `cowsay`: all of it text, the bubble wrapped to the widget's width.
+// The cow, in the manner of `cowsay`: all of it text, with the bubble and the cow laid out to fill the
+// widget, in the biggest letters they fit in.
 // The drawing comes from Rust (src/cowfile.rs): our own, or a cow file the `cowfile` setting names.
 // What it wears shows in its eyes, the only part of it that changes.
 component CowSay inherits Rectangle {
@@ -290,21 +291,18 @@ component CowSay inherits Rectangle {
     in property <bool> nav;
     in property <string> cowfile;
     property <MascotLine> line: Mascots.lines[root.id];
-    property <CowSize> size: Mascots.cow-size(root.cowfile);
-    property <length> edge: Theme.pad-tight;
-    // Letters that fit the drawing and about four lines of bubble; a big cow gets small ones.
-    property <length> font: clamp(min(
-        (root.height - 2 * root.edge) / (root.size.lines + 6) / 1.4,
-        (root.width - 2 * root.edge) / max(root.size.width, 24) / 0.62), 6px, 14px);
-    // From the font size, not measured: this feeds the text being drawn, and measuring text while
-    // the renderer draws it panics (the font context is already borrowed). Monospace fonts are
-    // about 0.6 em wide; both are on the roomy side, and what still doesn't fit is clipped.
-    property <length> char-w: root.font * 0.62;
-    property <length> line-h: root.font * 1.4;
-    property <int> cols: floor((root.width - 2 * root.edge) / root.char-w);
-    // What is left after the cow and the bubble's top and bottom.
-    property <int> rows: max(1, floor((root.height - 2 * root.edge) / root.line-h) - root.size.lines - 2);
-    property <string> bubble: Mascots.cow-bubble(root.line.text == "" ? "..." : root.line.text, root.cols, root.rows);
+    property <length> edge: max(Theme.pad-tight, min(root.width, root.height) * 0.04);
+    // The room the cow has: all the card but its margin, and the corner where "+n more" sits.
+    property <length> reserve: root.line.queued > 0 ? 18px : 0px;
+    // The letters, and what is said, laid out by Rust (src/mascots.rs): the biggest letters in
+    // which the bubble and the cow fit, and the two as one block to center. Not measured here:
+    // this feeds the text being drawn, and measuring text while the renderer draws it panics (the
+    // font context is already borrowed).
+    property <CowScene> scene: Mascots.cow-scene(
+        Mascots.cow-art(root.cowfile, root.eyes, root.tongue),
+        root.line.text,
+        root.width - 2 * root.edge,
+        root.height - 2 * root.edge - root.reserve);
 
     // Blinks, like the others.
     property <bool> blink;
@@ -352,20 +350,25 @@ component CowSay inherits Rectangle {
         }
     }
     Text {
-        x: root.edge;
-        y: root.edge + (root.up ? 0px : 10px);
+        // The block of bubble and cow, centered; flush with the margin when it is wider than the
+        // card (a cow too big for it is clipped on the right).
+        x: max(root.edge, (root.width - root.scene.width) / 2);
+        y: root.edge + root.reserve + max(0px, (root.height - 2 * root.edge - root.reserve - root.scene.height) / 2)
+            + (root.up ? 0px : 10px);
         animate y { duration: (root.up ? 300ms : 90ms) * Theme.motion; easing: ease-out-back; }
         opacity: root.up ? 1 : 0;
         animate opacity { duration: (root.up ? 200ms : 90ms) * Theme.motion; }
-        width: root.width - 2 * root.edge;
-        height: root.height - 2 * root.edge;
-        vertical-alignment: bottom;
+        // Half an em of slack: the size is an estimate, and a letter cut at the edge looks worse
+        // than one a little over.
+        width: min(root.scene.width, root.width - 2 * root.edge) + root.scene.font / 2;
+        height: root.scene.height + root.scene.font / 2;
+        vertical-alignment: top;
         wrap: no-wrap;
         overflow: clip;
         font-family: Mascots.cow-font();
-        font-size: root.font;
+        font-size: root.scene.font;
         color: Theme.text;
-        text: root.bubble + "\n" + Mascots.cow-art(root.cowfile, root.eyes, root.tongue);
+        text: root.scene.text;
     }
     if root.line.queued > 0: Text {
         x: root.width - self.width - root.edge;

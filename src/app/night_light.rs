@@ -35,7 +35,7 @@ fn kelvin(warmth: f32) -> u32 {
 impl App {
     /// On start: bring back what was on before the restart.
     pub(super) fn restore_night_light(&self) {
-        if self.caps.kwin_night_light() {
+        if self.caps.night_light_native {
             // KWin keeps its own state; a pause ended with the daemon.
             let ui = self.ui();
             let g = ui.global::<UiNightLight>();
@@ -63,7 +63,7 @@ impl App {
     /// Apply a request from the widget, a standalone app or the command line; `announce` shows
     /// the result as an on-screen message (a keybinding has no other feedback).
     pub(super) fn night_light(&self, cmd: Cmd, announce: bool) {
-        if self.caps.kwin_night_light() {
+        if self.caps.night_light_native {
             if self.solo.is_some() {
                 self.forward_night_light(cmd);
             } else {
@@ -151,7 +151,7 @@ impl App {
 
     /// A temperature from the widget: KWin sets its own, so only show it again.
     fn night_light_kelvin(&self, kelvin: u32) {
-        if self.caps.kwin_night_light() {
+        if self.caps.night_light_native {
             let ui = self.ui();
             let g = ui.global::<UiNightLight>();
             g.set_warmth(warmth(g.get_kelvin().max(0) as u32));

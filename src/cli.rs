@@ -10,8 +10,6 @@ use std::path::{Path, PathBuf};
 /// What the command line reports when a command fails.
 #[derive(Debug, thiserror::Error)]
 enum Error {
-    #[error("unknown widget {widget:?}; one of: {names}")]
-    UnknownWidget { widget: String, names: String },
     #[error("sending command: {0}")]
     Send(#[source] std::io::Error),
     #[error("niri-dash is not running: {0}")]
@@ -34,19 +32,6 @@ enum Error {
 
 type Result<T, E = Error> = std::result::Result<T, E>;
 
-/// A widget by the name config.kdl uses.
-fn parse_widget(name: &str) -> Result<layout::Kind> {
-    layout::Kind::from_str_opt(name).ok_or_else(|| {
-        let names: Vec<&str> = <layout::Kind as strum::IntoEnumIterator>::iter()
-            .map(|k| k.name())
-            .collect();
-        Error::UnknownWidget {
-            widget: name.into(),
-            names: names.join(", "),
-        }
-    })
-}
-
 /// The part of `niri-dash --help` for Plasma users.
 const PLASMA_HELP: &str = "\
 On KDE Plasma (6):
@@ -60,7 +45,7 @@ On KDE Plasma (6):
   or resume its schedule while niri-dash runs; its times and warmth are set in System Settings.
   Keyboard layouts, the color picker and Log out go through Plasma.
   Not available on Plasma: the window list, focusing a Claude session's window, and noticing
-  screen sharing; they need niri. `niri-dash window-rules` writes rules for niri only.";
+  screen sharing. `niri-dash window-rules` writes rules for niri only.";
 
 #[derive(Parser)]
 #[command(
@@ -87,8 +72,9 @@ enum Command {
     /// Run one widget as a standalone app in its own window, e.g. `niri-dash app clock`. If it is
     /// already running, show and focus it.
     App {
-        /// The widget, as named in config.kdl (clock, calendar, wifi, bluetooth, clipboard, …).
-        widget: String,
+        /// The widget, as named in config.kdl.
+        #[arg(value_enum)]
+        widget: layout::Kind,
         /// Close it if it is open, show it otherwise (for keybinds).
         #[arg(long, conflicts_with = "quit")]
         toggle: bool,
@@ -172,8 +158,7 @@ fn send(path: &Path, line: &str) -> Result<()> {
 }
 
 /// `niri-dash app <widget>`: hand the request to a running instance, or become it.
-fn app_client(widget: &str, toggle: bool, quit: bool) -> Result<()> {
-    let kind = parse_widget(widget)?;
+fn app_client(kind: layout::Kind, toggle: bool, quit: bool) -> Result<()> {
     let control = if quit {
         Control::Quit
     } else if toggle {
@@ -268,7 +253,7 @@ fn run() -> Result<()> {
             widget,
             toggle,
             quit,
-        } => app_client(&widget, toggle, quit),
+        } => app_client(widget, toggle, quit),
         Command::Say {
             text,
             to,
@@ -278,10 +263,7 @@ fn run() -> Result<()> {
         } => say(text, to, outfit, secs, show),
         Command::DesktopEntries { remove } => Ok(desktop::entries(remove)?),
         Command::WindowRules { output } => Ok(desktop::window_rules(output.as_deref())?),
-        Command::Snapshot(args) => {
-            let solo = args.app.as_deref().map(parse_widget).transpose()?;
-            Ok(app::snapshot::run(&args, solo)?)
-        }
+        Command::Snapshot(args) => Ok(app::snapshot::run(&args, args.app)?),
         Command::Stress(args) => Ok(app::stress::run(&args)?),
         Command::NightLight { value } => {
             let cmd = niri_dash_system::night_light::Cmd::parse(&value)

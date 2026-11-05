@@ -54,6 +54,8 @@ export component TextButton inherits Rectangle {
     in property <bool> danger;
     in property <bool> enabled: true;
     in property <bool> kfocus;
+    // Tight padding, for a row of choices that must fit in a narrow widget.
+    in property <bool> compact;
     callback clicked();
     accessible-role: button;
     accessible-label: root.text;
@@ -63,15 +65,15 @@ export component TextButton inherits Rectangle {
     height: 30px;
     border-width: kfocus ? 2px : 0px;
     border-color: primary ? Theme.text : Theme.accent;
-    min-width: label.preferred-width + (has-icon ? 44px : 24px);
+    min-width: label.preferred-width + (has-icon ? 44px : compact ? 8px : 24px);
     border-radius: min(self.height / 2, Theme.radius-small);
     background: danger ? (touch.has-hover ? Theme.bad.with-alpha(0.33) : Theme.bad.with-alpha(0.2))
         : primary ? (touch.pressed ? Theme.accent.darker(0.2) : touch.has-hover ? Theme.accent.brighter(0.1) : Theme.accent)
         : (touch.pressed ? Theme.pressed : touch.has-hover ? Theme.hover : Theme.card-raised);
     opacity: enabled ? 1 : 0.45;
     HorizontalLayout {
-        padding-left: 12px;
-        padding-right: 12px;
+        padding-left: root.compact ? 4px : 12px;
+        padding-right: root.compact ? 4px : 12px;
         spacing: 6px;
         alignment: center;
         if root.has-icon: Icon {
@@ -83,6 +85,8 @@ export component TextButton inherits Rectangle {
         label := Text {
             text: root.text;
             vertical-alignment: center;
+            // A compact button gives way when the row is too narrow, rather than overflowing.
+            overflow: root.compact ? TextOverflow.elide : TextOverflow.clip;
             font-size: Theme.font-body;
             color: root.primary ? Theme.on-accent : root.danger ? Theme.bad : Theme.text;
         }
@@ -148,7 +152,10 @@ export component Ring inherits Rectangle {
     accessible-value: Math.round(clamp(root.value, 0, 1) * 100) + "%";
     accessible-value-minimum: 0;
     accessible-value-maximum: 100;
+    // Gauges glide to a new value; a knob under the pointer, which glides by itself, says 0.
+    in property <duration> glide: 0ms;
     property <float> v: clamp(value, 0, 0.9999);
+    animate v { duration: root.glide; easing: ease-out; }
     property <float> r: 50 - (thickness / self.width) * 50 - 0.5;
     Path {
         width: 100%;
@@ -196,6 +203,9 @@ export component Bar inherits Rectangle {
         width: parent.width * clamp(root.value, 0, 1);
         border-radius: parent.border-radius;
         background: root.high-is-bad && root.value > 0.9 ? Theme.bad : root.tint;
+        // New readings slide in rather than jump.
+        animate width { duration: 300ms * Theme.motion; easing: ease-out; }
+        animate background { duration: 200ms * Theme.motion; }
     }
 }
 
@@ -218,6 +228,7 @@ export component RoundGauge inherits Rectangle {
         width: 100%;
         height: 100%;
         value: root.value;
+        glide: 400ms * Theme.motion;
         thickness: max(6px, root.width * 0.06);
         tint: root.high-is-bad && root.value > 0.9 ? Theme.bad : root.tint;
     }
@@ -226,6 +237,7 @@ export component RoundGauge inherits Rectangle {
         width: 76%;
         height: 76%;
         value: root.inner;
+        glide: 400ms * Theme.motion;
         thickness: max(5px, root.width * 0.05);
         tint: root.inner-tint;
     }
@@ -371,6 +383,10 @@ export component Slider inherits Rectangle {
     }
     height: 24px;
     property <length> knob: 16px;
+    // What is drawn: it glides to `value` (a key step, a change from elsewhere), but follows
+    // the pointer without lag while it drags.
+    property <float> shown: root.value;
+    animate shown { duration: touch.pressed ? 0ms : 100ms * Theme.motion; easing: ease-out; }
     opacity: enabled ? 1 : 0.4;
     Rectangle {
         y: (root.height - self.height) / 2;
@@ -381,13 +397,13 @@ export component Slider inherits Rectangle {
     Rectangle {
         x: 0;
         y: (root.height - self.height) / 2;
-        width: clamp(root.value, 0, 1) * (root.width - root.knob) + root.knob / 2;
+        width: clamp(root.shown, 0, 1) * (root.width - root.knob) + root.knob / 2;
         height: 6px;
         border-radius: 3px;
         background: root.tint;
     }
     Rectangle {
-        x: clamp(root.value, 0, 1) * (root.width - root.knob);
+        x: clamp(root.shown, 0, 1) * (root.width - root.knob);
         y: (root.height - self.height) / 2;
         width: root.knob;
         height: root.knob;
@@ -506,10 +522,13 @@ export component RingKnob inherits Rectangle {
     }
     border-radius: self.width / 2;
     background: root.kfocus ? Theme.hover : transparent;
+    // Glides to `value`, so a key step doesn't jump.
+    property <float> shown: root.value;
+    animate shown { duration: 100ms * Theme.motion; easing: ease-out; }
     Ring {
         width: 100%;
         height: 100%;
-        value: root.value;
+        value: root.shown;
         thickness: max(6px, root.width * 0.07);
         tint: root.dimmed ? Theme.faint : root.tint;
     }
@@ -573,6 +592,9 @@ export component Row inherits Rectangle {
     in property <bool> enabled: true;
     // Under the keyboard cursor. A Row in a ScrollList scrolls into view through `revealed`.
     in property <bool> kfocus;
+    // Under the keyboard cursor on a part of the row (its close button): the row scrolls into
+    // view for that too.
+    in property <bool> kfocus-part;
     out property <bool> hovered: touch.has-hover;
     callback clicked();
     callback middle-clicked();
@@ -590,9 +612,14 @@ export component Row inherits Rectangle {
             self.revealed(self.absolute-position.y, self.height);
         }
     }
+    changed kfocus-part => {
+        if (self.kfocus-part) {
+            self.revealed(self.absolute-position.y, self.height);
+        }
+    }
     // The list changed around it (a section appeared above): the cursor stays in sight.
     changed y => {
-        if (self.kfocus) {
+        if (self.kfocus || self.kfocus-part) {
             self.revealed(self.absolute-position.y, self.height);
         }
     }
@@ -680,6 +707,9 @@ export component ScrollList inherits Rectangle {
         x: 0;
         width: root.width - root.gutter;
         height: root.height;
+        // Only up and down: a row too wide for the list would otherwise make the whole column
+        // wider than its view, and shift it sideways, out from under the scrollbar and the cursor.
+        content-width: self.width;
         content-height: column.preferred-height;
         column := VerticalLayout {
             width: flick.width;

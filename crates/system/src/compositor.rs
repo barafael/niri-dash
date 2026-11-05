@@ -69,8 +69,11 @@ pub enum Error {
     Niri(#[from] niri::Error),
     #[error(transparent)]
     Kde(#[from] kde::Error),
-    #[error("{0} needs niri or KDE Plasma")]
-    Unsupported(&'static str),
+    #[error("{what} not available on {platform}")]
+    Unsupported {
+        what: &'static str,
+        platform: Compositor,
+    },
 }
 
 /// Start what the compositor reports by itself: niri's event stream (windows, keyboard layouts,
@@ -153,7 +156,10 @@ pub async fn pick_color(ctx: &Ctx) -> Result<Option<[f64; 3]>, Error> {
             .await
             .map_err(niri::Error::from)??),
         Compositor::Kwin => Ok(kde::pick_color(ctx).await?),
-        Compositor::Other => Err(Error::Unsupported("Picking a color")),
+        Compositor::Other => Err(Error::Unsupported {
+            what: "Picking a color",
+            platform: Compositor::Other,
+        }),
     }
 }
 
@@ -165,13 +171,17 @@ pub async fn logout(ctx: &Ctx) -> Result<(), Error> {
         })
         .await?),
         Compositor::Kwin => Ok(kde::logout(ctx).await?),
-        Compositor::Other => Err(Error::Unsupported("Logging out")),
+        Compositor::Other => Err(Error::Unsupported {
+            what: "Logging out",
+            platform: Compositor::Other,
+        }),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Capabilities;
 
     #[test]
     fn detection() {
@@ -186,5 +196,23 @@ mod tests {
         assert_eq!(from_env(None, None, Some("true")), Some(Kwin));
         assert_eq!(from_env(None, Some("sway"), None), None);
         assert_eq!(from_env(None, None, None), None);
+    }
+
+    #[test]
+    fn what_a_platform_lacks_is_said_one_way() {
+        use Compositor::*;
+        for (platform, name) in [
+            (Niri, "niri"),
+            (Kwin, "KDE Plasma"),
+            (Other, "this desktop"),
+        ] {
+            let caps = Capabilities::for_compositor(platform, false, false);
+            assert_eq!(caps.unavailable(), format!("not available on {name}"));
+        }
+        let e = Error::Unsupported {
+            what: "Logging out",
+            platform: Other,
+        };
+        assert_eq!(e.to_string(), "Logging out not available on this desktop");
     }
 }

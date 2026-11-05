@@ -16,7 +16,7 @@ Clock, calendar, weather (Open-Meteo, no API key), windows by workspace, Wi-Fi, 
 battery and power profiles (with a switch that blocks sleep and screen locking), volume,
 brightness, night light, notifications, system tray, media player (MPRIS), session (lock,
 suspend, log out, …), clipboard history, CPU / memory / disks / network / GPU, keyboard layout,
-color picker, timer, stopwatch, sticky notes, privacy (who uses the microphone, camera or
+color picker, timer, stopwatch, pomodoro, sleep timer, sticky notes, privacy (who uses the microphone, camera or
 screen), removable drives, phone (KDE Connect), Claude Code sessions and usage, and a mascot
 that comments on your day.
 
@@ -27,6 +27,27 @@ Clipboard history is opt-in. niri-dash reads what you copy only while a clipboar
 your layout (add one in edit mode) or `niri-dash app clipboard` is running. The history stays in
 memory and skips what password managers mark secret. Removing the widget, or
 `niri-dash app clipboard --quit`, stops the recording and forgets the history.
+
+The sleep timer (`sleep-timer`) is [sleepy](https://github.com/barafael/sleepy) as a widget: count
+down to the moment the machine suspends, hibernates or powers off. The *when* is a duration
+(`45s`, `30 min`, `1h30m`) or a clock time (`23:45`, the next one to come); what isn't one is
+told off in red under the field. Only the modes logind says this machine can do are offered
+(suspend, hibernate, hybrid sleep, suspend then hibernate, power off), and a script of your own
+(`~/.config/niri-dash/sleep.sh`, or the widget's `sleep-script` setting) as a sixth. The
+countdown keeps running while the dashboard is hidden. Keys, once inside the widget: type in the
+field with Enter or `i` (Enter there arms), `j`/`k` or the arrows pick the mode, Enter arms,
+Space or `p` pauses and resumes, `+` and `-` move the deadline a minute, `d` or Ctrl+D is the
+dry run (count down for real, then only say what would have run), `a` keeps the screen on while
+it counts, and Escape gives up on the countdown before it leaves the widget. Its settings
+(`sleep-when`, `sleep-script`, `dry-run`, `keep-awake`) say where it starts.
+
+The pomodoro (`pomodoro`) alternates focus sessions and breaks: 25 minutes, then 5, and after four
+sessions a long break of 15. A ring, or a bar, shows the part in hand, and a dot per session shows
+how far the round has come. Each part waits to be started unless `auto-start` is on; a notice and
+a sound say when one ends, even while the dashboard is hidden, and a part that is running survives
+a restart of the daemon. Space starts and pauses, `n` goes to the next part (a skipped focus
+session doesn't count), `r` starts the part over. Its settings are `focus-minutes`, `short-break`,
+`long-break`, `rounds` (sessions before the long break) and `auto-start`.
 
 The mascot can also be a cow in the manner of `cowsay`: `character "cow"`, and `cowfile "tux"` for
 another animal. Cows are read from your own cowsay install (or from a path); a few of our own stand
@@ -48,7 +69,8 @@ next one. The calendar has a day cursor: `h`/`l` a day, `j`/`k` a week, `n`/`p` 
 Enter on a text field types into it; Escape gets you out again.
 
 `e` blows the widget up in the middle of the dashboard (round widgets open into their full
-form); `e` or Escape puts it back. Ctrl+Shift+`h`/`j`/`k`/`l` move the widget a cell, pushing
+form); `e` or Escape puts it back. `s` opens the widget's settings (the same card as in edit mode,
+below). Ctrl+Shift+`h`/`j`/`k`/`l` move the widget a cell, pushing
 the others aside. Ctrl+`r` sizes it: `H`/`J`/`K`/`L` push that side out a cell, `h`/`j`/`k`/`l`
 pull it in; Enter, Escape or Ctrl+`r` again when done. Ctrl+`h`/`j`/`k`/`l` (or `H`/`J`/`K`/`L`)
 go to the neighbouring widget, Escape leaves the widget, and a second Escape closes the
@@ -58,12 +80,14 @@ dashboard. A standalone app starts inside its widget.
 
 The pencil in the corner (or a right-click on the background) opens edit mode: drag widgets
 around (the others make room), resize them from any edge or corner, click one for its settings, and add
-new ones from the sidebar. The sidebar also sets the grid's columns and rows, the color scheme
+new ones from the sidebar. A widget's settings open in a card in the middle of the screen (the
+gear in its corner, a click on it, or `s` from inside it); Escape or a click outside closes it.
+The sidebar also sets the grid's columns and rows, the color scheme
 (gruvbox, catppuccin, nord, dracula, rose-pine, everforest, solarized, …) and the style:
 corners, spacing, fonts, animation speed, frosted glass.
 
 All of it works from the keyboard too (Ctrl+E opens and closes edit mode). In the sidebar, Tab
-switches tabs, `j`/`k` move between rows, `h`/`l` step a value or flip a switch, Enter or Space
+switches tabs (in the settings card, it steps through the rows), `j`/`k` move between rows, `h`/`l` step a value or flip a switch, Enter or Space
 presses (or starts typing in a text field), and Backspace puts a row back to its default. `f` and
 a label picks a widget and opens its settings; then Ctrl+`h`/`j`/`k`/`l` go to the next widget,
 Ctrl+Shift+`h`/`j`/`k`/`l` move it, Ctrl+`r` sizes it (`H`/`J`/`K`/`L` push a side out,
@@ -131,7 +155,7 @@ Start `niri-dash` at login (System Settings → Autostart), and bind a key to `n
 
 Plasma keeps showing notifications; the notification widget pauses its pop-ups. Night light,
 keyboard layouts, the color picker and logging out go through Plasma. The window list, focusing
-windows and noticing screen sharing need niri.
+windows and noticing screen sharing are not available on Plasma.
 
 `niri-dash --help` lists the other commands: `inhibit`, `dnd`, `night-light`, `say`, ….
 

@@ -10,9 +10,6 @@ use std::rc::Rc;
 use std::time::Duration;
 use web_time::{SystemTime, UNIX_EPOCH};
 
-/// Played when the timer goes off, if it's there.
-const ALARM_SOUND: &str = "/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga";
-
 /// The countdown and the stopwatch, shared by every timer widget.
 pub(super) struct Timers {
     countdown: RefCell<Countdown>,
@@ -101,7 +98,7 @@ impl App {
         ui.global::<crate::Countdown>().set_done(true);
         let text = format!("{} timer is done", crate::timer::format(length, false));
         // On Plasma the notification pops up by itself.
-        if !self.caps.notifications_elsewhere() {
+        if self.caps.notifications_server {
             self.osd(&text, "alarm-symbolic");
         }
         self.tx
@@ -113,7 +110,7 @@ impl App {
             });
         self.tx
             .host
-            .tell(host::Command::PlaySound(ALARM_SOUND.into()));
+            .tell(host::Command::PlaySound(host::Sound::Alarm));
         let w = self.ui.clone();
         self.timers
             .done

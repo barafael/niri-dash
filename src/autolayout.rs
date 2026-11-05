@@ -2204,7 +2204,9 @@ mod tests {
                 clashes += 1;
             }
         }
-        assert!(hits * 10 >= total * 9, "liked pairs touch {hits}/{total}");
+        // Most touch. Not all: with every kind on the grid (now 33) a widget has many friends and only
+        // four sides, and the crowded grid leaves some pairs a gap apart.
+        assert!(hits * 100 >= total * 85, "liked pairs touch {hits}/{total}");
         assert!(clashes <= 2, "session and windows touch in {clashes}/20");
     }
 

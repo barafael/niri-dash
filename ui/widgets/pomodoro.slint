@@ -1,0 +1,223 @@
+import { Theme, Icons } from "../theme.slint";
+import { IconButton, Muted, Bar, Ring, NavScope } from "../common.slint";
+
+// The pomodoro: focus sessions and the breaks between them. What comes next is Rust's
+// (src/pomodoro.rs); this is what it shows and what can be pressed.
+export global Pomodoro {
+    // "Focus", "Short break", "Long break".
+    in property <string> label;
+    in property <bool> on-break;
+    // The time left, "24:12".
+    in property <string> text: "25:00";
+    // The part still to go: 1 at the start, 0 at the end.
+    in property <float> fraction: 1;
+    in property <bool> running;
+    in property <bool> paused;
+    // Focus sessions before the long break, and how many of them are done.
+    in property <int> rounds: 4;
+    in property <int> done;
+    // "Next: short break, 5 min".
+    in property <string> next;
+    callback toggle();
+    callback reset();
+    callback skip();
+}
+
+// One dot per session of the round: lit for those done, ringed for the one in hand.
+component Dots inherits HorizontalLayout {
+    in property <length> size: 9px;
+    in property <color> tint;
+    spacing: root.size * 0.7;
+    alignment: start;
+    for i in Pomodoro.rounds: Rectangle {
+        y: (parent.height - self.height) / 2;
+        width: root.size;
+        height: root.size;
+        border-radius: root.size / 2;
+        background: i < Pomodoro.done ? root.tint : transparent;
+        border-width: i < Pomodoro.done ? 0px : 1.5px;
+        border-color: !Pomodoro.on-break && i == Pomodoro.done ? root.tint : Theme.track;
+    }
+}
+
+component PomodoroButtons inherits HorizontalLayout {
+    in property <length> size: 36px;
+    // The play / pause button.
+    in property <bool> primary: true;
+    // The keyboard cursor's button: 0 play / pause, 1 skip, 2 reset (-1: none).
+    in property <int> kfocus: -1;
+    out property <bool> has-reset: Pomodoro.running || Pomodoro.paused;
+    spacing: 6px;
+    alignment: center;
+    if root.primary: IconButton {
+        accessible-label: Pomodoro.running ? "Pause" : "Start";
+        kfocus: root.kfocus == 0;
+        y: (parent.height - self.height) / 2;
+        size: root.size;
+        fill: Theme.accent-soft;
+        tint: Theme.accent;
+        icon: Pomodoro.running ? Icons.pause : Icons.play;
+        clicked => { Pomodoro.toggle(); }
+    }
+    IconButton {
+        accessible-label: "Skip to the next part";
+        kfocus: root.kfocus == 1;
+        y: (parent.height - self.height) / 2;
+        size: root.size;
+        fill: Theme.card-raised;
+        icon: Icons.next;
+        clicked => { Pomodoro.skip(); }
+    }
+    if root.has-reset: IconButton {
+        accessible-label: "Start this part over";
+        kfocus: root.kfocus == 2;
+        y: (parent.height - self.height) / 2;
+        size: root.size;
+        fill: Theme.card-raised;
+        icon: Icons.reset;
+        clicked => { Pomodoro.reset(); }
+    }
+}
+
+export component PomodoroWidget inherits Rectangle {
+    in property <bool> round;
+    in property <bool> nav;
+    property <color> tint: Pomodoro.on-break ? Theme.good : Theme.accent;
+    property <bool> has-reset: Pomodoro.running || Pomodoro.paused;
+    // Keyboard stops (rectangular): play / pause, skip, and reset where shown.
+    property <int> buttons: 2 + (root.has-reset ? 1 : 0);
+    property <bool> extras: root.height > 110px;
+    property <string> status: Pomodoro.label + " · " + Pomodoro.done + "/" + Pomodoro.rounds
+        + (Pomodoro.paused ? " · paused" : "");
+    // Square and centered, should the widget not be (a standalone app's window).
+    if root.round: face := Rectangle {
+        width: min(root.width, root.height);
+        height: self.width;
+        property <length> ring: max(5px, self.width * 0.06);
+        // Buttons under the time once the face has room for them.
+        property <bool> buttons: self.width >= 150px;
+        Ring {
+            accessible-label: "Time left in this part";
+            width: 100%;
+            height: 100%;
+            value: Pomodoro.running || Pomodoro.paused ? Pomodoro.fraction : 1;
+            thickness: face.ring;
+            tint: Pomodoro.paused ? Theme.faint : root.tint;
+        }
+        // Click starts and pauses, a double click starts the part over.
+        TouchArea {
+            accessible-role: button;
+            accessible-label: Pomodoro.running ? "Pause" : "Start";
+            accessible-action-default => { Pomodoro.toggle(); }
+            clicked => { Pomodoro.toggle(); }
+            double-clicked => { Pomodoro.reset(); }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            padding: face.ring * 2;
+            Text {
+                text: Pomodoro.text;
+                horizontal-alignment: center;
+                font-size: clamp(face.width * 0.21, 12px, 56px);
+                font-weight: Theme.font-weight-display;
+                color: Theme.text;
+            }
+            Text {
+                text: Pomodoro.label;
+                horizontal-alignment: center;
+                font-size: Theme.font-small;
+                color: root.tint;
+                overflow: elide;
+            }
+            if face.width >= 120px: Dots {
+                height: 14px;
+                size: clamp(face.width * 0.04, 6px, 12px);
+                tint: root.tint;
+                alignment: center;
+            }
+            if face.buttons: PomodoroButtons {
+                height: 34px;
+                size: 30px;
+            }
+        }
+    }
+    if !root.round: VerticalLayout {
+        padding: Theme.pad;
+        spacing: 8px;
+        alignment: center;
+        HorizontalLayout {
+            spacing: 12px;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                Text {
+                    text: Pomodoro.text;
+                    font-size: clamp(min(root.height * (root.extras ? 0.3 : 0.42), root.width * 0.15), 18px, 64px);
+                    font-weight: Theme.font-weight-display;
+                    color: Theme.text;
+                    overflow: elide;
+                }
+                Text {
+                    text: root.status;
+                    font-size: Theme.font-small;
+                    color: root.tint;
+                    overflow: elide;
+                }
+            }
+            PomodoroButtons {
+                kfocus: keys.on && keys.cursor < root.buttons ? keys.cursor : -1;
+            }
+        }
+        if root.extras: Bar {
+            accessible-label: "Time left in this part";
+            value: Pomodoro.running || Pomodoro.paused ? Pomodoro.fraction : 1;
+            tint: Pomodoro.paused ? Theme.faint : root.tint;
+            thickness: 4px;
+            high-is-bad: false;
+        }
+        if root.extras: HorizontalLayout {
+            spacing: 12px;
+            height: 16px;
+            Dots {
+                tint: root.tint;
+            }
+            Muted {
+                text: Pomodoro.next;
+                horizontal-stretch: 1;
+                horizontal-alignment: right;
+            }
+        }
+    }
+    // Space starts and pauses, n skips to the next part, r starts this one over. Rectangular:
+    // j/k over the buttons, Enter presses one. (s is every widget's settings.)
+    keys := NavScope {
+        accessible-label: "Pomodoro";
+        active: root.nav;
+        count: root.round ? 0 : root.buttons;
+        activate(i) => {
+            if (root.round || i == 0) {
+                Pomodoro.toggle();
+            } else if (i == 1) {
+                Pomodoro.skip();
+            } else {
+                Pomodoro.reset();
+            }
+        }
+        letter(t) => {
+            if (t == " ") {
+                Pomodoro.toggle();
+                return true;
+            }
+            if (t == "n") {
+                Pomodoro.skip();
+                return true;
+            }
+            if (t == "r") {
+                Pomodoro.reset();
+                return true;
+            }
+            false
+        }
+    }
+}

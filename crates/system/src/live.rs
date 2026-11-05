@@ -2,9 +2,9 @@
 //! turns the applet's commands into what the sources do.
 
 use super::{
-    Capabilities, Event, Feed, Senders, Started, audio, bluetooth, brightness, clipboard, color,
-    drives, host, keyboard, mascot, media, night_light, notifications, phones, power, privacy,
-    session, tray, wayland, weather, wifi, windows,
+    Capabilities, EventSender, Feed, Senders, Started, audio, bluetooth, brightness, clipboard,
+    color, drives, host, keyboard, mascot, media, night_light, notifications, phones, power,
+    privacy, session, sleep, tray, wayland, weather, wifi, windows,
 };
 use crate::compositor;
 use crate::sources::{
@@ -32,7 +32,7 @@ pub struct Options {
 
 /// Start the real system on a thread of its own, reporting to `events`. Returns once it is
 /// running and knows which compositor this is. It stops when every sender is dropped.
-pub fn live(events: Sender<Event>, opts: Options) -> std::io::Result<Started> {
+pub fn live(events: EventSender, opts: Options) -> std::io::Result<Started> {
     let (started_tx, started_rx) = std::sync::mpsc::channel();
     std::thread::Builder::new()
         .name("niri-dash-system".into())
@@ -56,11 +56,11 @@ pub fn live(events: Sender<Event>, opts: Options) -> std::io::Result<Started> {
                 },
                 None => None,
             };
-            let caps = Capabilities {
+            let caps = Capabilities::for_compositor(
                 compositor,
-                clipboard: wayland.as_ref().is_some_and(|w| w.has_clipboard),
-                gamma: wayland.as_ref().is_some_and(|w| w.has_gamma),
-            };
+                wayland.as_ref().is_some_and(|w| w.has_clipboard),
+                wayland.as_ref().is_some_and(|w| w.has_gamma),
+            );
             let (host_tx, host_rx) = unbounded_channel();
             let senders = {
                 let _in_runtime = rt.enter();
@@ -137,6 +137,10 @@ fn start(
         }),
         mascot: run(MascotActor { ctx: base() }),
         clipboard: run(ClipboardActor(wayland.map(|w| w.clipboard))),
+        sleep: run(SleepActor {
+            awake: sources::sleep::Awake::start(base()),
+            ctx: base(),
+        }),
     }
 }
 
@@ -184,9 +188,14 @@ impl Actor for Host {
                     log::warn!("{e}");
                 }
             }
-            PlaySound(path) => {
-                if path.exists() {
-                    let _ = sources::spawn_detached("pw-play", &[&path.to_string_lossy()]);
+            PlaySound(sound) => {
+                let path = match sound {
+                    host::Sound::Alarm => {
+                        "/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga"
+                    }
+                };
+                if std::path::Path::new(path).exists() {
+                    let _ = sources::spawn_detached("pw-play", &[path]);
                 }
             }
             FocusedOutput { reply } => {
@@ -546,5 +555,24 @@ impl Actor for MascotActor {
             };
             c.send(mascot::Event::Output { id, stdout });
         });
+    }
+}
+
+struct SleepActor {
+    awake: sources::sleep::Awake,
+    ctx: Ctx,
+}
+
+impl Actor for SleepActor {
+    type Command = sleep::Command;
+
+    fn handle(&mut self, cmd: sleep::Command) {
+        match cmd {
+            sleep::Command::Detect { script } => sources::sleep::detect(&self.ctx, script),
+            sleep::Command::Run { mode, script } => {
+                sources::sleep::perform(&self.ctx, mode, script)
+            }
+            sleep::Command::KeepAwake(on) => self.awake.set(on),
+        }
     }
 }

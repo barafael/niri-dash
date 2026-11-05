@@ -110,6 +110,7 @@ export component BatteryWidget inherits Rectangle {
             width: 100%;
             height: 100%;
             value: Power.percent / 100;
+            glide: 400ms * Theme.motion;
             thickness: max(6px, root.width * 0.07);
             tint: root.level-color;
         }
@@ -174,6 +175,7 @@ export component BatteryWidget inherits Rectangle {
                 width: self.d;
                 height: self.d;
                 value: Power.percent / 100;
+                glide: 400ms * Theme.motion;
                 thickness: 6px;
                 tint: root.level-color;
                 Icon {
@@ -203,6 +205,8 @@ export component BatteryWidget inherits Rectangle {
             spacing: 4px;
             height: 30px;
             for p in Power.profiles: Rectangle {
+                // Narrow, they share what there is and the names are cut short.
+                min-width: 0px;
                 accessible-role: radio-button;
                 accessible-label: p == PowerProfile.power-saver ? "Saver" : p == PowerProfile.balanced ? "Balanced" : "Performance";
                 accessible-checkable: true;
@@ -212,10 +216,13 @@ export component BatteryWidget inherits Rectangle {
                 border-radius: min(self.height / 2, Theme.radius-small);
                 property <bool> current: Power.has-profile && Power.profile == p;
                 background: self.current ? Theme.accent : pt.has-hover ? Theme.hover : Theme.card-raised;
+                animate background { duration: 100ms * Theme.motion; }
                 border-width: self.current && keys.on && keys.cursor == 0 ? 2px : 0px;
                 border-color: Theme.text;
                 Text {
                     text: p == PowerProfile.power-saver ? "Saver" : p == PowerProfile.balanced ? "Balanced" : "Performance";
+                    horizontal-alignment: center;
+                    overflow: elide;
                     font-size: Theme.font-small;
                     color: parent.current ? Theme.on-accent : Theme.text;
                 }
@@ -411,6 +418,7 @@ export component VolumeWidget inherits Rectangle {
             height: 24px;
             border-radius: min(6px, Theme.radius-small);
             background: pick-touch.has-hover || (keys.on && keys.cursor == 0) ? Theme.hover : transparent;
+            animate background { duration: 100ms * Theme.motion; }
             border-width: keys.on && keys.cursor == 0 ? 2px : 0px;
             border-color: Theme.accent;
             HorizontalLayout {
@@ -767,6 +775,7 @@ component SessionButton inherits Rectangle {
     }
     border-radius: Theme.radius-small;
     background: armed ? Theme.bad.with-alpha(0.25) : touch.pressed ? Theme.pressed : touch.has-hover || kfocus ? Theme.hover : Theme.card-raised;
+    animate background { duration: 100ms * Theme.motion; }
     border-width: kfocus ? 2px : 0px;
     border-color: Theme.accent;
     VerticalLayout {

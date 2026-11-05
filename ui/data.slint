@@ -1,11 +1,11 @@
 // Data the Rust side pushes into the UI, one global per source, plus the callbacks widgets use to
 // act on it. Several widget instances of the same kind share one global.
 
-export enum WidgetKind { clock, calendar, system-monitor, windows, claude-sessions, wifi, bluetooth, battery, volume, brightness, notifications, tray, media, session, clipboard, weather, memory, disks, network, gpu, claude-usage, mascot, keyboard-layout, color-picker, timer, stopwatch, notes, privacy, night-light, removable-drives, phone }
+export enum WidgetKind { clock, calendar, system-monitor, windows, claude-sessions, wifi, bluetooth, battery, volume, brightness, notifications, tray, media, session, clipboard, weather, memory, disks, network, gpu, claude-usage, mascot, keyboard-layout, color-picker, timer, stopwatch, notes, privacy, night-light, removable-drives, phone, sleep-timer, pomodoro }
 export enum Shape { rect, round }
 
 // The sidebar's sections.
-export enum DrawerTab { widgets, colors, style, widget, arrange }
+export enum DrawerTab { widgets, colors, style, arrange }
 // The pointer shape the platform layer should show.
 export enum PointerShape { normal, move, resize-ew, resize-ns, resize-nwse, resize-nesw }
 // The mascots (src/mascots.rs) and what they wear for a line.
@@ -107,11 +107,13 @@ export global Shell {
     callback hide();
 }
 
-// The compositor we run under: niri, KDE Plasma (KWin), or another. Widgets that need one of them
-// say so.
+// What the desktop offers, and which compositor it is. Widgets that need something it doesn't
+// offer say so, with `unavailable` ("not available on KDE Plasma") after what they lack.
 export global Desktop {
+    in property <bool> screencast: true;
     in property <bool> niri: true;
     in property <bool> plasma;
+    in property <string> unavailable;
 }
 
 export struct ZoneTime {
@@ -691,10 +693,13 @@ export struct MascotLine {
     queued: int,
 }
 
-// A cow's drawing, in columns and lines.
-export struct CowSize {
-    width: int,
-    lines: int,
+// The cow and its speech bubble laid out for a widget: one text, the letters' size, and the size
+// of the text.
+export struct CowScene {
+    text: string,
+    font: length,
+    width: length,
+    height: length,
 }
 
 export global Mascots {
@@ -703,11 +708,10 @@ export global Mascots {
     in property <bool> awake;
     // Clicked: the next line (and the sent one goes away).
     callback next(int);
-    // A line in the cow's ASCII speech bubble, for so many columns and lines of text.
-    pure callback cow-bubble(string, int, int) -> string;
-    // The drawing of the cow a `cowfile` setting names, with these eyes and tongue, and its size.
+    // The drawing of the cow a `cowfile` setting names, with these eyes and tongue.
     pure callback cow-art(string, string, string) -> string;
-    pure callback cow-size(string) -> CowSize;
+    // A drawing and a line for its bubble, in a box of this width and height: both, laid out.
+    pure callback cow-scene(string, string, length, length) -> CowScene;
     // The font family cows are drawn in.
     pure callback cow-font() -> string;
 }

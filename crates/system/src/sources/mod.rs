@@ -1,5 +1,5 @@
 //! Background data sources. Each one runs on the tokio runtime (or its own thread), sends plain
-//! [`Event`]s to the UI thread through a calloop channel, and exposes methods its actor
+//! [`Event`]s to the UI thread through the [`EventSender`], and exposes methods its actor
 //! (`system/live.rs`) calls for commands. Polled sources only poll while the dashboard is visible.
 
 pub mod audio;
@@ -20,12 +20,12 @@ pub mod pipewire;
 pub mod power;
 pub mod privacy;
 pub mod session;
+pub mod sleep;
 pub mod tray;
 pub mod udisks;
 pub mod weather;
 pub mod wifi;
 
-use smithay_client_toolkit::reexports::calloop::channel::Sender;
 use std::collections::HashMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -36,7 +36,7 @@ use tokio::sync::{Notify, watch};
 use zbus::zvariant::{OwnedValue, Value};
 
 pub use crate::text::{clean_label, locale, one_line, strip_spinner, unescape_entities};
-pub use crate::{Compositor, Event, IconSrc, clipboard, keyboard};
+pub use crate::{Compositor, Event, EventSender, IconSrc, clipboard, keyboard};
 
 /// Wakes one source early, e.g. when a change event says its data is stale. If the source is
 /// busy, the wake-up is kept for when it's done.
@@ -95,7 +95,7 @@ struct Buses {
 
 #[derive(Clone)]
 pub struct Ctx {
-    tx: Sender<Event>,
+    tx: EventSender,
     /// Whether the dashboard is up; watchers and pollers wait on this rather than waking to check.
     visible: watch::Sender<bool>,
     wake: Arc<Notify>,
@@ -109,7 +109,7 @@ pub struct Ctx {
 }
 
 impl Ctx {
-    pub fn new(tx: Sender<Event>, rt: tokio::runtime::Handle, compositor: Compositor) -> Self {
+    pub fn new(tx: EventSender, rt: tokio::runtime::Handle, compositor: Compositor) -> Self {
         Self {
             tx,
             visible: watch::Sender::new(false),

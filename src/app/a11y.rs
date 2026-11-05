@@ -91,6 +91,19 @@ fn under_cursor(tile: &ItemRc) -> Vec<ItemRc> {
     found
 }
 
+/// What in `tile` is under the cursor but out of sight: clipped away by the widget's edge or a
+/// scrolled list that didn't follow the cursor.
+fn out_of_sight(tile: &ItemRc) -> Vec<ItemRc> {
+    let mut found = Vec::new();
+    tile.visit_descendants(|item| {
+        if item.is_accessible() && prop(item, Prop::ItemSelected) == "true" && !item.is_visible() {
+            found.push(item.clone());
+        }
+        ControlFlow::<()>::Continue(())
+    });
+    found
+}
+
 /// The element with the accessible id `id`, anywhere in the window.
 fn find_id(window: &slint::Window, id: &str) -> Option<ItemRc> {
     let root = ItemRc::new_root(WindowInner::from_pub(window).try_component()?);
@@ -198,6 +211,22 @@ impl App {
     /// An error says what doesn't add up: the keyboard in another widget, a cursor on nothing or
     /// on two things at once, or a stop that has no name.
     pub(super) fn spoken(&self) -> Result<Option<Spoken>, String> {
+        let mut now = self.spoken_now();
+        // A list follows the cursor when it is laid out, and a tile settles when it has finished
+        // moving: look again a few frames later before calling the cursor lost.
+        for _ in 0..4 {
+            if !matches!(&now, Err(e) if e.contains("out of sight")) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(40));
+            slint::platform::update_timers_and_animations();
+            self.lay_out();
+            now = self.spoken_now();
+        }
+        now
+    }
+
+    fn spoken_now(&self) -> Result<Option<Spoken>, String> {
         let ui = self.ui();
         let n = ui.global::<Nav>();
         if n.get_mode() != NavMode::Widget {
@@ -233,10 +262,18 @@ impl App {
         match under.as_slice() {
             [one] => named(speak(one)).map(Some),
             [] if stops == 0 => named(speak(&at)).map(Some),
-            [] => Err(format!(
-                "the cursor is on nothing in {} ({stops} stops)",
-                speak(&at)
-            )),
+            [] => Err(match out_of_sight(&frame).as_slice() {
+                [] => format!("the cursor is on nothing in {} ({stops} stops)", speak(&at)),
+                hidden => format!(
+                    "the cursor is out of sight in {} ({stops} stops), on {}",
+                    speak(&at),
+                    hidden
+                        .iter()
+                        .map(|i| speak(i).to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            }),
             many => Err(format!(
                 "the cursor is on {} things at once: {}",
                 many.len(),

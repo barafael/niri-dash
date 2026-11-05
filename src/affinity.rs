@@ -31,6 +31,14 @@ const TABLE: &[(&[Kind], f32)] = &[
     (&[Timer, Stopwatch], 0.9),
     (&[Clock, Timer], 0.5),
     (&[Clock, Stopwatch], 0.4),
+    (&[Pomodoro, Timer], 0.9),
+    (&[Pomodoro, Stopwatch], 0.6),
+    (&[Pomodoro, Clock], 0.4),
+    (&[Pomodoro, Notes], 0.4),
+    (&[SleepTimer, Session], 0.7),
+    (&[SleepTimer, Battery], 0.5),
+    (&[SleepTimer, Timer], 0.4),
+    (&[SleepTimer, Clock], 0.4),
     // Sliders and switches that change the room.
     (&[Volume, Brightness], 1.0),
     (&[Brightness, NightLight], 0.9),
@@ -74,7 +82,7 @@ const TABLE: &[(&[Kind], f32)] = &[
 type Matrix = [[f32; KINDS]; KINDS];
 
 /// How many kinds there are.
-const KINDS: usize = 31;
+const KINDS: usize = 33;
 
 fn index(k: Kind) -> usize {
     Kind::iter().position(|o| o == k).unwrap_or(0)

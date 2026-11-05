@@ -9,19 +9,27 @@ fn or_here(dir: Option<PathBuf>) -> PathBuf {
     dir.unwrap_or_else(|| PathBuf::from("."))
 }
 
+/// `$NIRI_DASH_HOME/<sub>` if that is set: one directory for everything niri-dash keeps, which is
+/// how tests and the stress run stay off the real files, whatever the platform's own rules for
+/// where they go.
+fn under_home(sub: &str) -> Option<PathBuf> {
+    std::env::var_os("NIRI_DASH_HOME").map(|home| PathBuf::from(home).join(sub))
+}
+
 /// `$XDG_CONFIG_HOME`, usually `~/.config`.
 pub fn config_home() -> PathBuf {
-    or_here(dirs::config_dir())
+    under_home("config").unwrap_or_else(|| or_here(dirs::config_dir()))
 }
 
 /// `$XDG_DATA_HOME`, usually `~/.local/share`.
 pub fn data_home() -> PathBuf {
-    or_here(dirs::data_dir())
+    under_home("data").unwrap_or_else(|| or_here(dirs::data_dir()))
 }
 
-/// `$XDG_STATE_HOME`, usually `~/.local/state`.
+/// `$XDG_STATE_HOME`, usually `~/.local/state`. Where there is no such directory, the data
+/// directory.
 pub fn state_home() -> PathBuf {
-    or_here(dirs::state_dir())
+    under_home("state").unwrap_or_else(|| or_here(dirs::state_dir().or_else(dirs::data_dir)))
 }
 
 #[cfg(not(target_arch = "wasm32"))]

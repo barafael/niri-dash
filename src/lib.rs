@@ -34,6 +34,7 @@ mod gpu;
 mod layout;
 mod mascots;
 mod nav;
+mod pomodoro;
 #[cfg(not(target_arch = "wasm32"))]
 mod shell;
 mod state;

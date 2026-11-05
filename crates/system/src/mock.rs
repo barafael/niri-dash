@@ -6,7 +6,7 @@
 use crate::{
     Capabilities, Compositor, Event, EventSender, IconSrc, Inboxes, audio, bluetooth, brightness,
     claude, clipboard, color, drives, host, keyboard, mascot, media, night_light, notifications,
-    perf, phones, power, privacy, session, tray, weather, wifi, windows,
+    perf, phones, power, privacy, session, sleep, tray, weather, wifi, windows,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use crate::{Started, channels};
@@ -50,6 +50,7 @@ pub enum Received {
     NightLight(night_light::Command),
     Mascot(mascot::Command),
     Clipboard(clipboard::Command),
+    Sleep(sleep::Command),
 }
 
 impl Inboxes {
@@ -77,6 +78,7 @@ impl Inboxes {
             Some(c) = self.night_light.recv() => Received::NightLight(c),
             Some(c) = self.mascot.recv() => Received::Mascot(c),
             Some(c) = self.clipboard.recv() => Received::Clipboard(c),
+            Some(c) = self.sleep.recv() => Received::Sleep(c),
             else => return None,
         })
     }
@@ -91,11 +93,7 @@ pub struct MockSystem {
 
 impl MockSystem {
     /// It runs under niri, with everything there is.
-    pub const CAPS: Capabilities = Capabilities {
-        compositor: Compositor::Niri,
-        clipboard: true,
-        gamma: true,
-    };
+    pub const CAPS: Capabilities = Capabilities::for_compositor(Compositor::Niri, true, true);
 
     pub fn new(demo: Demo, events: EventSender) -> Self {
         Self {
@@ -251,6 +249,17 @@ impl MockSystem {
             R::Mascot(mascot::Command::Run { id, .. }) => {
                 // Nothing printed: the mascot says something of its own.
                 self.send(mascot::Event::Output { id, stdout: None });
+            }
+            R::Sleep(sleep::Command::Detect { .. }) => {
+                // A laptop that can suspend and hibernate, and a script of its own.
+                use sleep::Mode::*;
+                self.send(sleep::Event::Modes(vec![
+                    Suspend, Hibernate, Poweroff, RunScript,
+                ]));
+            }
+            R::Sleep(sleep::Command::Run { mode, .. }) => {
+                // The mock sleeps through nothing: it only says it did.
+                self.send(sleep::Event::Done { mode, error: None });
             }
             _ => {}
         }
@@ -633,15 +642,14 @@ fn demo_weather() -> weather::State {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Tell, channels};
-    use smithay_client_toolkit::reexports::calloop::{EventLoop, channel};
+    use crate::{EventSender, Tell, channels};
 
     /// Commands queued before the loop runs, then the senders dropped: the loop answers them
     /// all and stops. Each applet's commands keep their order; between applets there is none
     /// (they are separate channels, as with the live system's actors).
     #[tokio::test]
     async fn answers_and_records() {
-        let (events_tx, events_rx) = channel::channel();
+        let (events_tx, events_rx) = EventSender::channel();
         let (tx, inbox) = channels();
         tx.brightness.tell(brightness::Command::Set(0.3));
         tx.brightness.tell(brightness::Command::Set(0.6));
@@ -655,19 +663,7 @@ mod tests {
         assert_eq!(mock.demo.brightness, 0.6);
         assert!(mock.demo.audio.muted);
 
-        let mut event_loop = EventLoop::<Vec<Event>>::try_new().unwrap();
-        event_loop
-            .handle()
-            .insert_source(events_rx, |ev, _, seen| {
-                if let channel::Event::Msg(e) = ev {
-                    seen.push(e);
-                }
-            })
-            .unwrap();
-        let mut seen = Vec::new();
-        event_loop
-            .dispatch(Some(std::time::Duration::ZERO), &mut seen)
-            .unwrap();
+        let seen: Vec<Event> = events_rx.try_iter().collect();
         let levels: Vec<f32> = seen
             .iter()
             .filter_map(|e| match e {

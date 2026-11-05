@@ -8,8 +8,10 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use strum::{AsRefStr, EnumIter, EnumString, IntoEnumIterator, IntoStaticStr};
 
-/// A widget type. Its name ([`Kind::name`]) is what config.kdl uses.
+/// A widget type. Its name ([`Kind::name`]) is what config.kdl uses, and what the command line
+/// takes (`niri-dash app wifi`), so a typo there gets a "similar value" hint from clap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, EnumString, AsRefStr, IntoStaticStr)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(clap::ValueEnum))]
 #[strum(serialize_all = "kebab-case")]
 pub enum Kind {
     Clock,
@@ -43,6 +45,8 @@ pub enum Kind {
     NightLight,
     RemovableDrives,
     Phone,
+    SleepTimer,
+    Pomodoro,
 }
 
 impl Kind {
@@ -431,6 +435,30 @@ impl Kind {
                 starts_round: false,
                 settings: &[],
                 icon: "smartphone",
+            },
+            Kind::SleepTimer => &KindInfo {
+                title: "Sleep timer",
+                description: "Count down to suspend, hibernate or power off (like sleepy)",
+                default_size: (4, 3),
+                min_size: (3, 2),
+                max_size: (5, 4),
+                group: Group::Time,
+                can_be_round: true,
+                starts_round: false,
+                settings: &[SleepWhen, SleepScript, DryRun, KeepAwake],
+                icon: "system-suspend",
+            },
+            Kind::Pomodoro => &KindInfo {
+                title: "Pomodoro",
+                description: "Focus sessions and breaks; a long break every few sessions",
+                default_size: (3, 2),
+                min_size: (2, 1),
+                max_size: (4, 3),
+                group: Group::Time,
+                can_be_round: true,
+                starts_round: true,
+                settings: &[FocusMinutes, ShortBreak, LongBreak, Rounds, AutoStart],
+                icon: "appointment-soon",
             },
         }
     }
@@ -2705,6 +2733,19 @@ mod tests {
         assert_eq!(again.render(), out);
     }
 
+    /// The command line takes the names config.kdl does: one list, not two.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn the_command_line_takes_the_config_names() {
+        use clap::ValueEnum;
+        let cli: Vec<String> = Kind::value_variants()
+            .iter()
+            .map(|k| k.to_possible_value().unwrap().get_name().to_string())
+            .collect();
+        let config: Vec<&str> = Kind::iter().map(Kind::name).collect();
+        assert_eq!(cli, config);
+    }
+
     #[test]
     fn widget_names_and_round_size_parse() {
         for kind in Kind::iter() {
@@ -2746,6 +2787,8 @@ mod tests {
                 "night-light",
                 "removable-drives",
                 "phone",
+                "sleep-timer",
+                "pomodoro",
             ]
         );
         assert_eq!(Kind::from_str_opt("perf"), None);

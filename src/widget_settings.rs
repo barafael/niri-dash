@@ -51,6 +51,17 @@ pub enum Opt {
     Interval,
     Command,
     Cowfile,
+    // Sleep timer.
+    SleepWhen,
+    SleepScript,
+    DryRun,
+    KeepAwake,
+    // Pomodoro.
+    FocusMinutes,
+    ShortBreak,
+    LongBreak,
+    Rounds,
+    AutoStart,
 }
 
 /// What kind of value a setting takes, and how it is edited.
@@ -98,6 +109,15 @@ impl Opt {
             Opt::Interval => "New remark every",
             Opt::Command => "Lines from command",
             Opt::Cowfile => "Cow file",
+            Opt::SleepWhen => "Starts with",
+            Opt::SleepScript => "Script to run",
+            Opt::DryRun => "Dry run",
+            Opt::KeepAwake => "Keep the screen on",
+            Opt::FocusMinutes => "Focus session",
+            Opt::ShortBreak => "Short break",
+            Opt::LongBreak => "Long break",
+            Opt::Rounds => "Sessions before the long break",
+            Opt::AutoStart => "Start the next part by itself",
         }
     }
 
@@ -136,6 +156,17 @@ impl Opt {
             Opt::Cowfile => Ty::Text {
                 placeholder: "e.g. tux, or a path (the cow only)",
             },
+            Opt::SleepWhen => Ty::Text {
+                placeholder: "30 min (or 45s, 1h30m, 23:45)",
+            },
+            Opt::SleepScript => Ty::Text {
+                placeholder: "sleep.sh next to config.kdl",
+            },
+            Opt::DryRun | Opt::KeepAwake | Opt::AutoStart => Ty::Toggle,
+            Opt::FocusMinutes => Ty::Steps(&[10, 15, 20, 25, 30, 40, 45, 50, 60, 90]),
+            Opt::ShortBreak => Ty::Steps(&[3, 5, 7, 10, 15]),
+            Opt::LongBreak => Ty::Steps(&[10, 15, 20, 25, 30, 45]),
+            Opt::Rounds => Ty::Steps(&[2, 3, 4, 5, 6, 8]),
         }
     }
 
@@ -166,6 +197,12 @@ impl Opt {
             Opt::Interval => KdlValue::Integer(45),
             Opt::Command => text(""),
             Opt::Cowfile => text(""),
+            Opt::SleepWhen | Opt::SleepScript => text(""),
+            Opt::DryRun | Opt::KeepAwake | Opt::AutoStart => KdlValue::Bool(false),
+            Opt::FocusMinutes => KdlValue::Integer(25),
+            Opt::ShortBreak => KdlValue::Integer(5),
+            Opt::LongBreak => KdlValue::Integer(15),
+            Opt::Rounds => KdlValue::Integer(4),
         }
     }
 
@@ -184,6 +221,9 @@ impl Opt {
                 if let Some(word) = usize::try_from(*w).ok().and_then(|w| WILDNESS.get(w)) =>
             {
                 (*word).into()
+            }
+            (Opt::FocusMinutes | Opt::ShortBreak | Opt::LongBreak, KdlValue::Integer(m)) => {
+                format!("{m} min")
             }
             (Opt::TopApps, KdlValue::Integer(0)) => "none".into(),
             (_, KdlValue::Integer(i)) => i.to_string(),
