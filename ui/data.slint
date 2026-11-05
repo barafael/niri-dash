@@ -105,11 +105,13 @@ export global Shell {
     callback hide();
 }
 
-// The compositor we run under: niri, KDE Plasma (KWin), or another. Widgets that need one of them
-// say so.
+// What the desktop offers, and which compositor it is. Widgets that need something it doesn't
+// offer say so, with `unavailable` ("not available on KDE Plasma") after what they lack.
 export global Desktop {
+    in property <bool> screencast: true;
     in property <bool> niri: true;
     in property <bool> plasma;
+    in property <string> unavailable;
 }
 
 export struct ZoneTime {

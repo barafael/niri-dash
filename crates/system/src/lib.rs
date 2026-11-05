@@ -58,12 +58,43 @@ pub use text::{Locale, clean_label, locale, one_line, strip_spinner, unescape_en
 pub use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 pub use tokio::sync::oneshot;
 
-/// Where a system's events go. On the desktop they wake the dashboard's calloop; in a browser the
-/// dashboard awaits them on its one thread.
-#[cfg(not(target_arch = "wasm32"))]
-pub type EventSender = smithay_client_toolkit::reexports::calloop::channel::Sender<Event>;
-#[cfg(target_arch = "wasm32")]
-pub type EventSender = UnboundedSender<Event>;
+/// Where a system's events go: a function that hands each one to the dashboard and wakes it. What
+/// wakes it is the dashboard's business (a Wayland event loop, a browser promise, a test's
+/// receiver), so nothing here depends on it.
+pub type EventSender = Sink<Event>;
+
+/// The other end is gone; there is nobody left to tell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Closed;
+
+/// A way to send values to someone who wakes up for them.
+pub struct Sink<T>(Arc<dyn Fn(T) -> Result<(), Closed> + Send + Sync>);
+
+impl<T> Clone for Sink<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl<T> Sink<T> {
+    /// A sink that calls `send` with each value, from whichever thread sends it.
+    pub fn new(send: impl Fn(T) -> Result<(), Closed> + Send + Sync + 'static) -> Self {
+        Self(Arc::new(send))
+    }
+
+    pub fn send(&self, value: T) -> Result<(), Closed> {
+        (self.0)(value)
+    }
+}
+
+impl<T: Send + 'static> Sink<T> {
+    /// A sink and the receiver that gets what is sent to it, with nothing to wake: for tests and
+    /// anything else that reads when it chooses to.
+    pub fn channel() -> (Self, std::sync::mpsc::Receiver<T>) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        (Self::new(move |v| tx.send(v).map_err(|_| Closed)), rx)
+    }
+}
 
 /// An image that the UI thread turns into a `slint::Image`.
 #[derive(Debug, Clone, PartialEq)]
@@ -85,6 +116,23 @@ pub enum Compositor {
     Kwin,
     /// Anything else: the Wayland protocols work, the compositor-specific features don't.
     Other,
+}
+
+impl Compositor {
+    /// What the platform is called to the user, to finish "not available on …".
+    pub const fn name(self) -> &'static str {
+        match self {
+            Compositor::Niri => "niri",
+            Compositor::Kwin => "KDE Plasma",
+            Compositor::Other => "this desktop",
+        }
+    }
+}
+
+impl std::fmt::Display for Compositor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
 }
 
 /// Hand a command to an actor. Commands are never refused, so the only failure is that the actor
@@ -196,38 +244,55 @@ pub struct Started {
 /// What the system can do here, decided once when it starts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Capabilities {
+    /// Which compositor this is, for wording ("Plasma's night light"); what the system can do is
+    /// in the fields below.
     pub compositor: Compositor,
     /// The compositor offers clipboard access (ext- or wlr-data-control).
     pub clipboard: bool,
     /// We hold the gamma control (wlr-gamma-control) for night light.
     pub gamma: bool,
+    /// The window list works, and focusing and closing windows.
+    pub windows: bool,
+    /// The keyboard layouts can be listed and switched.
+    pub keyboard_layouts: bool,
+    /// A color can be picked from the screen.
+    pub color_picker: bool,
+    /// Screen sharing is reported (who is casting, and stopping it).
+    pub screencast: bool,
+    /// We are the notification server, so our own messages land in our history. Where another
+    /// one is (Plasma's), they go to it and it pops them up by itself.
+    pub notifications_server: bool,
+    /// Night light is the compositor's own rather than our gamma control.
+    pub night_light_native: bool,
     /// None of it is real (the demo in a browser): opening something by clicking it opens nothing.
     pub simulated: bool,
 }
 
 impl Capabilities {
-    pub fn niri(self) -> bool {
-        self.compositor == Compositor::Niri
+    /// How to say that something this platform can't do isn't there: "not available on KDE
+    /// Plasma". The one wording for every widget that lacks what it needs; callers put the
+    /// feature in front of it ("Window list not available on …").
+    pub fn unavailable(&self) -> String {
+        format!("not available on {}", self.compositor)
     }
 
-    pub fn kwin(self) -> bool {
-        self.compositor == Compositor::Kwin
-    }
-
-    /// Whether the window list (and focusing windows) works here.
-    pub fn has_windows(self) -> bool {
-        self.niri()
-    }
-
-    /// Whether our own messages go to another notification server (Plasma's) rather than into
-    /// our history, which then pops them up by itself.
-    pub fn notifications_elsewhere(self) -> bool {
-        self.kwin()
-    }
-
-    /// Whether night light is KWin's own rather than our gamma control.
-    pub fn kwin_night_light(self) -> bool {
-        self.kwin()
+    /// What `compositor` offers, with clipboard and gamma as found (those are protocols, not
+    /// compositors).
+    pub const fn for_compositor(compositor: Compositor, clipboard: bool, gamma: bool) -> Self {
+        let niri = matches!(compositor, Compositor::Niri);
+        let kwin = matches!(compositor, Compositor::Kwin);
+        Self {
+            compositor,
+            clipboard,
+            gamma,
+            windows: niri,
+            keyboard_layouts: niri || kwin,
+            color_picker: niri || kwin,
+            screencast: niri,
+            notifications_server: !kwin,
+            night_light_native: kwin,
+            simulated: false,
+        }
     }
 }
 

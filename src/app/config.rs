@@ -6,7 +6,7 @@ use niri_dash_system::{Tell, weather};
 use {
     super::wayland::Input,
     crate::layout::Layout,
-    smithay_client_toolkit::reexports::calloop::channel::Sender,
+    niri_dash_system::Sink,
     std::path::PathBuf,
     std::sync::{Arc, Mutex},
     std::time::Duration,
@@ -73,7 +73,7 @@ impl App {
 /// symlinks, so a symlinked dotfile counts as its target). The list of files changes with the
 /// theme, which goes through config.kdl, so the watches are re-synced after every event.
 #[cfg(not(target_arch = "wasm32"))]
-pub(super) fn watch_config(paths: Arc<Mutex<Vec<PathBuf>>>, input: Sender<Input>) {
+pub(super) fn watch_config(paths: Arc<Mutex<Vec<PathBuf>>>, input: Sink<Input>) {
     use notify::{RecursiveMode, Watcher};
     use std::collections::HashSet;
     fn resolve(p: &std::path::Path) -> PathBuf {

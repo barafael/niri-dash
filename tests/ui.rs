@@ -617,6 +617,7 @@ fn main() {
     let dir = std::env::temp_dir().join(format!("niri-dash-ui-{}", std::process::id()));
     // SAFETY: nothing else runs yet that could read the environment.
     unsafe {
+        std::env::set_var("NIRI_DASH_HOME", &dir);
         for (var, sub) in [
             ("XDG_CONFIG_HOME", "config"),
             ("XDG_STATE_HOME", "state"),

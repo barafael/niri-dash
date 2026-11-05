@@ -119,7 +119,7 @@ impl App {
         );
         self.toast(&text);
         // On Plasma the notification pops up by itself.
-        if !self.caps.notifications_elsewhere() {
+        if self.caps.notifications_server {
             self.osd(&text, "weather-clear-night");
         }
         self.tx

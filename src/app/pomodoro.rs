@@ -2,7 +2,6 @@
 //! and the sound when one ends. Every pomodoro widget shows the same one.
 
 use super::App;
-use super::timer::ALARM_SOUND;
 use crate::layout::Kind;
 use crate::pomodoro::{Phase, Plan, Pomodoro};
 use crate::timer::{Run, format_left};
@@ -109,7 +108,7 @@ impl App {
             (_, _) => format!("Break is over. Focus for {minutes} minutes"),
         };
         // On Plasma the notification pops up by itself.
-        if !self.caps.notifications_elsewhere() {
+        if self.caps.notifications_server {
             self.osd(&text, "appointment-soon");
         }
         self.tx
@@ -121,7 +120,7 @@ impl App {
             });
         self.tx
             .host
-            .tell(host::Command::PlaySound(ALARM_SOUND.into()));
+            .tell(host::Command::PlaySound(host::Sound::Alarm));
     }
 
     /// Run the ticker only while it shows anything.

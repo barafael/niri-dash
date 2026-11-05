@@ -36,8 +36,8 @@ pub struct Args {
     #[arg(long)]
     edit: bool,
     /// Render a standalone app (a widget name) instead of the dashboard.
-    #[arg(long)]
-    pub app: Option<String>,
+    #[arg(long, value_enum)]
+    pub app: Option<crate::layout::Kind>,
     /// Open this sidebar tab.
     #[arg(long, value_enum, requires = "edit")]
     tab: Option<Tab>,
@@ -72,7 +72,7 @@ pub struct Args {
 
 /// Render the snapshot `args` describe, of the dashboard or of the standalone app `solo`.
 pub fn run(args: &Args, solo: Option<Kind>) -> Result<()> {
-    let (events_tx, events) = channel::channel::<Event>();
+    let (events_tx, events) = super::loop_channel::<Event>();
     let system = if args.mock {
         niri_dash_system::mock(events_tx)?
     } else {
@@ -132,7 +132,7 @@ pub fn run(args: &Args, solo: Option<Kind>) -> Result<()> {
     window.set_size(slint::PhysicalSize::new(pw, ph));
     let mut event_loop: EventLoop<'static, ()> = EventLoop::try_new()?;
     // Only the config watcher sends inputs: there is no control socket.
-    let (input_tx, inputs) = channel::channel::<Input>();
+    let (input_tx, inputs) = super::loop_channel::<Input>();
     let app = build(&ui, system, input_tx, solo, Layout::load(), true);
     let a = app.clone();
     event_loop

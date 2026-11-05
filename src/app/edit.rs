@@ -5,7 +5,7 @@ use super::{App, model, set_if_changed};
 use crate::layout::{Kind, Placed};
 use crate::nav::Dir;
 use crate::{Dash, PaletteItem, WidgetInst};
-use niri_dash_system::{Capabilities, Compositor, Tell, weather};
+use niri_dash_system::{Capabilities, Tell, weather};
 use slint::{ComponentHandle, Model};
 use std::rc::Rc;
 use strum::IntoEnumIterator;
@@ -436,19 +436,34 @@ impl App {
 
 /// How a widget's description reads here, where the compositor lacks what it needs (None: as
 /// usual), and whether it can't work here at all.
-fn caveat(caps: Capabilities, kind: Kind) -> Option<(&'static str, bool)> {
-    use Compositor::*;
-    match (caps.compositor, kind) {
-        (Niri, _) => None,
-        (_, Kind::Windows) => Some(("Needs niri: open windows by workspace", true)),
-        (_, Kind::ClaudeSessions) => Some(("Running Claude Code sessions", false)),
-        (_, Kind::Privacy) => Some((
-            "Who uses the microphone or camera (screen sharing needs niri)",
+fn caveat(caps: Capabilities, kind: Kind) -> Option<(String, bool)> {
+    match kind {
+        Kind::Windows if !caps.windows => Some((
+            format!("Open windows by workspace ({})", caps.unavailable()),
+            true,
+        )),
+        Kind::ClaudeSessions if !caps.windows => {
+            Some(("Running Claude Code sessions".into(), false))
+        }
+        Kind::Privacy if !caps.screencast => Some((
+            format!(
+                "Who uses the microphone or camera (screen sharing {})",
+                caps.unavailable()
+            ),
             false,
         )),
-        (Kwin, Kind::Notifications) => Some(("Pause Plasma's notification pop-ups", false)),
-        (Kwin, Kind::NightLight) => Some(("Pause or resume Plasma's night light", false)),
-        (Other, Kind::KeyboardLayout | Kind::ColorPicker) => Some(("Needs niri or Plasma", true)),
+        Kind::Notifications if !caps.notifications_server => {
+            Some(("Pause Plasma's notification pop-ups".into(), false))
+        }
+        Kind::NightLight if caps.night_light_native => {
+            Some(("Pause or resume Plasma's night light".into(), false))
+        }
+        Kind::KeyboardLayout if !caps.keyboard_layouts => {
+            Some((format!("Keyboard layouts ({})", caps.unavailable()), true))
+        }
+        Kind::ColorPicker if !caps.color_picker => {
+            Some((format!("Color picker ({})", caps.unavailable()), true))
+        }
         _ => None,
     }
 }
@@ -642,11 +657,54 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
                 PaletteItem {
                     kind: kind_to_ui(k),
                     title: info.title.into(),
-                    description: caveat.unwrap_or(info.description).into(),
+                    description: caveat.unwrap_or_else(|| info.description.into()).into(),
                     w: info.new_size().0,
                     h: info.new_size().1,
                 }
             })
             .collect(),
     ));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use niri_dash_system::Compositor;
+
+    fn said(compositor: Compositor, kind: Kind) -> Option<(String, bool)> {
+        caveat(Capabilities::for_compositor(compositor, true, true), kind)
+    }
+
+    /// Where a widget can't work, it says so the same way, naming the platform.
+    #[test]
+    fn caveats_name_the_platform() {
+        assert_eq!(said(Compositor::Niri, Kind::Windows), None);
+        assert_eq!(
+            said(Compositor::Kwin, Kind::Windows),
+            Some((
+                "Open windows by workspace (not available on KDE Plasma)".into(),
+                true
+            ))
+        );
+        assert_eq!(
+            said(Compositor::Kwin, Kind::Privacy),
+            Some((
+                "Who uses the microphone or camera (screen sharing not available on KDE Plasma)"
+                    .into(),
+                false
+            ))
+        );
+        assert_eq!(
+            said(Compositor::Other, Kind::KeyboardLayout),
+            Some((
+                "Keyboard layouts (not available on this desktop)".into(),
+                true
+            ))
+        );
+        assert_eq!(
+            said(Compositor::Other, Kind::ColorPicker),
+            Some(("Color picker (not available on this desktop)".into(), true))
+        );
+        assert_eq!(said(Compositor::Kwin, Kind::ColorPicker), None);
+    }
 }
