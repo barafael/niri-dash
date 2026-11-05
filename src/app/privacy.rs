@@ -85,6 +85,7 @@ impl App {
         p.set_mic(!usage.mic.is_empty());
         p.set_camera(!usage.camera.is_empty());
         p.set_screen(!casts.is_empty());
+        p.set_first_share((items.len() - casts.len()) as i32);
         p.set_items(model(items));
     }
 }

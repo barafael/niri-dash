@@ -112,12 +112,9 @@ export component PrivacyWidget inherits Rectangle {
                     alignment: center;
                     horizontal-stretch: 1;
                     Text {
-                        // The stop of an app without a Stop button: the cursor stays here when
-                        // only such apps are listed, as all of them are skipped.
                         accessible-role: list-item;
                         accessible-label: it.app;
                         accessible-value: it.kind == PrivacyKind.mic ? "uses the microphone" : it.kind == PrivacyKind.camera ? "uses the camera" : "shares the screen";
-                        accessible-item-selected: keys.on && keys.cursor == i && it.kind != PrivacyKind.screen;
                         text: it.app;
                         font-size: Theme.font-body;
                         color: Theme.text;
@@ -132,7 +129,7 @@ export component PrivacyWidget inherits Rectangle {
                     text: "Stop";
                     accessible-label: "Stop sharing with " + it.app;
                     danger: true;
-                    kfocus: keys.on && keys.cursor == i;
+                    kfocus: keys.on && keys.cursor == i - Privacy.first-share;
                     revealed(y, h) => { privacy-list.reveal(y, h); }
                     clicked => { Privacy.stop(it.session); }
                 }
@@ -143,11 +140,11 @@ export component PrivacyWidget inherits Rectangle {
     keys := NavScope {
         accessible-label: "Privacy";
         active: root.nav;
-        count: root.list ? Privacy.items.length : 0;
-        skip(i) => { return i < Privacy.items.length && Privacy.items[i].kind != PrivacyKind.screen; }
+        // Only the shares can be stopped; with none there are no stops at all.
+        count: root.list ? Privacy.items.length - Privacy.first-share : 0;
         activate(i) => {
-            if (root.list && i < Privacy.items.length && Privacy.items[i].kind == PrivacyKind.screen) {
-                Privacy.stop(Privacy.items[i].session);
+            if (root.list && i < self.count) {
+                Privacy.stop(Privacy.items[i + Privacy.first-share].session);
             }
         }
     }

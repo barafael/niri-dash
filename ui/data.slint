@@ -787,6 +787,8 @@ export global Privacy {
     in property <bool> camera;
     in property <bool> screen;
     in property <[PrivacyItem]> items;
+    // Where the screen shares start in `items`; they come last.
+    in property <int> first-share;
     callback stop(int);
 }
 

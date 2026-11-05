@@ -748,6 +748,31 @@ fn stops_in_sight_other_lists() {
     every_stop_in_sight(&mut h);
 }
 
+/// Only mic and camera apps: nothing to stop, so no stops; the list itself is what's read out.
+fn privacy_without_a_share_has_no_stops() {
+    let mut h = testing::Harness::new("layout {\n    privacy col=0 row=0 width=3 height=3\n}\n");
+    h.send(privacy::Event::Usage(privacy::Usage {
+        mic: vec!["Firefox".into()],
+        ..Default::default()
+    }));
+    enter(&mut h, "Privacy");
+    let now = said(&mut h);
+    assert!(now.starts_with("list \"Privacy\""), "on: {now}");
+}
+
+/// Five mic apps above a screen share: the cursor starts on its Stop button.
+fn privacy_stops_are_the_shares() {
+    let mut h = testing::Harness::new("layout {\n    privacy col=0 row=0 width=3 height=4\n}\n");
+    h.send(privacy::Event::Usage(privacy::Usage {
+        mic: (0..5).map(|i| format!("Mic {i}")).collect(),
+        ..Default::default()
+    }));
+    h.send(privacy::Event::Casts(vec![cast(1)]));
+    enter(&mut h, "Privacy");
+    let now = said(&mut h);
+    assert!(now.contains("Stop sharing with App 1"), "on: {now}");
+}
+
 fn main() {
     // The dashboard's config, state and notes go somewhere disposable; dates in a fixed locale.
     let dir = std::env::temp_dir().join(format!("niri-dash-ui-{}", std::process::id()));
@@ -830,6 +855,11 @@ fn main() {
         ),
         ("stops_in_sight_privacy", stops_in_sight_privacy),
         ("stops_in_sight_other_lists", stops_in_sight_other_lists),
+        (
+            "privacy_without_a_share_has_no_stops",
+            privacy_without_a_share_has_no_stops,
+        ),
+        ("privacy_stops_are_the_shares", privacy_stops_are_the_shares),
         (
             "keyboard survives its field going away",
             keyboard_survives_its_field_going_away,
