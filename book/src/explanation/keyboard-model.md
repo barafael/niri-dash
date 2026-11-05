@@ -47,6 +47,15 @@ Three properties follow from that rule:
 The labels come from the widget's name in `config.kdl`, not its title. That is the reason for the
 two-word rule: the name is `claude-sessions`, and the key is `cs`.
 
+## Edit mode: two places for the keys
+
+Edit mode has the same idea with two places the keys can be: the widgets and the sidebar. The same
+letters mean something in each. `h`, `j`, `k` and `l` size the picked widget when the keys are on
+the widgets, and move between rows and step values when they are in the sidebar. Tab goes from one
+to the other, and `w`, `a`, `s` and `d` (or a move with Ctrl) go back. The bar at the top of the
+screen always lists the keys that work in the place you are, so you don't have to remember which
+it is.
+
 ## Moving between widgets without going out
 
 Ctrl+`h`/`j`/`k`/`l` goes to the neighbouring widget, in the direction you press. This is the one
