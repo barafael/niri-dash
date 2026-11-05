@@ -6,7 +6,9 @@
 
 use niri_dash::testing::{Element, Harness};
 use niri_dash::{Control, testing};
-use niri_dash_system::{Demo, bluetooth, brightness, clipboard, color, session, tray, wifi};
+use niri_dash_system::{
+    Demo, bluetooth, brightness, clipboard, color, session, tray, wifi, windows,
+};
 use slint::{ComponentHandle, Model};
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
@@ -545,6 +547,42 @@ fn cursor_follows_the_text_field() {
     assert!(now.contains("Password"), "typing the password, on: {now}");
 }
 
+/// A window moving to another workspace can put a heading where the cursor is.
+fn cursor_leaves_a_heading_that_moved_under_it() {
+    let mut h = testing::Harness::new("layout {\n    windows col=0 row=0 width=4 height=4\n}\n");
+    let mut state = Demo::new().windows;
+    h.send(windows::Event::State(state.clone()));
+    enter(&mut h, "Windows");
+    h.press("j");
+    assert!(said(&mut h).contains("Mozilla Firefox"));
+    state.rows.swap(2, 3);
+    h.send(windows::Event::State(state));
+    let now = said(&mut h);
+    assert!(now.starts_with("listitem"), "on: {now}");
+}
+
+/// `j` gets past however many stops in a row can't be stopped at.
+fn cursor_crosses_many_skipped_stops() {
+    let mut h =
+        testing::Harness::new("layout {\n    claude-sessions col=0 row=0 width=4 height=7\n}\n");
+    let mut state = Demo::new().claude;
+    let session = state.sessions[0].clone();
+    state.sessions = (0..8)
+        .map(|i| niri_dash_system::claude::Session {
+            pid: i,
+            title: format!("Session {i}"),
+            window: (i == 0 || i == 7).then_some(1),
+            ..session.clone()
+        })
+        .collect();
+    h.send(niri_dash_system::claude::Event::Sessions(state));
+    enter(&mut h, "Claude sessions");
+    assert!(said(&mut h).contains("Session 0"));
+    h.press("j");
+    let now = said(&mut h);
+    assert!(now.contains("Session 7"), "on: {now}");
+}
+
 fn main() {
     // The dashboard's config, state and notes go somewhere disposable; dates in a fixed locale.
     let dir = std::env::temp_dir().join(format!("niri-dash-ui-{}", std::process::id()));
@@ -609,6 +647,14 @@ fn main() {
         (
             "cursor_follows_the_text_field",
             cursor_follows_the_text_field,
+        ),
+        (
+            "cursor_leaves_a_heading_that_moved_under_it",
+            cursor_leaves_a_heading_that_moved_under_it,
+        ),
+        (
+            "cursor_crosses_many_skipped_stops",
+            cursor_crosses_many_skipped_stops,
         ),
         (
             "keyboard survives its field going away",

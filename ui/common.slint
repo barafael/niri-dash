@@ -734,8 +734,8 @@ export component NavScope inherits FocusScope {
     // Any other key: the event's text, the cursor. True if the widget took it.
     callback letter(string, int) -> bool;
     callback back() -> bool;
-    // A stop the cursor passes over (a section heading); up to four in a row are skipped.
-    callback skip(int) -> bool;
+    // A stop the cursor passes over (a section heading); up to 16 in a row are skipped.
+    pure callback skip(int) -> bool;
     // Sees every key first (while the widget shows a menu, say); true if it took it.
     callback filter(string) -> bool;
     // The cursor shows only while the widget is entered.
@@ -766,6 +766,17 @@ export component NavScope inherits FocusScope {
             self.go(self.cursor, 1);
         }
     }
+    // The list changed under the cursor and put a stop it can't rest on there (a window moved to
+    // another workspace, and its heading is here now): on to the next one, or the one before.
+    property <bool> stranded: self.on && self.skip(self.cursor);
+    changed stranded => {
+        if (self.stranded) {
+            self.go(self.cursor, 1);
+        }
+        if (self.skip(self.cursor)) {
+            self.go(self.cursor, -1);
+        }
+    }
     // The stop's parts changed under the cursor (a network came up, and its details button is now
     // Disconnect): back to the stop itself, not onto something else.
     changed subs => {
@@ -774,13 +785,16 @@ export component NavScope inherits FocusScope {
     function fit(c: int) -> int {
         clamp(c, 0, max(0, self.count - 1))
     }
-    // Past a skipped stop, in direction d.
+    // Past a skipped stop, in direction d. (No loops in Slint, so a fixed number of steps.)
     function past(c: int, d: int) -> int {
         self.skip(c) ? self.fit(c + d) : c
     }
+    function past4(c: int, d: int) -> int {
+        self.past(self.past(self.past(self.past(c, d), d), d), d)
+    }
     // Moves to c, or on past skipped stops in direction d (staying put if all are skipped).
     function go(c: int, d: int) {
-        let n = self.past(self.past(self.past(self.past(self.fit(c), d), d), d), d);
+        let n = self.past4(self.past4(self.past4(self.past4(self.fit(c), d), d), d), d);
         if (!self.skip(n) && n != self.cursor) {
             self.cursor = n;
             self.sub = 0;
