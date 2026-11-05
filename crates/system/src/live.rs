@@ -3,8 +3,8 @@
 
 use super::{
     Capabilities, Event, Feed, Senders, Started, audio, bluetooth, brightness, clipboard, color,
-    host, keyboard, mascot, night_light, notifications, power, privacy, session, tray, wayland,
-    weather, wifi, windows,
+    host, keyboard, mascot, night_light, power, privacy, session, tray, wayland, weather, wifi,
+    windows,
 };
 use crate::compositor;
 use crate::sources::{
@@ -114,10 +114,7 @@ fn start(
         bluetooth: run(BluetoothActor(Bluetooth::start(feed(Feed::Bluetooth)))),
         audio: run(AudioActor(Audio::start(feed(Feed::Audio)))),
         brightness: run(BrightnessActor(Brightness::start(feed(Feed::Brightness)))),
-        notifications: run(NotificationsActor {
-            notifications: Notifications::start(feed(Feed::Notifications)),
-            ctx: base(),
-        }),
+        notifications: run(Notifications::start(feed(Feed::Notifications), base())),
         tray: run(TrayActor(Tray::start(feed(Feed::Tray)))),
         media: run(Media::start(feed(Feed::Media))),
         power: run(PowerActor {
@@ -385,28 +382,6 @@ impl Actor for BrightnessActor {
     fn handle(&mut self, cmd: brightness::Command) {
         let brightness::Command::Set(v) = cmd;
         self.0.set(v);
-    }
-}
-
-struct NotificationsActor {
-    notifications: Notifications,
-    ctx: Ctx,
-}
-
-impl Actor for NotificationsActor {
-    type Command = notifications::Command;
-
-    fn handle(&mut self, cmd: notifications::Command) {
-        use notifications::Command::*;
-        let n = &self.notifications;
-        match cmd {
-            SetDnd(dnd) => n.set_dnd(dnd),
-            Dismiss(id) => n.dismiss(id),
-            Clear => n.clear(),
-            Invoke(id) => n.invoke(id),
-            AddLocal { app, summary, body } => n.add_local(&app, &summary, &body),
-            Osd { text, icon } => n.osd().show(&self.ctx, &text, &icon),
-        }
     }
 }
 

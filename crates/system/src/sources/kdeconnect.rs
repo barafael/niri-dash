@@ -256,10 +256,10 @@ impl KdeConnect {
                 n => format!("{n} files"),
             };
             // The dashboard is hidden by now, so a toast wouldn't be seen.
-            super::osd::Osd::default().show(
+            super::osd::send(
                 &ctx,
-                &format!("Sending {what} to {}", phone.name),
-                "document-send",
+                format!("Sending {what} to {}", phone.name),
+                "document-send".to_string(),
             );
             Ok(())
         });
