@@ -461,6 +461,79 @@ fn sub_part_changing_meaning_goes_back_to_the_row() {
     assert!(now.starts_with("listitem \"Lighthouse\""), "on: {now}");
 }
 
+/// A tall Wi-Fi tile, so a form fits and only the stops are being tested.
+fn tall_wifi() -> Harness {
+    testing::Harness::new(
+        "grid columns=16 rows=9\nlayout {\n    wifi col=0 row=0 width=4 height=7\n}\n",
+    )
+}
+
+/// A new Enterprise network's prompt on an entered Wi-Fi widget.
+fn enterprise_prompt(h: &mut Harness) {
+    h.send(wifi::Event::State(Box::new(Demo::new().wifi)));
+    enter(h, "Wi-Fi");
+    let mut state = Demo::new().wifi;
+    let mut prompt = wifi::Prompt::default();
+    prompt.serial = 9;
+    prompt.ssid = "Campus".into();
+    prompt.kind = wifi::PromptKind::Enterprise;
+    prompt.new = true;
+    state.prompt = Some(prompt);
+    h.send(wifi::Event::State(Box::new(state)));
+    shown(h);
+}
+
+/// The hidden-network form, on the 802.1X choice with the server check, with a name typed.
+fn hidden_enterprise_form(h: &mut Harness) {
+    h.send(wifi::Event::State(Box::new(Demo::new().wifi)));
+    enter(h, "Wi-Fi");
+    walk_to(h, "Hidden network");
+    h.press("enter");
+    shown(h);
+    for c in "Attic".chars() {
+        h.press(&c.to_string());
+    }
+    h.press("esc");
+    h.press("j");
+    h.press("l");
+    shown(h);
+}
+
+/// Turning the server check off keeps the cursor on the switch: pressed again, it can't cancel.
+fn server_check_keeps_the_cursor_in_the_prompt() {
+    let mut h = tall_wifi();
+    enterprise_prompt(&mut h);
+    h.press("esc");
+    walk_to(&mut h, "Don't check");
+    h.press("enter");
+    let now = said(&mut h);
+    assert!(now.contains("Don't check"), "on: {now}");
+    h.press("enter");
+    assert!(
+        !matches!(h.inbox.wifi.try_recv(), Ok(wifi::Command::CancelPrompt)),
+        "cancelled the prompt"
+    );
+}
+
+/// Turning the server check off keeps the cursor on the switch: pressed again, it can't join a
+/// network with the check off.
+fn server_check_keeps_the_cursor_in_the_form() {
+    let mut h = tall_wifi();
+    hidden_enterprise_form(&mut h);
+    walk_to(&mut h, "Don't check");
+    h.press("enter");
+    let now = said(&mut h);
+    assert!(now.contains("Don't check"), "on: {now}");
+    h.press("enter");
+    assert!(
+        !matches!(
+            h.inbox.wifi.try_recv(),
+            Ok(wifi::Command::JoinHidden { .. })
+        ),
+        "joined with the check off"
+    );
+}
+
 fn main() {
     // The dashboard's config, state and notes go somewhere disposable; dates in a fixed locale.
     let dir = std::env::temp_dir().join(format!("niri-dash-ui-{}", std::process::id()));
@@ -513,6 +586,14 @@ fn main() {
         (
             "sub_part_changing_meaning_goes_back_to_the_row",
             sub_part_changing_meaning_goes_back_to_the_row,
+        ),
+        (
+            "server_check_keeps_the_cursor_in_the_prompt",
+            server_check_keeps_the_cursor_in_the_prompt,
+        ),
+        (
+            "server_check_keeps_the_cursor_in_the_form",
+            server_check_keeps_the_cursor_in_the_form,
         ),
         (
             "keyboard survives its field going away",

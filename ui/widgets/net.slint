@@ -77,6 +77,8 @@ component ServerCheck inherits VerticalLayout {
     in property <bool> kfocus-field;
     in property <bool> kfocus-switch;
     in property <int> edit-tick;
+    // Turned on or off, by mouse too: the stops after it just moved, so the cursor goes with it.
+    callback toggled();
     spacing: 6px;
     if !root.insecure: KeyField {
         label: "Server domain";
@@ -100,7 +102,10 @@ component ServerCheck inherits VerticalLayout {
             y: (parent.height - self.height) / 2;
             checked: root.insecure;
             kfocus: root.kfocus-switch;
-            toggled => { root.insecure = !root.insecure; }
+            toggled => {
+                root.insecure = !root.insecure;
+                root.toggled();
+            }
         }
     }
 }
@@ -144,6 +149,8 @@ component WifiPasswordPrompt inherits Rectangle {
                 root.method = 1 - root.method;
             } else if (i == root.k-insecure) {
                 root.insecure = !root.insecure;
+                // The domain field comes or goes: without this, the cursor lands on Cancel.
+                self.cursor = root.k-insecure;
             } else if (i == root.k-cancel) {
                 Wifi.cancel-prompt();
             } else if (i == root.k-cancel + 1) {
@@ -208,6 +215,7 @@ component WifiPasswordPrompt inherits Rectangle {
                 kfocus-field: root.kf(root.k-domain);
                 kfocus-switch: root.kf(root.k-insecure);
                 edit-tick: root.edit-tick;
+                toggled => { keys.cursor = root.k-insecure; }
             }
             if Wifi.prompt.message != "": Text {
                 text: Wifi.prompt.message;
@@ -761,6 +769,7 @@ export component WifiWidget inherits Rectangle {
                         kfocus-field: root.kf(2, root.k-domain);
                         kfocus-switch: root.kf(2, root.k-insecure);
                         edit-tick: root.edit-tick;
+                        toggled => { keys.cursor = root.k-insecure; }
                     }
                     HorizontalLayout {
                         alignment: end;
@@ -856,6 +865,9 @@ export component WifiWidget inherits Rectangle {
                 root.hidden-method = 1 - root.hidden-method;
             } else if (i == root.k-insecure) {
                 root.hidden-insecure = !root.hidden-insecure;
+                // The domain field comes or goes: without this, the cursor lands on Join, and
+                // Enter again would join with the check off.
+                keys.cursor = root.k-insecure;
             } else if (i == root.k-join) {
                 root.join-hidden();
             } else {
