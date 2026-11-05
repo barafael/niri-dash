@@ -126,7 +126,7 @@ impl Windows {
     pub fn handle(&mut self, cmd: windows::Command, t: f64) {
         match cmd {
             windows::Command::Focus(id) => self.focused = Some((id, t + 45.0)),
-            windows::Command::FocusPid(_) => {}
+            windows::Command::FocusPid(_) | windows::Command::ShowTab(_) => {}
             windows::Command::Close(id) => {
                 self.closed.insert(id, t + 240.0);
             }

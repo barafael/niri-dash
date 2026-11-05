@@ -7,7 +7,8 @@
 use niri_dash::testing::{Element, Harness};
 use niri_dash::{Control, testing};
 use niri_dash_system::{
-    Demo, bluetooth, brightness, clipboard, color, power, privacy, session, tray, wifi, windows,
+    Demo, bluetooth, brightness, claude, clipboard, color, power, privacy, session, tray, wifi,
+    windows,
 };
 use slint::{ComponentHandle, Model};
 use std::panic::AssertUnwindSafe;
@@ -564,23 +565,24 @@ fn cursor_leaves_a_heading_that_moved_under_it() {
 /// `j` gets past however many stops in a row can't be stopped at.
 fn cursor_crosses_many_skipped_stops() {
     let mut h =
-        testing::Harness::new("layout {\n    claude-sessions col=0 row=0 width=4 height=7\n}\n");
-    let mut state = Demo::new().claude;
-    let session = state.sessions[0].clone();
-    state.sessions = (0..8)
-        .map(|i| niri_dash_system::claude::Session {
-            pid: i,
-            title: format!("Session {i}"),
-            window: (i == 0 || i == 7).then_some(1),
-            ..session.clone()
+        testing::Harness::new("layout {\n    removable-drives col=0 row=0 width=4 height=7\n}\n");
+    let mut state = Demo::new().drives;
+    state.drives.truncate(1);
+    // Locked volumes can't be stopped at; only the first and the last are open.
+    state.drives[0].volumes = (0..8)
+        .map(|i| niri_dash_system::drives::Volume {
+            path: format!("/v{i}"),
+            name: format!("Volume {i}"),
+            locked: i != 0 && i != 7,
+            ..Default::default()
         })
         .collect();
-    h.send(niri_dash_system::claude::Event::Sessions(state));
-    enter(&mut h, "Claude sessions");
-    assert!(said(&mut h).contains("Session 0"));
+    h.send(niri_dash_system::drives::Event::State(state));
+    enter(&mut h, "Removable drives");
+    assert!(said(&mut h).contains("Volume 0"));
     h.press("j");
     let now = said(&mut h);
-    assert!(now.contains("Session 7"), "on: {now}");
+    assert!(now.contains("Volume 7"), "on: {now}");
 }
 
 /// Every stop from here to the last has to be there to read, and in sight.
@@ -811,6 +813,174 @@ fn cursor_stays_in_sight_as_a_tile_shrinks() {
     assert!(now.contains("Hidden network"), "on: {now}");
 }
 
+/// A calendar, entered, with its cursor moved two days on from today; and where that is.
+fn calendar_with_a_day_picked() -> (Harness, String) {
+    let mut h = testing::Harness::new(
+        "grid columns=16 rows=9\nlayout {\n    calendar col=0 row=0 width=5 height=5\n}\n",
+    );
+    enter(&mut h, "Calendar");
+    h.press("l");
+    h.press("l");
+    let on = h
+        .spoken()
+        .expect("a cursor that adds up")
+        .expect("a day under the cursor");
+    (h, on)
+}
+
+/// The picked day stays picked, whatever else is pressed: only what moves it may move it.
+fn calendar_cursor_survives_other_keys() {
+    let (mut h, on) = calendar_with_a_day_picked();
+    let keys = [
+        "enter",
+        "space",
+        "tab",
+        "backtab",
+        "backspace",
+        "a",
+        "b",
+        "c",
+        "d",
+        "g",
+        "G",
+        "i",
+        "m",
+        "o",
+        "q",
+        "r",
+        "s",
+        "u",
+        "v",
+        "w",
+        "x",
+        "y",
+        "z",
+        "1",
+        "ctrl+c",
+        "ctrl+a",
+        "alt+x",
+        "shift+tab",
+    ];
+    let lost: Vec<&str> = keys
+        .iter()
+        .copied()
+        .filter(|key| {
+            h.press(key);
+            let now = h.spoken().expect("a cursor that adds up");
+            let lost = now.as_deref() != Some(on.as_str());
+            if lost {
+                println!("  {key:?} took the cursor from {on:?} to {now:?}");
+                // Back where it was, for the next key.
+                h.press("t");
+                h.press("l");
+                h.press("l");
+            }
+            lost
+        })
+        .collect();
+    assert!(lost.is_empty(), "lost the picked day on {lost:?}");
+}
+
+/// Blowing the widget up and leaving it for a moment don't lose the picked day either.
+fn calendar_cursor_survives_expanding_and_leaving() {
+    let (mut h, on) = calendar_with_a_day_picked();
+    h.press("e");
+    assert_eq!(h.spoken().expect("a cursor").as_deref(), Some(on.as_str()));
+    h.press("e");
+    assert_eq!(h.spoken().expect("a cursor").as_deref(), Some(on.as_str()));
+    h.press("esc");
+    enter(&mut h, "Calendar");
+    assert_eq!(h.spoken().expect("a cursor").as_deref(), Some(on.as_str()));
+}
+
+/// Today is still one key away.
+fn calendar_cursor_goes_home_on_t() {
+    let (mut h, on) = calendar_with_a_day_picked();
+    h.press("t");
+    assert_ne!(h.spoken().expect("a cursor").as_deref(), Some(on.as_str()));
+}
+
+/// Ctrl+C copies the day under the cursor as a date, and leaves it there.
+fn calendar_copies_the_picked_day() {
+    let (mut h, on) = calendar_with_a_day_picked();
+    while h.inbox.clipboard.try_recv().is_ok() {}
+    h.press("ctrl+c");
+    let picked = chrono::Local::now().date_naive() + chrono::Days::new(2);
+    let Ok(clipboard::Command::Set(clip)) = h.inbox.clipboard.try_recv() else {
+        panic!("nothing copied");
+    };
+    assert_eq!(
+        String::from_utf8_lossy(&clip.data),
+        picked.format("%Y-%m-%d").to_string()
+    );
+    assert_eq!(h.spoken().expect("a cursor").as_deref(), Some(on.as_str()));
+}
+
+/// The Claude sessions, entered, the first `with_window` of them with a window to go to.
+fn claude_sessions(with_window: usize) -> Harness {
+    let mut h = testing::Harness::new(
+        "grid columns=16 rows=9\nlayout {\n    claude-sessions col=0 row=0 width=5 height=4\n}\n",
+    );
+    let mut state = Demo::new().claude;
+    for (i, s) in state.sessions.iter_mut().enumerate() {
+        if i >= with_window {
+            s.window = None;
+        }
+    }
+    h.send(claude::Event::Sessions(state));
+    enter(&mut h, "Claude sessions");
+    h
+}
+
+/// j and k walk the list, whether or not a session has a window to go to.
+fn claude_sessions_walk() {
+    for with_window in [0, 1, 2] {
+        let mut h = claude_sessions(with_window);
+        let said = |h: &Harness| {
+            h.spoken()
+                .expect("a cursor that adds up")
+                .unwrap_or_default()
+        };
+        assert!(
+            said(&h).contains("Split off"),
+            "{with_window} with a window, starts on {:?}",
+            said(&h)
+        );
+        h.press("j");
+        assert!(
+            said(&h).contains("Keyboard navigation"),
+            "{with_window} with a window, j went to {:?}",
+            said(&h)
+        );
+        h.press("k");
+        assert!(
+            said(&h).contains("Split off"),
+            "{with_window} with a window, k went to {:?}",
+            said(&h)
+        );
+    }
+}
+
+/// Enter goes to a session's window; one without stays put rather than hiding the dashboard.
+fn claude_session_enter() {
+    let mut h = claude_sessions(1);
+    h.press("j");
+    h.press("enter");
+    assert!(h.inbox.windows.try_recv().is_err(), "focused nothing");
+    assert_eq!(h.controls(), [], "hid the dashboard for nothing");
+    h.press("k");
+    h.press("enter");
+    assert!(matches!(
+        h.inbox.windows.try_recv(),
+        Ok(windows::Command::ShowTab(4101))
+    ));
+    assert!(matches!(
+        h.inbox.windows.try_recv(),
+        Ok(windows::Command::Focus(4101))
+    ));
+    assert_eq!(h.controls(), [Control::Hide]);
+}
+
 fn main() {
     // The dashboard's config, state and notes go somewhere disposable; dates in a fixed locale.
     let dir = std::env::temp_dir().join(format!("niri-dash-ui-{}", std::process::id()));
@@ -911,6 +1081,24 @@ fn main() {
             "keyboard survives its field going away",
             keyboard_survives_its_field_going_away,
         ),
+        (
+            "calendar: the picked day survives other keys",
+            calendar_cursor_survives_other_keys,
+        ),
+        (
+            "calendar: the picked day survives expanding and leaving",
+            calendar_cursor_survives_expanding_and_leaving,
+        ),
+        (
+            "calendar: t goes back to today",
+            calendar_cursor_goes_home_on_t,
+        ),
+        (
+            "calendar: Ctrl+C copies the day",
+            calendar_copies_the_picked_day,
+        ),
+        ("Claude sessions: j and k walk", claude_sessions_walk),
+        ("Claude sessions: Enter", claude_session_enter),
     ];
     let mut failed = Vec::new();
     for (name, scenario) in scenarios {

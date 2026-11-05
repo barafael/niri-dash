@@ -44,7 +44,7 @@ the stops, Enter or Space presses, and `g`/`G` jump to the first or last item. L
 of their own: `d` closes a window or dismisses a notification, `r` rescans Wi-Fi, `t` turns it
 on and off, `m` mutes, `1`–`0` set a slider to 10–100 %, `x` ejects a drive, and so on. In the
 volume widget `j`/`k` make the slider under the cursor quieter and louder, and Tab goes to the
-next one. The calendar has a day cursor: `h`/`l` a day, `j`/`k` a week, `n`/`p` a month, `t` back to today.
+next one. The calendar has a day cursor: `h`/`l` a day, `j`/`k` a week, `n`/`p` a month, `t` back to today, `Ctrl+C` copies the day as `YYYY-MM-DD`.
 Enter on a text field types into it; Escape gets you out again.
 
 `e` blows the widget up in the middle of the dashboard (round widgets open into their full
@@ -105,8 +105,9 @@ Start `niri-dash` at login (System Settings → Autostart), and bind a key to `n
 (System Settings → Keyboard → Shortcuts → Add New → Command or Script).
 
 Plasma keeps showing notifications; the notification widget pauses its pop-ups. Night light,
-keyboard layouts, the color picker and logging out go through Plasma. The window list, focusing
-windows and noticing screen sharing need niri.
+keyboard layouts, the color picker, logging out and going to a Claude session's window go through
+Plasma; a session in Konsole gets its tab brought up too. The window list and noticing screen
+sharing need niri.
 
 `niri-dash --help` lists the other commands: `inhibit`, `dnd`, `night-light`, `say`, ….
 

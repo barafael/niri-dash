@@ -294,11 +294,23 @@ export component CalendarWidget inherits Rectangle {
         }
     }
     // A cursor over the days: h/l a day back and on, j/k a week, n/p (or Page Down/Up) a month;
-    // t (or Enter) goes back to today. The month turns as the cursor leaves it.
+    // t goes back to today, Ctrl+C copies the day. The month turns as the cursor leaves it.
     keys := NavScope {
         accessible-label: "Calendar";
         active: root.nav;
-        activate => { Calendar.shift(0); }
+        // Round, there is no cursor to lose.
+        activate => {
+            if (root.round) {
+                Calendar.shift(0);
+            }
+        }
+        copy => {
+            if (root.round) {
+                return false;
+            }
+            Calendar.copy-day();
+            true
+        }
         filter(t) => {
             if (root.round) {
                 return false;

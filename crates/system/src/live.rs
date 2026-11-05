@@ -243,6 +243,7 @@ impl Actor for WindowsActor {
         match cmd {
             Focus(id) => compositor::focus_window(&self.ctx, id),
             FocusPid(pid) => compositor::focus_pid(&self.ctx, pid),
+            ShowTab(pid) => sources::konsole::show_tab(&self.ctx, pid),
             Close(id) => compositor::close_window(&self.ctx, id),
         }
     }

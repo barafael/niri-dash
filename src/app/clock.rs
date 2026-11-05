@@ -246,6 +246,10 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     let a = app.clone();
     ui.global::<Calendar>()
         .on_move_day(move |d| a.move_calendar_day(d));
+    let a = app.clone();
+    ui.global::<Calendar>().on_copy_day(move || {
+        a.copy_text(&a.calendar_cursor().format("%Y-%m-%d").to_string());
+    });
     let a = Rc::downgrade(app);
     app.clock
         .timer

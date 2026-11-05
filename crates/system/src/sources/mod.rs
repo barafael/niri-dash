@@ -12,6 +12,7 @@ pub mod icons;
 pub mod inhibit;
 pub mod kde;
 pub mod kdeconnect;
+pub mod konsole;
 pub mod media;
 pub mod niri;
 pub mod notifications;

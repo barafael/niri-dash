@@ -1,13 +1,13 @@
 //! KDE Plasma's own services on the session bus, for what niri does over its IPC: keyboard layouts
-//! (KWin's `org.kde.keyboard`), the logout prompt, KWin's color picker and night light, and
-//! Plasma's on-screen messages.
+//! (KWin's `org.kde.keyboard`), the logout prompt, KWin's color picker and night light, its windows
+//! (through short-lived scripts), and Plasma's on-screen messages.
 
 use super::{Ctx, Dedup, Mailbox, Trigger, keyboard, prop};
 pub use crate::night_light::NightLightState;
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio::sync::mpsc::UnboundedSender;
-use tokio::sync::watch;
+use tokio::sync::{oneshot, watch};
 use zbus::zvariant::OwnedValue;
 
 /// zbus errors are boxed: a `zbus::Error` is large, and unboxed it would make every `Result`
@@ -19,6 +19,17 @@ pub enum Error {
     /// KWin turned the color picker down; KWin's message.
     #[error("KWin refused: {0}")]
     PickRefused(String),
+    /// Nowhere private to put a script for KWin to read.
+    #[error("no runtime or cache directory for a KWin script")]
+    NoScriptDir,
+    #[error("writing a KWin script: {0}")]
+    ScriptFile(std::io::Error),
+    #[error("KWin wouldn't load a script")]
+    ScriptNotLoaded,
+    #[error("no answer from a KWin script")]
+    ScriptSilent,
+    #[error("a KWin script answered {0:?}")]
+    ScriptAnswer(String),
 }
 
 impl From<zbus::Error> for Error {
@@ -140,6 +151,171 @@ pub fn switch_layout(ctx: &Ctx, to: keyboard::Switch) {
             }
         };
         Ok::<_, Error>(())
+    });
+}
+
+// Windows.
+
+/// How long a script gets to answer: it only looks through KWin's windows.
+const SCRIPT_TIMEOUT: Duration = Duration::from_secs(2);
+const SCRIPTING: &str = "org.kde.kwin.Scripting";
+const REPORT_INTERFACE: &str = "org.niri_dash.KWinScript";
+
+/// Where a running script sends its answer.
+struct ScriptReport(Option<oneshot::Sender<String>>);
+
+#[zbus::interface(name = "org.niri_dash.KWinScript")]
+impl ScriptReport {
+    fn report(&mut self, answer: String) {
+        if let Some(tx) = self.0.take() {
+            let _ = tx.send(answer);
+        }
+    }
+}
+
+/// A script that runs `body` (a function body) and sends what it returns, as JSON, to `report`.
+fn script_source(me: &str, report: &str, body: &str) -> String {
+    format!(
+        "const answer = (function () {{ {body} }})();\n\
+         callDBus(\"{me}\", \"{report}\", \"{REPORT_INTERFACE}\", \"Report\", JSON.stringify(answer));\n"
+    )
+}
+
+/// KWin has no call for its windows, only scripts can get at them: run `body` in one, and return
+/// its answer. KWin reads the script from a file, so the file goes in the runtime directory, which
+/// only we can write to: anything that could put one there would be running code inside KWin.
+async fn run_script(conn: &zbus::Connection, body: &str) -> Result<String> {
+    // Only makes each script's name unique: no state anyone shares.
+    #[allow(clippy::disallowed_types)]
+    static RUNS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = RUNS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let name = format!("niri-dash-{}-{n}", std::process::id());
+    let file = dirs::runtime_dir()
+        .or_else(dirs::cache_dir)
+        .ok_or(Error::NoScriptDir)?
+        .join(format!("{name}.js"));
+    let report = format!("/org/niri_dash/KWinScript/{n}");
+    let me = conn
+        .unique_name()
+        .ok_or(Error::ScriptNotLoaded)?
+        .to_string();
+    let (tx, answer) = oneshot::channel();
+    conn.object_server()
+        .at(report.as_str(), ScriptReport(Some(tx)))
+        .await?;
+    std::fs::write(&file, script_source(&me, &report, body)).map_err(Error::ScriptFile)?;
+    let result = async {
+        let path = file.to_string_lossy();
+        let loaded = conn
+            .call_method(
+                Some(KWIN),
+                "/Scripting",
+                Some(SCRIPTING),
+                "loadScript",
+                &(path.as_ref(), name.as_str()),
+            )
+            .await?;
+        let (id,): (i32,) = loaded.body().deserialize()?;
+        if id < 0 {
+            return Err(Error::ScriptNotLoaded);
+        }
+        conn.call_method(
+            Some(KWIN),
+            format!("/Scripting/Script{id}").as_str(),
+            Some("org.kde.kwin.Script"),
+            "run",
+            &(),
+        )
+        .await?;
+        // Not before this: KWin reads the file some time after being told to run it.
+        tokio::time::timeout(SCRIPT_TIMEOUT, answer)
+            .await
+            .map_err(|_| Error::ScriptSilent)?
+            .map_err(|_| Error::ScriptSilent)
+    }
+    .await;
+    let _ = conn
+        .call_method(
+            Some(KWIN),
+            "/Scripting",
+            Some(SCRIPTING),
+            "unloadScript",
+            &(name.as_str(),),
+        )
+        .await;
+    let _ = std::fs::remove_file(&file);
+    let _ = conn
+        .object_server()
+        .remove::<ScriptReport, _>(report.as_str())
+        .await;
+    result
+}
+
+/// A window's id for the rest of the system, which counts windows in `u64`s: the first half of
+/// KWin's UUID, which is plenty to tell a desktop's windows apart. `window_key` finds it again.
+fn window_id(uuid: &str) -> Option<u64> {
+    let hex: String = uuid.chars().filter(char::is_ascii_hexdigit).collect();
+    u64::from_str_radix(hex.get(..16)?, 16).ok()
+}
+
+/// Script code for what `window_id` makes of window `w`, written out as `format!("{id:016x}")`.
+const WINDOW_KEY: &str =
+    r#"w.internalId.toString().replace(/[^0-9a-fA-F]/g, "").slice(0, 16).toLowerCase()"#;
+
+/// Every ordinary window (not a panel or a dialog's shadow) by the pid of its process. A process
+/// with several keeps one of them.
+async fn list_windows(conn: &zbus::Connection) -> Result<HashMap<i32, u64>> {
+    let answer = run_script(
+        conn,
+        "return workspace.windowList()\
+         .filter(w => w.normalWindow && w.pid > 0)\
+         .map(w => [w.pid, w.internalId.toString()]);",
+    )
+    .await?;
+    let windows: Vec<(i32, String)> =
+        serde_json::from_str(&answer).map_err(|_| Error::ScriptAnswer(answer.clone()))?;
+    Ok(windows
+        .into_iter()
+        .filter_map(|(pid, uuid)| Some((pid, window_id(&uuid)?)))
+        .collect())
+}
+
+pub async fn windows_by_pid(ctx: &Ctx) -> Result<HashMap<i32, u64>> {
+    list_windows(&ctx.bus(false).await?).await
+}
+
+/// Bring up the first window `pick` (script code about `w`) holds for: from another desktop, and
+/// out of being minimized, too. If there is none it has gone, and there is nothing to do.
+async fn activate(conn: &zbus::Connection, pick: &str) -> Result<()> {
+    run_script(
+        conn,
+        &format!(
+            "const found = workspace.windowList().find(w => {pick});\
+             if (found) {{ found.minimized = false; workspace.activeWindow = found; }}\
+             return found !== undefined;"
+        ),
+    )
+    .await
+    .map(|_| ())
+}
+
+async fn activate_window(conn: &zbus::Connection, id: u64) -> Result<()> {
+    activate(conn, &format!(r#"{WINDOW_KEY} === "{id:016x}""#)).await
+}
+
+pub fn focus_window(ctx: &Ctx, id: u64) {
+    let c = ctx.clone();
+    ctx.act("Focus window", async move {
+        activate_window(&c.bus(false).await?, id).await
+    });
+}
+
+/// Focus the window of process `pid`, if it has one.
+pub fn focus_pid(ctx: &Ctx, pid: i32) {
+    let c = ctx.clone();
+    ctx.act("Focus window", async move {
+        let conn = c.bus(false).await?;
+        activate(&conn, &format!("w.normalWindow && w.pid === {pid}")).await
     });
 }
 
@@ -469,6 +645,96 @@ async fn release_pause(p: Pause) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn window_ids_are_the_first_half_of_the_uuid() {
+        let uuid = "{0123abcd-4567-89ef-0011-223344556677}";
+        assert_eq!(window_id(uuid), Some(0x0123_abcd_4567_89ef));
+        assert_eq!(
+            format!("{:016x}", window_id(uuid).unwrap()),
+            "0123abcd456789ef"
+        );
+        // Leading zeros stay, as the script compares text.
+        assert_eq!(
+            format!(
+                "{:016x}",
+                window_id("{00000000-0000-00ab-0011-223344556677}").unwrap()
+            ),
+            "00000000000000ab"
+        );
+        assert_eq!(window_id("{0123}"), None);
+    }
+
+    /// Against a real KWin, whose focus it moves around: start a throwaway one with two windows
+    /// and run this in its D-Bus session, with NIRI_DASH_TEST_KWIN=1.
+    #[tokio::test]
+    #[ignore = "needs a KWin to change the focus of"]
+    async fn windows_in_a_real_kwin() {
+        assert!(
+            std::env::var_os("NIRI_DASH_TEST_KWIN").is_some(),
+            "this moves the focus around: set NIRI_DASH_TEST_KWIN=1 in a throwaway session"
+        );
+        let conn = zbus::Connection::session().await.unwrap();
+        let windows = list_windows(&conn).await.unwrap();
+        assert!(windows.len() >= 2, "windows: {windows:?}");
+        let active = async || {
+            let answer = run_script(
+                &conn,
+                &format!(
+                    "const w = workspace.activeWindow;\
+                     return w ? [{WINDOW_KEY}, w.minimized, w.desktops[0] === workspace.currentDesktop] : null;"
+                ),
+            )
+            .await
+            .unwrap();
+            serde_json::from_str::<Option<(String, bool, bool)>>(&answer).unwrap()
+        };
+        let ids: Vec<u64> = windows.values().copied().collect();
+        let (a, b) = (ids[0], ids[1]);
+        let key = |id: u64| format!("{id:016x}");
+        for id in [a, b, a] {
+            activate_window(&conn, id).await.unwrap();
+            assert_eq!(active().await, Some((key(id), false, true)));
+        }
+        // Out of being minimized.
+        run_script(
+            &conn,
+            &format!(
+                r#"workspace.windowList().find(w => {WINDOW_KEY} === "{}").minimized = true; return 1;"#,
+                key(b)
+            ),
+        )
+        .await
+        .unwrap();
+        activate_window(&conn, b).await.unwrap();
+        assert_eq!(active().await, Some((key(b), false, true)));
+        // From another desktop.
+        run_script(
+            &conn,
+            &format!(
+                r#"workspace.createDesktop(1, "other");
+                   const other = workspace.desktops[1];
+                   workspace.windowList().find(w => {WINDOW_KEY} === "{}").desktops = [other];
+                   workspace.currentDesktop = workspace.desktops[0];
+                   return 1;"#,
+                key(a)
+            ),
+        )
+        .await
+        .unwrap();
+        activate_window(&conn, a).await.unwrap();
+        assert_eq!(active().await, Some((key(a), false, true)));
+        // A window that has gone is nothing to do, and an answer still comes.
+        activate_window(&conn, 1).await.unwrap();
+        // Nothing left behind for KWin.
+        let left: Vec<_> = std::fs::read_dir(dirs::runtime_dir().unwrap())
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().starts_with("niri-dash-"))
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".js"))
+            .collect();
+        assert!(left.is_empty(), "left behind: {left:?}");
+    }
 
     #[test]
     fn plasma_layouts() {

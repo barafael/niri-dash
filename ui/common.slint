@@ -770,6 +770,8 @@ export component NavScope inherits FocusScope {
     pure callback skip(int) -> bool;
     // Sees every key first (while the widget shows a menu, say); true if it took it.
     callback filter(string) -> bool;
+    // Ctrl+C on the stop under the cursor; true if there was something to copy.
+    callback copy(int) -> bool;
     // The cursor shows only while the widget is entered.
     out property <bool> on: self.active && Nav.mode == NavMode.widget;
     focus-on-click: false;
@@ -850,6 +852,10 @@ export component NavScope inherits FocusScope {
         if (!self.has-focus) {
             // Something inside (a text field) has the keyboard and passed this key on.
             return reject;
+        }
+        if ((e.text == "c" || e.text == "C") && e.modifiers.control && !e.modifiers.shift
+            && !e.modifiers.alt && !e.modifiers.meta) {
+            return self.copy(self.cursor) ? accept : reject;
         }
         if (e.modifiers.control || e.modifiers.alt || e.modifiers.meta) {
             return reject;

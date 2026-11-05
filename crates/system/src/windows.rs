@@ -26,6 +26,8 @@ pub enum Command {
     Focus(u64),
     /// Focus the window of this process, if it has one.
     FocusPid(i32),
+    /// Bring up the terminal tab this process runs in, where the terminal can be asked (Konsole).
+    ShowTab(i32),
     Close(u64),
 }
 

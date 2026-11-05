@@ -684,6 +684,7 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     ui.global::<UiClaude>().on_focus(move |pid| {
         let win = a.claude_windows.borrow().get(&pid).copied();
         if let Some(id) = win {
+            a.tx.windows.tell(windows::Command::ShowTab(pid));
             a.tx.windows.tell(windows::Command::Focus(id));
         }
     });
