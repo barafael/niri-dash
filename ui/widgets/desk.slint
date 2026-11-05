@@ -737,12 +737,12 @@ export component ClaudeSessionsWidget inherits Rectangle {
             }
         }
     }
-    // j/k over the sessions that have a window, Enter focuses one.
+    // j/k over the sessions, Enter focuses the one under the cursor (if it has a window: one
+    // that runs where none was found, over ssh or in a multiplexer, can be read but not focused).
     keys := NavScope {
         accessible-label: "Claude sessions";
         active: root.nav;
         count: root.round ? 0 : Claude.sessions.length;
-        skip(i) => { return i < Claude.sessions.length && !Claude.sessions[i].has-window; }
         activate(i) => {
             if (!root.round && i < Claude.sessions.length && Claude.sessions[i].has-window) {
                 Claude.focus(Claude.sessions[i].pid);

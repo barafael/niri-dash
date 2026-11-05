@@ -1684,6 +1684,58 @@ fn sidebar_follows(issues: &mut Issues) {
 }
 
 // ------------------------------------------------------------------------------------------
+// Resizing pushes others aside, and lets them back.
+
+/// Growing a widget into its neighbours pushes them out of the way; shrinking it again in the
+/// same resize brings them back to where they were, and ending the resize without a drop leaves
+/// everything where it was.
+fn resize_gives_room_back(issues: &mut Issues) {
+    const ROOMY: &str = "grid columns=16 rows=9\nlayout {\n    clock col=0 row=0 width=4 height=2\n    notes col=4 row=0 width=3 height=3\n    wifi col=0 row=3 width=3 height=3\n}\n";
+    let mut h = dashboard(ROOMY);
+    h.ui().set_editing(true);
+    h.settle(300);
+    let clock = id_of(&h, "clock");
+    // Where the UI shows it, preview included (the layout itself only changes on a drop).
+    let at = |h: &Harness, kind: &str| {
+        let id = id_of(h, kind) as i32;
+        let w = h.ui().get_widgets().iter().find(|w| w.id == id).unwrap();
+        (w.col, w.row, w.w, w.h)
+    };
+    let home = (at(&h, "notes"), at(&h, "wifi"));
+    let preview = |h: &mut Harness, w: i32, hh: i32| {
+        let ok = h.ui().invoke_preview_resize(clock as i32, 0, 0, w, hh);
+        h.settle(50);
+        ok
+    };
+    if !preview(&mut h, 6, 2) {
+        issues.add("resize: growing the clock by two cells found no room");
+    }
+    if at(&h, "notes") == home.0 {
+        issues.add("resize: growing the clock into the notes didn't push them aside");
+    }
+    // Grow further (down too), then shrink step by step: each size is planned from where the
+    // widgets were, so the ones pushed out come back as room appears.
+    preview(&mut h, 8, 4);
+    for (w, hh) in [(7, 3), (6, 2), (5, 2), (4, 2)] {
+        preview(&mut h, w, hh);
+    }
+    if (at(&h, "notes"), at(&h, "wifi")) != home {
+        issues.add(format!(
+            "resize: after shrinking back, the notes are at {:?} and wifi at {:?} instead of {:?}",
+            at(&h, "notes"),
+            at(&h, "wifi"),
+            home
+        ));
+    }
+    h.ui().invoke_end_preview();
+    h.settle(50);
+    if (at(&h, "notes"), at(&h, "wifi")) != home {
+        issues.add("resize: ending the resize without a drop moved something");
+    }
+    issues.check(&h, "resize: grow and shrink in one resize");
+}
+
+// ------------------------------------------------------------------------------------------
 
 type Scenario = (&'static str, fn(&mut Issues));
 
@@ -1727,6 +1779,10 @@ fn main() {
             grid_shrink_and_grow,
         ),
         ("sidebar: follows its widget", sidebar_follows),
+        (
+            "resize: pushed widgets come back when it shrinks",
+            resize_gives_room_back,
+        ),
     ];
     let only = std::env::var("NIRI_DASH_EDIT_ONLY").unwrap_or_default();
     let scenarios: Vec<_> = scenarios

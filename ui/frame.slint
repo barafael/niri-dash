@@ -91,8 +91,9 @@ export component WidgetFrame inherits Rectangle {
     // Drawn as a circle: round, and not expanded.
     property <bool> shows-round: root.is-round && !root.expanded;
     // Where it sits in the grid, and how big it gets when expanded (never smaller than it is).
-    property <length> grid-w: inst.w * cell + stretch-w;
-    property <length> grid-h: cells-h * cell + stretch-h;
+    // While resizing, the widget itself snaps to the cells it would take, as the others make room.
+    property <length> grid-w: t-w * cell;
+    property <length> grid-h: t-h * cell;
     property <length> big-w: min(root.area-w, max(root.grid-w, root.area-w * 0.55, 8 * root.cell));
     property <length> big-h: min(root.area-h, max(root.grid-h, root.area-h * 0.8, 6 * root.cell));
     // Entered with the keyboard.
@@ -192,8 +193,8 @@ export component WidgetFrame inherits Rectangle {
         && (sizing || lifted || selected || mover.has-hover || toolbar.has-hover || hover-x != 0 || hover-y != 0) ? 1 : 0;
     animate handles-fade { duration: 160ms * Theme.motion; easing: ease-out; }
 
-    x: expanded ? (area-w - big-w) / 2 : carried ? carry-x : inst.col * cell + dx - (pull-x < 0 ? stretch-w : 0);
-    y: expanded ? (area-h - big-h) / 2 : carried ? carry-y : inst.row * cell + dy - (pull-y < 0 ? stretch-h : 0);
+    x: expanded ? (area-w - big-w) / 2 : carried ? carry-x : inst.col * cell + dx - (pull-x < 0 ? (t-w - inst.w) * cell : 0);
+    y: expanded ? (area-h - big-h) / 2 : carried ? carry-y : inst.row * cell + dy - (pull-y < 0 ? (t-h - cells-h) * cell : 0);
     width: expanded ? big-w : grid-w;
     height: expanded ? big-h : grid-h;
     // Above the shade (140) while expanded, and while it shrinks back into place.
@@ -208,14 +209,15 @@ export component WidgetFrame inherits Rectangle {
         running: root.settling;
         triggered => { root.settling = false; }
     }
-    // Dragging follows the pointer directly; after a drop (or a layout change) widgets glide.
+    // Dragging follows the pointer directly; resizing steps from cell to cell, quickly; after a
+    // drop (or a layout change) widgets glide.
     animate x, y, width, height {
-        duration: root.moving || root.sizing || root.carried ? 0ms : 240ms * Theme.motion;
+        duration: root.moving || root.carried ? 0ms : (root.sizing ? 90ms : 240ms) * Theme.motion;
         easing: cubic-bezier(0.2, 0.9, 0.3, 1.0);
     }
 
-    // Landing ghost.
-    if root.moving || root.sizing: Rectangle {
+    // Landing ghost (a resize shows on the widget itself).
+    if root.moving: Rectangle {
         x: root.t-col * root.cell - root.x + Theme.gap;
         y: root.t-row * root.cell - root.y + Theme.gap;
         width: root.t-w * root.cell - 2 * Theme.gap;
@@ -235,7 +237,7 @@ export component WidgetFrame inherits Rectangle {
         // Expanded it stands over the others: solid, so they don't show through.
         background: root.expanded ? Theme.card.with-alpha(1) : Theme.card.transparentize(1 - Theme.card-opacity);
         border-width: root.entered && Nav.sizing ? 3px : root.selected || root.entered ? max(2px, Theme.border-width * 1px) : Theme.border-width * 1px;
-        border-color: root.selected || root.entered ? Theme.accent : root.editing ? Theme.accent.with-alpha(root.moving || root.sizing ? 0.9 : 0.35) : Theme.border;
+        border-color: root.sizing && !root.t-ok ? Theme.bad : root.selected || root.entered ? Theme.accent : root.editing ? Theme.accent.with-alpha(root.moving || root.sizing ? 0.9 : 0.35) : Theme.border;
         animate border-color { duration: 160ms * Theme.motion; }
         clip: true;
         // The GPU renderer redraws the whole dashboard every frame; with each card drawn into
@@ -392,7 +394,8 @@ export component WidgetFrame inherits Rectangle {
         visible: self.opacity > 0.01;
         x: root.is-round ? (root.width - self.width) / 2 : root.width - Theme.gap - self.width - 12px;
         y: root.is-round ? (root.height - root.diameter) / 2 + 12px : Theme.gap + 12px;
-        width: 4px + 34px * ((root.inst.can-round ? 1 : 0) + (root.inst.has-settings ? 1 : 0) + 1);
+        // 30px buttons, 2px apart and from the edge.
+        width: 2px + 32px * ((root.inst.can-round ? 1 : 0) + (root.inst.has-settings ? 1 : 0) + 1);
         height: 34px;
         border-radius: min(self.height / 2, Theme.radius-small + 2px);
         background: Theme.panel;
