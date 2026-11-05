@@ -6,7 +6,7 @@ The machine's health: load, memory, disks, battery.
 
 {{#include ../widgets.generated.md:system-monitor}}
 
-## Battery and power {#battery}
+## Battery & power {#battery}
 
 {{#include ../widgets.generated.md:battery}}
 

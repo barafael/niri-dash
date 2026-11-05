@@ -44,7 +44,7 @@ Characters: `schraubi`, `zolli`, `verschnitti` and `cow`. `niri-dash say` makes 
 
 **Cows.** With `character "cow"` the mascot is a cow in the manner of `cowsay`, and `cowfile` picks another animal. Cows are read from your own cowsay installation (or from a path). When there is no such file, five of our own stand in: `bunny`, `dragon`, `moose`, `sheep` and `tux`. Cow files are only read, never run, so one that needs Perl to draw itself is refused.
 
-## Notes {#notes}
+## Sticky note {#notes}
 
 {{#include ../widgets.generated.md:notes}}
 
