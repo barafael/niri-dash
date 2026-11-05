@@ -37,6 +37,8 @@ component KeyField inherits VerticalLayout {
     in property <int> edit-tick;
     in-out property <string> text <=> field.text;
     callback accepted();
+    // It got the keyboard (Tab, a click, opening with `focus-first`): the cursor belongs here.
+    callback focused();
     spacing: 2px;
     changed edit-tick => {
         if (self.kfocus) {
@@ -50,9 +52,16 @@ component KeyField inherits VerticalLayout {
         input-type: root.input-type;
         placeholder-text: root.placeholder;
         accepted => { root.accepted(); }
+        changed has-focus => {
+            if (self.has-focus) {
+                root.focused();
+            }
+        }
         init => {
             if (root.focus-first) {
                 self.focus();
+                // Change handlers only start after this.
+                root.focused();
             }
         }
     }
@@ -79,6 +88,7 @@ component ServerCheck inherits VerticalLayout {
     in property <int> edit-tick;
     // Turned on or off, by mouse too: the stops after it just moved, so the cursor goes with it.
     callback toggled();
+    callback focused();
     spacing: 6px;
     if !root.insecure: KeyField {
         label: "Server domain";
@@ -86,6 +96,7 @@ component ServerCheck inherits VerticalLayout {
         text <=> root.domain;
         kfocus: root.kfocus-field;
         edit-tick: root.edit-tick;
+        focused => { root.focused(); }
     }
     HorizontalLayout {
         spacing: 8px;
@@ -199,6 +210,7 @@ component WifiPasswordPrompt inherits Rectangle {
                 focus-first: true;
                 kfocus: root.kf(root.k-ident);
                 edit-tick: root.edit-tick;
+                focused => { keys.move-to(root.k-ident); }
             }
             KeyField {
                 placeholder: Wifi.prompt.kind == 1 ? "WEP key" : "Password";
@@ -207,6 +219,7 @@ component WifiPasswordPrompt inherits Rectangle {
                 text <=> root.password;
                 kfocus: root.kf(root.k-pass);
                 edit-tick: root.edit-tick;
+                focused => { keys.move-to(root.k-pass); }
                 accepted => { root.submit(); }
             }
             if root.new-enterprise: ServerCheck {
@@ -216,6 +229,7 @@ component WifiPasswordPrompt inherits Rectangle {
                 kfocus-switch: root.kf(root.k-insecure);
                 edit-tick: root.edit-tick;
                 toggled => { keys.cursor = root.k-insecure; }
+                focused => { keys.move-to(root.k-domain); }
             }
             if Wifi.prompt.message != "": Text {
                 text: Wifi.prompt.message;
@@ -735,6 +749,7 @@ export component WifiWidget inherits Rectangle {
                         focus-first: true;
                         kfocus: root.kf(2, 0);
                         edit-tick: root.edit-tick;
+                        focused => { keys.move-to(0); }
                     }
                     Choice {
                         label: "Security";
@@ -753,6 +768,7 @@ export component WifiWidget inherits Rectangle {
                         text <=> root.hidden-identity;
                         kfocus: root.kf(2, root.k-ident);
                         edit-tick: root.edit-tick;
+                        focused => { keys.move-to(root.k-ident); }
                     }
                     // Bound both ways: what is sent is what the field shows.
                     if root.hidden-security != 0: KeyField {
@@ -761,6 +777,7 @@ export component WifiWidget inherits Rectangle {
                         text <=> root.hidden-password;
                         kfocus: root.kf(2, root.k-pass);
                         edit-tick: root.edit-tick;
+                        focused => { keys.move-to(root.k-pass); }
                         accepted => { root.join-hidden(); }
                     }
                     if root.hidden-security == 2: ServerCheck {
@@ -770,6 +787,7 @@ export component WifiWidget inherits Rectangle {
                         kfocus-switch: root.kf(2, root.k-insecure);
                         edit-tick: root.edit-tick;
                         toggled => { keys.cursor = root.k-insecure; }
+                        focused => { keys.move-to(root.k-domain); }
                     }
                     HorizontalLayout {
                         alignment: end;
@@ -1004,6 +1022,7 @@ component BtPairingPrompt inherits Rectangle {
                 focus-first: true;
                 kfocus: keys.on && keys.cursor == 0;
                 edit-tick: root.edit-tick;
+                focused => { keys.move-to(0); }
                 accepted => { Bluetooth.answer(Bluetooth.prompt.serial, true, root.code); }
             }
             HorizontalLayout {
@@ -1419,6 +1438,7 @@ export component BluetoothWidget inherits Rectangle {
                         text <=> root.rename-to;
                         kfocus: root.kf(1, 2);
                         edit-tick: root.edit-tick;
+                        focused => { keys.move-to(2); }
                         accepted => { root.rename(); }
                     }
                     TextButton {

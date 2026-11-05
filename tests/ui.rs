@@ -534,6 +534,17 @@ fn server_check_keeps_the_cursor_in_the_form() {
     );
 }
 
+/// The cursor says the field the keys go to: from the start, and after Tab.
+fn cursor_follows_the_text_field() {
+    let mut h = tall_wifi();
+    enterprise_prompt(&mut h);
+    let now = said(&mut h);
+    assert!(now.contains("User name"), "typing into the name, on: {now}");
+    h.press("tab");
+    let now = said(&mut h);
+    assert!(now.contains("Password"), "typing the password, on: {now}");
+}
+
 fn main() {
     // The dashboard's config, state and notes go somewhere disposable; dates in a fixed locale.
     let dir = std::env::temp_dir().join(format!("niri-dash-ui-{}", std::process::id()));
@@ -594,6 +605,10 @@ fn main() {
         (
             "server_check_keeps_the_cursor_in_the_form",
             server_check_keeps_the_cursor_in_the_form,
+        ),
+        (
+            "cursor_follows_the_text_field",
+            cursor_follows_the_text_field,
         ),
         (
             "keyboard survives its field going away",
