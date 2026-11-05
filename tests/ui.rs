@@ -7,7 +7,7 @@
 use niri_dash::testing::{Element, Harness};
 use niri_dash::{Control, testing};
 use niri_dash_system::{
-    Demo, bluetooth, brightness, clipboard, color, privacy, session, tray, wifi, windows,
+    Demo, bluetooth, brightness, clipboard, color, power, privacy, session, tray, wifi, windows,
 };
 use slint::{ComponentHandle, Model};
 use std::panic::AssertUnwindSafe;
@@ -773,6 +773,23 @@ fn privacy_stops_are_the_shares() {
     assert!(now.contains("Stop sharing with App 1"), "on: {now}");
 }
 
+/// No current profile: the cursor still shows on the choices, and Enter picks the one lit.
+fn battery_without_a_current_profile() {
+    let mut h = testing::Harness::new("layout {\n    battery col=0 row=0 width=4 height=3\n}\n");
+    h.send(power::Event::State(power::State {
+        profile: None,
+        ..Demo::new().power
+    }));
+    enter(&mut h, "Battery & power");
+    let now = said(&mut h);
+    assert!(now.contains("Saver"), "on: {now}");
+    h.press("enter");
+    assert!(matches!(
+        h.inbox.power.try_recv(),
+        Ok(power::Command::SetProfile(power::Profile::PowerSaver))
+    ));
+}
+
 fn main() {
     // The dashboard's config, state and notes go somewhere disposable; dates in a fixed locale.
     let dir = std::env::temp_dir().join(format!("niri-dash-ui-{}", std::process::id()));
@@ -860,6 +877,10 @@ fn main() {
             privacy_without_a_share_has_no_stops,
         ),
         ("privacy_stops_are_the_shares", privacy_stops_are_the_shares),
+        (
+            "battery_without_a_current_profile",
+            battery_without_a_current_profile,
+        ),
         (
             "keyboard survives its field going away",
             keyboard_survives_its_field_going_away,
