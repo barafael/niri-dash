@@ -6,9 +6,13 @@
 //! pairing or connecting on its own) is rejected. It is not registered as the default agent,
 //! so it doesn't take over from a desktop's own.
 
-use super::{Answer, BLUEZ, Bluetooth, Error, PromptKind};
+use super::{Answer, Asked, BLUEZ, Error, Inner, PromptKind};
+use crate::sources::connector::Connector;
 use futures_util::StreamExt;
 use std::time::Duration;
+use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::oneshot;
+use zbus::Connection;
 use zbus::zvariant::{ObjectPath, OwnedObjectPath};
 
 const PATH: &str = "/io/github/niri_dash/bluetooth_agent";
@@ -24,27 +28,61 @@ enum AgentError {
     Canceled(String),
 }
 
+/// The agent's methods run at the same time, and wait for the user: they only ask the actor, which
+/// owns the prompt and knows what is being paired.
 struct Agent {
-    bt: Bluetooth,
+    actor: UnboundedSender<Inner>,
+}
+
+fn not_ours() -> AgentError {
+    AgentError::Rejected("not a pairing started here".into())
 }
 
 impl Agent {
     /// Only the device being paired from the widget gets an answer.
-    fn ours(&self, device: &ObjectPath<'_>) -> Result<(), AgentError> {
-        if self.bt.pairing().as_deref() == Some(device.as_str()) {
+    async fn ours(&self, device: &ObjectPath<'_>) -> Result<(), AgentError> {
+        let (reply, ours) = oneshot::channel();
+        let _ = self.actor.send(Inner::IsOurs {
+            device: device.to_string(),
+            reply,
+        });
+        if ours.await == Ok(true) {
             Ok(())
         } else {
-            Err(AgentError::Rejected("not a pairing started here".into()))
+            Err(not_ours())
         }
     }
 
+    /// Show a code to type on the device, if it is ours; there is nothing to wait for.
+    async fn show(&self, device: &ObjectPath<'_>, kind: PromptKind) -> Result<(), AgentError> {
+        let (reply, ours) = oneshot::channel();
+        let _ = self.actor.send(Inner::Show {
+            device: device.to_string(),
+            kind,
+            reply,
+        });
+        if ours.await == Ok(true) {
+            Ok(())
+        } else {
+            Err(not_ours())
+        }
+    }
+
+    /// Ask the user about the device, if it is ours, and wait for the answer. In one message, so
+    /// what is being paired can't change between the check and the prompt.
     async fn wait(&self, device: &ObjectPath<'_>, kind: PromptKind) -> Result<Answer, AgentError> {
-        let rx = self.bt.ask(device.as_str(), kind);
-        match tokio::time::timeout(WAIT, rx).await {
-            Ok(Ok(Some(answer))) => Ok(answer),
+        let (reply, answer) = oneshot::channel();
+        let _ = self.actor.send(Inner::Ask {
+            device: device.to_string(),
+            kind,
+            reply,
+        });
+        match tokio::time::timeout(WAIT, answer).await {
+            Ok(Ok(Asked::Answer(answer))) => Ok(answer),
+            Ok(Ok(Asked::NotOurs)) => Err(not_ours()),
             Ok(_) => Err(AgentError::Rejected("declined".into())),
             Err(_) => {
-                self.bt.drop_prompt();
+                let _ = self.actor.send(Inner::PromptGone);
                 Err(AgentError::Canceled("nobody answered".into()))
             }
         }
@@ -56,7 +94,6 @@ impl Agent {
     fn release(&self) {}
 
     async fn request_pin_code(&self, device: OwnedObjectPath) -> Result<String, AgentError> {
-        self.ours(&device)?;
         match self.wait(&device, PromptKind::EnterPin).await? {
             // A legacy PIN: 1 to 16 characters.
             Answer::Code(pin) if (1..=16).contains(&pin.len()) => Ok(pin),
@@ -69,14 +106,11 @@ impl Agent {
         device: OwnedObjectPath,
         pincode: String,
     ) -> Result<(), AgentError> {
-        self.ours(&device)?;
         // Shown until the pairing ends; nothing to wait for.
-        self.bt.show(device.as_str(), PromptKind::ShowPin(pincode));
-        Ok(())
+        self.show(&device, PromptKind::ShowPin(pincode)).await
     }
 
     async fn request_passkey(&self, device: OwnedObjectPath) -> Result<u32, AgentError> {
-        self.ours(&device)?;
         match self.wait(&device, PromptKind::EnterPasskey).await? {
             Answer::Code(code) => code
                 .trim()
@@ -94,10 +128,8 @@ impl Agent {
         passkey: u32,
         entered: u16,
     ) -> Result<(), AgentError> {
-        self.ours(&device)?;
-        self.bt
-            .show(device.as_str(), PromptKind::ShowPasskey(passkey, entered));
-        Ok(())
+        self.show(&device, PromptKind::ShowPasskey(passkey, entered))
+            .await
     }
 
     async fn request_confirmation(
@@ -105,7 +137,6 @@ impl Agent {
         device: OwnedObjectPath,
         passkey: u32,
     ) -> Result<(), AgentError> {
-        self.ours(&device)?;
         match self.wait(&device, PromptKind::Confirm(passkey)).await? {
             Answer::Yes => Ok(()),
             Answer::Code(_) => Err(AgentError::Rejected("declined".into())),
@@ -113,7 +144,6 @@ impl Agent {
     }
 
     async fn request_authorization(&self, device: OwnedObjectPath) -> Result<(), AgentError> {
-        self.ours(&device)?;
         match self.wait(&device, PromptKind::Authorize).await? {
             Answer::Yes => Ok(()),
             Answer::Code(_) => Err(AgentError::Rejected("declined".into())),
@@ -126,25 +156,25 @@ impl Agent {
         device: OwnedObjectPath,
         _uuid: String,
     ) -> Result<(), AgentError> {
-        self.ours(&device)
+        self.ours(&device).await
     }
 
     fn cancel(&self) {
-        self.bt.drop_prompt();
+        let _ = self.actor.send(Inner::PromptGone);
     }
 }
 
 /// Serve the agent and register it, again whenever BlueZ restarts.
-pub fn start(bt: Bluetooth) {
-    let ctx = bt.ctx.clone();
-    ctx.spawn(async move {
-        loop {
-            if let Err(e) = serve(&bt).await {
-                log::debug!("bluetooth agent: {e}");
-            }
-            tokio::time::sleep(Duration::from_secs(30)).await;
+pub async fn serve_forever(
+    agent_conn: Connector<Connection, zbus::Error>,
+    actor: UnboundedSender<Inner>,
+) {
+    loop {
+        if let Err(e) = serve(&agent_conn, &actor).await {
+            log::debug!("bluetooth agent: {e}");
         }
-    });
+        tokio::time::sleep(Duration::from_secs(30)).await;
+    }
 }
 
 async fn register(conn: &zbus::Connection) {
@@ -166,10 +196,18 @@ async fn register(conn: &zbus::Connection) {
     }
 }
 
-async fn serve(bt: &Bluetooth) -> Result<(), Error> {
-    let conn = bt.agent_conn().await?.clone();
+async fn serve(
+    agent_conn: &Connector<Connection, zbus::Error>,
+    actor: &UnboundedSender<Inner>,
+) -> Result<(), Error> {
+    let conn = agent_conn.get().await?;
     conn.object_server()
-        .at(PATH, Agent { bt: bt.clone() })
+        .at(
+            PATH,
+            Agent {
+                actor: actor.clone(),
+            },
+        )
         .await?;
     let dbus = zbus::fdo::DBusProxy::new(&conn).await?;
     let mut owners = dbus

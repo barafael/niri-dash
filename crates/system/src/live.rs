@@ -2,9 +2,8 @@
 //! turns the applet's commands into what the sources do.
 
 use super::{
-    Capabilities, Event, Feed, Senders, Started, audio, bluetooth, brightness, clipboard, color,
-    host, keyboard, mascot, night_light, power, privacy, session, tray, wayland, weather, wifi,
-    windows,
+    Capabilities, Event, Feed, Senders, Started, audio, brightness, clipboard, color, host,
+    keyboard, mascot, night_light, power, privacy, session, tray, wayland, weather, wifi, windows,
 };
 use crate::compositor;
 use crate::sources::{
@@ -111,7 +110,7 @@ fn start(
         privacy: run(PrivacyActor { ctx: base() }),
         color: run(ColorActor { ctx: base() }),
         wifi: run(WifiActor(Wifi::start(feed(Feed::Wifi)))),
-        bluetooth: run(BluetoothActor(Bluetooth::start(feed(Feed::Bluetooth)))),
+        bluetooth: run(Bluetooth::start(feed(Feed::Bluetooth))),
         audio: run(AudioActor(Audio::start(feed(Feed::Audio)))),
         brightness: run(BrightnessActor(Brightness::start(feed(Feed::Brightness)))),
         notifications: run(Notifications::start(feed(Feed::Notifications), base())),
@@ -325,32 +324,6 @@ impl Actor for WifiActor {
             Reveal { uuid } => w.reveal(uuid),
             HideSecret => w.hide_secret(),
             SignIn => w.sign_in(),
-        }
-    }
-}
-
-struct BluetoothActor(Bluetooth);
-
-impl Actor for BluetoothActor {
-    type Command = bluetooth::Command;
-
-    fn handle(&mut self, cmd: bluetooth::Command) {
-        use bluetooth::Command::*;
-        let b = &self.0;
-        match cmd {
-            Toggle => b.toggle(),
-            Scan(on) => b.scan(on),
-            Connect(addr) => b.connect(addr),
-            Disconnect(addr) => b.disconnect(addr),
-            SetTrusted(addr, on) => b.set_trusted(addr, on),
-            SetBlocked(addr, on) => b.set_blocked(addr, on),
-            Forget(addr) => b.forget(addr),
-            Rename(addr, name) => b.rename(addr, name),
-            Pair(addr) => b.pair(addr),
-            CancelPairing => b.cancel_pairing(),
-            Answer { serial, answer } => b.answer(serial, answer),
-            Decline => b.decline(),
-            Select(addr) => b.select(addr),
         }
     }
 }
