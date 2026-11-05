@@ -11,6 +11,7 @@ component Choice inherits HorizontalLayout {
     in property <string> label;
     // Under the keyboard cursor (h/l pick).
     in property <bool> kfocus;
+    callback revealed(length, length);
     spacing: 4px;
     for o[i] in root.options: TextButton {
         accessible-label: root.label + ": " + o;
@@ -18,6 +19,7 @@ component Choice inherits HorizontalLayout {
         text: o;
         primary: i == root.picked;
         kfocus: root.kfocus && i == root.picked;
+        revealed(y, h) => { root.revealed(y, h); }
         horizontal-stretch: 1;
         clicked => { root.picked = i; }
     }
@@ -39,6 +41,13 @@ component KeyField inherits VerticalLayout {
     callback accepted();
     // It got the keyboard (Tab, a click, opening with `focus-first`): the cursor belongs here.
     callback focused();
+    // The keyboard cursor came here: its position in the window and height, for a list to scroll to.
+    callback revealed(length, length);
+    changed kfocus => {
+        if (self.kfocus) {
+            self.revealed(self.absolute-position.y, self.height);
+        }
+    }
     spacing: 2px;
     changed edit-tick => {
         if (self.kfocus) {
@@ -89,6 +98,7 @@ component ServerCheck inherits VerticalLayout {
     // Turned on or off, by mouse too: the stops after it just moved, so the cursor goes with it.
     callback toggled();
     callback focused();
+    callback revealed(length, length);
     spacing: 6px;
     if !root.insecure: KeyField {
         label: "Server domain";
@@ -97,6 +107,7 @@ component ServerCheck inherits VerticalLayout {
         kfocus: root.kfocus-field;
         edit-tick: root.edit-tick;
         focused => { root.focused(); }
+        revealed(y, h) => { root.revealed(y, h); }
     }
     HorizontalLayout {
         spacing: 8px;
@@ -113,6 +124,7 @@ component ServerCheck inherits VerticalLayout {
             y: (parent.height - self.height) / 2;
             checked: root.insecure;
             kfocus: root.kfocus-switch;
+            revealed(y, h) => { root.revealed(y, h); }
             toggled => {
                 root.insecure = !root.insecure;
                 root.toggled();
@@ -649,6 +661,7 @@ export component WifiWidget inherits Rectangle {
                         accessible-label: "Connect automatically";
                         y: (parent.height - self.height) / 2;
                         kfocus: root.kf(1, 0);
+                        revealed(y, h) => { detail-list.reveal(y, h); }
                         checked: Wifi.detail.autoconnect;
                         toggled => { Wifi.set-autoconnect(Wifi.detail.uuid, !Wifi.detail.autoconnect); }
                     }
@@ -702,6 +715,12 @@ export component WifiWidget inherits Rectangle {
                             detail-list.reveal(self.absolute-position.y, self.height);
                         }
                     }
+                    // The password and QR code appeared above: the buttons stay in sight.
+                    changed y => {
+                        if (self.kf) {
+                            detail-list.reveal(self.absolute-position.y, self.height);
+                        }
+                    }
                     if Wifi.detail.known: TextButton {
                         accessible-label: "Forget network";
                         text: "Forget";
@@ -739,7 +758,7 @@ export component WifiWidget inherits Rectangle {
                 }
             }
             // A network that doesn't broadcast its name.
-            if Wifi.available && Wifi.enabled && root.page == 2: ScrollList {
+            if Wifi.available && Wifi.enabled && root.page == 2: hidden-list := ScrollList {
                 vertical-stretch: 1;
                 VerticalLayout {
                     spacing: 6px;
@@ -748,6 +767,7 @@ export component WifiWidget inherits Rectangle {
                         text <=> root.hidden-ssid;
                         focus-first: true;
                         kfocus: root.kf(2, 0);
+                        revealed(y, h) => { hidden-list.reveal(y, h); }
                         edit-tick: root.edit-tick;
                         focused => { keys.move-to(0); }
                     }
@@ -756,17 +776,20 @@ export component WifiWidget inherits Rectangle {
                         options: ["Open", "WPA", "802.1X"];
                         picked <=> root.hidden-security;
                         kfocus: root.kf(2, 1);
+                        revealed(y, h) => { hidden-list.reveal(y, h); }
                     }
                     if root.hidden-security == 2: Choice {
                         label: "Method";
                         options: ["PEAP", "TTLS"];
                         picked <=> root.hidden-method;
                         kfocus: root.kf(2, root.k-method);
+                        revealed(y, h) => { hidden-list.reveal(y, h); }
                     }
                     if root.hidden-security == 2: KeyField {
                         placeholder: "User name";
                         text <=> root.hidden-identity;
                         kfocus: root.kf(2, root.k-ident);
+                        revealed(y, h) => { hidden-list.reveal(y, h); }
                         edit-tick: root.edit-tick;
                         focused => { keys.move-to(root.k-ident); }
                     }
@@ -776,6 +799,7 @@ export component WifiWidget inherits Rectangle {
                         input-type: InputType.password;
                         text <=> root.hidden-password;
                         kfocus: root.kf(2, root.k-pass);
+                        revealed(y, h) => { hidden-list.reveal(y, h); }
                         edit-tick: root.edit-tick;
                         focused => { keys.move-to(root.k-pass); }
                         accepted => { root.join-hidden(); }
@@ -785,6 +809,7 @@ export component WifiWidget inherits Rectangle {
                         insecure <=> root.hidden-insecure;
                         kfocus-field: root.kf(2, root.k-domain);
                         kfocus-switch: root.kf(2, root.k-insecure);
+                        revealed(y, h) => { hidden-list.reveal(y, h); }
                         edit-tick: root.edit-tick;
                         toggled => { keys.cursor = root.k-insecure; }
                         focused => { keys.move-to(root.k-domain); }
@@ -796,6 +821,7 @@ export component WifiWidget inherits Rectangle {
                             primary: true;
                             enabled: root.hidden-ssid != "";
                             kfocus: root.kf(2, root.k-join);
+                            revealed(y, h) => { hidden-list.reveal(y, h); }
                             clicked => { root.join-hidden(); }
                         }
                     }
@@ -1409,6 +1435,7 @@ export component BluetoothWidget inherits Rectangle {
                         y: (parent.height - self.height) / 2;
                         checked: Bluetooth.detail.trusted;
                         kfocus: root.kf(1, 0);
+                        revealed(y, h) => { bt-detail-list.reveal(y, h); }
                         toggled => { Bluetooth.set-trusted(Bluetooth.detail.address, !Bluetooth.detail.trusted); }
                     }
                 }
@@ -1427,6 +1454,7 @@ export component BluetoothWidget inherits Rectangle {
                         y: (parent.height - self.height) / 2;
                         checked: Bluetooth.detail.blocked;
                         kfocus: root.kf(1, root.paired ? 1 : 0);
+                        revealed(y, h) => { bt-detail-list.reveal(y, h); }
                         toggled => { Bluetooth.set-blocked(Bluetooth.detail.address, !Bluetooth.detail.blocked); }
                     }
                 }
@@ -1437,6 +1465,7 @@ export component BluetoothWidget inherits Rectangle {
                         placeholder: "Rename";
                         text <=> root.rename-to;
                         kfocus: root.kf(1, 2);
+                        revealed(y, h) => { bt-detail-list.reveal(y, h); }
                         edit-tick: root.edit-tick;
                         focused => { keys.move-to(2); }
                         accepted => { root.rename(); }

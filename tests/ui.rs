@@ -7,7 +7,7 @@
 use niri_dash::testing::{Element, Harness};
 use niri_dash::{Control, testing};
 use niri_dash_system::{
-    Demo, bluetooth, brightness, clipboard, color, session, tray, wifi, windows,
+    Demo, bluetooth, brightness, clipboard, color, privacy, session, tray, wifi, windows,
 };
 use slint::{ComponentHandle, Model};
 use std::panic::AssertUnwindSafe;
@@ -583,6 +583,171 @@ fn cursor_crosses_many_skipped_stops() {
     assert!(now.contains("Session 7"), "on: {now}");
 }
 
+/// Every stop from here to the last has to be there to read, and in sight.
+fn every_stop_in_sight(h: &mut Harness) {
+    let mut last = said(h);
+    for _ in 0..60 {
+        h.press("j");
+        let now = said(h);
+        if now == last {
+            return;
+        }
+        last = now;
+    }
+    panic!("never reached the last stop");
+}
+
+fn cast(i: u64) -> privacy::ScreenCast {
+    privacy::ScreenCast {
+        session_id: i,
+        target: format!("Output {i}"),
+        active: true,
+        pid: None,
+        process: Some(format!("App {i}")),
+        pw_node: None,
+    }
+}
+
+/// A short tile: every stop of the hidden-network form scrolls into sight.
+fn stops_in_sight_hidden_form() {
+    let mut h = testing::Harness::new("layout {\n    wifi col=0 row=0 width=3 height=2\n}\n");
+    hidden_enterprise_form(&mut h);
+    every_stop_in_sight(&mut h);
+}
+
+/// A short tile: the details page of a saved network.
+fn stops_in_sight_wifi_details() {
+    let mut h = testing::Harness::new("layout {\n    wifi col=0 row=0 width=3 height=2\n}\n");
+    let mut state = Demo::new().wifi;
+    h.send(wifi::Event::State(Box::new(state.clone())));
+    enter(&mut h, "Wi-Fi");
+    h.press("l");
+    h.press("l");
+    h.press("enter");
+    state.detail = Some(wifi::Detail {
+        key: state.networks[0].key(),
+        ssid: "Lighthouse".into(),
+        network: Some(state.networks[0].clone()),
+        profile: Some(wifi::Profile {
+            ssid: "Lighthouse".into(),
+            ..Default::default()
+        }),
+    });
+    h.send(wifi::Event::State(Box::new(state)));
+    every_stop_in_sight(&mut h);
+}
+
+/// A short tile: the password and QR code appearing above Share push it down; it stays in sight.
+fn stops_in_sight_wifi_share() {
+    let mut h = testing::Harness::new("layout {\n    wifi col=0 row=0 width=3 height=2\n}\n");
+    let mut state = Demo::new().wifi;
+    h.send(wifi::Event::State(Box::new(state.clone())));
+    enter(&mut h, "Wi-Fi");
+    h.press("l");
+    h.press("l");
+    h.press("enter");
+    state.detail = Some(wifi::Detail {
+        key: state.networks[0].key(),
+        ssid: "Lighthouse".into(),
+        network: Some(state.networks[0].clone()),
+        profile: Some(wifi::Profile {
+            ssid: "Lighthouse".into(),
+            uuid: "u".into(),
+            ..Default::default()
+        }),
+    });
+    h.send(wifi::Event::State(Box::new(state.clone())));
+    for _ in 0..8 {
+        if said(&mut h).contains("Share network") {
+            break;
+        }
+        h.press("j");
+    }
+    assert!(said(&mut h).contains("Share network"));
+    state.secret = Some(wifi::Secret {
+        uuid: "u".into(),
+        password: "hunter2".into(),
+        qr: niri_dash_system::IconSrc::None,
+    });
+    h.send(wifi::Event::State(Box::new(state)));
+    let now = said(&mut h);
+    assert!(now.contains("Hide password"), "on: {now}");
+}
+
+/// A short tile: Bluetooth's details page.
+fn stops_in_sight_bluetooth_details() {
+    let mut h = testing::Harness::new("layout {\n    bluetooth col=0 row=0 width=3 height=2\n}\n");
+    let mut state = Demo::new().bluetooth;
+    h.send(bluetooth::Event::State(Box::new(state.clone())));
+    enter(&mut h, "Bluetooth");
+    h.press("l");
+    h.press("enter");
+    state.detail = Some(state.devices[0].clone());
+    h.send(bluetooth::Event::State(Box::new(state)));
+    every_stop_in_sight(&mut h);
+}
+
+/// A short tile: many screen shares, and the Stop button of each comes into sight.
+fn stops_in_sight_privacy() {
+    let mut h = testing::Harness::new("layout {\n    privacy col=0 row=0 width=3 height=2\n}\n");
+    h.send(privacy::Event::Casts((0..8).map(cast).collect()));
+    enter(&mut h, "Privacy");
+    every_stop_in_sight(&mut h);
+}
+
+/// Short tiles: lists that wrap their rows, or aren't rows at all.
+fn stops_in_sight_other_lists() {
+    let mut h = testing::Harness::new("layout {\n    windows col=0 row=0 width=3 height=2\n}\n");
+    let mut w = Demo::new().windows;
+    let row = w.rows[1].clone();
+    w.rows = (0..12)
+        .map(|i| windows::Row {
+            id: i,
+            title: format!("Window {i}"),
+            ..row.clone()
+        })
+        .collect();
+    h.send(windows::Event::State(w));
+    enter(&mut h, "Windows");
+    every_stop_in_sight(&mut h);
+
+    let mut h =
+        testing::Harness::new("layout {\n    claude-sessions col=0 row=0 width=3 height=2\n}\n");
+    let mut c = Demo::new().claude;
+    let session = c.sessions[0].clone();
+    c.sessions = (0..12)
+        .map(|i| niri_dash_system::claude::Session {
+            pid: i,
+            title: format!("Session {i}"),
+            window: Some(1),
+            ..session.clone()
+        })
+        .collect();
+    h.send(niri_dash_system::claude::Event::Sessions(c));
+    enter(&mut h, "Claude sessions");
+    every_stop_in_sight(&mut h);
+
+    let mut h =
+        testing::Harness::new("layout {\n    notifications col=0 row=0 width=3 height=2\n}\n");
+    let mut n = Demo::new().notifications;
+    let one = n.items[0].clone();
+    n.items = (0..10)
+        .map(|i| niri_dash_system::notifications::Notification {
+            id: i,
+            summary: format!("Note {i}"),
+            ..one.clone()
+        })
+        .collect();
+    h.send(niri_dash_system::notifications::Event::State(n));
+    enter(&mut h, "Notifications");
+    every_stop_in_sight(&mut h);
+
+    let mut h = testing::Harness::new("layout {\n    volume col=0 row=0 width=3 height=2\n}\n");
+    h.send(niri_dash_system::audio::Event::State(Demo::new().audio));
+    enter(&mut h, "Volume");
+    every_stop_in_sight(&mut h);
+}
+
 fn main() {
     // The dashboard's config, state and notes go somewhere disposable; dates in a fixed locale.
     let dir = std::env::temp_dir().join(format!("niri-dash-ui-{}", std::process::id()));
@@ -656,6 +821,15 @@ fn main() {
             "cursor_crosses_many_skipped_stops",
             cursor_crosses_many_skipped_stops,
         ),
+        ("stops_in_sight_hidden_form", stops_in_sight_hidden_form),
+        ("stops_in_sight_wifi_details", stops_in_sight_wifi_details),
+        ("stops_in_sight_wifi_share", stops_in_sight_wifi_share),
+        (
+            "stops_in_sight_bluetooth_details",
+            stops_in_sight_bluetooth_details,
+        ),
+        ("stops_in_sight_privacy", stops_in_sight_privacy),
+        ("stops_in_sight_other_lists", stops_in_sight_other_lists),
         (
             "keyboard survives its field going away",
             keyboard_survives_its_field_going_away,

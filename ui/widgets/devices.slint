@@ -97,7 +97,7 @@ export component PrivacyWidget inherits Rectangle {
             vertical-stretch: 1;
             text: Desktop.niri ? "Nothing uses the microphone, camera or screen" : "Nothing uses the microphone or camera";
         }
-        if root.any: ScrollList {
+        if root.any: privacy-list := ScrollList {
             vertical-stretch: 1;
             for it[i] in Privacy.items: HorizontalLayout {
                 height: 36px;
@@ -133,6 +133,7 @@ export component PrivacyWidget inherits Rectangle {
                     accessible-label: "Stop sharing with " + it.app;
                     danger: true;
                     kfocus: keys.on && keys.cursor == i;
+                    revealed(y, h) => { privacy-list.reveal(y, h); }
                     clicked => { Privacy.stop(it.session); }
                 }
             }

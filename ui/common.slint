@@ -55,6 +55,13 @@ export component TextButton inherits Rectangle {
     in property <bool> enabled: true;
     in property <bool> kfocus;
     callback clicked();
+    // The keyboard cursor came here: its position in the window and height, for a list to scroll to.
+    callback revealed(length, length);
+    changed kfocus => {
+        if (self.kfocus) {
+            self.revealed(self.absolute-position.y, self.height);
+        }
+    }
     accessible-role: button;
     accessible-label: root.text;
     accessible-enabled: root.enabled;
@@ -98,6 +105,13 @@ export component Switch inherits Rectangle {
     in property <bool> enabled: true;
     in property <bool> kfocus;
     callback toggled();
+    // The keyboard cursor came here: its position in the window and height, for a list to scroll to.
+    callback revealed(length, length);
+    changed kfocus => {
+        if (self.kfocus) {
+            self.revealed(self.absolute-position.y, self.height);
+        }
+    }
     // Each use names the switch with `accessible-label`.
     accessible-role: switch;
     accessible-checkable: true;
