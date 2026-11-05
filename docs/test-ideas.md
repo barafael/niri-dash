@@ -88,14 +88,17 @@ Largest gains first.
    Extend it to every applet's commands, and to a check that a capability that is off means no
    events and no controls.
 
-## System tests in a container
+## System tests in the test box
 
-`tests/system/run.sh` runs the real system code (`live()`, without a compositor) against mocks of
-NetworkManager, BlueZ and UPower on a bus of their own, in a podman (or docker) container. It is
-built on the neutral event sink: `live(sink, Options { wayland: None, .. })` runs without a
-compositor, and the test reads its events from `Sink::channel()`.
+`cargo testbox test` (`testbox/README.md`) runs the tests that run system code in a Podman
+container, and they run nowhere else: `crates/system/tests/live.rs` runs the real system
+(`live()`, without a compositor) against mocks of NetworkManager, BlueZ and UPower on a bus of
+their own; `contract.rs` checks the mock, the simulation and `live()` against the same contract;
+`tests/atspi.rs` and `tests/orca.rs` put the dashboard on a private accessibility bus, read by
+libatspi and by Orca. It is built on the neutral event sink: `live(sink, Options { wayland: None,
+.. })` runs without a compositor, and the test reads its events from `Sink::channel()`.
 
-What it does now (`crates/system/tests/live.rs`):
+What `live.rs` does now:
 
 - Wi-Fi is turned off and on again through the dashboard's `Toggle`, and the state follows.
 - The same for the Bluetooth adapter.
@@ -103,12 +106,9 @@ What it does now (`crates/system/tests/live.rs`):
 - A program sends a notification over the session bus; the dashboard keeps it, and drops it when
   told to.
 
-How it is put together: `tests/system/Containerfile` is an Arch image with `python-dbusmock`;
-`mocks.py` starts the two buses and the mocks, then runs the test binary. The binary is built on
-the host and mounted in, so the whole workspace isn't compiled again in the container.
-
-It switches radios, so the test binary refuses to run unless it is in a container and
-`NIRI_DASH_SYSTEM_TESTS` is set (outside, it prints "skipped" and succeeds).
+The box has no network, no capabilities and a read-only root, and the tests refuse to run outside
+it (outside, they print "skipped" and succeed). The test programs are built on the host and
+mounted in, so the whole workspace isn't compiled again in the container.
 
 Next steps, from cheap to costly:
 

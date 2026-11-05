@@ -16,7 +16,7 @@ png.workspace = true
 tokio = { version = "1", features = ["sync", "macros"] }
 qrcode = { version = "0.14.1", default-features = false }
 
-# Needs the container in tests/system, which turns radios off and on.
+# Needs the test box (testbox/), which turns radios off and on.
 [[test]]
 name = "live"
 harness = false
