@@ -114,6 +114,8 @@ pub(super) enum Input {
     NightLight(sys::night_light::Cmd),
     /// A line for the mascots, from `niri-dash say`.
     MascotSay(crate::mascots::Say),
+    /// A screen reader wants something (see `a11y/bridge.rs`).
+    Access(super::a11y::bridge::Request),
 }
 
 impl App {
@@ -124,6 +126,7 @@ impl App {
             Input::ConfigChanged => self.reload_config(),
             Input::NightLight(cmd) => self.night_light(cmd, true),
             Input::MascotSay(say) => self.mascot_say(say),
+            Input::Access(request) => self.access_request(request),
         }
         None
     }
@@ -348,6 +351,11 @@ fn serve(
     let has_clipboard = system.caps.clipboard;
     let app = build(&ui, system, input_tx.clone(), solo, config, false);
     ui.global::<UiClipboard>().set_available(has_clipboard);
+    // A screen reader finds the dashboard on the accessibility bus. Never in a stress run, which
+    // is a test: tests keep off the session's bus.
+    if stress.is_none() && std::env::var_os("NIRI_DASH_ATSPI").is_none_or(|v| v != "0") {
+        app.access_attach(super::a11y::bridge::unix(input_tx.clone()));
+    }
 
     shell.watch_pointer(super::hold::watcher(&app));
     let a = app.clone();
@@ -401,6 +409,7 @@ fn serve(
             slint::platform::duration_until_next_timer_update().unwrap_or(Duration::MAX)
         };
         let timeout = shell.frame_wait().map_or(timeout, |w| w.min(timeout));
+        let timeout = app.access_wait().map_or(timeout, |w| w.min(timeout));
         let timeout = stress
             .as_ref()
             .map_or(timeout, |r| r.pace.wait().min(timeout));
@@ -412,6 +421,7 @@ fn serve(
             route(&app, &mut shell, c);
         }
         app.tick(&mut shell);
+        app.access_sync(false);
         if let Some(run) = stress.as_deref_mut() {
             if shell.closed_by_compositor {
                 return Ok(());

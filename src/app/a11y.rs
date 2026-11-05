@@ -6,6 +6,12 @@
 //! `accessible-item-selected` (a scope's controls are often beside it rather than inside). A widget
 //! without controls has no focus of its own while entered, so its tile answers for it.
 
+// The screen reader's side is the desktop's: AT-SPI, over D-Bus. The web build has no use for it.
+#[cfg(not(target_arch = "wasm32"))]
+pub(super) mod bridge;
+#[cfg(not(target_arch = "wasm32"))]
+pub(super) mod tree;
+
 use super::App;
 use crate::{Nav, NavMode};
 use i_slint_core::accessibility::{AccessibilityAction, AccessibleStringProperty as Prop};
@@ -207,6 +213,31 @@ impl App {
         }
     }
 
+    /// The dashboard as a screen reader's tree, its focus on the cursor (or, with no widget
+    /// entered, on what holds Slint's focus).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(super) fn access_tree(&self) -> accesskit::TreeUpdate {
+        let ui = self.ui();
+        let focus = match self.cursor_now() {
+            Ok(Some(cursor)) => Some(cursor),
+            _ => WindowInner::from_pub(ui.window())
+                .focus_item
+                .borrow()
+                .upgrade(),
+        };
+        let mut update = tree::build(ui.window(), &mut self.access_ids.borrow_mut(), focus);
+        // A hidden dashboard is there for a screen reader to find, but shows nothing.
+        if !self.visible.get() {
+            let root = update.tree.as_ref().map(|t| t.root);
+            for (id, node) in &mut update.nodes {
+                if Some(*id) == root {
+                    node.set_hidden();
+                }
+            }
+        }
+        update
+    }
+
     /// What a screen reader would say about the entered widget; `None` with no widget entered.
     /// An error says what doesn't add up: the keyboard in another widget, a cursor on nothing or
     /// on two things at once, or a stop that has no name.
@@ -227,6 +258,17 @@ impl App {
     }
 
     fn spoken_now(&self) -> Result<Option<Spoken>, String> {
+        match self.cursor_now()? {
+            Some(item) => named(speak(&item)).map(Some),
+            None => Ok(None),
+        }
+    }
+
+    /// The element the keyboard is on in the entered widget, which is also where a screen
+    /// reader's focus belongs; `None` with no widget entered. An error says what doesn't add up.
+    /// It doesn't wait for a moving list to settle (the tree is built on the loop's own turn,
+    /// which must not sleep): where it errs, the tree's focus falls back to Slint's.
+    pub(super) fn cursor_now(&self) -> Result<Option<ItemRc>, String> {
         let ui = self.ui();
         let n = ui.global::<Nav>();
         if n.get_mode() != NavMode::Widget {
@@ -238,8 +280,8 @@ impl App {
             && let Some(menu) = find_id(window, "tray-menu")
         {
             return match under_cursor(&menu).as_slice() {
-                [one] => named(speak(one)).map(Some),
-                _ => named(speak(&menu)).map(Some),
+                [one] => Ok(Some(one.clone())),
+                _ => Ok(Some(menu)),
             };
         }
         let tile = format!("widget-{}", n.get_active_id());
@@ -248,20 +290,19 @@ impl App {
         else {
             // Keyboard not in the tile: it stays with the dashboard for a widget without
             // controls, whose tile answers.
-            let spoken = find_id(window, &tile)
-                .map(|t| speak(&t))
-                .ok_or(format!("{tile} isn't on the dashboard"))?;
-            return named(spoken).map(Some);
+            return find_id(window, &tile)
+                .map(Some)
+                .ok_or(format!("{tile} isn't on the dashboard"));
         };
         let at = nearest_accessible(item);
         if at.accessible_role() != AccessibleRole::List {
-            return named(speak(&at)).map(Some);
+            return Ok(Some(at));
         }
         let stops: usize = prop(&at, Prop::ItemCount).parse().unwrap_or(0);
         let under = under_cursor(&frame);
         match under.as_slice() {
-            [one] => named(speak(one)).map(Some),
-            [] if stops == 0 => named(speak(&at)).map(Some),
+            [one] => Ok(Some(one.clone())),
+            [] if stops == 0 => Ok(Some(at)),
             [] => Err(match out_of_sight(&frame).as_slice() {
                 [] => format!("the cursor is on nothing in {} ({stops} stops)", speak(&at)),
                 hidden => format!(

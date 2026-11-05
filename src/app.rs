@@ -221,6 +221,12 @@ struct App {
     image_uses: Cell<u64>,
     /// Controls from the UI, run by the event loop, which has the shell at hand.
     pending: RefCell<Vec<Control>>,
+    /// Which element each node of the screen reader's tree stands for.
+    #[cfg(not(target_arch = "wasm32"))]
+    access_ids: RefCell<a11y::tree::Ids>,
+    /// The screen reader, if there is one: what it was given, and where the tree goes.
+    #[cfg(not(target_arch = "wasm32"))]
+    access: RefCell<a11y::bridge::Access>,
     locale: sys::Locale,
     /// When the brightness slider was last dragged.
     brightness_touched: Cell<Option<Instant>>,
@@ -588,6 +594,10 @@ fn build(
         images: Default::default(),
         image_uses: Cell::new(0),
         pending: Default::default(),
+        #[cfg(not(target_arch = "wasm32"))]
+        access_ids: Default::default(),
+        #[cfg(not(target_arch = "wasm32"))]
+        access: Default::default(),
         locale,
         brightness_touched: Cell::new(None),
         tray_items: Default::default(),
