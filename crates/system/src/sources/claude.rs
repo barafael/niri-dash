@@ -29,7 +29,7 @@ struct SessionFile {
     entrypoint: String,
 }
 
-fn proc_stat(pid: i32) -> Option<(i32, String)> {
+pub(super) fn proc_stat(pid: i32) -> Option<(i32, String)> {
     let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
     // The command name can contain spaces and parens; fields restart after the last ')'.
     let rest = &stat[stat.rfind(')')? + 2..];

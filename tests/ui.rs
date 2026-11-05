@@ -575,6 +575,10 @@ fn claude_session_enter() {
     h.press("enter");
     assert!(matches!(
         h.inbox.windows.try_recv(),
+        Ok(windows::Command::ShowTab(4101))
+    ));
+    assert!(matches!(
+        h.inbox.windows.try_recv(),
         Ok(windows::Command::Focus(4101))
     ));
     assert_eq!(h.controls(), [Control::Hide]);
