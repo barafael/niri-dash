@@ -133,6 +133,10 @@ harness = false
 name = "atspi"
 harness = false
 
+[[test]]
+name = "orca"
+harness = false
+
 [build-dependencies]
 slint-build = "1.18"
 

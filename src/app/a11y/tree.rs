@@ -302,8 +302,8 @@ fn node(item: &ItemRc, scale: f32) -> Node {
             .and_then(|n| n.trim().parse::<f64>().ok());
         match value.parse::<f64>() {
             _ if matches!(role, Role::Slider | Role::ProgressIndicator) && percent.is_some() => {
+                // Only the number: with the text as well, Orca says both ("70 70 percent").
                 node.set_numeric_value(percent.unwrap_or_default());
-                node.set_value(value.to_string());
                 if min.is_none() {
                     node.set_min_numeric_value(0.0);
                 }
@@ -316,7 +316,17 @@ fn node(item: &ItemRc, scale: f32) -> Node {
                 node.set_value(value.to_string());
             }
             Ok(n) if !is_text_input(role) => node.set_numeric_value(n),
-            _ => node.set_value(value.to_string()),
+            _ => {
+                node.set_value(value.to_string());
+                // AT-SPI has no value for a row or a button, only a description, which a screen
+                // reader reads after the name ("connected, signal 78%").
+                if !is_text_input(role)
+                    && !matches!(role, Role::Label)
+                    && prop(item, Prop::Description).is_none()
+                {
+                    node.set_description(value.to_string());
+                }
+            }
         }
     }
     if let Some(p) = prop(item, Prop::PlaceholderText) {

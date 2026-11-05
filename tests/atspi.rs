@@ -11,6 +11,8 @@
 //! Slint wants one thread and one platform per process, so this is a plain program
 //! (`harness = false`).
 
+mod bus;
+
 use niri_dash::testing::{Harness, Sandbox};
 use niri_dash_system::{Demo, brightness, wifi};
 use std::process::{Command, Stdio};
@@ -26,87 +28,18 @@ layout {
 
 const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/atspi_client.py");
 
-fn installed(program: &str) -> bool {
-    Command::new(program)
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok()
-}
-
-/// What this test needs, or the first thing that is missing.
-fn missing() -> Option<String> {
-    for p in ["dbus-run-session", "gdbus", "python3"] {
-        if !installed(p) {
-            return Some(p.to_string());
-        }
-    }
-    let bindings = Command::new("python3")
-        .args([
-            "-c",
-            "import gi; gi.require_version('Atspi', '2.0'); from gi.repository import Atspi",
-        ])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-    if !bindings.is_ok_and(|s| s.success()) {
-        return Some("python3 with the Atspi bindings (gi)".into());
-    }
-    let launcher = [
-        "/usr/lib/at-spi-bus-launcher",
-        "/usr/libexec/at-spi-bus-launcher",
-    ];
-    if !launcher.iter().any(|p| std::path::Path::new(p).exists()) {
-        return Some("at-spi-bus-launcher".into());
-    }
-    None
-}
-
 fn main() {
     if std::env::var_os("NIRI_DASH_PRIVATE_BUS").is_some() {
         return inner();
     }
-    if let Some(what) = missing() {
+    if let Some(what) = bus::missing(&[]) {
         println!(
             "test atspi: skipped, {what} isn't installed\n\ntest result: ok. 0 passed; 0 failed"
         );
         return;
     }
-    // The accessibility bus makes its socket in the runtime directory: a directory of its own,
-    // so it can't meet the session's.
-    let runtime = std::env::temp_dir().join(format!("niri-dash-atspi-{}", std::process::id()));
-    std::fs::create_dir_all(&runtime).expect("a runtime directory");
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&runtime, std::fs::Permissions::from_mode(0o700))
-            .expect("a private runtime directory");
-    }
-    let exe = std::env::current_exe().expect("this program's path");
-    let status = Command::new("dbus-run-session")
-        .arg("--")
-        .arg(exe)
-        .env("NIRI_DASH_PRIVATE_BUS", "1")
-        .env("XDG_RUNTIME_DIR", &runtime)
-        // The accessibility bus is made by a plain dbus-daemon: dbus-broker, where it is the
-        // default, wants a systemd user manager that a private session doesn't have.
-        .env("ATSPI_DBUS_IMPLEMENTATION", "dbus-daemon")
-        .env_remove("DBUS_SESSION_BUS_ADDRESS")
-        .env_remove("AT_SPI_BUS_ADDRESS")
-        .env_remove("WAYLAND_DISPLAY")
-        .env_remove("DISPLAY")
-        .status();
-    let _ = std::fs::remove_dir_all(&runtime);
-    match status {
-        Ok(s) if s.success() => {}
-        Ok(s) => {
-            println!("\ntest result: FAILED ({s})");
-            std::process::exit(1);
-        }
-        Err(e) => {
-            println!("\ntest result: FAILED (dbus-run-session: {e})");
-            std::process::exit(1);
-        }
+    if !bus::rerun_privately("atspi") {
+        std::process::exit(1);
     }
 }
 
@@ -122,27 +55,7 @@ fn inner() {
     h.access_connect_unix();
 
     // A desktop turns accessibility on when a screen reader starts; this is that.
-    let on = Command::new("gdbus")
-        .args([
-            "call",
-            "--session",
-            "--dest",
-            "org.a11y.Bus",
-            "--object-path",
-            "/org/a11y/bus",
-            "--method",
-            "org.freedesktop.DBus.Properties.Set",
-            "org.a11y.Status",
-            "IsEnabled",
-            "<true>",
-        ])
-        .output()
-        .expect("running gdbus");
-    assert!(
-        on.status.success(),
-        "turning accessibility on: {}",
-        String::from_utf8_lossy(&on.stderr)
-    );
+    bus::accessibility_on();
 
     let exe = std::env::current_exe().expect("this program's path");
     let prefix = exe

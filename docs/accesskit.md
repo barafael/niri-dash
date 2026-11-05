@@ -27,9 +27,11 @@ the session bus. Nothing is built until it turns true.
   its own thread, so it doesn't need ours. `accesskit_consumer` 0.38 reads the tree back in tests.
   The version is the one `i-slint-core`'s `accessibility-text` uses, for when text fields need it.
   All of it resolves offline; 15 crates are new, zbus is shared.
-- **Will Orca read a layer-shell overlay?** Not answered: Orca isn't installed here. Everything
-  below the compositor is checked (libatspi reads and drives the tree; keyboard interactivity is
-  `Exclusive` while the dashboard is up, so the surface has the keyboard). A manual check is below.
+- **Will Orca read a layer-shell overlay?** Orca reads the dashboard: `tests/orca.rs` runs Orca 51
+  against it and reads Orca's log of what it spoke (no speaker needed). What that test does not
+  cover is the real compositor: the dashboard's surface there is a layer-shell one with exclusive
+  keyboard interactivity, which Orca never sees (it only follows AT-SPI focus). A manual check on
+  the real session is below.
 - **Hooking into Slint (`WindowAdapterInternal`).** Not needed. The tree is read from the
   `slint::Window`, and the loop looks once a turn (`access_sync`), so the GPU `GpuWindow` and
   Slint's `MinimalSoftwareWindow` are treated alike and neither is touched.
@@ -46,6 +48,16 @@ the session bus. Nothing is built until it turns true.
 - `Action::Focus` enters the widget that holds the element, as typing its letters does
   (`Nav.active-id`, mode `widget`). The cursor then stands where that widget keeps it, usually its
   first stop; Slint's own focus can't be set on elements that are not focus scopes.
+- **What Orca says** (Orca 51, English): entering Wi-Fi gives "Wi-Fi List with 4 items", then
+  "Lighthouse" and its Disconnect and Details buttons, then the row's details "connected, signal
+  78%, secured"; `j` reads the next row the same way; the brightness knob is "Brightness slider
+  70 70 percent." (Orca's own value-then-percentage form). AT-SPI has no value for a row, so a
+  row's text value is also its description, which is what Orca reads after the name.
+- With both the number and the text "70%" on a slider, Orca said it twice more than it needed to;
+  sliders carry the number only.
+- Orca cannot start without a display (it crashes setting up its keyboard), so its test runs a
+  virtual `kwin_wayland --virtual` in the same private session. Its service name is
+  `org.gnome.Orca1.Service`; its settings are kept in memory (`GSETTINGS_BACKEND=memory`).
 - dbus-broker, where it is the default, makes `at-spi-bus-launcher` need a systemd user manager. A
   private test session sets `ATSPI_DBUS_IMPLEMENTATION=dbus-daemon`.
 
@@ -55,12 +67,19 @@ the session bus. Nothing is built until it turns true.
 |---|---|
 | `cargo test --test a11y` | the existing audit, now also building the tree at every keyboard stop: it builds in `accesskit_consumer`, is reachable from the root, has unique ids, names everything that can be acted on, has the focus where `spoken()` says the keyboard is, keeps ids between builds. A control proves the check can fail. |
 | `cargo test --test access` | the bridge, with a recording sink instead of a bus: nothing sent before a screen reader asks; whole tree first; focus follows the keyboard one move per step; quiet when nothing changes; actions (click, increment, focus); changes arrive as node updates; leaving and coming back. |
+| `cargo test --test orca` | Orca itself, on a private bus and a virtual KWin, reading the dashboard while the keyboard is walked into Wi-Fi and brightness: it says each stop's name and details, the list and its length, the slider as a slider. The transcript is printed. Skips if Orca or KWin isn't installed. |
 | `cargo test --test atspi` | the real bus: starts itself under `dbus-run-session` with a temporary runtime directory and its own accessibility bus, and runs `tests/atspi_client.py` (libatspi). Skips, and passes, if `dbus-run-session`, `gdbus`, python3 with the `Atspi` bindings or the bus launcher are missing. |
+
+`tests/bus/mod.rs` is what `atspi` and `orca` share: a private session bus whose own files
+(`HOME`, `XDG_*`) and runtime directory are temporary, so neither the session's buses nor its
+settings are touched.
 
 Tests keep off the session's bus: the only real sink is made by the daemon's loop, and the harness's
 `access_connect_unix` refuses without `NIRI_DASH_PRIVATE_BUS`, which only `tests/atspi.rs` sets.
 
 ## Manual check with a real screen reader
+
+The tests cannot stand in for the real compositor, so once, by hand:
 
 ```
 orca &                              # or switch the desktop's screen reader on
@@ -69,7 +88,7 @@ niri-dash daemon                    # then toggle the dashboard
 python3 tests/atspi_client.py niri-dash
 ```
 
-Things to listen for: the dashboard is announced when it appears; `f`, a letter, then `j` and `k`
+Things to listen for (or to read in `orca --debug-file=orca.log`, as the test does): the dashboard is announced when it appears; `f`, a letter, then `j` and `k`
 read the stops; the values of sliders; whether Orca follows the focus into a widget.
 
 ## Not done
@@ -79,6 +98,7 @@ read the stops; the values of sliders; whether Orca follows the focus into a wid
 - **A stop for each part:** `Focus` on the Wi-Fi switch enters the Wi-Fi widget at its first stop,
   not on the switch. Mapping an element to its stop needs the stop's index from the widget's
   `NavScope`.
+- **Row noise:** Orca reads a row's Disconnect and Details buttons as part of the row each time.
 - **Announcements:** toasts and other changes the user should hear aren't live regions yet.
 - **From the handover, still open and unchecked:** Tab between text fields speaks the wrong field;
   the edit-mode UI is labelled but the "what is under the keyboard" check skips it; the Privacy
