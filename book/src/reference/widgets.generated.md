@@ -39,9 +39,8 @@
 <!-- ANCHOR_END: index -->
 
 <!-- ANCHOR: clock -->
-| | |
-|---|---|
 | Name in `config.kdl` | `clock` |
+|---|---|
 | Title | Clock |
 | Shows | Digital, or analog when round |
 | Group | Time |
@@ -57,9 +56,8 @@
 <!-- ANCHOR_END: clock -->
 
 <!-- ANCHOR: calendar -->
-| | |
-|---|---|
 | Name in `config.kdl` | `calendar` |
+|---|---|
 | Title | Calendar |
 | Shows | Month view |
 | Group | Time |
@@ -73,9 +71,8 @@
 <!-- ANCHOR_END: calendar -->
 
 <!-- ANCHOR: system-monitor -->
-| | |
-|---|---|
 | Name in `config.kdl` | `system-monitor` |
+|---|---|
 | Title | System monitor |
 | Shows | CPU, memory, network, temperature |
 | Group | System |
@@ -89,9 +86,8 @@
 <!-- ANCHOR_END: system-monitor -->
 
 <!-- ANCHOR: windows -->
-| | |
-|---|---|
 | Name in `config.kdl` | `windows` |
+|---|---|
 | Title | Windows |
 | Shows | Open windows by workspace; click to focus |
 | Group | Activity |
@@ -101,9 +97,8 @@
 <!-- ANCHOR_END: windows -->
 
 <!-- ANCHOR: claude-sessions -->
-| | |
-|---|---|
 | Name in `config.kdl` | `claude-sessions` |
+|---|---|
 | Title | Claude sessions |
 | Shows | Running Claude Code sessions; click to focus |
 | Group | Activity |
@@ -113,9 +108,8 @@
 <!-- ANCHOR_END: claude-sessions -->
 
 <!-- ANCHOR: wifi -->
-| | |
-|---|---|
 | Name in `config.kdl` | `wifi` |
+|---|---|
 | Title | Wi-Fi |
 | Shows | Networks, connect, radio on/off |
 | Group | Devices |
@@ -125,9 +119,8 @@
 <!-- ANCHOR_END: wifi -->
 
 <!-- ANCHOR: bluetooth -->
-| | |
-|---|---|
 | Name in `config.kdl` | `bluetooth` |
+|---|---|
 | Title | Bluetooth |
 | Shows | Devices, connect, adapter on/off |
 | Group | Devices |
@@ -137,9 +130,8 @@
 <!-- ANCHOR_END: bluetooth -->
 
 <!-- ANCHOR: battery -->
-| | |
-|---|---|
 | Name in `config.kdl` | `battery` |
+|---|---|
 | Title | Battery & power |
 | Shows | Charge, power profile; device batteries and sleep blockers when bigger |
 | Group | System |
@@ -149,9 +141,8 @@
 <!-- ANCHOR_END: battery -->
 
 <!-- ANCHOR: volume -->
-| | |
-|---|---|
 | Name in `config.kdl` | `volume` |
+|---|---|
 | Title | Volume |
 | Shows | Speaker and microphone; outputs and apps when bigger |
 | Group | Controls |
@@ -161,9 +152,8 @@
 <!-- ANCHOR_END: volume -->
 
 <!-- ANCHOR: brightness -->
-| | |
-|---|---|
 | Name in `config.kdl` | `brightness` |
+|---|---|
 | Title | Brightness |
 | Shows | Screen backlight |
 | Group | Controls |
@@ -173,9 +163,8 @@
 <!-- ANCHOR_END: brightness -->
 
 <!-- ANCHOR: notifications -->
-| | |
-|---|---|
 | Name in `config.kdl` | `notifications` |
+|---|---|
 | Title | Notifications |
 | Shows | Notification history |
 | Group | Activity |
@@ -185,9 +174,8 @@
 <!-- ANCHOR_END: notifications -->
 
 <!-- ANCHOR: tray -->
-| | |
-|---|---|
 | Name in `config.kdl` | `tray` |
+|---|---|
 | Title | Tray |
 | Shows | Status icons and their menus |
 | Group | Controls |
@@ -197,9 +185,8 @@
 <!-- ANCHOR_END: tray -->
 
 <!-- ANCHOR: media -->
-| | |
-|---|---|
 | Name in `config.kdl` | `media` |
+|---|---|
 | Title | Media player |
 | Shows | Now playing (MPRIS) |
 | Group | Media |
@@ -209,9 +196,8 @@
 <!-- ANCHOR_END: media -->
 
 <!-- ANCHOR: session -->
-| | |
-|---|---|
 | Name in `config.kdl` | `session` |
+|---|---|
 | Title | Session |
 | Shows | Lock, suspend, log out, power off |
 | Group | Controls |
@@ -229,9 +215,8 @@
 <!-- ANCHOR_END: session -->
 
 <!-- ANCHOR: clipboard -->
-| | |
-|---|---|
 | Name in `config.kdl` | `clipboard` |
+|---|---|
 | Title | Clipboard history |
 | Shows | Records what you copy while it's on the dashboard, in memory only |
 | Group | Activity |
@@ -241,9 +226,8 @@
 <!-- ANCHOR_END: clipboard -->
 
 <!-- ANCHOR: weather -->
-| | |
-|---|---|
 | Name in `config.kdl` | `weather` |
+|---|---|
 | Title | Weather |
 | Shows | Now and the next days (Open-Meteo) |
 | Group | Time |
@@ -257,9 +241,8 @@
 <!-- ANCHOR_END: weather -->
 
 <!-- ANCHOR: memory -->
-| | |
-|---|---|
 | Name in `config.kdl` | `memory` |
+|---|---|
 | Title | Memory |
 | Shows | RAM and swap, history, biggest apps |
 | Group | System |
@@ -273,9 +256,8 @@
 <!-- ANCHOR_END: memory -->
 
 <!-- ANCHOR: disks -->
-| | |
-|---|---|
 | Name in `config.kdl` | `disks` |
+|---|---|
 | Title | Disks |
 | Shows | Space per filesystem, read and write |
 | Group | System |
@@ -288,9 +270,8 @@
 <!-- ANCHOR_END: disks -->
 
 <!-- ANCHOR: network -->
-| | |
-|---|---|
 | Name in `config.kdl` | `network` |
+|---|---|
 | Title | Network |
 | Shows | Download and upload, history |
 | Group | System |
@@ -303,9 +284,8 @@
 <!-- ANCHOR_END: network -->
 
 <!-- ANCHOR: gpu -->
-| | |
-|---|---|
 | Name in `config.kdl` | `gpu` |
+|---|---|
 | Title | GPU |
 | Shows | GPU load, video memory, temperature |
 | Group | System |
@@ -318,9 +298,8 @@
 <!-- ANCHOR_END: gpu -->
 
 <!-- ANCHOR: claude-usage -->
-| | |
-|---|---|
 | Name in `config.kdl` | `claude-usage` |
+|---|---|
 | Title | Claude usage |
 | Shows | Plan, 5-hour window, tokens today |
 | Group | Activity |
@@ -330,9 +309,8 @@
 <!-- ANCHOR_END: claude-usage -->
 
 <!-- ANCHOR: mascot -->
-| | |
-|---|---|
 | Name in `config.kdl` | `mascot` |
+|---|---|
 | Title | Mascot |
 | Shows | Schraubi, Zolli or Verschnitti; says what you tell it |
 | Group | Activity |
@@ -349,9 +327,8 @@
 <!-- ANCHOR_END: mascot -->
 
 <!-- ANCHOR: keyboard-layout -->
-| | |
-|---|---|
 | Name in `config.kdl` | `keyboard-layout` |
+|---|---|
 | Title | Keyboard layout |
 | Shows | Current layout; click to switch, bigger shows all |
 | Group | Controls |
@@ -361,9 +338,8 @@
 <!-- ANCHOR_END: keyboard-layout -->
 
 <!-- ANCHOR: color-picker -->
-| | |
-|---|---|
 | Name in `config.kdl` | `color-picker` |
+|---|---|
 | Title | Color picker |
 | Shows | Pick a pixel anywhere; hex copied, recent colors |
 | Group | Controls |
@@ -373,9 +349,8 @@
 <!-- ANCHOR_END: color-picker -->
 
 <!-- ANCHOR: timer -->
-| | |
-|---|---|
 | Name in `config.kdl` | `timer` |
+|---|---|
 | Title | Timer |
 | Shows | Countdown with a ring; scroll to set, presets when bigger |
 | Group | Time |
@@ -385,9 +360,8 @@
 <!-- ANCHOR_END: timer -->
 
 <!-- ANCHOR: stopwatch -->
-| | |
-|---|---|
 | Name in `config.kdl` | `stopwatch` |
+|---|---|
 | Title | Stopwatch |
 | Shows | Laps; a seconds dial when round, the lap list when taller |
 | Group | Time |
@@ -397,9 +371,8 @@
 <!-- ANCHOR_END: stopwatch -->
 
 <!-- ANCHOR: notes -->
-| | |
-|---|---|
 | Name in `config.kdl` | `notes` |
+|---|---|
 | Title | Sticky note |
 | Shows | A note that keeps what you type; name it to have several |
 | Group | Activity |
@@ -412,9 +385,8 @@
 <!-- ANCHOR_END: notes -->
 
 <!-- ANCHOR: privacy -->
-| | |
-|---|---|
 | Name in `config.kdl` | `privacy` |
+|---|---|
 | Title | Privacy |
 | Shows | Who uses the microphone, camera or screen; stop screen sharing |
 | Group | System |
@@ -424,9 +396,8 @@
 <!-- ANCHOR_END: privacy -->
 
 <!-- ANCHOR: night-light -->
-| | |
-|---|---|
 | Name in `config.kdl` | `night-light` |
+|---|---|
 | Title | Night light |
 | Shows | Warmer screen colors for the evening |
 | Group | Controls |
@@ -436,9 +407,8 @@
 <!-- ANCHOR_END: night-light -->
 
 <!-- ANCHOR: removable-drives -->
-| | |
-|---|---|
 | Name in `config.kdl` | `removable-drives` |
+|---|---|
 | Title | Removable drives |
 | Shows | USB drives and SD cards: mount, open, eject |
 | Group | Devices |
@@ -448,9 +418,8 @@
 <!-- ANCHOR_END: removable-drives -->
 
 <!-- ANCHOR: phone -->
-| | |
-|---|---|
 | Name in `config.kdl` | `phone` |
+|---|---|
 | Title | Phone |
 | Shows | KDE Connect: battery, ring to find it, send files |
 | Group | Devices |
@@ -460,9 +429,8 @@
 <!-- ANCHOR_END: phone -->
 
 <!-- ANCHOR: sleep-timer -->
-| | |
-|---|---|
 | Name in `config.kdl` | `sleep-timer` |
+|---|---|
 | Title | Sleep timer |
 | Shows | Count down to suspend, hibernate or power off (like sleepy) |
 | Group | Time |
@@ -478,9 +446,8 @@
 <!-- ANCHOR_END: sleep-timer -->
 
 <!-- ANCHOR: pomodoro -->
-| | |
-|---|---|
 | Name in `config.kdl` | `pomodoro` |
+|---|---|
 | Title | Pomodoro |
 | Shows | Focus sessions and breaks; a long break every few sessions |
 | Group | Time |

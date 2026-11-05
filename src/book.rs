@@ -117,8 +117,8 @@ fn widget(kind: Kind) -> String {
         (true, true) => "round, rectangular (a new one starts round)".to_string(),
     };
     writeln!(s, "<!-- ANCHOR: {name} -->").unwrap();
-    writeln!(s, "| | |\n|---|---|").unwrap();
-    writeln!(s, "| Name in `config.kdl` | `{name}` |").unwrap();
+    // The name is the header row: a table has to have one, and an empty one is a grey bar.
+    writeln!(s, "| Name in `config.kdl` | `{name}` |\n|---|---|").unwrap();
     writeln!(s, "| Title | {} |", info.title).unwrap();
     writeln!(s, "| Shows | {} |", info.description).unwrap();
     writeln!(s, "| Group | {} |", group_name(info.group)).unwrap();
