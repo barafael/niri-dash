@@ -2,7 +2,6 @@
 
 use super::{Ctx, Dedup, Trigger, sysfs};
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::watch;
 
@@ -68,14 +67,16 @@ impl Brightness {
             |l| l.starts_with("KERNEL["),
             trigger.clone(),
         );
-        let sent = Arc::new(Dedup::default());
-        ctx.poll_events(trigger, Duration::from_secs(60), move || {
-            let (c, sent) = (c.clone(), sent.clone());
-            async move {
+        let mut ticks = ctx.ticks(trigger);
+        ctx.spawn(async move {
+            let sent = Dedup::default();
+            ticks.ready().await;
+            loop {
                 let level = level();
                 if sent.changed(&level) {
                     c.send(crate::brightness::Event::Level(level));
                 }
+                ticks.next(Duration::from_secs(60)).await;
             }
         });
         let c = ctx.clone();

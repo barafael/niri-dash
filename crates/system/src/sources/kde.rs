@@ -105,10 +105,11 @@ pub fn start_keyboard(ctx: Ctx) {
         trigger.clone(),
     );
     let c = ctx.clone();
-    let sent = Arc::new(Dedup::default());
-    ctx.poll_events(trigger, Duration::from_secs(60), move || {
-        let (c, sent) = (c.clone(), sent.clone());
-        async move {
+    let mut ticks = ctx.ticks(trigger);
+    ctx.spawn(async move {
+        let sent = Dedup::default();
+        ticks.ready().await;
+        loop {
             let layouts = fetch_layouts(&c)
                 .await
                 .map_err(|e| log::debug!("keyboard layouts: {e}"))
@@ -116,6 +117,7 @@ pub fn start_keyboard(ctx: Ctx) {
             if sent.changed(&layouts) {
                 c.send(crate::keyboard::Event::Layouts(layouts));
             }
+            ticks.next(Duration::from_secs(60)).await;
         }
     });
 }

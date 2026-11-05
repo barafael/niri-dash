@@ -8,7 +8,6 @@
 
 use super::{Ctx, Dedup};
 pub use crate::power::Blocker;
-use std::sync::Arc;
 use tokio::sync::watch;
 use zbus::Connection;
 use zbus::zvariant::OwnedFd;
@@ -218,10 +217,11 @@ impl Inhibit {
     pub fn start(ctx: Ctx) -> Self {
         // logind has no signal for its inhibitor list: look again every few seconds while shown.
         let c = ctx.clone();
-        let sent = Arc::new(Dedup::default());
-        ctx.poll(std::time::Duration::from_secs(5), move || {
-            let (c, sent) = (c.clone(), sent.clone());
-            async move {
+        let mut ticks = ctx.ticks(Default::default());
+        ctx.spawn(async move {
+            let sent = Dedup::default();
+            ticks.ready().await;
+            loop {
                 let list = blockers(&c).await.unwrap_or_else(|e| {
                     log::debug!("ListInhibitors: {e}");
                     Vec::new()
@@ -229,6 +229,7 @@ impl Inhibit {
                 if sent.changed(&list) {
                     c.send(crate::power::Event::SleepBlockers(list));
                 }
+                ticks.next(std::time::Duration::from_secs(5)).await;
             }
         });
         let want = watch::Sender::new(false);

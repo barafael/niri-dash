@@ -7,7 +7,6 @@ pub use crate::claude::{Session, State, Status};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Deserialize)]
@@ -169,16 +168,18 @@ pub fn start(ctx: Ctx) {
     let trigger = Trigger::default();
     ctx.on_dir_changes(sessions_dir(), trigger.clone());
     // The fallback also keeps the "5 min" texts current.
-    let sent = Arc::new(Dedup::default());
-    ctx.poll_events(trigger, Duration::from_secs(30), move || {
-        let (c, sent) = (c.clone(), sent.clone());
-        async move {
+    let mut ticks = ctx.ticks(trigger);
+    ctx.spawn(async move {
+        let sent = Dedup::default();
+        ticks.ready().await;
+        loop {
             let compositor = c.compositor();
             if let Ok(state) = tokio::task::spawn_blocking(move || fetch(compositor)).await
                 && sent.changed(&state)
             {
                 c.send(crate::claude::Event::Sessions(state));
             }
+            ticks.next(Duration::from_secs(30)).await;
         }
     });
 }

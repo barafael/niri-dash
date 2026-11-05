@@ -6,7 +6,8 @@
 //! timer going off) are sent to Plasma as notifications.
 #![allow(clippy::disallowed_types)] // Still to be moved over to an actor.
 
-use super::{Ctx, IconSrc, icons, osd::Osd, prop, unescape_entities};
+use super::icons::IconThread;
+use super::{Ctx, IconSrc, osd::Osd, prop, unescape_entities};
 pub use crate::notifications::{Dnd, Notification, State};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -61,6 +62,7 @@ struct Server {
     store: Arc<Mutex<Store>>,
     ctx: Ctx,
     osd: Osd,
+    icons: IconThread,
 }
 
 fn publish(ctx: &Ctx, store: &Mutex<Store>) {
@@ -132,26 +134,35 @@ fn image_data(v: &OwnedValue) -> Option<IconSrc> {
     })
 }
 
-fn resolve_icon(app_icon: &str, hints: &HashMap<String, OwnedValue>) -> IconSrc {
+async fn resolve_icon(
+    icons: &IconThread,
+    app_icon: &str,
+    hints: &HashMap<String, OwnedValue>,
+) -> IconSrc {
     for key in ["image-data", "image_data", "icon_data"] {
         if let Some(img) = hints.get(key).and_then(image_data) {
             return img;
         }
     }
-    for path in [
+    // Owned: the hints don't go across a wait.
+    let paths: Vec<String> = [
         prop::<&str>(hints, "image-path"),
         prop::<&str>(hints, "image_path"),
         Some(app_icon),
     ]
     .into_iter()
     .flatten()
-    {
-        let path = path.strip_prefix("file://").unwrap_or(path);
-        if let Some(p) = icons::lookup(path, 48) {
+    .map(|p| p.strip_prefix("file://").unwrap_or(p).to_string())
+    .collect();
+    let entry = prop::<&str>(hints, "desktop-entry").map(str::to_string);
+    for path in paths {
+        if let Some(p) = icons.lookup(&path, 48).await {
             return IconSrc::Path(p);
         }
     }
-    if let Some(p) = prop::<&str>(hints, "desktop-entry").and_then(icons::app_icon) {
+    if let Some(entry) = entry
+        && let Some(p) = icons.app_icon(&entry).await
+    {
         return IconSrc::Path(p);
     }
     IconSrc::None
@@ -172,7 +183,7 @@ impl Server {
         _expire_timeout: i32,
     ) -> u32 {
         let urgent = prop::<u8>(&hints, "urgency") == Some(2);
-        let icon = resolve_icon(&app_icon, &hints);
+        let icon = resolve_icon(&self.icons, &app_icon, &hints).await;
         let popup_icon = osd_icon(&app_icon, &hints, urgent);
         let actions = actions
             .chunks(2)
@@ -329,6 +340,7 @@ impl Notifications {
                     store: self.store.clone(),
                     ctx: self.ctx.clone(),
                     osd: self.osd.clone(),
+                    icons: IconThread::start(),
                 },
             )
             .await?;

@@ -1,9 +1,9 @@
 //! Default speaker and microphone through PipeWire's `wpctl`; per-app volume and the outputs
 //! from the PipeWire graph (`pw-dump`).
 
-use super::{Ctx, Dedup, IconSrc, Trigger, icons, pipewire, run};
+use super::icons::Icons;
+use super::{Ctx, Dedup, IconSrc, Trigger, pipewire, run};
 pub use crate::audio::{Sink, State, Stream};
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::watch;
 
@@ -16,7 +16,7 @@ fn ignored(n: &pipewire::Node) -> bool {
 }
 
 /// Outputs and playing apps from the PipeWire graph.
-pub fn mixer(g: &pipewire::Graph) -> (Vec<Sink>, Vec<Stream>) {
+pub fn mixer(g: &pipewire::Graph, icons: &mut Icons) -> (Vec<Sink>, Vec<Stream>) {
     let sinks = g
         .of_class("Audio/Sink")
         .map(|n| Sink {
@@ -34,7 +34,7 @@ pub fn mixer(g: &pipewire::Graph) -> (Vec<Sink>, Vec<Stream>) {
             icon: [&n.icon, &n.binary, &n.app.to_lowercase()]
                 .into_iter()
                 .filter(|s| !s.is_empty())
-                .find_map(|s| icons::lookup(s, 32))
+                .find_map(|s| icons.lookup(s, 32))
                 .map_or(IconSrc::None, IconSrc::Path),
             volume: n.volume.unwrap_or(1.0),
             muted: n.muted,
@@ -50,7 +50,7 @@ pub fn parse_volume(s: &str) -> Option<(f32, bool)> {
     Some((v, rest.contains("[MUTED]")))
 }
 
-async fn fetch() -> State {
+async fn fetch(icons: &mut Icons) -> State {
     let Some((volume, muted)) = run("wpctl", &["get-volume", SINK])
         .await
         .ok()
@@ -77,7 +77,7 @@ async fn fetch() -> State {
         })
         .unwrap_or_default();
     let (sinks, streams) = match pipewire::dump().await {
-        Ok(g) => mixer(&g),
+        Ok(g) => mixer(&g, icons),
         Err(e) => {
             log::debug!("pw-dump: {e}");
             Default::default()
@@ -128,14 +128,17 @@ impl Audio {
             },
             trigger.clone(),
         );
-        let sent = Arc::new(Dedup::default());
-        ctx.poll_events(trigger, Duration::from_secs(60), move || {
-            let (c, sent) = (c.clone(), sent.clone());
-            async move {
-                let state = fetch().await;
+        let mut ticks = ctx.ticks(trigger);
+        ctx.spawn(async move {
+            let sent = Dedup::default();
+            let mut icons = Icons::default();
+            ticks.ready().await;
+            loop {
+                let state = fetch(&mut icons).await;
                 if sent.changed(&state) {
                     c.send(crate::audio::Event::State(state));
                 }
+                ticks.next(Duration::from_secs(60)).await;
             }
         });
         // Slider drags only apply the latest value, so they don't queue up processes.

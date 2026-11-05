@@ -1,6 +1,7 @@
 //! System tray: a StatusNotifierWatcher/host via the `system-tray` crate, with dbusmenu menus.
 
-use super::{Ctx, Dedup, IconSrc, icons};
+use super::icons::Icons;
+use super::{Ctx, Dedup, IconSrc};
 pub use crate::tray::{Entry, Item, Menu, Toggle};
 use std::sync::Arc;
 use system_tray::client::{ActivateRequest, Client};
@@ -36,12 +37,12 @@ fn pixmap(p: &[IconPixmap]) -> Option<IconSrc> {
     })
 }
 
-fn item_icon(i: &StatusNotifierItem) -> IconSrc {
+fn item_icon(i: &StatusNotifierItem, icons: &mut Icons) -> IconSrc {
     let by_name = i
         .icon_name
         .as_deref()
         .filter(|n| !n.is_empty())
-        .and_then(|n| icons::lookup_in(i.icon_theme_path.as_deref(), n, 48));
+        .and_then(|n| icons.lookup_in(i.icon_theme_path.as_deref(), n, 48));
     by_name
         .map(IconSrc::Path)
         .or_else(|| i.icon_pixmap.as_deref().and_then(pixmap))
@@ -106,7 +107,7 @@ fn flatten(items: &[MenuItem], depth: i32, out: &mut Vec<Entry>) {
     }
 }
 
-fn snapshot(client: &Client) -> Vec<Item> {
+fn snapshot(client: &Client, icons: &mut Icons) -> Vec<Item> {
     let map = client.items();
     let Ok(map) = map.lock() else { return vec![] };
     let mut items: Vec<Item> = map
@@ -118,7 +119,7 @@ fn snapshot(client: &Client) -> Vec<Item> {
                 .clone()
                 .or_else(|| item.tool_tip.as_ref().map(|t| t.title.clone()))
                 .unwrap_or_else(|| item.id.clone()),
-            icon: item_icon(item),
+            icon: item_icon(item, icons),
             has_menu: item.menu.is_some() || menu.is_some(),
             item_is_menu: item.item_is_menu,
         })
@@ -144,8 +145,9 @@ impl Tray {
             let c2 = c.clone();
             tokio::spawn(async move {
                 let sent = Dedup::default();
-                let publish = || {
-                    let items = snapshot(&cl);
+                let mut icons = Icons::default();
+                let mut publish = || {
+                    let items = snapshot(&cl, &mut icons);
                     if sent.changed(&items) {
                         c2.send(crate::tray::Event::Items(items));
                     }

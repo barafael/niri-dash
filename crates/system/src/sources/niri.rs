@@ -1,6 +1,7 @@
 //! Windows and workspaces from niri's event stream; window actions over the IPC socket.
 
-use super::{Ctx, Dedup, IconSrc, icons, keyboard, strip_spinner};
+use super::icons::Icons;
+use super::{Ctx, Dedup, IconSrc, keyboard, strip_spinner};
 pub use crate::privacy::ScreenCast;
 pub use crate::windows::{Row, State as WindowsState};
 use niri_ipc::state::{EventStreamState, EventStreamStatePart};
@@ -40,7 +41,7 @@ pub fn action(a: Action) -> Result<()> {
     request(Request::Action(a)).map(|_| ())
 }
 
-fn build(state: &EventStreamState) -> WindowsState {
+fn build(state: &EventStreamState, icons: &mut Icons) -> WindowsState {
     let mut workspaces: Vec<_> = state.workspaces.workspaces.values().collect();
     workspaces.sort_by(|a, b| a.output.cmp(&b.output).then(a.idx.cmp(&b.idx)));
     let multi_output = {
@@ -95,7 +96,8 @@ fn build(state: &EventStreamState) -> WindowsState {
         for w in wins {
             count += 1;
             let app = w.app_id.clone().unwrap_or_default();
-            let icon = icons::app_icon(&app)
+            let icon = icons
+                .app_icon(&app)
                 .map(IconSrc::Path)
                 .unwrap_or(IconSrc::None);
             if w.is_focused {
@@ -150,10 +152,11 @@ pub fn start(ctx: Ctx) {
         .name("niri-events".into())
         .spawn(move || {
             let sent = Sent::default();
+            let mut icons = Icons::default();
             let mut warned = false;
             loop {
                 // Warn once; niri may simply not be running (yet).
-                if let Err(e) = stream(&ctx, &sent) {
+                if let Err(e) = stream(&ctx, &sent, &mut icons) {
                     if warned {
                         log::debug!("niri event stream: {e}");
                     } else {
@@ -170,7 +173,7 @@ pub fn start(ctx: Ctx) {
         .expect("spawning niri thread");
 }
 
-fn stream(ctx: &Ctx, sent: &Sent) -> Result<()> {
+fn stream(ctx: &Ctx, sent: &Sent, icons: &mut Icons) -> Result<()> {
     let mut socket = Socket::connect().map_err(Error::Connect)?;
     let reply = socket.send(Request::EventStream)?;
     reply.map_err(Error::Refused)?;
@@ -180,7 +183,7 @@ fn stream(ctx: &Ctx, sent: &Sent) -> Result<()> {
         let ev = read()?;
         let config_changed = matches!(ev, niri_ipc::Event::ConfigLoaded { .. });
         state.apply(ev);
-        sent.windows(ctx, build(&state));
+        sent.windows(ctx, build(&state, icons));
         let layouts = state.keyboard_layouts.keyboard_layouts.as_ref().map(|l| {
             keyboard::Layouts::from_names(l.names.iter().map(String::as_str), l.current_idx.into())
         });

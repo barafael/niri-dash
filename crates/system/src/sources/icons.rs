@@ -1,19 +1,21 @@
 //! Icon lookup: freedesktop icon themes, and app ids to desktop-file icons.
-#![allow(clippy::disallowed_types)] // Still to be moved over to an actor.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{LazyLock, Mutex};
+use std::sync::LazyLock;
+use tokio::sync::oneshot;
 
 const THEMES: [&str; 3] = ["breeze-dark", "breeze", "Adwaita"];
 
-/// Lookup results, misses included.
-type Cache<K> = LazyLock<Mutex<HashMap<K, Option<PathBuf>>>>;
-
-/// Theme lookups by icon name and size.
-static THEME_CACHE: Cache<(String, u16)> = LazyLock::new(Default::default);
-/// Desktop-file icons by app id.
-static APP_CACHE: Cache<String> = LazyLock::new(Default::default);
+/// Icon lookups and what they found, misses included: they read the disk. Whoever looks icons up
+/// owns one of these.
+#[derive(Default)]
+pub struct Icons {
+    /// By icon name and size.
+    themes: HashMap<(String, u16), Option<PathBuf>>,
+    /// Desktop-file icons by app id.
+    apps: HashMap<String, Option<PathBuf>>,
+}
 
 fn user_theme() -> Option<String> {
     static THEME: LazyLock<Option<String>> = LazyLock::new(|| {
@@ -30,21 +32,118 @@ fn user_theme() -> Option<String> {
     THEME.clone()
 }
 
-/// Resolve an icon name (or absolute path) to a file.
-pub fn lookup(name: &str, size: u16) -> Option<PathBuf> {
-    if name.is_empty() {
-        return None;
+impl Icons {
+    /// Resolve an icon name (or absolute path) to a file.
+    pub fn lookup(&mut self, name: &str, size: u16) -> Option<PathBuf> {
+        if name.is_empty() {
+            return None;
+        }
+        if name.starts_with('/') {
+            return Path::new(name).is_file().then(|| PathBuf::from(name));
+        }
+        let key = (name.to_string(), size);
+        if let Some(hit) = self.themes.get(&key) {
+            return hit.clone();
+        }
+        let found = find_in_themes(name, size);
+        self.themes.insert(key, found.clone());
+        found
     }
-    if name.starts_with('/') {
-        return Path::new(name).is_file().then(|| PathBuf::from(name));
+
+    /// Look up an icon inside an extra directory first (tray items may ship their own theme path).
+    pub fn lookup_in(&mut self, dir: Option<&str>, name: &str, size: u16) -> Option<PathBuf> {
+        if let Some(dir) = dir.filter(|d| !d.is_empty()) {
+            for sub in [
+                "",
+                "hicolor/scalable/apps",
+                "hicolor/48x48/apps",
+                "hicolor/32x32/apps",
+                "hicolor/24x24/apps",
+                "hicolor/22x22/apps",
+            ] {
+                for ext in ["png", "svg"] {
+                    let p = Path::new(dir).join(sub).join(format!("{name}.{ext}"));
+                    if p.is_file() {
+                        return Some(p);
+                    }
+                }
+            }
+        }
+        self.lookup(name, size)
     }
-    let key = (name.to_string(), size);
-    if let Some(hit) = THEME_CACHE.lock().ok()?.get(&key) {
-        return hit.clone();
+
+    /// The icon file for a Wayland app id (or a desktop file name, as notifications give it), via
+    /// its desktop file.
+    pub fn app_icon(&mut self, app_id: &str) -> Option<PathBuf> {
+        if app_id.is_empty() {
+            return None;
+        }
+        if let Some(hit) = self.apps.get(app_id) {
+            return hit.clone();
+        }
+        let lower = app_id.to_lowercase();
+        let icon = find_desktop_file(app_id)
+            .as_deref()
+            .and_then(desktop_icon)
+            .and_then(|name| self.lookup(&name, 48))
+            .or_else(|| self.lookup(app_id, 48))
+            .or_else(|| self.lookup(&lower, 48));
+        self.apps.insert(app_id.to_string(), icon.clone());
+        icon
     }
+}
+
+enum Ask {
+    Lookup(String, u16, oneshot::Sender<Option<PathBuf>>),
+    AppIcon(String, oneshot::Sender<Option<PathBuf>>),
+}
+
+/// For who can't own [`Icons`] (a D-Bus server's methods only get `&self`): a thread that does, and
+/// answers. It ends with the last clone of this.
+#[derive(Clone)]
+pub struct IconThread(std::sync::mpsc::Sender<Ask>);
+
+impl IconThread {
+    pub fn start() -> Self {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::Builder::new()
+            .name("niri-dash-icons".into())
+            .spawn(move || {
+                let mut icons = Icons::default();
+                while let Ok(ask) = rx.recv() {
+                    match ask {
+                        Ask::Lookup(name, size, reply) => {
+                            let _ = reply.send(icons.lookup(&name, size));
+                        }
+                        Ask::AppIcon(id, reply) => {
+                            let _ = reply.send(icons.app_icon(&id));
+                        }
+                    }
+                }
+            })
+            .expect("spawning the icon thread");
+        Self(tx)
+    }
+
+    /// See [`Icons::lookup`].
+    pub async fn lookup(&self, name: &str, size: u16) -> Option<PathBuf> {
+        let (reply, answer) = oneshot::channel();
+        self.0.send(Ask::Lookup(name.into(), size, reply)).ok()?;
+        answer.await.ok()?
+    }
+
+    /// See [`Icons::app_icon`].
+    pub async fn app_icon(&self, app_id: &str) -> Option<PathBuf> {
+        let (reply, answer) = oneshot::channel();
+        self.0.send(Ask::AppIcon(app_id.into(), reply)).ok()?;
+        answer.await.ok()?
+    }
+}
+
+fn find_in_themes(name: &str, size: u16) -> Option<PathBuf> {
     let mut themes: Vec<String> = user_theme().into_iter().collect();
     themes.extend(THEMES.iter().map(|s| s.to_string()));
-    let found = themes
+    themes
         .iter()
         .find_map(|t| {
             freedesktop_icons::lookup(name)
@@ -60,33 +159,7 @@ pub fn lookup(name: &str, size: u16) -> Option<PathBuf> {
                 .find(|p| p.is_file())
         })
         // Slint can't decode xpm.
-        .filter(|p| p.extension().is_some_and(|e| e != "xpm"));
-    if let Ok(mut c) = THEME_CACHE.lock() {
-        c.insert(key, found.clone());
-    }
-    found
-}
-
-/// Look up an icon inside an extra directory first (tray items may ship their own theme path).
-pub fn lookup_in(dir: Option<&str>, name: &str, size: u16) -> Option<PathBuf> {
-    if let Some(dir) = dir.filter(|d| !d.is_empty()) {
-        for sub in [
-            "",
-            "hicolor/scalable/apps",
-            "hicolor/48x48/apps",
-            "hicolor/32x32/apps",
-            "hicolor/24x24/apps",
-            "hicolor/22x22/apps",
-        ] {
-            for ext in ["png", "svg"] {
-                let p = Path::new(dir).join(sub).join(format!("{name}.{ext}"));
-                if p.is_file() {
-                    return Some(p);
-                }
-            }
-        }
-    }
-    lookup(name, size)
+        .filter(|p| p.extension().is_some_and(|e| e != "xpm"))
 }
 
 fn data_dirs() -> Vec<PathBuf> {
@@ -129,15 +202,8 @@ fn wm_class_matches(path: &Path, app_id: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// The icon file for a Wayland app id (or a desktop file name, as notifications give it), via
-/// its desktop file.
-pub fn app_icon(app_id: &str) -> Option<PathBuf> {
-    if app_id.is_empty() {
-        return None;
-    }
-    if let Some(hit) = APP_CACHE.lock().ok()?.get(app_id) {
-        return hit.clone();
-    }
+/// The desktop file of a Wayland app id.
+fn find_desktop_file(app_id: &str) -> Option<PathBuf> {
     let dirs: Vec<PathBuf> = data_dirs()
         .into_iter()
         .map(|d| d.join("applications"))
@@ -181,14 +247,64 @@ pub fn app_icon(app_id: &str) -> Option<PathBuf> {
             }
         }
     }
-    let icon = desktop
-        .as_deref()
-        .and_then(desktop_icon)
-        .and_then(|name| lookup(&name, 48))
-        .or_else(|| lookup(app_id, 48))
-        .or_else(|| lookup(&lower, 48));
-    if let Ok(mut c) = APP_CACHE.lock() {
-        c.insert(app_id.to_string(), icon.clone());
+    desktop
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A file that exists, wherever the tests run.
+    const THIS_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
+
+    #[test]
+    fn a_path_is_taken_as_it_is() {
+        let mut icons = Icons::default();
+        assert_eq!(icons.lookup(THIS_FILE, 48), Some(PathBuf::from(THIS_FILE)));
+        assert_eq!(icons.lookup("/no/such/file.png", 48), None);
     }
-    icon
+
+    #[test]
+    fn no_name_no_icon() {
+        let mut icons = Icons::default();
+        assert_eq!(icons.lookup("", 48), None);
+        assert_eq!(icons.app_icon(""), None);
+    }
+
+    #[test]
+    fn a_miss_is_remembered() {
+        let mut icons = Icons::default();
+        let name = "niri-dash-no-such-icon";
+        assert_eq!(icons.lookup(name, 48), None);
+        assert_eq!(icons.themes.get(&(name.to_string(), 48)), Some(&None));
+        assert_eq!(icons.app_icon(name), None);
+        assert_eq!(icons.apps.get(name), Some(&None));
+    }
+
+    #[test]
+    fn an_extra_directory_comes_first() {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../ui/icons");
+        let Some(name) = std::fs::read_dir(dir).ok().and_then(|mut d| {
+            d.find_map(|e| {
+                let p = e.ok()?.path();
+                (p.extension()? == "svg")
+                    .then(|| p.file_stem().map(|s| s.to_string_lossy().into_owned()))?
+            })
+        }) else {
+            panic!("no icons in {dir}");
+        };
+        let mut icons = Icons::default();
+        let found = icons.lookup_in(Some(dir), &name, 48).expect("found");
+        assert!(found.starts_with(dir));
+    }
+
+    #[tokio::test]
+    async fn the_thread_answers() {
+        let icons = IconThread::start();
+        assert_eq!(
+            icons.lookup(THIS_FILE, 48).await,
+            Some(PathBuf::from(THIS_FILE))
+        );
+        assert_eq!(icons.app_icon("").await, None);
+    }
 }
