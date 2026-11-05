@@ -463,10 +463,10 @@ pub fn remarks(c: Character) -> &'static [Remark] {
     }
 }
 
-/// `text` in a `cowsay` speech bubble: wrapped to fit `cols` columns (borders included), at most
-/// `rows` lines of text, cut short with an ellipsis if it takes more.
-pub fn cow_bubble(text: &str, cols: usize, rows: usize) -> String {
-    let width = cols.saturating_sub(4).max(4);
+/// `text` wrapped to lines of at most `width` characters: at spaces, a word longer than a whole
+/// line broken up.
+fn wrap_lines(text: &str, width: usize) -> Vec<String> {
+    let width = width.max(1);
     let mut lines: Vec<String> = Vec::new();
     for paragraph in text.lines() {
         let mut line = String::new();
@@ -477,7 +477,6 @@ pub fn cow_bubble(text: &str, cols: usize, rows: usize) -> String {
                 lines.push(std::mem::take(&mut line));
                 len = 0;
             }
-            // Longer than a whole line: broken up.
             while word.len() > width {
                 let rest = word.split_off(width);
                 lines.push(word.iter().collect());
@@ -492,13 +491,11 @@ pub fn cow_bubble(text: &str, cols: usize, rows: usize) -> String {
         }
         lines.push(line);
     }
-    let rows = rows.max(1);
-    if lines.len() > rows {
-        lines.truncate(rows);
-        let last = &mut lines[rows - 1];
-        let keep: String = last.chars().take(width.saturating_sub(1)).collect();
-        *last = format!("{keep}\u{2026}");
-    }
+    lines
+}
+
+/// `lines` in a `cowsay` speech bubble, one line of text per row.
+fn frame_bubble(lines: &[String]) -> String {
     let wide = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
     let n = lines.len();
     let mut out = format!(" {}\n", "_".repeat(wide + 2));
@@ -514,6 +511,169 @@ pub fn cow_bubble(text: &str, cols: usize, rows: usize) -> String {
     }
     out.push_str(&format!(" {}", "-".repeat(wide + 2)));
     out
+}
+
+/// What a bubble of `cols` columns (borders included) says of `text`: wrapped, at most `rows`
+/// lines, the last cut short with an ellipsis if it takes more.
+fn bubble_lines(text: &str, cols: usize, rows: usize) -> Vec<String> {
+    let width = cols.saturating_sub(4).max(4);
+    let mut lines = wrap_lines(text, width);
+    let rows = rows.max(1);
+    if lines.len() > rows {
+        lines.truncate(rows);
+        let last = &mut lines[rows - 1];
+        let keep: String = last.chars().take(width.saturating_sub(1)).collect();
+        *last = format!("{keep}\u{2026}");
+    }
+    lines
+}
+
+/// `text` in a `cowsay` speech bubble: wrapped to fit `cols` columns (borders included), at most
+/// `rows` lines of text, cut short with an ellipsis if it takes more.
+#[cfg(test)]
+fn cow_bubble(text: &str, cols: usize, rows: usize) -> String {
+    frame_bubble(&bubble_lines(text, cols, rows))
+}
+
+/// How wide a monospace letter is, and how tall its line, in ems. Estimates: measuring text while
+/// the renderer draws it panics (the font context is already borrowed), and monospace fonts are
+/// about 0.6 em wide and 1.2 to 1.4 tall. Both are on the roomy side, so what is laid out to fit
+/// does.
+pub const COW_CHAR_W: f32 = 0.62;
+pub const COW_LINE_H: f32 = 1.4;
+/// The letters' size range, in pixels: a big cow in a small widget still gets legible ones, and a
+/// small one in a huge widget doesn't shout.
+const COW_FONT: std::ops::RangeInclusive<f32> = 6.0..=30.0;
+
+/// The cow and its bubble, laid out for a widget.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CowScene {
+    /// The bubble, then the cow, with the spaces that put each where it belongs.
+    pub text: String,
+    /// The letters' size, in pixels, and the size of the text in pixels.
+    pub font: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+/// The cow with the bubble that says `text`, in a box of `width` by `height` pixels: the biggest
+/// letters in which both fit, the bubble no wider than its words need, the cow centered under it
+/// (or the bubble over the cow, if the cow is the wider), the two together as one block to center
+/// in the box. If the words don't fit even in the smallest letters, they are cut short.
+pub fn cow_scene(art: &str, text: &str, width: f32, height: f32) -> CowScene {
+    // The drawing without the margin every cow file keeps to its left (the tail of the bubble
+    // starts there), and without the spaces trailing its lines: only what is drawn takes room.
+    let indent = art
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| l.chars().take_while(|c| c.is_whitespace()).count())
+        .min()
+        .unwrap_or(0);
+    let art_lines: Vec<String> = art
+        .lines()
+        .map(|l| {
+            l.chars()
+                .skip(indent)
+                .collect::<String>()
+                .trim_end()
+                .to_string()
+        })
+        .collect();
+    let art_w = art_lines
+        .iter()
+        .map(|l| l.chars().count())
+        .max()
+        .unwrap_or(0);
+    let text = if text.trim().is_empty() { "..." } else { text };
+
+    // The biggest letters in which the cow fits across and the words fit down.
+    let mut font = *COW_FONT.end();
+    let (mut lines, mut chosen) = (Vec::new(), false);
+    while font >= *COW_FONT.start() {
+        let cols = (width / (COW_CHAR_W * font)).floor() as usize;
+        let room = (height / (COW_LINE_H * font)).floor() as isize - art_lines.len() as isize - 2;
+        if cols >= art_w && room >= 1 {
+            let wrapped = wrap_lines(text, cols.saturating_sub(4).max(4));
+            if wrapped.len() as isize <= room {
+                lines = wrapped;
+                chosen = true;
+                break;
+            }
+        }
+        font -= 0.5;
+    }
+    if !chosen {
+        // Smallest letters, and the words cut to what room there is (a line at least).
+        font = *COW_FONT.start();
+        let cols = ((width / (COW_CHAR_W * font)).floor() as usize).max(art_w);
+        let room = (height / (COW_LINE_H * font)).floor() as isize - art_lines.len() as isize - 2;
+        lines = bubble_lines(text, cols, room.max(1) as usize);
+    } else {
+        // The narrowest lines that still make as many: the words then sit in a bubble of their
+        // own size, instead of ragged against the widget's edge.
+        let n = lines.len();
+        let longest = lines.iter().map(|l| l.chars().count()).max().unwrap_or(1);
+        let (mut lo, mut hi) = (1, longest);
+        while lo < hi {
+            let mid = (lo + hi) / 2;
+            if wrap_lines(text, mid).len() <= n {
+                hi = mid;
+            } else {
+                lo = mid + 1;
+            }
+        }
+        lines = wrap_lines(text, hi);
+    }
+
+    let bubble = frame_bubble(&lines);
+    let bubble_lines: Vec<&str> = bubble.lines().collect();
+    let bubble_w = bubble_lines
+        .iter()
+        .map(|l| l.chars().count())
+        .max()
+        .unwrap_or(0);
+    // Where the cow's speech trails off to it: the first mark of its first line.
+    let tail = art_lines
+        .iter()
+        .find(|l| !l.trim().is_empty())
+        .map_or(0, |l| l.chars().take_while(|c| c.is_whitespace()).count());
+    // The bubble over the cow, or the cow under the bubble, whichever is the wider one around
+    // the other; and the tail starts under the bubble's words, not at its corner.
+    let (mut bubble_at, mut cow_at) = if bubble_w >= art_w {
+        (0, (bubble_w - art_w) / 2)
+    } else {
+        ((art_w - bubble_w) / 2, 0)
+    };
+    let (first, last) = (
+        bubble_at + 2,
+        (bubble_at + bubble_w).saturating_sub(3).max(bubble_at + 2),
+    );
+    if cow_at + tail < first {
+        cow_at = first - tail;
+    } else if cow_at + tail > last {
+        bubble_at += cow_at + tail - last;
+    }
+    let mut text = String::new();
+    for l in &bubble_lines {
+        text.push_str(&" ".repeat(bubble_at));
+        text.push_str(l);
+        text.push('\n');
+    }
+    for (i, l) in art_lines.iter().enumerate() {
+        text.push_str(&" ".repeat(cow_at));
+        text.push_str(l);
+        if i + 1 < art_lines.len() {
+            text.push('\n');
+        }
+    }
+    let cols = (bubble_at + bubble_w).max(cow_at + art_w);
+    let rows = bubble_lines.len() + art_lines.len();
+    CowScene {
+        text,
+        font,
+        width: cols as f32 * COW_CHAR_W * font,
+        height: rows as f32 * COW_LINE_H * font,
+    }
 }
 
 /// A remark for the time it is, if this mascot has one for it.
@@ -957,6 +1117,81 @@ mod tests {
             assert!(widest <= cols.max(8), "{cols}: {b}");
         }
         assert!(cow_bubble(&"word ".repeat(40), 20, 2).contains('\u{2026}'));
+    }
+
+    const TUX: &str = "    \\     .---.\n     \\   ( oo  )\n        /`-  -'\\\n       / /   \\ \\\n      (_/|   |\\_)\n        _|___|_";
+
+    #[test]
+    fn the_cow_scene_fits_its_box_and_fills_it() {
+        let text = "Another side project? Lovely. Put it in the pasture with the others.";
+        let mut last = 0.0;
+        for side in [160.0, 240.0, 360.0, 520.0, 800.0] {
+            let s = cow_scene(TUX, text, side * 1.6, side);
+            assert!(s.width <= side * 1.6 && s.height <= side, "{side}: {s:?}");
+            assert!(s.font >= last, "bigger boxes get bigger letters: {s:?}");
+            last = s.font;
+            // Filled: one dimension is nearly all there is (or the letters are as big as they
+            // get).
+            let (w, h) = (s.width / (side * 1.6), s.height / side);
+            assert!(w.max(h) > 0.8 || s.font >= 30.0, "{side}: {s:?}");
+            // Nothing is cut short while the words fit.
+            assert!(!s.text.contains('\u{2026}'), "{s:?}");
+        }
+    }
+
+    #[test]
+    fn the_cow_scene_bubble_is_as_wide_as_its_words() {
+        // Two lines whatever the width of the box: the bubble is as wide as the lines need, not
+        // as wide as the box.
+        let s = cow_scene(TUX, "one two three four", 1000.0, 200.0);
+        let top = s.text.lines().next().unwrap().trim();
+        assert!(top.chars().count() < 24, "{}", s.text);
+    }
+
+    #[test]
+    fn the_cow_is_centered_under_a_wider_bubble_and_the_bubble_over_a_wider_cow() {
+        let lead = |line: &str| line.chars().take_while(|c| *c == ' ').count();
+        // A wide bubble over a small cow: the cow sits in the middle.
+        let s = cow_scene(TUX, "x ".repeat(30).trim(), 2000.0, 60.0);
+        let lines: Vec<&str> = s.text.lines().collect();
+        let head = lines.iter().find(|l| l.contains("oo")).unwrap();
+        let bubble_w = lines[0].chars().count();
+        assert!(lead(head) > 0 && lead(head) < bubble_w / 2, "{}", s.text);
+        // A short word over a wide cow: the bubble moves over the cow, but not away from where
+        // its tail starts.
+        let wide = format!("\\{}\n{}", "_".repeat(60), " ".repeat(20) + "oo");
+        let s = cow_scene(&wide, "moo", 2000.0, 300.0);
+        let lines: Vec<&str> = s.text.lines().collect();
+        let tail = lines
+            .iter()
+            .find(|l| l.contains('\\'))
+            .unwrap()
+            .find('\\')
+            .unwrap();
+        let (open, close) = (lines[1].find('<').unwrap(), lines[1].find('>').unwrap());
+        assert!(open < tail && tail < close, "{}", s.text);
+    }
+
+    #[test]
+    fn the_cow_scene_leaves_out_the_margin_cow_files_keep() {
+        let with = cow_scene("        \\\n         ( oo )", "moo", 400.0, 200.0);
+        let without = cow_scene("\\\n ( oo )", "moo", 400.0, 200.0);
+        assert_eq!(with, without);
+    }
+
+    #[test]
+    fn the_cow_scene_copes_with_boxes_too_small_and_words_too_long() {
+        let long = "word ".repeat(80);
+        for (w, h) in [(0.0, 0.0), (30.0, 30.0), (100.0, 40.0), (3000.0, 5.0)] {
+            let s = cow_scene(TUX, &long, w, h);
+            assert!(s.font >= 6.0 && s.text.contains("oo"), "{w}x{h}: {s:?}");
+        }
+        // Empty words are three dots.
+        assert!(cow_scene(TUX, "  ", 400.0, 300.0).text.contains("..."));
+        // Too much to say: cut short, with the cow whole.
+        let s = cow_scene(TUX, &long, 200.0, 120.0);
+        assert!(s.text.contains('\u{2026}'), "{}", s.text);
+        assert!(s.text.contains("_|___|_"), "{}", s.text);
     }
 
     #[test]

@@ -689,10 +689,13 @@ export struct MascotLine {
     queued: int,
 }
 
-// A cow's drawing, in columns and lines.
-export struct CowSize {
-    width: int,
-    lines: int,
+// The cow and its speech bubble laid out for a widget: one text, the letters' size, and the size
+// of the text.
+export struct CowScene {
+    text: string,
+    font: length,
+    width: length,
+    height: length,
 }
 
 export global Mascots {
@@ -701,11 +704,10 @@ export global Mascots {
     in property <bool> awake;
     // Clicked: the next line (and the sent one goes away).
     callback next(int);
-    // A line in the cow's ASCII speech bubble, for so many columns and lines of text.
-    pure callback cow-bubble(string, int, int) -> string;
-    // The drawing of the cow a `cowfile` setting names, with these eyes and tongue, and its size.
+    // The drawing of the cow a `cowfile` setting names, with these eyes and tongue.
     pure callback cow-art(string, string, string) -> string;
-    pure callback cow-size(string) -> CowSize;
+    // A drawing and a line for its bubble, in a box of this width and height: both, laid out.
+    pure callback cow-scene(string, string, length, length) -> CowScene;
     // The font family cows are drawn in.
     pure callback cow-font() -> string;
 }
