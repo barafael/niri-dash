@@ -34,6 +34,8 @@ See [How to turn clipboard history on and off](../../how-to/clipboard.md).
 
 {{#include ../widgets.generated.md:claude-usage}}
 
+Local only; nothing is sent anywhere. Token counts come from Claude Code's session transcripts in `~/.claude/projects`, and the plan from the `oauthAccount` entry of `~/.claude.json` (two fields of it: the organization type and rate-limit tier). The file with your login tokens, `~/.claude/.credentials.json`, is never opened. The plan's actual limits aren't stored locally, so the widget shows usage, not a percentage of a limit.
+
 ## Mascot {#mascot}
 
 {{#include ../widgets.generated.md:mascot}}

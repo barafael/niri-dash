@@ -1,6 +1,6 @@
-//! Claude usage from local data only: the plan from `~/.claude/.credentials.json` (only the
-//! plan fields are read; tokens never are), and token usage from the session transcripts in
-//! `~/.claude/projects`. Like ccusage, usage is grouped into 5-hour windows (each starts at the
+//! Claude usage from local data only: the plan from the `oauthAccount` entry of `~/.claude.json`
+//! (two fields of it; the OAuth tokens live in a different file, `~/.claude/.credentials.json`,
+//! which is never opened), and token usage from the session transcripts in `~/.claude/projects`. Like ccusage, usage is grouped into 5-hour windows (each starts at the
 //! hour of its first message), and every message is counted once (by message and request id).
 //! The plan's actual limits aren't stored locally, so this shows usage, not a percentage of them.
 
@@ -52,18 +52,20 @@ struct Usage {
     cache_read_input_tokens: u64,
 }
 
-/// Only the plan fields of the credentials file; everything else (the tokens) is skipped.
+/// Claude Code's own settings file; only the account's plan is read from it.
 #[derive(Deserialize)]
-struct Credentials {
-    #[serde(rename = "claudeAiOauth")]
-    oauth: Option<PlanFields>,
+struct Settings {
+    #[serde(rename = "oauthAccount")]
+    account: Option<Account>,
 }
 
 #[derive(Deserialize)]
-struct PlanFields {
-    #[serde(rename = "subscriptionType")]
-    subscription: Option<String>,
-    #[serde(rename = "rateLimitTier")]
+struct Account {
+    /// "claude_max", "claude_pro", "claude_team", ...
+    #[serde(rename = "organizationType")]
+    kind: Option<String>,
+    /// "default_claude_max_5x"
+    #[serde(rename = "organizationRateLimitTier")]
     tier: Option<String>,
 }
 
@@ -90,14 +92,20 @@ pub fn plan_name(subscription: &str, tier: &str) -> String {
 }
 
 fn read_plan(home: &Path) -> String {
-    let text = std::fs::read_to_string(home.join(".claude/.credentials.json")).unwrap_or_default();
-    match serde_json::from_str::<Credentials>(&text)
+    let text = std::fs::read_to_string(home.join(".claude.json")).unwrap_or_default();
+    plan_of(&text)
+}
+
+fn plan_of(settings: &str) -> String {
+    match serde_json::from_str::<Settings>(settings)
         .ok()
-        .and_then(|c| c.oauth)
+        .and_then(|s| s.account)
     {
-        Some(p) => plan_name(
-            p.subscription.as_deref().unwrap_or(""),
-            p.tier.as_deref().unwrap_or(""),
+        Some(a) => plan_name(
+            a.kind
+                .as_deref()
+                .map_or("", |k| k.strip_prefix("claude_").unwrap_or(k)),
+            a.tier.as_deref().unwrap_or(""),
         ),
         None => "Not signed in".into(),
     }
@@ -385,6 +393,18 @@ mod tests {
     }
 
     #[test]
+    fn the_plan_comes_from_the_account_entry_and_nothing_else() {
+        let signed_in = r#"{"numStartups": 3, "oauthAccount": {"organizationType": "claude_max",
+            "organizationRateLimitTier": "default_claude_max_5x", "displayName": "x"}}"#;
+        assert_eq!(plan_of(signed_in), "Max 5×");
+        let pro = r#"{"oauthAccount": {"organizationType": "claude_pro",
+            "organizationRateLimitTier": null}}"#;
+        assert_eq!(plan_of(pro), "Pro");
+        assert_eq!(plan_of(r#"{"numStartups": 3}"#), "Not signed in");
+        assert_eq!(plan_of(""), "Not signed in");
+    }
+
+    #[test]
     fn windows_start_on_the_hour_and_last_five_hours() {
         let e = vec![
             entry("2026-11-01T08:40:00Z", 10),
@@ -410,19 +430,5 @@ mod tests {
         s.take(line);
         assert_eq!(s.entries.len(), 1);
         assert_eq!((s.entries[0].tokens, s.entries[0].cache_read), (15, 100));
-    }
-
-    #[test]
-    fn credentials_never_need_tokens() {
-        let text = r#"{"claudeAiOauth":{"accessToken":"secret","refreshToken":"secret","subscriptionType":"max","rateLimitTier":"default_claude_max_20x"}}"#;
-        let c: Credentials = serde_json::from_str(text).unwrap();
-        let p = c.oauth.unwrap();
-        assert_eq!(
-            plan_name(
-                p.subscription.as_deref().unwrap(),
-                p.tier.as_deref().unwrap()
-            ),
-            "Max 20×"
-        );
     }
 }
