@@ -25,7 +25,7 @@ brightness, night light, notifications, system tray, media player (MPRIS), sessi
 suspend, log out, …), clipboard history, CPU / memory / disks / network / GPU, keyboard layout,
 color picker, timer, stopwatch, pomodoro, sleep timer, sticky notes, privacy (who uses the
 microphone, camera or screen), removable drives, phone (KDE Connect), Claude Code sessions and
-usage, and a mascot that comments on your day.
+usage, a mascot that comments on your day, and an About card.
 
 Most widgets come in a rectangular and a round shape. Any widget can also run on its own as a
 small app window: `niri-dash app clock`.

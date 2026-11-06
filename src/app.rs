@@ -560,6 +560,8 @@ fn build(
     let Started { senders, caps } = system;
     theme::install_bundled();
     ui.set_solo(solo.is_some());
+    ui.global::<crate::Build>()
+        .set_version(env!("CARGO_PKG_VERSION").into());
     let desktop = ui.global::<crate::Desktop>();
     desktop.set_screencast(caps.screencast);
     desktop.set_niri(caps.compositor == sys::Compositor::Niri);

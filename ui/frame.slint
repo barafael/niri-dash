@@ -11,6 +11,7 @@ import { KeyboardLayoutWidget, ColorPickerWidget, TimerWidget, StopwatchWidget, 
 import { PrivacyWidget, RemovableDrivesWidget, PhoneWidget } from "widgets/devices.slint";
 import { SleepTimerWidget } from "widgets/sleep.slint";
 import { PomodoroWidget } from "widgets/pomodoro.slint";
+import { AboutWidget } from "widgets/about.slint";
 
 // A widget's content, picked by kind; fills its parent.
 export component WidgetBody inherits Rectangle {
@@ -51,6 +52,7 @@ export component WidgetBody inherits Rectangle {
     if root.inst.kind == WidgetKind.phone: PhoneWidget { round: root.round; nav: root.nav; }
     if root.inst.kind == WidgetKind.sleep-timer: SleepTimerWidget { round: root.round; nav: root.nav; }
     if root.inst.kind == WidgetKind.pomodoro: PomodoroWidget { round: root.round; nav: root.nav; }
+    if root.inst.kind == WidgetKind.about: AboutWidget { }
 }
 
 // One placed widget. Positions are grid cells; while dragging, (dx, dy) / (pulled-x, pulled-y)

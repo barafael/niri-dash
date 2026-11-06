@@ -47,6 +47,7 @@ pub enum Kind {
     Phone,
     SleepTimer,
     Pomodoro,
+    About,
 }
 
 impl Kind {
@@ -459,6 +460,18 @@ impl Kind {
                 starts_round: true,
                 settings: &[FocusMinutes, ShortBreak, LongBreak, Rounds, AutoStart],
                 icon: "appointment-soon",
+            },
+            Kind::About => &KindInfo {
+                title: "About",
+                description: "Which version this is, its license, and what it is made with",
+                default_size: (2, 2),
+                min_size: (2, 2),
+                max_size: (4, 4),
+                group: Group::Activity,
+                can_be_round: false,
+                starts_round: false,
+                settings: &[],
+                icon: "help-about",
             },
         }
     }
@@ -2789,6 +2802,7 @@ mod tests {
                 "phone",
                 "sleep-timer",
                 "pomodoro",
+                "about",
             ]
         );
         assert_eq!(Kind::from_str_opt("perf"), None);

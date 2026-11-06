@@ -51,3 +51,9 @@ Characters: `schraubi`, `zolli`, `verschnitti` and `cow`. `niri-dash say` makes 
 {{#include ../widgets.generated.md:notes}}
 
 A note keeps what you type. Two notes with the same name show the same note.
+
+## About {#about}
+
+{{#include ../widgets.generated.md:about}}
+
+The version, the license and the "Made with Slint" credit: [Slint](https://slint.dev) asks for it wherever its widgets are used. It has no settings and no keys.

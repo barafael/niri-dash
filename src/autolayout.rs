@@ -2097,7 +2097,7 @@ mod tests {
                     &items,
                     &[],
                     16,
-                    9,
+                    10,
                     &Params {
                         algo: Algo::Gravity,
                         seed,
@@ -2190,7 +2190,7 @@ mod tests {
         ];
         let (mut hits, mut total, mut clashes) = (0, 0, 0);
         for seed in 1..=20 {
-            let a = solve(&items, &[], 24, 13, &neighbours(seed));
+            let a = solve(&items, &[], 26, 13, &neighbours(seed));
             for (x, y) in pairs {
                 total += 1;
                 if side_by_side(&at(&items, &a, x).unwrap(), &at(&items, &a, y).unwrap()) {
@@ -2204,7 +2204,7 @@ mod tests {
                 clashes += 1;
             }
         }
-        // Most touch. Not all: with every kind on the grid (now 33) a widget has many friends and only
+        // Most touch. Not all: with every kind on the grid (now 34) a widget has many friends and only
         // four sides, and the crowded grid leaves some pairs a gap apart.
         assert!(hits * 100 >= total * 85, "liked pairs touch {hits}/{total}");
         assert!(clashes <= 2, "session and windows touch in {clashes}/20");

@@ -17,6 +17,7 @@
 | [`claude-usage`](activity.md#claude-usage) | Activity | Plan, 5-hour window, tokens today | 4×3 | rectangular, round |
 | [`mascot`](activity.md#mascot) | Activity | Schraubi, Zolli or Verschnitti; says what you tell it | 4×2 | rectangular |
 | [`notes`](activity.md#notes) | Activity | A note that keeps what you type; name it to have several | 3×3 | rectangular |
+| [`about`](activity.md#about) | Activity | Which version this is, its license, and what it is made with | 2×2 | rectangular |
 | [`media`](media.md#media) | Media | Now playing (MPRIS) | 5×2 | rectangular |
 | [`system-monitor`](system.md#system-monitor) | System | CPU, memory, network, temperature | 4×3 | rectangular, round |
 | [`battery`](system.md#battery) | System | Charge, power profile; device batteries and sleep blockers when bigger | 3×2 | rectangular, round |
@@ -594,4 +595,19 @@
 | `rounds` | Sessions before the long break | `2`, `3`, `4`, `5`, `6`, `8` | `4` |
 | `auto-start` | Start the next part by itself | `#true`, `#false` | `#false` |
 <!-- ANCHOR_END: pomodoro -->
+
+<!-- ANCHOR: about -->
+<div class="widget-facts">
+
+| Name in `config.kdl` | `about` |
+|---|---|
+| Title | About |
+| Shows | Which version this is, its license, and what it is made with |
+| Group | Activity |
+| Size in cells | 2×2 by default, 2×2 at least, 4×4 at most |
+| Shapes | rectangular |
+| Settings | none |
+
+</div>
+<!-- ANCHOR_END: about -->
 

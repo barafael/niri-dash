@@ -1,0 +1,36 @@
+import { AboutSlint } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { Build } from "../data.slint";
+import { Muted } from "../common.slint";
+
+// What this is, and what it is made with. Slint's license asks for its AboutSlint widget in an
+// About screen, so it is shown whole here, not redrawn.
+export component AboutWidget inherits Rectangle {
+    accessible-role: groupbox;
+    accessible-label: "About niri-dash";
+    VerticalLayout {
+        padding: Theme.pad;
+        spacing: 4px;
+        Text {
+            text: "niri-dash " + Build.version;
+            font-size: Theme.font-title;
+            font-weight: 600;
+            color: Theme.text;
+            overflow: elide;
+        }
+        Muted {
+            text: "MIT or Apache-2.0";
+        }
+        Muted {
+            text: "github.com/barafael/niri-dash";
+        }
+        Rectangle {
+            vertical-stretch: 1;
+            clip: true;
+            AboutSlint {
+                width: parent.width;
+                height: parent.height;
+            }
+        }
+    }
+}

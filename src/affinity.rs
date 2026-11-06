@@ -82,7 +82,7 @@ const TABLE: &[(&[Kind], f32)] = &[
 type Matrix = [[f32; KINDS]; KINDS];
 
 /// How many kinds there are.
-const KINDS: usize = 33;
+const KINDS: usize = 34;
 
 fn index(k: Kind) -> usize {
     Kind::iter().position(|o| o == k).unwrap_or(0)

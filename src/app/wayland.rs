@@ -53,6 +53,7 @@ fn feeds(kind: Kind) -> &'static [Feed] {
         Kind::SleepTimer => &[],
         // Its notices are local ones, like the timer's.
         Kind::Pomodoro => &[Feed::Notifications],
+        Kind::About => &[],
     }
 }
 /// The pointer the UI asks for, as a cursor shape.
