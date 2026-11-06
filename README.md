@@ -7,6 +7,8 @@ the background puts it away.
 It is a single daemon: a layer-shell overlay drawn with [Slint](https://slint.dev), on the GPU
 through EGL (or in software). While hidden it renders nothing and its data sources go quiet.
 
+[![Made with Slint](https://raw.githubusercontent.com/slint-ui/slint/master/logo/MadeWithSlint-logo-whitebg.png)](https://slint.dev)
+
 ![The dashboard with its default layout, on made-up data](book/src/images/dashboard.png)
 
 **[Try it in your browser](https://barafael.github.io/niri-dash/)**: the same dashboard, keyboard
@@ -27,6 +29,10 @@ usage, and a mascot that comments on your day.
 
 Most widgets come in a rectangular and a round shape. Any widget can also run on its own as a
 small app window: `niri-dash app clock`.
+
+The Claude usage widget reads only local files: session transcripts in `~/.claude/projects` for the
+token counts, and two plan fields of `~/.claude.json`. It never opens the file with your login
+tokens.
 
 Clipboard history is opt-in: niri-dash reads what you copy only while a clipboard widget is in your
 layout or `niri-dash app clipboard` is running. The history stays in memory and skips what password
@@ -118,7 +124,12 @@ The widget tables are written from the source by a test (`cargo test --lib book`
 
 MIT or Apache-2.0, at your option.
 
+niri-dash is built with [Slint](https://slint.dev), used under its [Royalty-free Desktop, Mobile,
+and Web Applications License](https://github.com/slint-ui/slint/blob/master/LICENSES/LicenseRef-Slint-Royalty-free-2.0.md).
+That license asks for attribution, which is the "Made with Slint" badge at the top of this page and on
+the [web version](https://barafael.github.io/niri-dash/). If you redistribute niri-dash or a fork,
+keep a badge on a public page where it can be found, or add Slint's `AboutSlint` widget to an About
+screen; or use Slint under the GPL-3.0 instead.
+
 `patches/i-slint-renderer-software` is a lightly patched copy of Slint's software renderer (see
 its README) and keeps Slint's own licenses, in its `LICENSES` directory.
-
-[![Made with Slint](https://raw.githubusercontent.com/slint-ui/slint/master/logo/MadeWithSlint-logo-whitebg.png)](https://slint.dev)
