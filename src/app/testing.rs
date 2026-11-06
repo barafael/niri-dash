@@ -335,7 +335,7 @@ impl Harness {
     /// come. Gives the monkey back for its summary, or what went wrong.
     pub fn stress(
         &mut self,
-        mut monkey: super::stress::Monkey,
+        monkey: super::stress::Monkey,
         ops: u64,
         rate: f64,
     ) -> Result<super::stress::Monkey, super::stress::Failure> {

@@ -663,9 +663,8 @@ async fn watch_plasma(actor: &UnboundedSender<Inner>) -> zbus::Result<()> {
         let header = msg.header();
         match header.message_type() {
             Type::MethodCall => {
-                let Ok((app, replaces, app_icon, summary, body, _actions, hints, _)) = msg
-                    .body()
-                    .deserialize::<(
+                let Ok((app, replaces, app_icon, summary, body, _actions, hints, _)) =
+                    msg.body().deserialize::<(
                         String,
                         u32,
                         String,

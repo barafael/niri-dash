@@ -1,0 +1,80 @@
+# Format, lints, unit tests, and both builds (desktop and browser) on every push and pull request.
+# The integration tests under tests/ and the `live` system tests are not run here: the ones that
+# touch the system belong in the test box (testbox/README.md).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # rust-toolchain.toml picks the toolchain; rustfmt comes on top.
+      - run: rustup component add rustfmt
+      - run: cargo fmt --all -- --check
+
+  desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # What the desktop build links against (fontconfig, xkbcommon, Wayland and its EGL glue).
+      - name: Install system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes pkg-config libfontconfig1-dev libxkbcommon-dev libwayland-dev
+
+      - run: rustup component add clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Unit tests
+        run: cargo test --workspace --lib --locked
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # For the Slint compiler, which runs on this machine during the build.
+      - name: Install fontconfig
+        run: sudo apt-get update && sudo apt-get install --yes libfontconfig1-dev
+
+      - run: rustup target add wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check the browser build
+        run: cargo check --target wasm32-unknown-unknown --lib --profile web --locked
+
+  manual:
+    runs-on: ubuntu-latest
+    env:
+      MDBOOK_VERSION: "0.5.4"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mdBook
+        run: |
+          curl --fail --silent --show-error --location \
+            "https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK_VERSION}/mdbook-v${MDBOOK_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz -C "$HOME/.cargo/bin"
+
+      - name: Build the manual
+        run: mdbook build book

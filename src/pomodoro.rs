@@ -336,8 +336,10 @@ mod tests {
         p.reset();
         assert_eq!(p.left(t(60)), Duration::from_secs(50 * 60));
         // Fewer rounds than done doesn't leave dots over.
-        let mut p = Pomodoro::default();
-        p.done = 3;
+        let mut p = Pomodoro {
+            done: 3,
+            ..Pomodoro::default()
+        };
         p.set_plan(Plan {
             rounds: 2,
             ..Plan::default()

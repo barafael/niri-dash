@@ -4,12 +4,8 @@ use super::App;
 use niri_dash_system::{Tell, weather};
 #[cfg(not(target_arch = "wasm32"))]
 use {
-    super::wayland::Input,
-    crate::layout::Layout,
-    niri_dash_system::Sink,
-    std::path::PathBuf,
-    std::sync::mpsc::Receiver,
-    std::time::Duration,
+    super::wayland::Input, crate::layout::Layout, niri_dash_system::Sink, std::path::PathBuf,
+    std::sync::mpsc::Receiver, std::time::Duration,
 };
 
 impl App {

@@ -615,7 +615,6 @@ fn sleep_timer_fires() {
     }
 }
 
-
 /// What a frame would show: laid out, and what that sets off (see `cursor_stays_in_sight…`).
 fn shown(h: &mut Harness) {
     for _ in 0..2 {
