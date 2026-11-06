@@ -204,21 +204,23 @@ export component BatteryWidget inherits Rectangle {
         if root.has-profiles: HorizontalLayout {
             spacing: 4px;
             height: 30px;
-            for p in Power.profiles: Rectangle {
+            for p[i] in Power.profiles: Rectangle {
                 // Narrow, they share what there is and the names are cut short.
                 min-width: 0px;
+                // The cursor shows on the current one, or on the first with none current.
+                property <bool> kfocus: keys.on && keys.cursor == 0 && (self.current || (i == 0 && !Power.has-profile));
                 accessible-role: radio-button;
                 accessible-label: p == PowerProfile.power-saver ? "Saver" : p == PowerProfile.balanced ? "Balanced" : "Performance";
                 accessible-checkable: true;
                 accessible-checked: self.current;
-                accessible-item-selected: self.current && keys.on && keys.cursor == 0;
+                accessible-item-selected: self.kfocus;
                 accessible-action-default => { Power.set-profile(p); }
                 border-radius: min(self.height / 2, Theme.radius-small);
                 property <bool> current: Power.has-profile && Power.profile == p;
                 background: self.current ? Theme.accent : pt.has-hover ? Theme.hover : Theme.card-raised;
                 animate background { duration: 100ms * Theme.motion; }
-                border-width: self.current && keys.on && keys.cursor == 0 ? 2px : 0px;
-                border-color: Theme.text;
+                border-width: self.kfocus ? 2px : 0px;
+                border-color: self.current ? Theme.text : Theme.accent;
                 Text {
                     text: p == PowerProfile.power-saver ? "Saver" : p == PowerProfile.balanced ? "Balanced" : "Performance";
                     horizontal-alignment: center;
@@ -343,7 +345,8 @@ export component BatteryWidget inherits Rectangle {
             if (!root.round && (!root.has-profiles || i == 1)) {
                 Power.toggle-inhibit();
             } else if (root.has-profiles) {
-                Power.set-profile(root.profile-step(1));
+                // With none current, the first is the one lit: that's what Enter picks.
+                Power.set-profile(root.profile-step(Power.has-profile ? 1 : 0));
             }
         }
         adjust(i, d) => {

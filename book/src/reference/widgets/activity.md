@@ -12,7 +12,7 @@ Click a window to focus it. On KDE Plasma the list is flat, and needs `niri-dash
 
 {{#include ../widgets.generated.md:claude-sessions}}
 
-Click a session to focus its window. On KDE Plasma this works when the window list does (see [KDE Plasma](../plasma.md)).
+Click a session to focus its window. On KDE Plasma this works too, and for a session in Konsole its tab is brought up (see [KDE Plasma](../plasma.md)).
 
 ## Notifications {#notifications}
 

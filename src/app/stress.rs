@@ -467,9 +467,7 @@ fn check(app: &App) -> Result<(), String> {
         }
         _ => {}
     }
-    if !ui.get_editing() {
-        app.spoken()?;
-    }
+    app.spoken()?;
     if !app.visible.get() {
         if ui.get_editing() {
             return Err("closed while still in edit mode".into());

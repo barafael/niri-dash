@@ -8,7 +8,7 @@
 mod clipboard;
 pub mod gamma;
 mod windows;
-pub use windows::by_pid as windows_by_pid;
+pub use windows::ByPid;
 
 use super::{EventSender, clipboard as vocab};
 use smithay_client_toolkit::reexports::calloop::EventLoop;
@@ -38,6 +38,8 @@ pub struct Handles {
     pub windows: Sender<crate::windows::Command>,
     /// KWin gives us its window list.
     pub has_windows: bool,
+    /// The windows KWin lists, by the process they belong to.
+    pub windows_by_pid: tokio::sync::watch::Receiver<ByPid>,
 }
 
 /// The state the thread owns; Wayland events are dispatched to it.
@@ -162,6 +164,7 @@ fn setup(
         has_gamma: state.gamma.available(),
         windows: windows_tx,
         has_windows: state.windows.available(),
+        windows_by_pid: state.windows.by_pid(),
     };
     Ok((event_loop, state, handles))
 }

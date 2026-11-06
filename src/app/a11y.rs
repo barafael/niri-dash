@@ -16,7 +16,7 @@ use super::App;
 use crate::{Nav, NavMode};
 use i_slint_core::accessibility::{AccessibilityAction, AccessibleStringProperty as Prop};
 use i_slint_core::item_tree::{ItemRc, ParentItemTraversalMode};
-use i_slint_core::items::AccessibleRole;
+use i_slint_core::items::{AccessibleRole, Flickable};
 use i_slint_core::window::WindowInner;
 use slint::ComponentHandle;
 use std::ops::ControlFlow;
@@ -83,13 +83,40 @@ fn around(item: &ItemRc, id: &str) -> Option<ItemRc> {
     None
 }
 
+/// Whether `item` is clearly in sight: no scrolling list around it hides more than a quarter of it
+/// (a few pixels cut off at the edge are no matter). Slint's `is_visible` also says yes for what
+/// only touches the edge.
+fn in_view(item: &ItemRc) -> bool {
+    if !item.is_visible() {
+        return false;
+    }
+    // `map_to_window` takes a point in the parent's coordinates, as `geometry` gives it.
+    let geometry = item.geometry();
+    let top = item.map_to_window(geometry.origin).y;
+    let height = geometry.size.height;
+    let mut at = item.parent_item(ParentItemTraversalMode::StopAtPopups);
+    while let Some(parent) = at {
+        if parent.downcast::<Flickable>().is_some() {
+            let view = parent.geometry();
+            let view_top = parent.map_to_window(view.origin).y;
+            let view_height = view.size.height;
+            let shown = (top + height).min(view_top + view_height) - top.max(view_top);
+            if shown < 0.75 * height.min(view_height) {
+                return false;
+            }
+        }
+        at = parent.parent_item(ParentItemTraversalMode::StopAtPopups);
+    }
+    true
+}
+
 /// The visible elements in `tile` under the cursor. Two would be two highlights on screen.
 fn under_cursor(tile: &ItemRc) -> Vec<ItemRc> {
     let mut found = Vec::new();
     // `visit_descendants` also makes what is still to be made: `first_child` would miss a list
     // or a page that hasn't been laid out yet.
     tile.visit_descendants(|item| {
-        if item.is_accessible() && prop(item, Prop::ItemSelected) == "true" && item.is_visible() {
+        if item.is_accessible() && prop(item, Prop::ItemSelected) == "true" && in_view(item) {
             found.push(item.clone());
         }
         ControlFlow::<()>::Continue(())
@@ -287,6 +314,26 @@ impl App {
     pub(super) fn cursor_now(&self) -> Result<Option<ItemRc>, String> {
         let ui = self.ui();
         let n = ui.global::<Nav>();
+        // Edit mode's sidebar has a cursor of its own; nothing else has one then.
+        if ui.get_editing() && ui.get_side_keys() {
+            let root = ItemRc::new_root(
+                WindowInner::from_pub(ui.window())
+                    .try_component()
+                    .ok_or("no window")?,
+            );
+            return match under_cursor(&root).as_slice() {
+                [one] => Ok(Some(one.clone())),
+                [] => Err("the sidebar's cursor is on nothing".into()),
+                many => Err(format!(
+                    "the sidebar's cursor is on {} things at once: {}",
+                    many.len(),
+                    many.iter()
+                        .map(|i| speak(i).to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )),
+            };
+        }
         if n.get_mode() != NavMode::Widget {
             return Ok(None);
         }

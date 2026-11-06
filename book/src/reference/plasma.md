@@ -13,7 +13,7 @@ niri-dash runs on KDE Plasma 6 as well as on niri. These are the differences, as
 | Color picker | Goes through Plasma. |
 | Log out | Goes through Plasma. |
 | Window list (`windows`) | One flat list in KWin's order, with no workspace headings. KWin gives it only to programs whose desktop file asks for it: run `niri-dash desktop-entries` once, then restart niri-dash. |
-| Focusing a Claude session's window (`claude-sessions`) | Works once the window list does. |
+| Focusing a Claude session's window (`claude-sessions`) | Goes through KWin. For a session in Konsole, niri-dash also brings up its tab. |
 | Noticing screen sharing (`privacy`) | Not available: the microphone and camera are still shown, but not who shares the screen, nor stopping a share. |
 | `niri-dash window-rules` | niri only. On Plasma, window rules are in System Settings. |
 

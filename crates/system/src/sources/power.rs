@@ -3,7 +3,6 @@
 use super::{Ctx, Dedup, Trigger, prop, prop_str, run, signals_from, sysfs};
 pub use crate::power::{DeviceKind, Peripheral, Profile, State};
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Duration;
 
 /// Device batteries from UPower: everything that isn't a power supply of this machine.
@@ -187,10 +186,11 @@ pub fn start(ctx: Ctx) {
         Duration::from_millis(300),
         trigger.clone(),
     );
-    let sent = Arc::new(Dedup::default());
-    ctx.poll_events(trigger, Duration::from_secs(60), move || {
-        let (c, sent) = (c.clone(), sent.clone());
-        async move {
+    let mut ticks = ctx.ticks(trigger);
+    ctx.spawn(async move {
+        let mut sent = Dedup::default();
+        ticks.ready().await;
+        loop {
             let mut s = State::default();
             battery(&mut s);
             if let Ok(list) = run("powerprofilesctl", &["list"]).await {
@@ -203,6 +203,7 @@ pub fn start(ctx: Ctx) {
             if sent.changed(&s) {
                 c.send(crate::power::Event::State(s));
             }
+            ticks.next(Duration::from_secs(60)).await;
         }
     });
 }

@@ -7,10 +7,12 @@ pub mod bluetooth;
 pub mod brightness;
 pub mod claude;
 pub mod claude_usage;
+pub mod connector;
 pub mod icons;
 pub mod inhibit;
 pub mod kde;
 pub mod kdeconnect;
+pub mod konsole;
 pub mod media;
 pub mod niri;
 pub mod notifications;
@@ -30,9 +32,10 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{Notify, watch};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+use tokio::sync::watch;
+use tokio::task::JoinSet;
 use zbus::zvariant::{OwnedValue, Value};
 
 pub use crate::text::{clean_label, locale, one_line, strip_spinner, unescape_entities};
@@ -40,37 +43,136 @@ pub use crate::{Compositor, Event, EventSender, IconSrc, clipboard, keyboard};
 
 /// Wakes one source early, e.g. when a change event says its data is stale. If the source is
 /// busy, the wake-up is kept for when it's done.
-#[derive(Clone, Default)]
-pub struct Trigger(Arc<Notify>);
+#[derive(Clone)]
+pub struct Trigger(watch::Sender<u64>);
+
+impl Default for Trigger {
+    fn default() -> Self {
+        Self(watch::Sender::new(0))
+    }
+}
 
 impl Trigger {
     pub fn fire(&self) {
-        self.0.notify_one();
+        self.0.send_modify(|n| *n = n.wrapping_add(1));
+    }
+}
+
+/// The rhythm of a poller, as a loop it owns: `ticks.ready().await`, then a fetch and
+/// `ticks.next(period).await` over and over. Only runs while the dashboard is visible, wakes early
+/// on `refresh()` and on its trigger, and counts those that come in during a fetch.
+pub struct Ticks {
+    ctx: Ctx,
+    wake: watch::Receiver<u64>,
+    trigger: watch::Receiver<u64>,
+    /// Keeps `trigger` open, for a source that gave its only one away.
+    _keep: Trigger,
+}
+
+impl Ticks {
+    /// Wait for the first run.
+    pub async fn ready(&mut self) {
+        // Hidden: sleep until shown (which also refreshes) rather than waking to check.
+        self.ctx.until_visible(true).await;
+        self.wake.mark_unchanged();
+    }
+
+    /// The run is over: wait for the next, `period` from now at the latest.
+    pub async fn next(&mut self, period: Duration) {
+        // Bursts of change events (a volume scroll is one per step) arrive faster than a fetch is
+        // worth; ones that come in meanwhile are folded into the next run.
+        tokio::time::sleep(MIN_POLL_GAP).await;
+        tokio::select! {
+            _ = tokio::time::sleep(period) => {}
+            _ = self.wake.changed() => {}
+            _ = self.trigger.changed() => {}
+        }
+        self.wake.mark_unchanged();
+        self.trigger.mark_unchanged();
+        self.ready().await;
     }
 }
 
 /// The last value a source sent, to skip sending the same again. Every update replaces the UI's
 /// models and redraws, and with the GPU renderer every frame makes niri recomposite the whole
 /// screen, so refreshes that change nothing (most of them) shouldn't reach the UI.
-pub struct Dedup<T>(std::sync::Mutex<Option<T>>);
+pub struct Dedup<T>(Option<T>);
 
 impl<T> Default for Dedup<T> {
     fn default() -> Self {
-        Self(std::sync::Mutex::new(None))
+        Self(None)
     }
 }
 
 impl<T: PartialEq + Clone> Dedup<T> {
     /// Whether `v` differs from the last value seen; remembers it if so.
-    pub fn changed(&self, v: &T) -> bool {
-        let Ok(mut last) = self.0.lock() else {
-            return true;
-        };
-        if last.as_ref() == Some(v) {
+    pub fn changed(&mut self, v: &T) -> bool {
+        if self.0.as_ref() == Some(v) {
             return false;
         }
-        *last = Some(v.clone());
+        self.0 = Some(v.clone());
         true
+    }
+}
+
+/// What an actor gets next: see [`Mailbox::next`].
+pub enum Next<I, C> {
+    Inner(I),
+    Command(C),
+}
+
+/// The private side of a stateful actor (see `Stateful` in `live.rs`): where the tasks it started
+/// send what they find, and those tasks, which end with it.
+pub struct Mailbox<I> {
+    tx: UnboundedSender<I>,
+    rx: UnboundedReceiver<I>,
+    tasks: JoinSet<()>,
+}
+
+impl<I> Default for Mailbox<I> {
+    fn default() -> Self {
+        let (tx, rx) = unbounded_channel();
+        Self {
+            tx,
+            rx,
+            tasks: JoinSet::new(),
+        }
+    }
+}
+
+impl<I: Send + 'static> Mailbox<I> {
+    /// Where a task sends what it found.
+    pub fn sender(&self) -> UnboundedSender<I> {
+        self.tx.clone()
+    }
+
+    /// Start a task, unless `ctx` is dormant.
+    pub fn spawn<F>(&mut self, ctx: &Ctx, task: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        if !ctx.dormant {
+            self.tasks.spawn_on(task, &ctx.rt);
+        }
+    }
+
+    /// The next thing to do; `None` when the last command sender is gone. What the actor's tasks
+    /// found comes first, so a command acts on what was found before it: it can't overtake a state
+    /// already on its way and find nothing to act on.
+    pub async fn next<C>(&mut self, commands: &mut UnboundedReceiver<C>) -> Option<Next<I, C>> {
+        loop {
+            tokio::select! {
+                biased;
+                // Never ends: this holds a sender itself.
+                Some(inner) = self.rx.recv() => return Some(Next::Inner(inner)),
+                command = commands.recv() => return command.map(Next::Command),
+                Some(done) = self.tasks.join_next(), if !self.tasks.is_empty() => {
+                    if let Err(e) = done {
+                        log::warn!("a task of an actor failed: {e}");
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -87,10 +189,23 @@ pub fn signals_from(sender: &'static str) -> zbus::MatchRule<'static> {
 }
 
 /// One connection per bus for the signal watchers, made on first use and dropped when it fails.
-#[derive(Default)]
+#[derive(Clone)]
 struct Buses {
-    system: tokio::sync::Mutex<Option<zbus::Connection>>,
-    session: tokio::sync::Mutex<Option<zbus::Connection>>,
+    system: connector::Connector<zbus::Connection, zbus::Error>,
+    session: connector::Connector<zbus::Connection, zbus::Error>,
+}
+
+impl Buses {
+    fn new(rt: &tokio::runtime::Handle) -> Self {
+        Self {
+            system: connector::Connector::new(rt, zbus::Connection::system),
+            session: connector::Connector::new(rt, zbus::Connection::session),
+        }
+    }
+
+    fn of(&self, system: bool) -> &connector::Connector<zbus::Connection, zbus::Error> {
+        if system { &self.system } else { &self.session }
+    }
 }
 
 #[derive(Clone)]
@@ -98,14 +213,17 @@ pub struct Ctx {
     tx: EventSender,
     /// Whether the dashboard is up; watchers and pollers wait on this rather than waking to check.
     visible: watch::Sender<bool>,
-    wake: Arc<Notify>,
-    buses: Arc<Buses>,
+    /// Counts `refresh()`es, which wake every poller.
+    wake: watch::Sender<u64>,
+    buses: Buses,
     /// A dormant context starts nothing: a source built with it stays idle (standalone apps
     /// only run the sources their widget shows).
     dormant: bool,
     rt: tokio::runtime::Handle,
     /// Which compositor we run under, decided when the system started.
     compositor: Compositor,
+    /// On KWin, if it lists its windows to us: the windows by process.
+    kwin_windows: Option<watch::Receiver<crate::wayland::ByPid>>,
 }
 
 impl Ctx {
@@ -113,12 +231,24 @@ impl Ctx {
         Self {
             tx,
             visible: watch::Sender::new(false),
-            wake: Arc::new(Notify::new()),
-            buses: Default::default(),
+            wake: watch::Sender::new(0),
+            buses: Buses::new(&rt),
             dormant: false,
             rt,
             compositor,
+            kwin_windows: None,
         }
+    }
+
+    /// Where KWin's window list is, once it gives us one.
+    pub fn with_kwin_windows(mut self, windows: watch::Receiver<crate::wayland::ByPid>) -> Self {
+        self.kwin_windows = Some(windows);
+        self
+    }
+
+    /// The windows KWin lists to us, by process; None if it doesn't.
+    pub fn kwin_windows(&self) -> crate::wayland::ByPid {
+        self.kwin_windows.as_ref().and_then(|w| w.borrow().clone())
     }
 
     pub fn compositor(&self) -> Compositor {
@@ -165,32 +295,12 @@ impl Ctx {
 
     /// The shared system or session bus connection.
     pub async fn bus(&self, system: bool) -> zbus::Result<zbus::Connection> {
-        let slot = if system {
-            &self.buses.system
-        } else {
-            &self.buses.session
-        };
-        let mut slot = slot.lock().await;
-        if let Some(c) = slot.as_ref() {
-            return Ok(c.clone());
-        }
-        let c = if system {
-            zbus::Connection::system().await?
-        } else {
-            zbus::Connection::session().await?
-        };
-        *slot = Some(c.clone());
-        Ok(c)
+        self.buses.of(system).get().await
     }
 
     /// Forget a bus connection that failed, so the next `bus` call reconnects.
-    async fn drop_bus(&self, system: bool) {
-        let slot = if system {
-            &self.buses.system
-        } else {
-            &self.buses.session
-        };
-        *slot.lock().await = None;
+    fn drop_bus(&self, system: bool) {
+        self.buses.of(system).reset();
     }
 
     /// The runtime the sources run on.
@@ -200,67 +310,18 @@ impl Ctx {
 
     /// Wake every poller now.
     pub fn refresh(&self) {
-        self.wake.notify_waiters();
+        self.wake.send_modify(|n| *n = n.wrapping_add(1));
     }
 
-    /// Run `f` every `period` while the dashboard is visible, and right away on `refresh()`.
-    pub fn poll<F, Fut>(&self, period: Duration, mut f: F)
-    where
-        F: FnMut() -> Fut + Send + 'static,
-        Fut: Future<Output = ()> + Send,
-    {
-        self.poll_on(Trigger::default(), move || {
-            let fut = f();
-            async move {
-                fut.await;
-                period
-            }
-        });
-    }
-
-    /// Run `f` when `trigger` fires (and on show), with a slow fallback poll in case an event
-    /// is missed.
-    pub fn poll_events<F, Fut>(&self, trigger: Trigger, fallback: Duration, mut f: F)
-    where
-        F: FnMut() -> Fut + Send + 'static,
-        Fut: Future<Output = ()> + Send,
-    {
-        self.poll_on(trigger, move || {
-            let fut = f();
-            async move {
-                fut.await;
-                fallback
-            }
-        });
-    }
-
-    /// Like `poll`, but also runs right away whenever `trigger` fires (a change event), and `f`
-    /// returns how long to wait until the next fallback poll.
-    pub fn poll_on<F, Fut>(&self, trigger: Trigger, mut f: F)
-    where
-        F: FnMut() -> Fut + Send + 'static,
-        Fut: Future<Output = Duration> + Send,
-    {
-        if self.dormant {
-            return;
+    /// The rhythm of a poller woken by `trigger` too: see [`Ticks`]. A poller on a dormant context
+    /// has no business running, so start it with [`Ctx::spawn`].
+    pub fn ticks(&self, trigger: Trigger) -> Ticks {
+        Ticks {
+            ctx: self.clone(),
+            wake: self.wake.subscribe(),
+            trigger: trigger.0.subscribe(),
+            _keep: trigger,
         }
-        let ctx = self.clone();
-        self.rt.spawn(async move {
-            loop {
-                // Hidden: sleep until shown (which also refreshes) rather than waking to check.
-                ctx.until_visible(true).await;
-                let woken = ctx.wake.notified();
-                let period = f().await;
-                // Bursts of change events (a volume scroll is one per step) arrive faster than a
-                // fetch is worth; ones that come in meanwhile are folded into the next run.
-                tokio::time::sleep(MIN_POLL_GAP).await;
-                tokio::select! {
-                    _ = tokio::time::sleep(period) => {}
-                    _ = woken => {}
-                    _ = trigger.0.notified() => {}
-                }
-            }
-        });
     }
 
     /// Fire `trigger` whenever a D-Bus signal matching `rule` arrives; signals within `settle` of
@@ -300,7 +361,7 @@ impl Ctx {
                 };
                 if let Err(e) = result {
                     log::debug!("dbus watch {rule}: {e}");
-                    ctx.drop_bus(system).await;
+                    ctx.drop_bus(system);
                 }
                 tokio::time::sleep(Duration::from_secs(10)).await;
             }
@@ -553,4 +614,195 @@ pub fn which(program: &str) -> Option<PathBuf> {
             .map(|p| p.join(program))
             .find(|p| p.is_file())
     })
+}
+
+#[cfg(test)]
+mod ticks_tests {
+    use super::*;
+    use tokio::time::{Instant, advance};
+
+    const LONG: Duration = Duration::from_secs(60);
+
+    fn ctx() -> Ctx {
+        // Nothing here sends, so nobody has to listen.
+        let (tx, _rx) = EventSender::channel();
+        Ctx::new(tx, tokio::runtime::Handle::current(), Compositor::Other)
+    }
+
+    /// Lets everything that can run, run, without the clock moving.
+    async fn settle() {
+        for _ in 0..16 {
+            tokio::task::yield_now().await;
+        }
+    }
+
+    /// Runs `ticks` as a poller would, counting runs in a watch channel.
+    fn runs(mut ticks: Ticks, period: Duration) -> watch::Receiver<u32> {
+        let (tx, rx) = watch::channel(0u32);
+        tokio::spawn(async move {
+            ticks.ready().await;
+            loop {
+                tx.send_modify(|n| *n += 1);
+                ticks.next(period).await;
+            }
+        });
+        rx
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn waits_for_the_dashboard_to_show() {
+        let c = ctx();
+        let count = runs(c.ticks(Trigger::default()), LONG);
+        settle().await;
+        assert_eq!(*count.borrow(), 0);
+        c.set_visible(true);
+        settle().await;
+        assert_eq!(*count.borrow(), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn stops_while_hidden() {
+        let c = ctx();
+        c.set_visible(true);
+        let count = runs(c.ticks(Trigger::default()), Duration::from_secs(1));
+        settle().await;
+        assert_eq!(*count.borrow(), 1);
+        c.set_visible(false);
+        advance(LONG).await;
+        settle().await;
+        // The wait that was under way ends, and then it sleeps until shown.
+        assert_eq!(*count.borrow(), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn runs_again_after_the_period() {
+        let c = ctx();
+        c.set_visible(true);
+        let count = runs(c.ticks(Trigger::default()), LONG);
+        settle().await;
+        // The gap comes first; the period's timer only starts after it.
+        advance(MIN_POLL_GAP).await;
+        settle().await;
+        advance(LONG - Duration::from_secs(1)).await;
+        settle().await;
+        assert_eq!(*count.borrow(), 1);
+        advance(Duration::from_secs(2)).await;
+        settle().await;
+        assert_eq!(*count.borrow(), 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_refresh_wakes_it_after_the_gap() {
+        let c = ctx();
+        c.set_visible(true);
+        let count = runs(c.ticks(Trigger::default()), LONG);
+        settle().await;
+        c.refresh();
+        settle().await;
+        assert_eq!(*count.borrow(), 1, "the gap comes first");
+        advance(MIN_POLL_GAP).await;
+        settle().await;
+        assert_eq!(*count.borrow(), 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_trigger_wakes_it_after_the_gap() {
+        let c = ctx();
+        c.set_visible(true);
+        let trigger = Trigger::default();
+        let count = runs(c.ticks(trigger.clone()), LONG);
+        settle().await;
+        trigger.fire();
+        advance(MIN_POLL_GAP).await;
+        settle().await;
+        assert_eq!(*count.borrow(), 2);
+    }
+
+    /// A refresh or trigger during a fetch counts: what was fetched may be stale already.
+    #[tokio::test(start_paused = true)]
+    async fn wakes_during_a_fetch_are_kept() {
+        let c = ctx();
+        c.set_visible(true);
+        let trigger = Trigger::default();
+        let mut ticks = c.ticks(trigger.clone());
+        ticks.ready().await;
+        // The fetch is running.
+        c.refresh();
+        let start = Instant::now();
+        ticks.next(LONG).await;
+        assert_eq!(start.elapsed(), MIN_POLL_GAP, "the refresh was lost");
+        // Another fetch.
+        trigger.fire();
+        let start = Instant::now();
+        ticks.next(LONG).await;
+        assert_eq!(start.elapsed(), MIN_POLL_GAP, "the trigger was lost");
+    }
+
+    /// Several wakes fold into one run.
+    #[tokio::test(start_paused = true)]
+    async fn wakes_are_folded() {
+        let c = ctx();
+        c.set_visible(true);
+        let trigger = Trigger::default();
+        let mut ticks = c.ticks(trigger.clone());
+        ticks.ready().await;
+        c.refresh();
+        trigger.fire();
+        trigger.fire();
+        ticks.next(LONG).await;
+        let start = Instant::now();
+        ticks.next(LONG).await;
+        assert_eq!(
+            start.elapsed(),
+            MIN_POLL_GAP + LONG,
+            "woke again for nothing"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_dormant_context_starts_no_task() {
+        let c = ctx().live_if(false);
+        let (tx, count) = watch::channel(0u32);
+        let mut mailbox = Mailbox::<()>::default();
+        mailbox.spawn(&c, async move {
+            tx.send_modify(|n| *n += 1);
+        });
+        settle().await;
+        assert_eq!(*count.borrow(), 0);
+    }
+
+    #[test]
+    fn dedup_says_when_it_changed() {
+        let mut sent = Dedup::default();
+        assert!(sent.changed(&1), "the first is news");
+        assert!(!sent.changed(&1));
+        assert!(sent.changed(&2));
+        assert!(sent.changed(&1));
+    }
+}
+
+/// For the tests of what sources do: a dormant context (its pollers don't start, so nothing goes
+/// near a real bus) and a way to read what it reported.
+#[cfg(test)]
+pub(crate) mod testing {
+    use super::*;
+    use std::sync::mpsc::Receiver;
+
+    pub fn ctx() -> (Ctx, Receiver<Event>) {
+        let (tx, rx) = EventSender::channel();
+        let ctx = Ctx::new(tx, tokio::runtime::Handle::current(), Compositor::Other);
+        (ctx.live_if(false), rx)
+    }
+
+    /// Everything reported so far.
+    pub fn reported(rx: Receiver<Event>) -> Vec<Event> {
+        rx.try_iter().collect()
+    }
+
+    /// Lets spawned work (`act`, say) finish, as far as it can without a clock.
+    pub async fn settle() {
+        for _ in 0..32 {
+            tokio::task::yield_now().await;
+        }
+    }
 }

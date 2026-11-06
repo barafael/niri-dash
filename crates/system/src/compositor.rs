@@ -112,15 +112,19 @@ pub fn switch_layout(ctx: &Ctx, to: keyboard::Switch) {
 // Focusing and closing on KWin goes through the Wayland thread, which holds its window list: the
 // system's window actor sends those commands there instead of calling these.
 pub fn focus_window(ctx: &Ctx, id: u64) {
-    if ctx.compositor() == Compositor::Niri {
-        niri::focus(ctx, id);
+    match ctx.compositor() {
+        Compositor::Niri => niri::focus(ctx, id),
+        Compositor::Kwin => kde::focus_window(ctx, id),
+        Compositor::Other => {}
     }
 }
 
 /// Focus the window of process `pid`, if it has one.
 pub fn focus_pid(ctx: &Ctx, pid: i32) {
-    if ctx.compositor() == Compositor::Niri {
-        niri::focus_pid(ctx, pid);
+    match ctx.compositor() {
+        Compositor::Niri => niri::focus_pid(ctx, pid),
+        Compositor::Kwin => kde::focus_pid(ctx, pid),
+        Compositor::Other => {}
     }
 }
 
@@ -137,19 +141,42 @@ pub fn stop_cast(ctx: &Ctx, session_id: u64) {
 }
 
 /// Every window by the pid of its process: (window id, title). Empty where windows aren't known.
-/// Blocks (niri's socket is synchronous).
-pub fn windows_by_pid(compositor: Compositor) -> HashMap<i32, (u64, String)> {
-    match compositor {
-        Compositor::Niri => {}
-        Compositor::Kwin => return crate::wayland::windows_by_pid(),
-        Compositor::Other => return HashMap::new(),
-    }
-    match niri::request(niri_ipc::Request::Windows) {
-        Ok(niri_ipc::Response::Windows(ws)) => ws
-            .into_iter()
-            .filter_map(|w| Some((w.pid?, (w.id, w.title.unwrap_or_default()))))
-            .collect(),
-        _ => HashMap::new(),
+pub async fn windows_by_pid(ctx: &Ctx) -> HashMap<i32, (u64, String)> {
+    match ctx.compositor() {
+        Compositor::Niri => {
+            tokio::task::spawn_blocking(|| match niri::request(niri_ipc::Request::Windows) {
+                Ok(niri_ipc::Response::Windows(ws)) => ws
+                    .into_iter()
+                    .filter_map(|w| Some((w.pid?, (w.id, w.title.unwrap_or_default()))))
+                    .collect(),
+                _ => HashMap::new(),
+            })
+            .await
+            .unwrap_or_default()
+        }
+        Compositor::Kwin => {
+            // The window list KWin gave us through Wayland, where it did (see
+            // `niri-dash desktop-entries`); otherwise ask KWin through a script. Either way no
+            // titles: a Konsole window's is the title of its current tab, and the sessions in its
+            // other tabs would all go by it.
+            if let Some(listed) = ctx.kwin_windows() {
+                return listed
+                    .into_iter()
+                    .map(|(pid, (id, _))| (pid, (id, String::new())))
+                    .collect();
+            }
+            match kde::windows_by_pid(ctx).await {
+                Ok(windows) => windows
+                    .into_iter()
+                    .map(|(pid, id)| (pid, (id, String::new())))
+                    .collect(),
+                Err(e) => {
+                    log::warn!("KWin's windows: {e}");
+                    HashMap::new()
+                }
+            }
+        }
+        Compositor::Other => HashMap::new(),
     }
 }
 

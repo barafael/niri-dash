@@ -1,14 +1,13 @@
 //! KDE Plasma's own services on the session bus, for what niri does over its IPC: keyboard layouts
-//! (KWin's `org.kde.keyboard`), the logout prompt, KWin's color picker and night light, and
-//! Plasma's on-screen messages.
+//! (KWin's `org.kde.keyboard`), the logout prompt, KWin's color picker and night light, its windows
+//! (through short-lived scripts), and Plasma's on-screen messages.
 
-use super::{Ctx, Dedup, Trigger, keyboard, prop};
+use super::{Ctx, Dedup, Mailbox, Trigger, keyboard, prop};
 pub use crate::night_light::NightLightState;
 use std::collections::HashMap;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
-use tokio::sync::watch;
+use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::{oneshot, watch};
 use zbus::zvariant::OwnedValue;
 
 /// zbus errors are boxed: a `zbus::Error` is large, and unboxed it would make every `Result`
@@ -20,6 +19,17 @@ pub enum Error {
     /// KWin turned the color picker down; KWin's message.
     #[error("KWin refused: {0}")]
     PickRefused(String),
+    /// Nowhere private to put a script for KWin to read.
+    #[error("no runtime or cache directory for a KWin script")]
+    NoScriptDir,
+    #[error("writing a KWin script: {0}")]
+    ScriptFile(std::io::Error),
+    #[error("KWin wouldn't load a script")]
+    ScriptNotLoaded,
+    #[error("no answer from a KWin script")]
+    ScriptSilent,
+    #[error("a KWin script answered {0:?}")]
+    ScriptAnswer(String),
 }
 
 impl From<zbus::Error> for Error {
@@ -104,10 +114,11 @@ pub fn start_keyboard(ctx: Ctx) {
         trigger.clone(),
     );
     let c = ctx.clone();
-    let sent = Arc::new(Dedup::default());
-    ctx.poll_events(trigger, Duration::from_secs(60), move || {
-        let (c, sent) = (c.clone(), sent.clone());
-        async move {
+    let mut ticks = ctx.ticks(trigger);
+    ctx.spawn(async move {
+        let mut sent = Dedup::default();
+        ticks.ready().await;
+        loop {
             let layouts = fetch_layouts(&c)
                 .await
                 .map_err(|e| log::debug!("keyboard layouts: {e}"))
@@ -115,6 +126,7 @@ pub fn start_keyboard(ctx: Ctx) {
             if sent.changed(&layouts) {
                 c.send(crate::keyboard::Event::Layouts(layouts));
             }
+            ticks.next(Duration::from_secs(60)).await;
         }
     });
 }
@@ -139,6 +151,171 @@ pub fn switch_layout(ctx: &Ctx, to: keyboard::Switch) {
             }
         };
         Ok::<_, Error>(())
+    });
+}
+
+// Windows.
+
+/// How long a script gets to answer: it only looks through KWin's windows.
+const SCRIPT_TIMEOUT: Duration = Duration::from_secs(2);
+const SCRIPTING: &str = "org.kde.kwin.Scripting";
+const REPORT_INTERFACE: &str = "org.niri_dash.KWinScript";
+
+/// Where a running script sends its answer.
+struct ScriptReport(Option<oneshot::Sender<String>>);
+
+#[zbus::interface(name = "org.niri_dash.KWinScript")]
+impl ScriptReport {
+    fn report(&mut self, answer: String) {
+        if let Some(tx) = self.0.take() {
+            let _ = tx.send(answer);
+        }
+    }
+}
+
+/// A script that runs `body` (a function body) and sends what it returns, as JSON, to `report`.
+fn script_source(me: &str, report: &str, body: &str) -> String {
+    format!(
+        "const answer = (function () {{ {body} }})();\n\
+         callDBus(\"{me}\", \"{report}\", \"{REPORT_INTERFACE}\", \"Report\", JSON.stringify(answer));\n"
+    )
+}
+
+/// KWin has no call for its windows, only scripts can get at them: run `body` in one, and return
+/// its answer. KWin reads the script from a file, so the file goes in the runtime directory, which
+/// only we can write to: anything that could put one there would be running code inside KWin.
+async fn run_script(conn: &zbus::Connection, body: &str) -> Result<String> {
+    // Only makes each script's name unique: no state anyone shares.
+    #[allow(clippy::disallowed_types)]
+    static RUNS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = RUNS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let name = format!("niri-dash-{}-{n}", std::process::id());
+    let file = dirs::runtime_dir()
+        .or_else(dirs::cache_dir)
+        .ok_or(Error::NoScriptDir)?
+        .join(format!("{name}.js"));
+    let report = format!("/org/niri_dash/KWinScript/{n}");
+    let me = conn
+        .unique_name()
+        .ok_or(Error::ScriptNotLoaded)?
+        .to_string();
+    let (tx, answer) = oneshot::channel();
+    conn.object_server()
+        .at(report.as_str(), ScriptReport(Some(tx)))
+        .await?;
+    std::fs::write(&file, script_source(&me, &report, body)).map_err(Error::ScriptFile)?;
+    let result = async {
+        let path = file.to_string_lossy();
+        let loaded = conn
+            .call_method(
+                Some(KWIN),
+                "/Scripting",
+                Some(SCRIPTING),
+                "loadScript",
+                &(path.as_ref(), name.as_str()),
+            )
+            .await?;
+        let (id,): (i32,) = loaded.body().deserialize()?;
+        if id < 0 {
+            return Err(Error::ScriptNotLoaded);
+        }
+        conn.call_method(
+            Some(KWIN),
+            format!("/Scripting/Script{id}").as_str(),
+            Some("org.kde.kwin.Script"),
+            "run",
+            &(),
+        )
+        .await?;
+        // Not before this: KWin reads the file some time after being told to run it.
+        tokio::time::timeout(SCRIPT_TIMEOUT, answer)
+            .await
+            .map_err(|_| Error::ScriptSilent)?
+            .map_err(|_| Error::ScriptSilent)
+    }
+    .await;
+    let _ = conn
+        .call_method(
+            Some(KWIN),
+            "/Scripting",
+            Some(SCRIPTING),
+            "unloadScript",
+            &(name.as_str(),),
+        )
+        .await;
+    let _ = std::fs::remove_file(&file);
+    let _ = conn
+        .object_server()
+        .remove::<ScriptReport, _>(report.as_str())
+        .await;
+    result
+}
+
+/// A window's id for the rest of the system, which counts windows in `u64`s: the first half of
+/// KWin's UUID, which is plenty to tell a desktop's windows apart. `window_key` finds it again.
+fn window_id(uuid: &str) -> Option<u64> {
+    let hex: String = uuid.chars().filter(char::is_ascii_hexdigit).collect();
+    u64::from_str_radix(hex.get(..16)?, 16).ok()
+}
+
+/// Script code for what `window_id` makes of window `w`, written out as `format!("{id:016x}")`.
+const WINDOW_KEY: &str =
+    r#"w.internalId.toString().replace(/[^0-9a-fA-F]/g, "").slice(0, 16).toLowerCase()"#;
+
+/// Every ordinary window (not a panel or a dialog's shadow) by the pid of its process. A process
+/// with several keeps one of them.
+async fn list_windows(conn: &zbus::Connection) -> Result<HashMap<i32, u64>> {
+    let answer = run_script(
+        conn,
+        "return workspace.windowList()\
+         .filter(w => w.normalWindow && w.pid > 0)\
+         .map(w => [w.pid, w.internalId.toString()]);",
+    )
+    .await?;
+    let windows: Vec<(i32, String)> =
+        serde_json::from_str(&answer).map_err(|_| Error::ScriptAnswer(answer.clone()))?;
+    Ok(windows
+        .into_iter()
+        .filter_map(|(pid, uuid)| Some((pid, window_id(&uuid)?)))
+        .collect())
+}
+
+pub async fn windows_by_pid(ctx: &Ctx) -> Result<HashMap<i32, u64>> {
+    list_windows(&ctx.bus(false).await?).await
+}
+
+/// Bring up the first window `pick` (script code about `w`) holds for: from another desktop, and
+/// out of being minimized, too. If there is none it has gone, and there is nothing to do.
+async fn activate(conn: &zbus::Connection, pick: &str) -> Result<()> {
+    run_script(
+        conn,
+        &format!(
+            "const found = workspace.windowList().find(w => {pick});\
+             if (found) {{ found.minimized = false; workspace.activeWindow = found; }}\
+             return found !== undefined;"
+        ),
+    )
+    .await
+    .map(|_| ())
+}
+
+async fn activate_window(conn: &zbus::Connection, id: u64) -> Result<()> {
+    activate(conn, &format!(r#"{WINDOW_KEY} === "{id:016x}""#)).await
+}
+
+pub fn focus_window(ctx: &Ctx, id: u64) {
+    let c = ctx.clone();
+    ctx.act("Focus window", async move {
+        activate_window(&c.bus(false).await?, id).await
+    });
+}
+
+/// Focus the window of process `pid`, if it has one.
+pub fn focus_pid(ctx: &Ctx, pid: i32) {
+    let c = ctx.clone();
+    ctx.act("Focus window", async move {
+        let conn = c.bus(false).await?;
+        activate(&conn, &format!("w.normalWindow && w.pid === {pid}")).await
     });
 }
 
@@ -238,17 +415,93 @@ struct Pause {
     cookie: u32,
 }
 
-#[derive(Clone)]
+/// KWin's night light properties, as read.
+type Props = HashMap<String, OwnedValue>;
+
+/// What the night light's tasks tell it.
+pub enum NightLightInner {
+    /// KWin's state, for the widget.
+    Read(Result<Props>),
+    /// Whether we hold a pause now.
+    Held(bool),
+    /// KWin's state, to decide what a command means.
+    Decide {
+        cmd: crate::night_light::Cmd,
+        announce: bool,
+        read: Result<Props>,
+    },
+}
+
+/// What a command comes to.
+#[derive(Debug, PartialEq)]
+struct Decision {
+    text: &'static str,
+    /// Something got in the way: it shows as a toast even if not announcing.
+    problem: bool,
+    /// Whether we should want KWin's night light paused; `None` leaves that as it is.
+    pause: Option<bool>,
+}
+
+/// On lets KWin's schedule run, off pauses it. The temperature is KWin's (System Settings), so a
+/// temperature only turns it on.
+fn decide(cmd: crate::night_light::Cmd, s: NightLightState) -> Decision {
+    use crate::night_light::Cmd;
+    let want_on = match cmd {
+        Cmd::Toggle => !s.on(),
+        Cmd::On | Cmd::Kelvin(_) => true,
+        Cmd::Off => false,
+    };
+    let problem = |text| Decision {
+        text,
+        problem: true,
+        pause: None,
+    };
+    if !s.available {
+        problem("KWin's night light isn't available")
+    } else if !s.enabled {
+        problem("Night light is turned off in System Settings")
+    } else if want_on && s.inhibited && !s.paused_by_us {
+        problem("Night light is paused by another program")
+    } else {
+        Decision {
+            text: match (want_on, cmd) {
+                (true, Cmd::Kelvin(_)) => "Night light on · Plasma sets its warmth",
+                (true, _) => "Night light on",
+                (false, _) => "Night light paused",
+            },
+            problem: false,
+            pause: Some(!want_on),
+        }
+    }
+}
+
+/// KWin's night light right now.
+async fn read_props(ctx: &Ctx) -> Result<Props> {
+    let (dest, path, iface) = NIGHT_LIGHT;
+    let conn = ctx.bus(false).await?;
+    let p = zbus::fdo::PropertiesProxy::builder(&conn)
+        .destination(dest)?
+        .path(path)?
+        .build()
+        .await?;
+    let iface = iface.try_into().map_err(zbus::Error::from)?;
+    Ok(p.get_all(iface).await.map_err(zbus::Error::from)?)
+}
+
+/// KWin's night light: the part of the night light actor that is only there on Plasma.
 pub struct NightLight {
     ctx: Ctx,
+    /// Where tasks send what they found.
+    found: UnboundedSender<NightLightInner>,
     /// Whether we want KWin's night light paused.
     pause: watch::Sender<bool>,
     /// Whether we hold a pause right now.
-    ours: Arc<AtomicBool>,
+    ours: bool,
+    sent: Dedup<NightLightState>,
 }
 
 impl NightLight {
-    pub fn start(ctx: Ctx) -> Self {
+    pub fn start(ctx: Ctx, mailbox: &mut Mailbox<NightLightInner>) -> Self {
         let trigger = Trigger::default();
         let (dest, path, _) = NIGHT_LIGHT;
         ctx.on_dbus_signals(
@@ -257,29 +510,26 @@ impl NightLight {
             Duration::from_millis(100),
             trigger.clone(),
         );
-        let ours = Arc::new(AtomicBool::new(false));
         let me = Self {
             ctx: ctx.clone(),
+            found: mailbox.sender(),
             pause: watch::Sender::new(false),
-            ours: ours.clone(),
+            ours: false,
+            sent: Default::default(),
         };
-        let m = me.clone();
-        let sent = Arc::new(Dedup::default());
-        ctx.poll_events(trigger.clone(), Duration::from_secs(60), move || {
-            let (m, sent) = (m.clone(), sent.clone());
-            async move {
-                let state = m.state().await.unwrap_or_else(|e| {
-                    log::debug!("KWin night light: {e}");
-                    NightLightState::default()
-                });
-                if sent.changed(&state) {
-                    m.ctx.send(crate::night_light::Event::Kwin(state));
-                }
+        let mut ticks = ctx.ticks(trigger.clone());
+        let (c, found) = (ctx.clone(), mailbox.sender());
+        mailbox.spawn(&ctx, async move {
+            ticks.ready().await;
+            loop {
+                let _ = found.send(NightLightInner::Read(read_props(&c).await));
+                ticks.next(Duration::from_secs(60)).await;
             }
         });
+        // Taking and letting go of the pause, for the latest wish, one at a time.
         let mut rx = me.pause.subscribe();
-        let c = ctx.clone();
-        ctx.spawn(async move {
+        let (c, found) = (ctx.clone(), mailbox.sender());
+        mailbox.spawn(&ctx, async move {
             let mut held: Option<Pause> = None;
             loop {
                 let want = *rx.borrow_and_update();
@@ -295,7 +545,8 @@ impl NightLight {
                     log::warn!("KWin night light: {e}");
                     c.toast(format!("Night light: {e}"));
                 }
-                ours.store(held.is_some(), Ordering::Relaxed);
+                // Before the fetch this sets off, so that fetch reads as ours.
+                let _ = found.send(NightLightInner::Held(held.is_some()));
                 trigger.fire();
                 if rx.changed().await.is_err() {
                     return;
@@ -305,63 +556,68 @@ impl NightLight {
         me
     }
 
-    /// KWin's night light right now.
-    async fn state(&self) -> Result<NightLightState> {
-        let (dest, path, iface) = NIGHT_LIGHT;
-        let conn = self.ctx.bus(false).await?;
-        let p = zbus::fdo::PropertiesProxy::builder(&conn)
-            .destination(dest)?
-            .path(path)?
-            .build()
-            .await?;
-        let iface = iface.try_into().map_err(zbus::Error::from)?;
-        let props = p.get_all(iface).await.map_err(zbus::Error::from)?;
-        // A pause asked for but not taken yet counts as ours.
-        let ours = self.ours.load(Ordering::Relaxed) || *self.pause.borrow();
-        Ok(night_light_state(&props, ours))
+    /// Carry out `niri-dash night-light …` or a click on the widget. With `announce`, the result
+    /// shows on screen; otherwise only problems do, as a toast.
+    pub fn apply(&self, cmd: crate::night_light::Cmd, announce: bool) {
+        let (c, found) = (self.ctx.clone(), self.found.clone());
+        self.ctx.spawn(async move {
+            let read = read_props(&c).await;
+            let _ = found.send(NightLightInner::Decide {
+                cmd,
+                announce,
+                read,
+            });
+        });
     }
 
-    /// Carry out `niri-dash night-light …` or a click on the widget: on lets KWin's schedule run,
-    /// off pauses it. The temperature is KWin's (System Settings), so a temperature only turns it
-    /// on. With `announce`, the result shows on screen; otherwise only problems do, as a toast.
-    pub fn apply(&self, cmd: crate::night_light::Cmd, announce: bool) {
-        use crate::night_light::Cmd;
-        let me = self.clone();
-        self.ctx.spawn(async move {
-            let s = match me.state().await {
-                Ok(s) => s,
-                Err(e) => {
-                    me.ctx.toast(format!("Night light: {e}"));
-                    return;
+    /// `props` as the widget should see them. A pause asked for but not taken yet counts as ours.
+    fn state(&self, props: &Props) -> NightLightState {
+        night_light_state(props, self.ours || *self.pause.borrow())
+    }
+
+    pub fn on_inner(&mut self, inner: NightLightInner) {
+        match inner {
+            NightLightInner::Held(held) => self.ours = held,
+            NightLightInner::Read(read) => {
+                let state = read.map_or_else(
+                    |e| {
+                        log::debug!("KWin night light: {e}");
+                        NightLightState::default()
+                    },
+                    |props| self.state(&props),
+                );
+                if self.sent.changed(&state) {
+                    self.ctx.send(crate::night_light::Event::Kwin(state));
                 }
-            };
-            let want_on = match cmd {
-                Cmd::Toggle => !s.on(),
-                Cmd::On | Cmd::Kelvin(_) => true,
-                Cmd::Off => false,
-            };
-            let (text, problem) = if !s.available {
-                ("KWin's night light isn't available", true)
-            } else if !s.enabled {
-                ("Night light is turned off in System Settings", true)
-            } else if want_on && s.inhibited && !s.paused_by_us {
-                ("Night light is paused by another program", true)
-            } else {
-                me.pause.send_replace(!want_on);
-                match (want_on, cmd) {
-                    (true, Cmd::Kelvin(_)) => ("Night light on · Plasma sets its warmth", false),
-                    (true, _) => ("Night light on", false),
-                    (false, _) => ("Night light paused", false),
-                }
-            };
-            if announce {
-                if let Err(e) = show_osd(&me.ctx, text, "weather-clear-night").await {
-                    log::debug!("plasma osd: {e}");
-                }
-            } else if problem {
-                me.ctx.toast(text);
             }
-        });
+            NightLightInner::Decide {
+                cmd,
+                announce,
+                read,
+            } => {
+                let props = match read {
+                    Ok(props) => props,
+                    Err(e) => {
+                        self.ctx.toast(format!("Night light: {e}"));
+                        return;
+                    }
+                };
+                let decision = decide(cmd, self.state(&props));
+                if let Some(pause) = decision.pause {
+                    self.pause.send_replace(pause);
+                }
+                if announce {
+                    let c = self.ctx.clone();
+                    self.ctx.spawn(async move {
+                        if let Err(e) = show_osd(&c, decision.text, "weather-clear-night").await {
+                            log::debug!("plasma osd: {e}");
+                        }
+                    });
+                } else if decision.problem {
+                    self.ctx.toast(decision.text);
+                }
+            }
+        }
     }
 }
 
@@ -389,6 +645,96 @@ async fn release_pause(p: Pause) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn window_ids_are_the_first_half_of_the_uuid() {
+        let uuid = "{0123abcd-4567-89ef-0011-223344556677}";
+        assert_eq!(window_id(uuid), Some(0x0123_abcd_4567_89ef));
+        assert_eq!(
+            format!("{:016x}", window_id(uuid).unwrap()),
+            "0123abcd456789ef"
+        );
+        // Leading zeros stay, as the script compares text.
+        assert_eq!(
+            format!(
+                "{:016x}",
+                window_id("{00000000-0000-00ab-0011-223344556677}").unwrap()
+            ),
+            "00000000000000ab"
+        );
+        assert_eq!(window_id("{0123}"), None);
+    }
+
+    /// Against a real KWin, whose focus it moves around: start a throwaway one with two windows
+    /// and run this in its D-Bus session, with NIRI_DASH_TEST_KWIN=1.
+    #[tokio::test]
+    #[ignore = "needs a KWin to change the focus of"]
+    async fn windows_in_a_real_kwin() {
+        assert!(
+            std::env::var_os("NIRI_DASH_TEST_KWIN").is_some(),
+            "this moves the focus around: set NIRI_DASH_TEST_KWIN=1 in a throwaway session"
+        );
+        let conn = zbus::Connection::session().await.unwrap();
+        let windows = list_windows(&conn).await.unwrap();
+        assert!(windows.len() >= 2, "windows: {windows:?}");
+        let active = async || {
+            let answer = run_script(
+                &conn,
+                &format!(
+                    "const w = workspace.activeWindow;\
+                     return w ? [{WINDOW_KEY}, w.minimized, w.desktops[0] === workspace.currentDesktop] : null;"
+                ),
+            )
+            .await
+            .unwrap();
+            serde_json::from_str::<Option<(String, bool, bool)>>(&answer).unwrap()
+        };
+        let ids: Vec<u64> = windows.values().copied().collect();
+        let (a, b) = (ids[0], ids[1]);
+        let key = |id: u64| format!("{id:016x}");
+        for id in [a, b, a] {
+            activate_window(&conn, id).await.unwrap();
+            assert_eq!(active().await, Some((key(id), false, true)));
+        }
+        // Out of being minimized.
+        run_script(
+            &conn,
+            &format!(
+                r#"workspace.windowList().find(w => {WINDOW_KEY} === "{}").minimized = true; return 1;"#,
+                key(b)
+            ),
+        )
+        .await
+        .unwrap();
+        activate_window(&conn, b).await.unwrap();
+        assert_eq!(active().await, Some((key(b), false, true)));
+        // From another desktop.
+        run_script(
+            &conn,
+            &format!(
+                r#"workspace.createDesktop(1, "other");
+                   const other = workspace.desktops[1];
+                   workspace.windowList().find(w => {WINDOW_KEY} === "{}").desktops = [other];
+                   workspace.currentDesktop = workspace.desktops[0];
+                   return 1;"#,
+                key(a)
+            ),
+        )
+        .await
+        .unwrap();
+        activate_window(&conn, a).await.unwrap();
+        assert_eq!(active().await, Some((key(a), false, true)));
+        // A window that has gone is nothing to do, and an answer still comes.
+        activate_window(&conn, 1).await.unwrap();
+        // Nothing left behind for KWin.
+        let left: Vec<_> = std::fs::read_dir(dirs::runtime_dir().unwrap())
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().starts_with("niri-dash-"))
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".js"))
+            .collect();
+        assert!(left.is_empty(), "left behind: {left:?}");
+    }
 
     #[test]
     fn plasma_layouts() {
@@ -422,5 +768,122 @@ mod tests {
         assert_eq!(s.temperature, 4200);
         props.insert("inhibited".into(), OwnedValue::from(true));
         assert!(!night_light_state(&props, true).on());
+    }
+
+    fn kwin(enabled: bool, inhibited: bool, paused_by_us: bool) -> NightLightState {
+        NightLightState {
+            available: true,
+            enabled,
+            inhibited,
+            paused_by_us,
+            temperature: 4200,
+        }
+    }
+
+    #[test]
+    fn what_commands_come_to() {
+        use crate::night_light::Cmd;
+        let on = kwin(true, false, false);
+        let paused = kwin(true, true, true);
+        // (command, state, resulting pause wish)
+        for (cmd, state, pause) in [
+            (Cmd::Toggle, on, true),
+            (Cmd::Off, on, true),
+            (Cmd::On, on, false),
+            (Cmd::Toggle, paused, false),
+            (Cmd::On, paused, false),
+            (Cmd::Kelvin(4000), paused, false),
+        ] {
+            let d = decide(cmd, state);
+            assert_eq!(d.pause, Some(pause), "{cmd:?} on {state:?}");
+            assert!(!d.problem);
+        }
+    }
+
+    #[test]
+    fn what_gets_in_the_way() {
+        use crate::night_light::Cmd;
+        let gone = NightLightState {
+            available: false,
+            ..kwin(true, false, false)
+        };
+        let off_in_settings = kwin(false, false, false);
+        let paused_by_another = kwin(true, true, false);
+        for (cmd, state) in [
+            (Cmd::On, gone),
+            (Cmd::Off, gone),
+            (Cmd::On, off_in_settings),
+            (Cmd::On, paused_by_another),
+            (Cmd::Toggle, paused_by_another),
+        ] {
+            let d = decide(cmd, state);
+            assert!(d.problem, "{cmd:?} on {state:?}");
+            assert_eq!(d.pause, None, "must leave the pause alone");
+        }
+        // Turning off what another program paused is no problem: we pause it too.
+        assert_eq!(decide(Cmd::Off, paused_by_another).pause, Some(true));
+    }
+
+    fn props(inhibited: bool) -> Props {
+        let mut props = HashMap::new();
+        for (k, v) in [
+            ("available", true),
+            ("enabled", true),
+            ("inhibited", inhibited),
+        ] {
+            props.insert(k.to_string(), OwnedValue::from(v));
+        }
+        props
+    }
+
+    fn night_light(ctx: Ctx) -> (NightLight, Mailbox<NightLightInner>) {
+        let mut mailbox = Mailbox::default();
+        (NightLight::start(ctx, &mut mailbox), mailbox)
+    }
+
+    /// The pause we hold shows as ours in what the widget gets, and a read that says the same again
+    /// isn't reported again.
+    #[tokio::test]
+    async fn a_pause_held_reads_as_ours() {
+        let (ctx, events) = crate::sources::testing::ctx();
+        let (mut me, _mailbox) = night_light(ctx);
+        me.on_inner(NightLightInner::Held(true));
+        me.on_inner(NightLightInner::Read(Ok(props(true))));
+        me.on_inner(NightLightInner::Read(Ok(props(true))));
+        let seen = crate::sources::testing::reported(events);
+        assert_eq!(seen.len(), 1);
+        let crate::Event::NightLight(crate::night_light::Event::Kwin(s)) = seen[0] else {
+            panic!("reported something else");
+        };
+        assert!(s.paused_by_us);
+    }
+
+    /// A pause asked for but not taken yet counts as ours: the switch doesn't flicker.
+    #[tokio::test]
+    async fn a_pause_asked_for_reads_as_ours() {
+        let (ctx, _events) = crate::sources::testing::ctx();
+        let (mut me, _mailbox) = night_light(ctx);
+        me.on_inner(NightLightInner::Decide {
+            cmd: crate::night_light::Cmd::Off,
+            announce: false,
+            read: Ok(props(false)),
+        });
+        assert!(*me.pause.borrow());
+        assert!(me.state(&props(true)).paused_by_us);
+    }
+
+    /// When we could not even read KWin's state, nothing changes and it says why.
+    #[tokio::test]
+    async fn a_read_that_failed_only_says_so() {
+        let (ctx, events) = crate::sources::testing::ctx();
+        let (mut me, _mailbox) = night_light(ctx);
+        me.on_inner(NightLightInner::Decide {
+            cmd: crate::night_light::Cmd::Off,
+            announce: true,
+            read: Err(zbus::Error::Failure("gone".into()).into()),
+        });
+        assert!(!*me.pause.borrow());
+        let seen = crate::sources::testing::reported(events);
+        assert!(matches!(&seen[..], [crate::Event::Toast(t)] if t.contains("gone")));
     }
 }

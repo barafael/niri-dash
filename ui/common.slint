@@ -57,6 +57,19 @@ export component TextButton inherits Rectangle {
     // Tight padding, for a row of choices that must fit in a narrow widget.
     in property <bool> compact;
     callback clicked();
+    // The keyboard cursor came here: its position in the window and height, for a list to scroll to.
+    callback revealed(length, length);
+    changed kfocus => {
+        if (self.kfocus) {
+            self.revealed(self.absolute-position.y, self.height);
+        }
+    }
+    // Made with the cursor already on it: a page opening.
+    init => {
+        if (self.kfocus) {
+            self.revealed(self.absolute-position.y, self.height);
+        }
+    }
     accessible-role: button;
     accessible-label: root.text;
     accessible-enabled: root.enabled;
@@ -102,6 +115,19 @@ export component Switch inherits Rectangle {
     in property <bool> enabled: true;
     in property <bool> kfocus;
     callback toggled();
+    // The keyboard cursor came here: its position in the window and height, for a list to scroll to.
+    callback revealed(length, length);
+    changed kfocus => {
+        if (self.kfocus) {
+            self.revealed(self.absolute-position.y, self.height);
+        }
+    }
+    // Made with the cursor already on it: a page opening.
+    init => {
+        if (self.kfocus) {
+            self.revealed(self.absolute-position.y, self.height);
+        }
+    }
     // Each use names the switch with `accessible-label`.
     accessible-role: switch;
     accessible-checkable: true;
@@ -617,6 +643,12 @@ export component Row inherits Rectangle {
             self.revealed(self.absolute-position.y, self.height);
         }
     }
+    // Made with the cursor already on it: a page opening.
+    init => {
+        if (self.kfocus || self.kfocus-part) {
+            self.revealed(self.absolute-position.y, self.height);
+        }
+    }
     // The list changed around it (a section appeared above): the cursor stays in sight.
     changed y => {
         if (self.kfocus || self.kfocus-part) {
@@ -775,10 +807,12 @@ export component NavScope inherits FocusScope {
     // Any other key: the event's text, the cursor. True if the widget took it.
     callback letter(string, int) -> bool;
     callback back() -> bool;
-    // A stop the cursor passes over (a section heading); up to four in a row are skipped.
-    callback skip(int) -> bool;
+    // A stop the cursor passes over (a section heading); up to 16 in a row are skipped.
+    pure callback skip(int) -> bool;
     // Sees every key first (while the widget shows a menu, say); true if it took it.
     callback filter(string) -> bool;
+    // Ctrl+C on the stop under the cursor; true if there was something to copy.
+    callback copy(int) -> bool;
     // The cursor shows only while the widget is entered.
     out property <bool> on: self.active && Nav.mode == NavMode.widget;
     focus-on-click: false;
@@ -807,16 +841,35 @@ export component NavScope inherits FocusScope {
             self.go(self.cursor, 1);
         }
     }
+    // The list changed under the cursor and put a stop it can't rest on there (a window moved to
+    // another workspace, and its heading is here now): on to the next one, or the one before.
+    property <bool> stranded: self.on && self.skip(self.cursor);
+    changed stranded => {
+        if (self.stranded) {
+            self.go(self.cursor, 1);
+        }
+        if (self.skip(self.cursor)) {
+            self.go(self.cursor, -1);
+        }
+    }
+    // The stop's parts changed under the cursor (a network came up, and its details button is now
+    // Disconnect): back to the stop itself, not onto something else.
+    changed subs => {
+        self.sub = 0;
+    }
     function fit(c: int) -> int {
         clamp(c, 0, max(0, self.count - 1))
     }
-    // Past a skipped stop, in direction d.
+    // Past a skipped stop, in direction d. (No loops in Slint, so a fixed number of steps.)
     function past(c: int, d: int) -> int {
         self.skip(c) ? self.fit(c + d) : c
     }
+    function past4(c: int, d: int) -> int {
+        self.past(self.past(self.past(self.past(c, d), d), d), d)
+    }
     // Moves to c, or on past skipped stops in direction d (staying put if all are skipped).
     function go(c: int, d: int) {
-        let n = self.past(self.past(self.past(self.past(self.fit(c), d), d), d), d);
+        let n = self.past4(self.past4(self.past4(self.past4(self.fit(c), d), d), d), d);
         if (!self.skip(n) && n != self.cursor) {
             self.cursor = n;
             self.sub = 0;
@@ -840,6 +893,10 @@ export component NavScope inherits FocusScope {
         if (!self.has-focus) {
             // Something inside (a text field) has the keyboard and passed this key on.
             return reject;
+        }
+        if ((e.text == "c" || e.text == "C") && e.modifiers.control && !e.modifiers.shift
+            && !e.modifiers.alt && !e.modifiers.meta) {
+            return self.copy(self.cursor) ? accept : reject;
         }
         if (e.modifiers.control || e.modifiers.alt || e.modifiers.meta) {
             return reject;

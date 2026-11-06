@@ -43,9 +43,11 @@ On KDE Plasma (6):
   Plasma keeps showing the notifications; the notification widget's bell and `niri-dash dnd`
   pause Plasma's pop-ups. Night light is KWin's: the switch and `niri-dash night-light` pause
   or resume its schedule while niri-dash runs; its times and warmth are set in System Settings.
-  Keyboard layouts, the color picker and Log out go through Plasma.
-  Not available on Plasma: the window list, focusing a Claude session's window, and noticing
-  screen sharing. `niri-dash window-rules` writes rules for niri only.";
+  Keyboard layouts, the color picker, Log out and going to a Claude session's window (and, in
+  Konsole, its tab) go through Plasma. The window list needs `niri-dash desktop-entries` run once
+  (KWin gives it only to programs whose desktop file asks), and then niri-dash restarted.
+  Not available on Plasma: noticing screen sharing. `niri-dash window-rules` writes rules for
+  niri only.";
 
 #[derive(Parser)]
 #[command(

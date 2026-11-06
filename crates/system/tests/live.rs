@@ -1202,7 +1202,7 @@ fn the_whole_system_under_strain() -> Result<(), String> {
         "Powered",
     )?;
     println!(
-        "    after 60 toggles each: Wi-Fi {}, Bluetooth {} (an even count; an odd end means two taps made one)",
+        "    after 60 toggles each: Wi-Fi {}, Bluetooth {} (a burst of taps counts as one, by design)",
         if truth_wifi { "on" } else { "off" },
         if truth_bluetooth { "on" } else { "off" },
     );
@@ -1263,9 +1263,9 @@ fn the_whole_system_under_strain() -> Result<(), String> {
 }
 
 /// Taps on a radio's switch in quick succession. What must hold: the dashboard shows the radio as
-/// it is. What it prints, and doesn't assert: where n taps leave the radio. Known: `Toggle` aims
-/// at the opposite of the last state it was *told*, so taps that come before that state changes
-/// all aim at the same target, and any number of quick taps does the work of one.
+/// it is. What it prints, and doesn't assert: where n taps leave the radio. By design, `Toggle` aims
+/// at the opposite of the last state it reported, so taps that come before that state changes
+/// all aim at the same target, and a burst of quick taps does the work of one.
 fn quick_taps_on_a_radio() -> Result<(), String> {
     let sys = System::start(&[Feed::Wifi, Feed::Bluetooth]);
     let world = Bus::system()?;

@@ -1,11 +1,11 @@
 //! Phones paired through KDE Connect (its daemon on the session bus): battery, ringing a lost
 //! phone, sending files to it.
 
-use super::{Ctx, Dedup, Trigger, prop, prop_str, signals_from};
+use super::{Ctx, Dedup, Mailbox, Trigger, prop, prop_str, signals_from};
+use crate::live::Stateful;
 pub use crate::phones::{Phone, State};
 use futures_util::StreamExt;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use zbus::Connection;
 use zbus::fdo::PropertiesProxy;
@@ -153,21 +153,22 @@ async fn pick_files(conn: &Connection, title: &str) -> Result<Vec<String>, zbus:
         .unwrap_or_default())
 }
 
-#[derive(Clone)]
 pub struct KdeConnect {
     ctx: Ctx,
-    last: Arc<Mutex<State>>,
-    sent: Arc<Dedup<State>>,
+    mailbox: Mailbox<State>,
+    /// What was found last, which the commands go by.
+    last: State,
+    sent: Dedup<State>,
 }
 
 impl KdeConnect {
     pub fn start(ctx: Ctx) -> Self {
-        let me = Self {
+        let mut me = Self {
             ctx: ctx.clone(),
+            mailbox: Default::default(),
             last: Default::default(),
             sent: Default::default(),
         };
-        let m = me.clone();
         let trigger = Trigger::default();
         ctx.on_dbus_signals(
             false,
@@ -175,39 +176,34 @@ impl KdeConnect {
             Duration::from_millis(500),
             trigger.clone(),
         );
-        ctx.poll_events(trigger, Duration::from_secs(60), move || {
-            let m = m.clone();
-            async move { m.refresh().await }
+        let mut ticks = ctx.ticks(trigger);
+        let (c, found) = (ctx.clone(), me.mailbox.sender());
+        me.mailbox.spawn(&ctx, async move {
+            ticks.ready().await;
+            loop {
+                let state = match async { fetch(&c.bus(false).await?).await }.await {
+                    Ok(phones) => State {
+                        available: true,
+                        phones,
+                    },
+                    Err(e) => {
+                        log::debug!("kdeconnect: {e}");
+                        State::default()
+                    }
+                };
+                let _ = found.send(state);
+                ticks.next(Duration::from_secs(60)).await;
+            }
         });
         me
     }
 
-    async fn refresh(&self) {
-        let state = match async { fetch(&self.ctx.bus(false).await?).await }.await {
-            Ok(phones) => State {
-                available: true,
-                phones,
-            },
-            Err(e) => {
-                log::debug!("kdeconnect: {e}");
-                State::default()
-            }
-        };
-        if let Ok(mut l) = self.last.lock() {
-            *l = state.clone();
-        }
-        if self.sent.changed(&state) {
-            self.ctx.send(crate::phones::Event::State(state));
-        }
-    }
-
     fn phone(&self, id: &str) -> Option<Phone> {
-        let last = self.last.lock().ok()?;
-        last.phones.iter().find(|p| p.id == id).cloned()
+        self.last.phones.iter().find(|p| p.id == id).cloned()
     }
 
     /// Make the phone ring, to find it.
-    pub fn ring(&self, id: String) {
+    fn ring(&self, id: String) {
         let ctx = self.ctx.clone();
         let phone = self.phone(&id);
         self.ctx.act("Ring", async move {
@@ -230,7 +226,7 @@ impl KdeConnect {
 
     /// Pick files with the desktop's file chooser and send them. (The dashboard hides itself
     /// first, as it would cover the dialog.)
-    pub fn send_files(&self, id: String) {
+    fn send_files(&self, id: String) {
         let ctx = self.ctx.clone();
         let phone = self.phone(&id);
         self.ctx.act("Send files", async move {
@@ -260,19 +256,90 @@ impl KdeConnect {
                 n => format!("{n} files"),
             };
             // The dashboard is hidden by now, so a toast wouldn't be seen.
-            super::osd::Osd::default().show(
+            super::osd::send(
                 &ctx,
-                &format!("Sending {what} to {}", phone.name),
-                "document-send",
+                format!("Sending {what} to {}", phone.name),
+                "document-send".to_string(),
             );
             Ok(())
         });
     }
 }
 
+impl Stateful for KdeConnect {
+    type Command = crate::phones::Command;
+    type Inner = State;
+
+    fn mailbox(&mut self) -> &mut Mailbox<State> {
+        &mut self.mailbox
+    }
+
+    fn on_command(&mut self, cmd: crate::phones::Command) {
+        match cmd {
+            crate::phones::Command::Ring(id) => self.ring(id),
+            crate::phones::Command::SendFiles(id) => self.send_files(id),
+        }
+    }
+
+    fn on_inner(&mut self, state: State) {
+        self.last = state.clone();
+        if self.sent.changed(&state) {
+            self.ctx.send(crate::phones::Event::State(state));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Event;
+    use crate::live::Actor;
+    use crate::sources::testing::{ctx, reported, settle};
+    use tokio::sync::mpsc::unbounded_channel;
+
+    fn with_phone() -> State {
+        State {
+            available: true,
+            phones: vec![Phone {
+                id: "p1".into(),
+                name: "Pixel".into(),
+                reachable: false,
+                ..Default::default()
+            }],
+        }
+    }
+
+    /// A state already on its way goes first, so a command queued after it knows the phone. The
+    /// phone is out of reach, so this doesn't get as far as a bus.
+    #[tokio::test]
+    async fn a_command_cant_overtake_what_was_found() {
+        let (ctx, events) = ctx();
+        let me = KdeConnect::start(ctx);
+        let (commands, inbox) = unbounded_channel();
+        let _ = commands.send(crate::phones::Command::Ring("p1".into()));
+        let _ = me.mailbox.sender().send(with_phone());
+        drop(commands);
+        me.event_loop(inbox).await;
+        settle().await;
+        let seen = reported(events);
+        assert!(matches!(seen[0], Event::Phones(_)));
+        assert!(
+            matches!(&seen[1], Event::Toast(t) if t.contains("Pixel")),
+            "should say the phone is out of reach"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unknown_phone_says_so() {
+        let (ctx, events) = ctx();
+        let me = KdeConnect::start(ctx);
+        let (commands, inbox) = unbounded_channel();
+        let _ = commands.send(crate::phones::Command::Ring("p1".into()));
+        drop(commands);
+        me.event_loop(inbox).await;
+        settle().await;
+        assert!(matches!(&reported(events)[..], [Event::Toast(_)]));
+    }
 
     #[test]
     fn status_line() {

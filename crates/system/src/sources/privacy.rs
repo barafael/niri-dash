@@ -4,7 +4,6 @@
 use super::{Ctx, Dedup, Trigger, pipewire};
 pub use crate::privacy::Usage;
 use std::collections::BTreeSet;
-use std::sync::Arc;
 use std::time::Duration;
 
 fn is_camera(n: &pipewire::Node) -> bool {
@@ -94,10 +93,11 @@ pub fn start(ctx: Ctx) {
         trigger.clone(),
     );
     let c = ctx.clone();
-    let sent = Arc::new(Dedup::default());
-    ctx.poll_events(trigger, Duration::from_secs(3), move || {
-        let (c, sent) = (c.clone(), sent.clone());
-        async move {
+    let mut ticks = ctx.ticks(trigger);
+    ctx.spawn(async move {
+        let mut sent = Dedup::default();
+        ticks.ready().await;
+        loop {
             let mut usage = match pipewire::dump().await {
                 Ok(g) => from_graph(&g),
                 Err(e) => {
@@ -116,6 +116,7 @@ pub fn start(ctx: Ctx) {
             if sent.changed(&usage) {
                 c.send(crate::privacy::Event::Usage(usage));
             }
+            ticks.next(Duration::from_secs(3)).await;
         }
     });
 }

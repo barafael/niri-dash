@@ -23,18 +23,9 @@ const DEMANDS_ATTENTION: u32 = 0x80;
 /// Left out of taskbars (docks, panels, the dashboard itself): left out of the list too.
 const SKIP_TASKBAR: u32 = 0x1000;
 
-/// Every listed window by its process: (window id, title). Kept for the Claude sessions, which
-/// find the terminal a session runs in by its process.
-static BY_PID: std::sync::Mutex<Option<HashMap<i32, (u64, String)>>> = std::sync::Mutex::new(None);
-
-/// The windows KWin listed last, by process id. Empty if it lists none (or not to us).
-pub fn by_pid() -> HashMap<i32, (u64, String)> {
-    BY_PID
-        .lock()
-        .ok()
-        .and_then(|m| m.clone())
-        .unwrap_or_default()
-}
+/// Every listed window by its process: (window id, title). `None` until KWin lists them to us
+/// (and for good if it never does, then the windows are asked for in another way).
+pub type ByPid = Option<HashMap<i32, (u64, String)>>;
 
 struct Window {
     id: u64,
@@ -52,6 +43,9 @@ pub struct Windows {
     manager: Option<OrgKdePlasmaWindowManagement>,
     /// In the order KWin announced them.
     list: Vec<Window>,
+    icons: icons::Icons,
+    /// Kept for the Claude sessions, which find the terminal a session runs in by its process.
+    by_pid: tokio::sync::watch::Sender<ByPid>,
     next_id: u64,
     sent: Option<State>,
 }
@@ -60,8 +54,9 @@ impl Windows {
     /// Bind the window management global, if KWin offers it to us. `kwin`: this is KWin at all
     /// (elsewhere it is not worth asking).
     pub fn bind(globals: &GlobalList, qh: &QueueHandle<Services>, kwin: bool) -> Self {
+        let mut me = Self::default();
         if !kwin {
-            return Self::default();
+            return me;
         }
         // 13 is the first version that names windows by uuid.
         let manager = globals
@@ -73,10 +68,17 @@ impl Windows {
                  desktop-entries` and restart niri-dash"
             );
         }
-        Self {
-            manager,
-            ..Default::default()
+        if manager.is_some() {
+            // Listed, even before the first window arrives.
+            me.by_pid.send_replace(Some(HashMap::new()));
         }
+        me.manager = manager;
+        me
+    }
+
+    /// Where the windows by process are read.
+    pub fn by_pid(&self) -> tokio::sync::watch::Receiver<ByPid> {
+        self.by_pid.subscribe()
     }
 
     pub fn available(&self) -> bool {
@@ -87,7 +89,7 @@ impl Windows {
         self.list.iter_mut().find(|w| w.id == id)
     }
 
-    fn rows(&self) -> State {
+    fn rows(&mut self) -> State {
         let mut rows = Vec::new();
         let mut focused_icon = None;
         for w in self
@@ -95,7 +97,9 @@ impl Windows {
             .iter()
             .filter(|w| w.ready && w.state & SKIP_TASKBAR == 0)
         {
-            let icon = icons::app_icon(&w.app_id)
+            let icon = self
+                .icons
+                .app_icon(&w.app_id)
                 .map(IconSrc::Path)
                 .unwrap_or(IconSrc::None);
             let active = w.state & ACTIVE != 0;
@@ -127,15 +131,13 @@ impl Windows {
             return;
         }
         let state = self.rows();
-        if let Ok(mut by_pid) = BY_PID.lock() {
-            *by_pid = Some(
-                self.list
-                    .iter()
-                    .filter(|w| w.ready && w.pid != 0)
-                    .map(|w| (w.pid as i32, (w.id, w.title.clone())))
-                    .collect(),
-            );
-        }
+        self.by_pid.send_replace(Some(
+            self.list
+                .iter()
+                .filter(|w| w.ready && w.pid != 0)
+                .map(|w| (w.pid as i32, (w.id, w.title.clone())))
+                .collect(),
+        ));
         if self.sent.as_ref() != Some(&state) {
             self.sent = Some(state.clone());
             let _ = events.send(Event::State(state).into());
@@ -168,6 +170,8 @@ impl Windows {
                     w.proxy.close();
                 }
             }
+            // The terminal's, not the window manager's.
+            Command::ShowTab(_) => {}
         }
         self.publish(events);
     }

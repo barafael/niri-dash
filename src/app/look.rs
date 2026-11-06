@@ -202,13 +202,13 @@ impl App {
     /// the current look over a third of a second (scaled by the new style's motion).
     pub(super) fn apply_look(&self, animate: bool) {
         let (target, problems) = self.current_look();
-        if let Ok(mut w) = self.watched.lock() {
+        {
             let l = self.layout.borrow();
-            *w = vec![
+            let _ = self.watched.send(vec![
                 Layout::path(),
                 theme::colorscheme_path(&l.colorscheme),
                 theme::style_path(&l.style),
-            ];
+            ]);
         }
         self.show_look(target, &problems, animate);
     }

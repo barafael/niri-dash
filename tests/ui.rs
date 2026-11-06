@@ -6,7 +6,10 @@
 
 use niri_dash::testing::{Element, Harness};
 use niri_dash::{Control, testing};
-use niri_dash_system::{Demo, bluetooth, brightness, clipboard, color, session, sleep, tray, wifi};
+use niri_dash_system::{
+    Demo, bluetooth, brightness, claude, clipboard, color, power, privacy, session, sleep, tray,
+    wifi, windows,
+};
 use slint::{ComponentHandle, Model};
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
@@ -612,6 +615,572 @@ fn sleep_timer_fires() {
     }
 }
 
+
+/// What a frame would show: laid out, and what that sets off (see `cursor_stays_in_sight…`).
+fn shown(h: &mut Harness) {
+    for _ in 0..2 {
+        h.render();
+        h.settle(5);
+    }
+}
+
+/// What a screen reader says now; the check's complaint fails the test.
+fn said(h: &mut Harness) -> String {
+    shown(h);
+    h.spoken()
+        .expect("a cursor that adds up")
+        .unwrap_or_default()
+}
+
+/// A network dropping off while the cursor is on its details button leaves the cursor on its row.
+fn sub_part_gone_goes_back_to_the_row() {
+    let mut h = dashboard();
+    let mut state = Demo::new().wifi;
+    h.send(wifi::Event::State(Box::new(state.clone())));
+    enter(&mut h, "Wi-Fi");
+    h.press("l");
+    h.press("l");
+    assert!(said(&mut h).contains("Details of Lighthouse"));
+    state.networks[0].active = false;
+    h.send(wifi::Event::State(Box::new(state)));
+    let now = said(&mut h);
+    assert!(now.starts_with("listitem \"Lighthouse\""), "on: {now}");
+}
+
+/// A network coming up while the cursor is on its details button must not turn that into
+/// Disconnect, under a key press meant for something else.
+fn sub_part_changing_meaning_goes_back_to_the_row() {
+    let mut h = dashboard();
+    let mut state = Demo::new().wifi;
+    state.networks[0].active = false;
+    h.send(wifi::Event::State(Box::new(state.clone())));
+    enter(&mut h, "Wi-Fi");
+    h.press("l");
+    assert!(said(&mut h).contains("Details of Lighthouse"));
+    state.networks[0].active = true;
+    h.send(wifi::Event::State(Box::new(state)));
+    let now = said(&mut h);
+    assert!(now.starts_with("listitem \"Lighthouse\""), "on: {now}");
+}
+
+/// A tall Wi-Fi tile, so a form fits and only the stops are being tested.
+fn tall_wifi() -> Harness {
+    testing::Harness::new(
+        "grid columns=16 rows=9\nlayout {\n    wifi col=0 row=0 width=4 height=7\n}\n",
+    )
+}
+
+/// A new Enterprise network's prompt on an entered Wi-Fi widget.
+fn enterprise_prompt(h: &mut Harness) {
+    h.send(wifi::Event::State(Box::new(Demo::new().wifi)));
+    enter(h, "Wi-Fi");
+    let mut state = Demo::new().wifi;
+    let mut prompt = wifi::Prompt::default();
+    prompt.serial = 9;
+    prompt.ssid = "Campus".into();
+    prompt.kind = wifi::PromptKind::Enterprise;
+    prompt.new = true;
+    state.prompt = Some(prompt);
+    h.send(wifi::Event::State(Box::new(state)));
+    shown(h);
+}
+
+/// The hidden-network form, on the 802.1X choice with the server check, with a name typed.
+fn hidden_enterprise_form(h: &mut Harness) {
+    h.send(wifi::Event::State(Box::new(Demo::new().wifi)));
+    enter(h, "Wi-Fi");
+    walk_to(h, "Hidden network");
+    h.press("enter");
+    shown(h);
+    for c in "Attic".chars() {
+        h.press(&c.to_string());
+    }
+    h.press("esc");
+    h.press("j");
+    h.press("l");
+    shown(h);
+}
+
+/// Turning the server check off keeps the cursor on the switch: pressed again, it can't cancel.
+fn server_check_keeps_the_cursor_in_the_prompt() {
+    let mut h = tall_wifi();
+    enterprise_prompt(&mut h);
+    h.press("esc");
+    walk_to(&mut h, "Don't check");
+    h.press("enter");
+    let now = said(&mut h);
+    assert!(now.contains("Don't check"), "on: {now}");
+    h.press("enter");
+    assert!(
+        !matches!(h.inbox.wifi.try_recv(), Ok(wifi::Command::CancelPrompt)),
+        "cancelled the prompt"
+    );
+}
+
+/// Turning the server check off keeps the cursor on the switch: pressed again, it can't join a
+/// network with the check off.
+fn server_check_keeps_the_cursor_in_the_form() {
+    let mut h = tall_wifi();
+    hidden_enterprise_form(&mut h);
+    walk_to(&mut h, "Don't check");
+    h.press("enter");
+    let now = said(&mut h);
+    assert!(now.contains("Don't check"), "on: {now}");
+    h.press("enter");
+    assert!(
+        !matches!(
+            h.inbox.wifi.try_recv(),
+            Ok(wifi::Command::JoinHidden { .. })
+        ),
+        "joined with the check off"
+    );
+}
+
+/// The cursor says the field the keys go to: from the start, and after Tab.
+fn cursor_follows_the_text_field() {
+    let mut h = tall_wifi();
+    enterprise_prompt(&mut h);
+    let now = said(&mut h);
+    assert!(now.contains("User name"), "typing into the name, on: {now}");
+    h.press("tab");
+    let now = said(&mut h);
+    assert!(now.contains("Password"), "typing the password, on: {now}");
+}
+
+/// A window moving to another workspace can put a heading where the cursor is.
+fn cursor_leaves_a_heading_that_moved_under_it() {
+    let mut h = testing::Harness::new("layout {\n    windows col=0 row=0 width=4 height=4\n}\n");
+    let mut state = Demo::new().windows;
+    h.send(windows::Event::State(state.clone()));
+    enter(&mut h, "Windows");
+    h.press("j");
+    assert!(said(&mut h).contains("Mozilla Firefox"));
+    state.rows.swap(2, 3);
+    h.send(windows::Event::State(state));
+    let now = said(&mut h);
+    assert!(now.starts_with("listitem"), "on: {now}");
+}
+
+/// `j` gets past however many stops in a row can't be stopped at.
+fn cursor_crosses_many_skipped_stops() {
+    let mut h =
+        testing::Harness::new("layout {\n    removable-drives col=0 row=0 width=4 height=7\n}\n");
+    let mut state = Demo::new().drives;
+    state.drives.truncate(1);
+    // Locked volumes can't be stopped at; only the first and the last are open.
+    state.drives[0].volumes = (0..8)
+        .map(|i| niri_dash_system::drives::Volume {
+            path: format!("/v{i}"),
+            name: format!("Volume {i}"),
+            locked: i != 0 && i != 7,
+            ..Default::default()
+        })
+        .collect();
+    h.send(niri_dash_system::drives::Event::State(state));
+    enter(&mut h, "Removable drives");
+    assert!(said(&mut h).contains("Volume 0"));
+    h.press("j");
+    let now = said(&mut h);
+    assert!(now.contains("Volume 7"), "on: {now}");
+}
+
+/// Every stop from here to the last has to be there to read, and in sight.
+fn every_stop_in_sight(h: &mut Harness) {
+    let mut last = said(h);
+    for _ in 0..60 {
+        h.press("j");
+        let now = said(h);
+        if now == last {
+            return;
+        }
+        last = now;
+    }
+    panic!("never reached the last stop");
+}
+
+fn cast(i: u64) -> privacy::ScreenCast {
+    privacy::ScreenCast {
+        session_id: i,
+        target: format!("Output {i}"),
+        active: true,
+        pid: None,
+        process: Some(format!("App {i}")),
+        pw_node: None,
+    }
+}
+
+/// A short tile: every stop of the hidden-network form scrolls into sight.
+fn stops_in_sight_hidden_form() {
+    let mut h = testing::Harness::new("layout {\n    wifi col=0 row=0 width=3 height=2\n}\n");
+    hidden_enterprise_form(&mut h);
+    every_stop_in_sight(&mut h);
+}
+
+/// A short tile: the details page of a saved network.
+fn stops_in_sight_wifi_details() {
+    let mut h = testing::Harness::new("layout {\n    wifi col=0 row=0 width=3 height=2\n}\n");
+    let mut state = Demo::new().wifi;
+    h.send(wifi::Event::State(Box::new(state.clone())));
+    enter(&mut h, "Wi-Fi");
+    h.press("l");
+    h.press("l");
+    h.press("enter");
+    state.detail = Some(wifi::Detail {
+        key: state.networks[0].key(),
+        ssid: "Lighthouse".into(),
+        network: Some(state.networks[0].clone()),
+        profile: Some(wifi::Profile {
+            ssid: "Lighthouse".into(),
+            ..Default::default()
+        }),
+    });
+    h.send(wifi::Event::State(Box::new(state)));
+    every_stop_in_sight(&mut h);
+}
+
+/// A short tile: the password and QR code appearing above Share push it down; it stays in sight.
+fn stops_in_sight_wifi_share() {
+    let mut h = testing::Harness::new("layout {\n    wifi col=0 row=0 width=3 height=2\n}\n");
+    let mut state = Demo::new().wifi;
+    h.send(wifi::Event::State(Box::new(state.clone())));
+    enter(&mut h, "Wi-Fi");
+    h.press("l");
+    h.press("l");
+    h.press("enter");
+    state.detail = Some(wifi::Detail {
+        key: state.networks[0].key(),
+        ssid: "Lighthouse".into(),
+        network: Some(state.networks[0].clone()),
+        profile: Some(wifi::Profile {
+            ssid: "Lighthouse".into(),
+            uuid: "u".into(),
+            ..Default::default()
+        }),
+    });
+    h.send(wifi::Event::State(Box::new(state.clone())));
+    for _ in 0..8 {
+        if said(&mut h).contains("Share network") {
+            break;
+        }
+        h.press("j");
+    }
+    assert!(said(&mut h).contains("Share network"));
+    state.secret = Some(wifi::Secret {
+        uuid: "u".into(),
+        password: "hunter2".into(),
+        qr: niri_dash_system::IconSrc::None,
+    });
+    h.send(wifi::Event::State(Box::new(state)));
+    let now = said(&mut h);
+    assert!(now.contains("Hide password"), "on: {now}");
+}
+
+/// A short tile: Bluetooth's details page.
+fn stops_in_sight_bluetooth_details() {
+    let mut h = testing::Harness::new("layout {\n    bluetooth col=0 row=0 width=3 height=2\n}\n");
+    let mut state = Demo::new().bluetooth;
+    h.send(bluetooth::Event::State(Box::new(state.clone())));
+    enter(&mut h, "Bluetooth");
+    h.press("l");
+    h.press("enter");
+    state.detail = Some(state.devices[0].clone());
+    h.send(bluetooth::Event::State(Box::new(state)));
+    every_stop_in_sight(&mut h);
+}
+
+/// A short tile: many screen shares, and the Stop button of each comes into sight.
+fn stops_in_sight_privacy() {
+    let mut h = testing::Harness::new("layout {\n    privacy col=0 row=0 width=3 height=2\n}\n");
+    h.send(privacy::Event::Casts((0..8).map(cast).collect()));
+    enter(&mut h, "Privacy");
+    every_stop_in_sight(&mut h);
+}
+
+/// Short tiles: lists that wrap their rows, or aren't rows at all.
+fn stops_in_sight_other_lists() {
+    let mut h = testing::Harness::new("layout {\n    windows col=0 row=0 width=3 height=2\n}\n");
+    let mut w = Demo::new().windows;
+    let row = w.rows[1].clone();
+    w.rows = (0..12)
+        .map(|i| windows::Row {
+            id: i,
+            title: format!("Window {i}"),
+            ..row.clone()
+        })
+        .collect();
+    h.send(windows::Event::State(w));
+    enter(&mut h, "Windows");
+    every_stop_in_sight(&mut h);
+
+    let mut h =
+        testing::Harness::new("layout {\n    claude-sessions col=0 row=0 width=3 height=2\n}\n");
+    let mut c = Demo::new().claude;
+    let session = c.sessions[0].clone();
+    c.sessions = (0..12)
+        .map(|i| niri_dash_system::claude::Session {
+            pid: i,
+            title: format!("Session {i}"),
+            window: Some(1),
+            ..session.clone()
+        })
+        .collect();
+    h.send(niri_dash_system::claude::Event::Sessions(c));
+    enter(&mut h, "Claude sessions");
+    every_stop_in_sight(&mut h);
+
+    let mut h =
+        testing::Harness::new("layout {\n    notifications col=0 row=0 width=3 height=2\n}\n");
+    let mut n = Demo::new().notifications;
+    let one = n.items[0].clone();
+    n.items = (0..10)
+        .map(|i| niri_dash_system::notifications::Notification {
+            id: i,
+            summary: format!("Note {i}"),
+            ..one.clone()
+        })
+        .collect();
+    h.send(niri_dash_system::notifications::Event::State(n));
+    enter(&mut h, "Notifications");
+    every_stop_in_sight(&mut h);
+}
+
+/// Only mic and camera apps: nothing to stop, so no stops; the list itself is what's read out.
+fn privacy_without_a_share_has_no_stops() {
+    let mut h = testing::Harness::new("layout {\n    privacy col=0 row=0 width=3 height=3\n}\n");
+    h.send(privacy::Event::Usage(privacy::Usage {
+        mic: vec!["Firefox".into()],
+        ..Default::default()
+    }));
+    enter(&mut h, "Privacy");
+    let now = said(&mut h);
+    assert!(now.starts_with("list \"Privacy\""), "on: {now}");
+}
+
+/// Five mic apps above a screen share: the cursor starts on its Stop button.
+fn privacy_stops_are_the_shares() {
+    let mut h = testing::Harness::new("layout {\n    privacy col=0 row=0 width=3 height=4\n}\n");
+    h.send(privacy::Event::Usage(privacy::Usage {
+        mic: (0..5).map(|i| format!("Mic {i}")).collect(),
+        ..Default::default()
+    }));
+    h.send(privacy::Event::Casts(vec![cast(1)]));
+    enter(&mut h, "Privacy");
+    let now = said(&mut h);
+    assert!(now.contains("Stop sharing with App 1"), "on: {now}");
+}
+
+/// No current profile: the cursor still shows on the choices, and Enter picks the one lit.
+fn battery_without_a_current_profile() {
+    let mut h = testing::Harness::new("layout {\n    battery col=0 row=0 width=4 height=3\n}\n");
+    h.send(power::Event::State(power::State {
+        profile: None,
+        ..Demo::new().power
+    }));
+    enter(&mut h, "Battery & power");
+    let now = said(&mut h);
+    assert!(now.contains("Saver"), "on: {now}");
+    h.press("enter");
+    assert!(matches!(
+        h.inbox.power.try_recv(),
+        Ok(power::Command::SetProfile(power::Profile::PowerSaver))
+    ));
+}
+
+/// Edit mode's sidebar has a cursor too, and what it is on can be read out.
+fn edit_mode_cursor_is_read_out() {
+    let mut h = dashboard();
+    h.press("ctrl+e");
+    h.press("j");
+    let now = said(&mut h);
+    assert!(!now.is_empty(), "nothing to say in the sidebar");
+}
+
+/// Shrinking a tile with the cursor on a row near the bottom keeps that row in sight.
+fn cursor_stays_in_sight_as_a_tile_shrinks() {
+    let mut h = testing::Harness::new("layout {\n    wifi col=0 row=0 width=3 height=3\n}\n");
+    h.send(wifi::Event::State(Box::new(Demo::new().wifi)));
+    enter(&mut h, "Wi-Fi");
+    walk_to(&mut h, "Hidden network");
+    assert!(said(&mut h).contains("Hidden network"));
+    let before = h.tiles()[0].h;
+    // Edit mode's keys size a picked widget, not an entered one; the tile is made smaller as a
+    // drag on its edge would.
+    let id = h.tiles()[0].id;
+    h.ui().invoke_resize_widget(id as i32, 0, 0, 3, 2);
+    h.settle(300);
+    assert!(h.tiles()[0].h < before, "the tile didn't shrink");
+    let now = said(&mut h);
+    assert!(now.contains("Hidden network"), "on: {now}");
+}
+
+/// A calendar, entered, with its cursor moved two days on from today; and where that is.
+fn calendar_with_a_day_picked() -> (Harness, String) {
+    let mut h = testing::Harness::new(
+        "grid columns=16 rows=9\nlayout {\n    calendar col=0 row=0 width=5 height=5\n}\n",
+    );
+    enter(&mut h, "Calendar");
+    h.press("l");
+    h.press("l");
+    let on = h
+        .spoken()
+        .expect("a cursor that adds up")
+        .expect("a day under the cursor");
+    (h, on)
+}
+
+/// The picked day stays picked, whatever else is pressed: only what moves it may move it.
+fn calendar_cursor_survives_other_keys() {
+    let (mut h, on) = calendar_with_a_day_picked();
+    let keys = [
+        "enter",
+        "space",
+        "tab",
+        "backtab",
+        "backspace",
+        "a",
+        "b",
+        "c",
+        "d",
+        "g",
+        "G",
+        "i",
+        "m",
+        "o",
+        "q",
+        "r",
+        // (`s` opens the widget's settings, from inside any widget.)
+        "u",
+        "v",
+        "w",
+        "x",
+        "y",
+        "z",
+        "1",
+        "ctrl+c",
+        "ctrl+a",
+        "alt+x",
+        "shift+tab",
+    ];
+    let lost: Vec<&str> = keys
+        .iter()
+        .copied()
+        .filter(|key| {
+            h.press(key);
+            let now = h.spoken().expect("a cursor that adds up");
+            let lost = now.as_deref() != Some(on.as_str());
+            if lost {
+                println!("  {key:?} took the cursor from {on:?} to {now:?}");
+                // Back where it was, for the next key.
+                h.press("t");
+                h.press("l");
+                h.press("l");
+            }
+            lost
+        })
+        .collect();
+    assert!(lost.is_empty(), "lost the picked day on {lost:?}");
+}
+
+/// Blowing the widget up and leaving it for a moment don't lose the picked day either.
+fn calendar_cursor_survives_expanding_and_leaving() {
+    let (mut h, on) = calendar_with_a_day_picked();
+    h.press("e");
+    assert_eq!(h.spoken().expect("a cursor").as_deref(), Some(on.as_str()));
+    h.press("e");
+    assert_eq!(h.spoken().expect("a cursor").as_deref(), Some(on.as_str()));
+    h.press("esc");
+    enter(&mut h, "Calendar");
+    assert_eq!(h.spoken().expect("a cursor").as_deref(), Some(on.as_str()));
+}
+
+/// Today is still one key away.
+fn calendar_cursor_goes_home_on_t() {
+    let (mut h, on) = calendar_with_a_day_picked();
+    h.press("t");
+    assert_ne!(h.spoken().expect("a cursor").as_deref(), Some(on.as_str()));
+}
+
+/// Ctrl+C copies the day under the cursor as a date, and leaves it there.
+fn calendar_copies_the_picked_day() {
+    let (mut h, on) = calendar_with_a_day_picked();
+    while h.inbox.clipboard.try_recv().is_ok() {}
+    h.press("ctrl+c");
+    let picked = chrono::Local::now().date_naive() + chrono::Days::new(2);
+    let Ok(clipboard::Command::Set(clip)) = h.inbox.clipboard.try_recv() else {
+        panic!("nothing copied");
+    };
+    assert_eq!(
+        String::from_utf8_lossy(&clip.data),
+        picked.format("%Y-%m-%d").to_string()
+    );
+    assert_eq!(h.spoken().expect("a cursor").as_deref(), Some(on.as_str()));
+}
+
+/// The Claude sessions, entered, the first `with_window` of them with a window to go to.
+fn claude_sessions(with_window: usize) -> Harness {
+    let mut h = testing::Harness::new(
+        "grid columns=16 rows=9\nlayout {\n    claude-sessions col=0 row=0 width=5 height=4\n}\n",
+    );
+    let mut state = Demo::new().claude;
+    for (i, s) in state.sessions.iter_mut().enumerate() {
+        if i >= with_window {
+            s.window = None;
+        }
+    }
+    h.send(claude::Event::Sessions(state));
+    enter(&mut h, "Claude sessions");
+    h
+}
+
+/// j and k walk the list, whether or not a session has a window to go to.
+fn claude_sessions_walk() {
+    for with_window in [0, 1, 2] {
+        let mut h = claude_sessions(with_window);
+        let said = |h: &Harness| {
+            h.spoken()
+                .expect("a cursor that adds up")
+                .unwrap_or_default()
+        };
+        assert!(
+            said(&h).contains("Split off"),
+            "{with_window} with a window, starts on {:?}",
+            said(&h)
+        );
+        h.press("j");
+        assert!(
+            said(&h).contains("Keyboard navigation"),
+            "{with_window} with a window, j went to {:?}",
+            said(&h)
+        );
+        h.press("k");
+        assert!(
+            said(&h).contains("Split off"),
+            "{with_window} with a window, k went to {:?}",
+            said(&h)
+        );
+    }
+}
+
+/// Enter goes to a session's window; one without stays put rather than hiding the dashboard.
+fn claude_session_enter() {
+    let mut h = claude_sessions(1);
+    h.press("j");
+    h.press("enter");
+    assert!(h.inbox.windows.try_recv().is_err(), "focused nothing");
+    assert_eq!(h.controls(), [], "hid the dashboard for nothing");
+    h.press("k");
+    h.press("enter");
+    assert!(matches!(
+        h.inbox.windows.try_recv(),
+        Ok(windows::Command::ShowTab(4101))
+    ));
+    assert!(matches!(
+        h.inbox.windows.try_recv(),
+        Ok(windows::Command::Focus(4101))
+    ));
+    assert_eq!(h.controls(), [Control::Hide]);
+}
+
 fn main() {
     // The dashboard's config, state and notes go somewhere disposable; dates in a fixed locale.
     let dir = std::env::temp_dir().join(format!("niri-dash-ui-{}", std::process::id()));
@@ -659,6 +1228,57 @@ fn main() {
             cursor_stays_in_sight_as_a_list_grows,
         ),
         (
+            "sub_part_gone_goes_back_to_the_row",
+            sub_part_gone_goes_back_to_the_row,
+        ),
+        (
+            "sub_part_changing_meaning_goes_back_to_the_row",
+            sub_part_changing_meaning_goes_back_to_the_row,
+        ),
+        (
+            "server_check_keeps_the_cursor_in_the_prompt",
+            server_check_keeps_the_cursor_in_the_prompt,
+        ),
+        (
+            "server_check_keeps_the_cursor_in_the_form",
+            server_check_keeps_the_cursor_in_the_form,
+        ),
+        (
+            "cursor_follows_the_text_field",
+            cursor_follows_the_text_field,
+        ),
+        (
+            "cursor_leaves_a_heading_that_moved_under_it",
+            cursor_leaves_a_heading_that_moved_under_it,
+        ),
+        (
+            "cursor_crosses_many_skipped_stops",
+            cursor_crosses_many_skipped_stops,
+        ),
+        ("stops_in_sight_hidden_form", stops_in_sight_hidden_form),
+        ("stops_in_sight_wifi_details", stops_in_sight_wifi_details),
+        ("stops_in_sight_wifi_share", stops_in_sight_wifi_share),
+        (
+            "stops_in_sight_bluetooth_details",
+            stops_in_sight_bluetooth_details,
+        ),
+        ("stops_in_sight_privacy", stops_in_sight_privacy),
+        ("stops_in_sight_other_lists", stops_in_sight_other_lists),
+        (
+            "privacy_without_a_share_has_no_stops",
+            privacy_without_a_share_has_no_stops,
+        ),
+        ("privacy_stops_are_the_shares", privacy_stops_are_the_shares),
+        (
+            "battery_without_a_current_profile",
+            battery_without_a_current_profile,
+        ),
+        ("edit_mode_cursor_is_read_out", edit_mode_cursor_is_read_out),
+        (
+            "cursor_stays_in_sight_as_a_tile_shrinks",
+            cursor_stays_in_sight_as_a_tile_shrinks,
+        ),
+        (
             "keyboard survives its field going away",
             keyboard_survives_its_field_going_away,
         ),
@@ -670,6 +1290,24 @@ fn main() {
             "pomodoro: follows its settings",
             pomodoro_follows_its_settings,
         ),
+        (
+            "calendar: the picked day survives other keys",
+            calendar_cursor_survives_other_keys,
+        ),
+        (
+            "calendar: the picked day survives expanding and leaving",
+            calendar_cursor_survives_expanding_and_leaving,
+        ),
+        (
+            "calendar: t goes back to today",
+            calendar_cursor_goes_home_on_t,
+        ),
+        (
+            "calendar: Ctrl+C copies the day",
+            calendar_copies_the_picked_day,
+        ),
+        ("Claude sessions: j and k walk", claude_sessions_walk),
+        ("Claude sessions: Enter", claude_session_enter),
     ];
     let mut failed = Vec::new();
     for (name, scenario) in scenarios {

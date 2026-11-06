@@ -1,13 +1,11 @@
 //! Running Claude Code sessions, from the files Claude Code keeps in `~/.claude/sessions/<pid>.json`,
-//! matched to their niri window by walking up the process tree.
+//! matched to their window by walking up the process tree.
 
 use super::{Ctx, Dedup, Trigger, strip_spinner};
-use crate::Compositor;
 pub use crate::claude::{Session, State, Status};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Deserialize)]
@@ -30,7 +28,7 @@ struct SessionFile {
     entrypoint: String,
 }
 
-fn proc_stat(pid: i32) -> Option<(i32, String)> {
+pub(super) fn proc_stat(pid: i32) -> Option<(i32, String)> {
     let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
     // The command name can contain spaces and parens; fields restart after the last ')'.
     let rest = &stat[stat.rfind(')')? + 2..];
@@ -69,12 +67,19 @@ fn sessions_dir() -> PathBuf {
         .join("sessions")
 }
 
-fn fetch(compositor: Compositor) -> State {
+/// Whether there can be sessions at all, before asking the compositor about windows for them.
+fn any_session_files() -> bool {
+    std::fs::read_dir(sessions_dir()).is_ok_and(|rd| {
+        rd.flatten()
+            .any(|e| e.path().extension().is_some_and(|x| x == "json"))
+    })
+}
+
+/// The sessions, given each window by the pid of its process: (window id, title).
+fn fetch(windows: &HashMap<i32, (u64, String)>) -> State {
     let Ok(rd) = std::fs::read_dir(sessions_dir()) else {
         return State::default();
     };
-    // pid -> (window id, title)
-    let windows: HashMap<i32, (u64, String)> = crate::compositor::windows_by_pid(compositor);
     let now_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
@@ -169,16 +174,22 @@ pub fn start(ctx: Ctx) {
     let trigger = Trigger::default();
     ctx.on_dir_changes(sessions_dir(), trigger.clone());
     // The fallback also keeps the "5 min" texts current.
-    let sent = Arc::new(Dedup::default());
-    ctx.poll_events(trigger, Duration::from_secs(30), move || {
-        let (c, sent) = (c.clone(), sent.clone());
-        async move {
-            let compositor = c.compositor();
-            if let Ok(state) = tokio::task::spawn_blocking(move || fetch(compositor)).await
+    let mut ticks = ctx.ticks(trigger);
+    ctx.spawn(async move {
+        let mut sent = Dedup::default();
+        ticks.ready().await;
+        loop {
+            let windows = if any_session_files() {
+                crate::compositor::windows_by_pid(&c).await
+            } else {
+                HashMap::new()
+            };
+            if let Ok(state) = tokio::task::spawn_blocking(move || fetch(&windows)).await
                 && sent.changed(&state)
             {
                 c.send(crate::claude::Event::Sessions(state));
             }
+            ticks.next(Duration::from_secs(30)).await;
         }
     });
 }

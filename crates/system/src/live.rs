@@ -2,15 +2,14 @@
 //! turns the applet's commands into what the sources do.
 
 use super::{
-    Capabilities, EventSender, Feed, Senders, Started, audio, bluetooth, brightness, clipboard,
-    color, drives, host, keyboard, mascot, media, night_light, notifications, phones, power,
-    privacy, session, sleep, tray, wayland, weather, wifi, windows,
+    Capabilities, EventSender, Feed, Senders, Started, audio, brightness, clipboard, color, host,
+    keyboard, mascot, night_light, power, privacy, session, sleep, tray, wayland, weather, windows,
 };
 use crate::compositor;
 use crate::sources::{
-    self, Ctx, audio::Audio, bluetooth::Bluetooth, brightness::Brightness, inhibit::Inhibit,
-    kdeconnect::KdeConnect, media::Media, notifications::Notifications, tray::Tray, udisks::Drives,
-    weather::Weather, wifi::Wifi,
+    self, Ctx, Mailbox, Next, audio::Audio, bluetooth::Bluetooth, brightness::Brightness,
+    inhibit::Inhibit, kdeconnect::KdeConnect, media::Media, notifications::Notifications,
+    tray::Tray, udisks::Drives, weather::Weather, wifi::Wifi,
 };
 use smithay_client_toolkit::reexports::calloop::channel::Sender;
 use smithay_client_toolkit::reexports::client::Connection;
@@ -63,6 +62,10 @@ pub fn live(events: EventSender, opts: Options) -> std::io::Result<Started> {
             );
             // KWin's window list is there only if it let us bind it.
             caps.windows |= wayland.as_ref().is_some_and(|w| w.has_windows);
+            let ctx = match wayland.as_ref().filter(|w| w.has_windows) {
+                Some(w) => ctx.with_kwin_windows(w.windows_by_pid.clone()),
+                None => ctx,
+            };
             let (host_tx, host_rx) = unbounded_channel();
             let senders = {
                 let _in_runtime = rt.enter();
@@ -118,30 +121,32 @@ fn start(
         keyboard: run(KeyboardActor { ctx: base() }),
         privacy: run(PrivacyActor { ctx: base() }),
         color: run(ColorActor { ctx: base() }),
-        wifi: run(WifiActor(Wifi::start(feed(Feed::Wifi)))),
-        bluetooth: run(BluetoothActor(Bluetooth::start(feed(Feed::Bluetooth)))),
+        wifi: run(Wifi::start(feed(Feed::Wifi))),
+        bluetooth: run(Bluetooth::start(feed(Feed::Bluetooth))),
         audio: run(AudioActor(Audio::start(feed(Feed::Audio)))),
         brightness: run(BrightnessActor(Brightness::start(feed(Feed::Brightness)))),
-        notifications: run(NotificationsActor {
-            notifications: Notifications::start(feed(Feed::Notifications)),
-            ctx: base(),
-        }),
+        notifications: run(Notifications::start(feed(Feed::Notifications), base())),
         tray: run(TrayActor(Tray::start(feed(Feed::Tray)))),
-        media: run(MediaActor(Media::start(feed(Feed::Media)))),
+        media: run(Media::start(feed(Feed::Media))),
         power: run(PowerActor {
             inhibit: Inhibit::start(feed(Feed::Inhibit)),
             ctx: base(),
         }),
         session: run(SessionActor { ctx: base() }),
-        drives: run(DrivesActor(Drives::start(feed(Feed::Drives)))),
-        phones: run(PhonesActor(KdeConnect::start(feed(Feed::Phone)))),
+        drives: run(Drives::start(feed(Feed::Drives))),
+        phones: run(KdeConnect::start(feed(Feed::Phone))),
         weather: run(WeatherActor(Weather::start(
             feed(Feed::Weather),
             locale.chrono,
         ))),
-        night_light: run(NightLightActor {
-            kwin: kwin.then(|| sources::kde::NightLight::start(feed(Feed::NightLight))),
-            gamma: wayland.as_ref().map(|w| w.gamma.clone()),
+        night_light: run({
+            let mut mailbox = Mailbox::default();
+            NightLightActor {
+                kwin: kwin
+                    .then(|| sources::kde::NightLight::start(feed(Feed::NightLight), &mut mailbox)),
+                gamma: wayland.as_ref().map(|w| w.gamma.clone()),
+                mailbox,
+            }
         }),
         mascot: run(MascotActor { ctx: base() }),
         clipboard: run(ClipboardActor(wayland.map(|w| w.clipboard))),
@@ -154,7 +159,7 @@ fn start(
 
 /// An actor: its data, and what it does with each command. The loop ends when every sender is
 /// gone, and hands the actor back.
-trait Actor: Sized + Send + 'static {
+pub(crate) trait Actor: Sized + Send + 'static {
     type Command: Send + 'static;
 
     fn handle(&mut self, cmd: Self::Command);
@@ -169,6 +174,35 @@ trait Actor: Sized + Send + 'static {
             }
             self
         }
+    }
+}
+
+/// An actor with tasks of its own, which send it what they find. Commands and findings are handled
+/// one at a time, so its data needs no lock; its tasks end when its loop does.
+pub(crate) trait Stateful: Sized + Send + 'static {
+    type Command: Send + 'static;
+    type Inner: Send + 'static;
+
+    fn mailbox(&mut self) -> &mut Mailbox<Self::Inner>;
+    fn on_command(&mut self, cmd: Self::Command);
+    fn on_inner(&mut self, inner: Self::Inner);
+}
+
+impl<T: Stateful> Actor for T {
+    type Command = T::Command;
+
+    fn handle(&mut self, cmd: T::Command) {
+        self.on_command(cmd);
+    }
+
+    async fn event_loop(mut self, mut rx: UnboundedReceiver<T::Command>) -> Self {
+        while let Some(next) = self.mailbox().next(&mut rx).await {
+            match next {
+                Next::Inner(inner) => self.on_inner(inner),
+                Next::Command(cmd) => self.on_command(cmd),
+            }
+        }
+        self
     }
 }
 
@@ -228,6 +262,11 @@ impl Actor for WindowsActor {
 
     fn handle(&mut self, cmd: windows::Command) {
         use windows::Command::*;
+        // The terminal's tab is Konsole's to bring up, whoever lists the windows.
+        if let ShowTab(pid) = cmd {
+            sources::konsole::show_tab(&self.ctx, pid);
+            return;
+        }
         if let Some(kwin) = &self.kwin {
             let _ = kwin.send(cmd);
             return;
@@ -235,6 +274,7 @@ impl Actor for WindowsActor {
         match cmd {
             Focus(id) => compositor::focus_window(&self.ctx, id),
             FocusPid(pid) => compositor::focus_pid(&self.ctx, pid),
+            ShowTab(pid) => sources::konsole::show_tab(&self.ctx, pid),
             Close(id) => compositor::close_window(&self.ctx, id),
         }
     }
@@ -290,62 +330,6 @@ impl Actor for ColorActor {
     }
 }
 
-struct WifiActor(Wifi);
-
-impl Actor for WifiActor {
-    type Command = wifi::Command;
-
-    fn handle(&mut self, cmd: wifi::Command) {
-        use wifi::Command::*;
-        let w = &self.0;
-        match cmd {
-            Toggle => w.toggle(),
-            Rescan => w.rescan(),
-            Connect { key } => w.connect(key),
-            JoinHidden {
-                ssid,
-                security,
-                answer,
-            } => w.join_hidden(ssid, security, answer),
-            Answer { serial, answer } => w.answer(serial, answer),
-            CancelPrompt => w.cancel_prompt(),
-            Disconnect => w.disconnect(),
-            Forget { uuid } => w.forget(uuid),
-            SetAutoconnect { uuid, on } => w.set_autoconnect(uuid, on),
-            Select { key } => w.select(key),
-            Reveal { uuid } => w.reveal(uuid),
-            HideSecret => w.hide_secret(),
-            SignIn => w.sign_in(),
-        }
-    }
-}
-
-struct BluetoothActor(Bluetooth);
-
-impl Actor for BluetoothActor {
-    type Command = bluetooth::Command;
-
-    fn handle(&mut self, cmd: bluetooth::Command) {
-        use bluetooth::Command::*;
-        let b = &self.0;
-        match cmd {
-            Toggle => b.toggle(),
-            Scan(on) => b.scan(on),
-            Connect(addr) => b.connect(addr),
-            Disconnect(addr) => b.disconnect(addr),
-            SetTrusted(addr, on) => b.set_trusted(addr, on),
-            SetBlocked(addr, on) => b.set_blocked(addr, on),
-            Forget(addr) => b.forget(addr),
-            Rename(addr, name) => b.rename(addr, name),
-            Pair(addr) => b.pair(addr),
-            CancelPairing => b.cancel_pairing(),
-            Answer { serial, answer } => b.answer(serial, answer),
-            Decline => b.decline(),
-            Select(addr) => b.select(addr),
-        }
-    }
-}
-
 struct AudioActor(Audio);
 
 impl Actor for AudioActor {
@@ -377,28 +361,6 @@ impl Actor for BrightnessActor {
     }
 }
 
-struct NotificationsActor {
-    notifications: Notifications,
-    ctx: Ctx,
-}
-
-impl Actor for NotificationsActor {
-    type Command = notifications::Command;
-
-    fn handle(&mut self, cmd: notifications::Command) {
-        use notifications::Command::*;
-        let n = &self.notifications;
-        match cmd {
-            SetDnd(dnd) => n.set_dnd(dnd),
-            Dismiss(id) => n.dismiss(id),
-            Clear => n.clear(),
-            Invoke(id) => n.invoke(id),
-            AddLocal { app, summary, body } => n.add_local(&app, &summary, &body),
-            Osd { text, icon } => n.osd().show(&self.ctx, &text, &icon),
-        }
-    }
-}
-
 struct TrayActor(Tray);
 
 impl Actor for TrayActor {
@@ -410,21 +372,6 @@ impl Actor for TrayActor {
             Activate { address, x, y } => self.0.activate(address, x, y),
             OpenMenu { address, x, y } => self.0.open_menu(address, x, y),
             MenuItem { address, id } => self.0.menu_item(address, id),
-        }
-    }
-}
-
-struct MediaActor(Media);
-
-impl Actor for MediaActor {
-    type Command = media::Command;
-
-    fn handle(&mut self, cmd: media::Command) {
-        use media::Command::*;
-        match cmd {
-            PlayPause => self.0.play_pause(),
-            Next => self.0.next(),
-            Previous => self.0.previous(),
         }
     }
 }
@@ -465,36 +412,6 @@ impl Actor for SessionActor {
     }
 }
 
-struct DrivesActor(Drives);
-
-impl Actor for DrivesActor {
-    type Command = drives::Command;
-
-    fn handle(&mut self, cmd: drives::Command) {
-        use drives::Command::*;
-        match cmd {
-            Mount(block) => self.0.mount(block),
-            Unmount(block) => self.0.unmount(block),
-            Eject(drive) => self.0.eject(drive),
-            EjectAll => self.0.eject_all(),
-            Open(mount) => self.0.open(mount),
-        }
-    }
-}
-
-struct PhonesActor(KdeConnect);
-
-impl Actor for PhonesActor {
-    type Command = phones::Command;
-
-    fn handle(&mut self, cmd: phones::Command) {
-        match cmd {
-            phones::Command::Ring(id) => self.0.ring(id),
-            phones::Command::SendFiles(id) => self.0.send_files(id),
-        }
-    }
-}
-
 struct WeatherActor(Weather);
 
 impl Actor for WeatherActor {
@@ -511,12 +428,24 @@ struct NightLightActor {
     kwin: Option<sources::kde::NightLight>,
     /// The Wayland side's gamma tables; None without Wayland.
     gamma: Option<Sender<Option<u32>>>,
+    mailbox: Mailbox<sources::kde::NightLightInner>,
 }
 
-impl Actor for NightLightActor {
+impl Stateful for NightLightActor {
     type Command = night_light::Command;
+    type Inner = sources::kde::NightLightInner;
 
-    fn handle(&mut self, cmd: night_light::Command) {
+    fn mailbox(&mut self) -> &mut Mailbox<Self::Inner> {
+        &mut self.mailbox
+    }
+
+    fn on_inner(&mut self, inner: Self::Inner) {
+        if let Some(kwin) = &mut self.kwin {
+            kwin.on_inner(inner);
+        }
+    }
+
+    fn on_command(&mut self, cmd: night_light::Command) {
         match cmd {
             night_light::Command::Gamma(want) => {
                 if let Some(gamma) = &self.gamma {

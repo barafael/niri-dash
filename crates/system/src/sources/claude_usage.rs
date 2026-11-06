@@ -11,7 +11,6 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 const WINDOW: Span = Span::hours(5);
@@ -330,23 +329,32 @@ fn summarize(entries: &[Entry], plan: String, now: DateTime<Utc>) -> State {
 
 pub fn start(ctx: Ctx) {
     let home = dirs::home_dir().unwrap_or_default();
-    let scanner = Arc::new(Mutex::new(Scanner::default()));
     let c = ctx.clone();
-    let sent = Arc::new(Dedup::default());
-    ctx.poll(Duration::from_secs(30), move || {
-        let (c, home, scanner, sent) = (c.clone(), home.clone(), scanner.clone(), sent.clone());
-        async move {
-            let state = tokio::task::spawn_blocking(move || {
-                let mut s = scanner.lock().ok()?;
-                s.scan(&home.join(".claude/projects"));
-                Some(summarize(&s.entries, read_plan(&home), Utc::now()))
+    let mut ticks = ctx.ticks(Default::default());
+    ctx.spawn(async move {
+        let mut sent = Dedup::default();
+        let mut scanner = Scanner::default();
+        ticks.ready().await;
+        loop {
+            // Scanning reads files, so it goes off with the scanner and comes back with it.
+            let home = home.clone();
+            let scanned = tokio::task::spawn_blocking(move || {
+                scanner.scan(&home.join(".claude/projects"));
+                let state = summarize(&scanner.entries, read_plan(&home), Utc::now());
+                (scanner, state)
             })
             .await;
-            if let Ok(Some(state)) = state
-                && sent.changed(&state)
-            {
-                c.send(crate::claude::Event::Usage(Box::new(state)));
-            }
+            scanner = match scanned {
+                Ok((scanner, state)) => {
+                    if sent.changed(&state) {
+                        c.send(crate::claude::Event::Usage(Box::new(state)));
+                    }
+                    scanner
+                }
+                // It panicked, and the scanner went with it: start over.
+                Err(_) => Scanner::default(),
+            };
+            ticks.next(Duration::from_secs(30)).await;
         }
     });
 }

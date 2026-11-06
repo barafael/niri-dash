@@ -37,6 +37,11 @@ managers mark secret.
 Everything works from the keyboard. `f` labels every widget with the start of its name, and typing
 a label goes into that widget; `j`/`k`/`h`/`l` move inside it, `e` blows it up, `s` opens its
 settings, and Escape steps back. Ctrl+E opens edit mode.
+Lists have letters of their own: `d` closes a window or dismisses a notification, `r` rescans
+Wi-Fi, `t` turns it on and off, `m` mutes, `1`–`0` set a slider to 10–100 %, `x` ejects a drive, and
+so on. The calendar has a day cursor: `h`/`l` a day, `j`/`k` a week, `n`/`p` a month, `t` back to
+today, `Ctrl+C` copies the day as `YYYY-MM-DD`. Enter on a text field types into it; Escape gets you
+out again.
 
 ![Pressing f labels every widget](book/src/images/keys-labels.png)
 
@@ -77,7 +82,12 @@ Start `niri-dash` at login (System Settings → Autostart), and bind a key to `n
 (System Settings → Keyboard → Shortcuts → Add New → Command or Script). Some widgets don't work on
 Plasma: the manual lists which. Run `niri-dash desktop-entries` once for the window list.
 
-`niri-dash --help` lists the other commands.
+Plasma keeps showing notifications; the notification widget pauses its pop-ups, and the history
+there is a copy of what Plasma was sent since niri-dash started. Night light, keyboard layouts, the
+color picker, logging out and going to a Claude session's window go through Plasma; a session in
+Konsole gets its tab brought up too. Noticing screen sharing needs niri.
+
+`niri-dash --help` lists the other commands: `inhibit`, `dnd`, `night-light`, `say`, ….
 
 ## The web version
 
