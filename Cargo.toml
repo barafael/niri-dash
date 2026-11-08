@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2024"
 description = "A fullscreen widget dashboard for niri: clock, calendar, windows, wifi, bluetooth, power, tray and more, with a Plasma-style edit mode"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/barafael/niri-dash"
+readme = "README.md"
+keywords = ["niri", "wayland", "dashboard", "widgets", "slint"]
+categories = ["gui"]
 
 [workspace]
 members = [".", "crates/system", "xtask"]
@@ -23,7 +27,7 @@ wayland-protocols = { version = "0.32", features = ["client", "staging"] }
 
 [dependencies]
 # What the dashboard runs on: it sends this crate's commands and gets its events, nothing else.
-niri-dash-system = { path = "crates/system" }
+niri-dash-system = { path = "crates/system", version = "0.1.0" }
 log.workspace = true
 thiserror.workspace = true
 dirs.workspace = true

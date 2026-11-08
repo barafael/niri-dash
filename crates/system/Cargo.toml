@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2024"
 description = "The system niri-dash runs on: one actor per applet, behind command and event enums"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/barafael/niri-dash"
+keywords = ["niri", "wayland", "dbus", "system"]
+categories = ["os::linux-apis"]
 
 [dependencies]
 log.workspace = true
