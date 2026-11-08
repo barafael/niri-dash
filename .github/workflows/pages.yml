@@ -51,8 +51,13 @@ jobs:
             "https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK_VERSION}/mdbook-v${MDBOOK_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
             | tar -xz -C "$HOME/.cargo/bin"
 
+      # mdBook 0.5 takes --dest-dir relative to where it is run, not to the book (a relative path
+      # here once put the manual outside the checkout, and it was never deployed), so the path is
+      # spelled out, and a missing page fails the build.
       - name: Build the manual
-        run: mdbook build book --dest-dir ../dist/manual
+        run: |
+          mdbook build book --dest-dir "$GITHUB_WORKSPACE/dist/manual"
+          test -f dist/manual/index.html
 
       - uses: actions/upload-pages-artifact@v5
         with:
