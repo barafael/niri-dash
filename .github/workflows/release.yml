@@ -1,0 +1,58 @@
+# A tag like v1.0.0-beta.1 or v1.0.0 makes a GitHub release with a Linux binary. A tag with a `-`
+# in it is a pre-release. The tag has to be the version in Cargo.toml, with a `v` in front.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: ci
+    # The oldest runner image there is: a binary built on a newer one needs a newer glibc.
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: The tag is the crate's version
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "niri-dash") | .version')
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "tag $GITHUB_REF_NAME, but Cargo.toml says $version" >&2
+            exit 1
+          fi
+
+      - name: Install system libraries
+        run: sudo apt-get update && sudo apt-get install --yes pkg-config libfontconfig1-dev libxkbcommon-dev libwayland-dev
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo build --release --locked
+
+      - name: Package
+        run: |
+          name="niri-dash-$GITHUB_REF_NAME-x86_64-linux"
+          mkdir "$name"
+          cp target/release/niri-dash LICENSE-MIT LICENSE-APACHE README.md "$name/"
+          strip "$name/niri-dash"
+          tar -czf "$name.tar.gz" "$name"
+          sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
+          echo "ARCHIVE=$name.tar.gz" >> "$GITHUB_ENV"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          case "$GITHUB_REF_NAME" in *-*) pre=--prerelease ;; *) pre= ;; esac
+          gh release create "$GITHUB_REF_NAME" $pre --verify-tag --generate-notes \
+            --title "niri-dash ${GITHUB_REF_NAME#v}" \
+            "$ARCHIVE" "$ARCHIVE.sha256"

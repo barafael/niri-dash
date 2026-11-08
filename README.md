@@ -76,7 +76,7 @@ comments intact. Color schemes and styles are KDL files next to it; add your own
 |---|---|---|
 | niri | 26.04 | Built against `niri-ipc` 26.4. Other releases may work; the IPC is only versioned with niri itself. |
 | KDE Plasma | 6.8 | Plasma 6 only. Some widgets don't work there: see below. |
-| Rust | stable | Slint 1.18 needs Rust 1.92 or newer. CI builds with the latest stable. |
+| Rust | stable | 1.95 or newer (the `kdl` crate needs it). CI builds with the latest stable and with 1.95. |
 | Browser | any with WebGL 2 | For the web version only. |
 
 ## Install

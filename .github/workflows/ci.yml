@@ -1,4 +1,5 @@
-# Format, lints, tests, and both builds (desktop and browser) on every push and pull request.
+# Format, lints, tests, and both builds (desktop and browser) on every push and pull request. The
+# release workflow runs this one first.
 # The tests that run system code (atspi, orca, `live`) skip themselves here: they belong in the
 # test box (testbox/README.md).
 name: CI
@@ -8,16 +9,19 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
+  # What the desktop build links against: fontconfig, xkbcommon, Wayland and its EGL glue.
+  LIBS: pkg-config libfontconfig1-dev libxkbcommon-dev libwayland-dev
 
 jobs:
   fmt:
@@ -28,27 +32,40 @@ jobs:
       - run: rustup component add rustfmt
       - run: cargo fmt --all -- --check
 
-  desktop:
+  clippy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-
-      # What the desktop build links against (fontconfig, xkbcommon, Wayland and its EGL glue).
       - name: Install system libraries
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes pkg-config libfontconfig1-dev libxkbcommon-dev libwayland-dev
-
+        run: sudo apt-get update && sudo apt-get install --yes $LIBS
       - run: rustup component add clippy
       - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
-      - name: Clippy
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
-
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install system libraries
+        run: sudo apt-get update && sudo apt-get install --yes $LIBS
+      - uses: Swatinem/rust-cache@v2
       # Everything, headless. The tests that run system code (atspi, orca, live) skip themselves
       # outside the test box.
-      - name: Tests
-        run: cargo test --workspace --locked
+      - run: cargo test --workspace --locked
+
+  # The README and Cargo.toml say Rust 1.95 or newer (what the kdl crate needs). RUSTUP_TOOLCHAIN
+  # beats rust-toolchain.toml, which says stable.
+  msrv:
+    runs-on: ubuntu-latest
+    env:
+      RUSTUP_TOOLCHAIN: "1.95.0"
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install system libraries
+        run: sudo apt-get update && sudo apt-get install --yes $LIBS
+      - run: rustup toolchain install 1.95.0 --profile minimal
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace --locked
 
   web:
     runs-on: ubuntu-latest
@@ -64,6 +81,17 @@ jobs:
 
       - name: Check the browser build
         run: cargo check --target wasm32-unknown-unknown --lib --profile web --locked
+
+  # Packaging problems (missing metadata, files left out) show up here, not at the release. Only
+  # niri-dash-system: the dashboard itself can't be packaged until that one is on crates.io.
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install system libraries
+        run: sudo apt-get update && sudo apt-get install --yes $LIBS
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo publish --dry-run -p niri-dash-system --locked
 
   manual:
     runs-on: ubuntu-latest
