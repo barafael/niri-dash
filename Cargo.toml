@@ -8,6 +8,23 @@ repository = "https://github.com/barafael/niri-dash"
 readme = "README.md"
 keywords = ["niri", "wayland", "dashboard", "widgets", "slint"]
 categories = ["gui"]
+# The manual's pictures and tooling, the web build, the test box and the patched renderer stay out
+# of the package. The manual's text stays: a test checks the widget tables in it.
+exclude = [
+    "/.cargo",
+    "/.github",
+    "/book/css",
+    "/book/mermaid*",
+    "/book/screenshots.sh",
+    "/book/src/images",
+    "/dist",
+    "/docs",
+    "/patches",
+    "/testbox",
+    "/Trunk.toml",
+    "/web",
+    "/xtask",
+]
 
 [workspace]
 members = [".", "crates/system", "xtask"]
