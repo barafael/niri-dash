@@ -39,6 +39,12 @@ snap edit-arrange --edit --tab arrange
 snap widget-settings --edit --configure 0
 snap edit-arranged --edit --tab arrange --arrange
 
+# The same layout in other color schemes and styles (the README shows these).
+snap style-catppuccin-soft --colorscheme catppuccin-mocha --style soft
+snap style-gruvbox-sharp --colorscheme gruvbox-light --style sharp
+snap style-nord-compact --colorscheme nord --style compact
+snap style-rose-pine-dawn --colorscheme rose-pine-dawn --style default
+
 # The keyboard: `f` labels every widget; `f`, `c`, `a`, `e` goes into the calendar and expands it.
 snap keys-labels --events "key:f"
 snap keys-expanded --events "key:f;key:c;key:a;key:e"
