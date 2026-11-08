@@ -1,6 +1,6 @@
-# Format, lints, unit tests, and both builds (desktop and browser) on every push and pull request.
-# The integration tests under tests/ and the `live` system tests are not run here: the ones that
-# touch the system belong in the test box (testbox/README.md).
+# Format, lints, tests, and both builds (desktop and browser) on every push and pull request.
+# The tests that run system code (atspi, orca, `live`) skip themselves here: they belong in the
+# test box (testbox/README.md).
 name: CI
 
 on:
@@ -45,8 +45,10 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
-      - name: Unit tests
-        run: cargo test --workspace --lib --locked
+      # Everything, headless. The tests that run system code (atspi, orca, live) skip themselves
+      # outside the test box.
+      - name: Tests
+        run: cargo test --workspace --locked
 
   web:
     runs-on: ubuntu-latest
