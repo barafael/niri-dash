@@ -1,5 +1,11 @@
 # How Arrange chooses a layout
 
+> [!WARNING]
+> **Experimental.** Arrange, its algorithms and the `autolayout` line in `config.kdl` may change
+> or be removed in any release, before and after 1.0. A line you copied out of the Arrange tab
+> may need changing after an update; settings niri-dash no longer knows are reported as config
+> warnings.
+
 Placing widgets on a grid is a packing problem with taste. niri-dash has no single answer to it,
 so Arrange offers four, and a handful of numbers that say what a good layout is.
 

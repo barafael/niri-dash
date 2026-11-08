@@ -57,12 +57,27 @@ The pencil in the corner (or a right-click on the background) opens edit mode: d
 resize them from any edge, click one for its settings, and add new ones from the sidebar. The
 sidebar also sets the grid, the color scheme (gruvbox, catppuccin, nord, dracula, rose-pine, …) and
 the style: corners, spacing, fonts, animation speed, frosted glass. Its Arrange tab lays the
-widgets out by itself.
+widgets out by itself (experimental: its settings may change between releases).
 
 ![Edit mode, with the sidebar open on the Colors tab](book/src/images/edit-colors.png)
 
+| catppuccin-mocha, soft | gruvbox-light, sharp |
+|---|---|
+| ![Catppuccin Mocha with the soft style: round and roomy](book/src/images/style-catppuccin-soft.png) | ![Gruvbox Light with the sharp style: square corners](book/src/images/style-gruvbox-sharp.png) |
+| **nord, compact** | **rose-pine-dawn, default** |
+| ![Nord with the compact style: tighter spacing](book/src/images/style-nord-compact.png) | ![Rose Pine Dawn with the default style](book/src/images/style-rose-pine-dawn.png) |
+
 Everything is kept in `~/.config/niri-dash/config.kdl`, which edit mode writes back with your
 comments intact. Color schemes and styles are KDL files next to it; add your own.
+
+## Supported versions
+
+| | Tested with | Notes |
+|---|---|---|
+| niri | 26.04 | Built against `niri-ipc` 26.4. Other releases may work; the IPC is only versioned with niri itself. |
+| KDE Plasma | 6.8 | Plasma 6 only. Some widgets don't work there: see below. |
+| Rust | stable | Slint 1.18 needs Rust 1.92 or newer. CI builds with the latest stable. |
+| Browser | any with WebGL 2 | For the web version only. |
 
 ## Install
 

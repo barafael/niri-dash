@@ -96,6 +96,12 @@ Read at start. Any other value is warned about and treated as `"auto"`. The envi
 
 ## autolayout
 
+> [!WARNING]
+> **Experimental.** Arrange, its algorithms and the `autolayout` line in `config.kdl` may change
+> or be removed in any release, before and after 1.0. A line you copied out of the Arrange tab
+> may need changing after an update; settings niri-dash no longer knows are reported as config
+> warnings.
+
 ```kdl
 autolayout algo="guillotine" order="group" seed=3 restarts=16 shrink=2.0 grow=0.6
 ```

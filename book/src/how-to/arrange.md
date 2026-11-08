@@ -1,5 +1,11 @@
 # How to rearrange widgets automatically
 
+> [!WARNING]
+> **Experimental.** Arrange, its algorithms and the `autolayout` line in `config.kdl` may change
+> or be removed in any release, before and after 1.0. A line you copied out of the Arrange tab
+> may need changing after an update; settings niri-dash no longer knows are reported as config
+> warnings.
+
 Arrange places every widget by itself, aiming at each one's preferred size and keeping widgets of
 a group together. Pinned widgets stay where they are, and the others are laid out around them.
 
