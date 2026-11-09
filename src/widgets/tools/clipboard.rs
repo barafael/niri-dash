@@ -434,12 +434,15 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
         .p(px(tk.pad()))
         .gap(px(6.0))
         .child(
+            // As tall as the header, whatever the button's height: in Slint the button hangs
+            // from the top of the header.
             div()
+                .flex_none()
+                .h(px(28.0))
                 .flex()
                 .flex_row()
-                .items_center()
-                .justify_between()
-                .child(kit::header("clipboard", "Clipboard", tk))
+                .items_start()
+                .child(ui::header("clipboard", "Clipboard", tk).flex_1())
                 .when(n > 0, |h| {
                     h.child(ui::text_button(
                         "clip-clear",

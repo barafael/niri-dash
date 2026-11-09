@@ -1666,11 +1666,15 @@ fn reconcile(v: &View, m: &Model, form_up: bool, id: u32, cx: &mut Context<Dash>
             // A new prompt: its fields start empty (the user name as asked for), and the first
             // takes the keyboard.
             let (identity, enterprise) = (p.identity.clone(), p.kind == 2);
+            let placeholder = if p.kind == 1 { "WEP key" } else { "Password" };
             later(cx, move |d, window, cx| {
                 make_pool(d, id, window, cx);
                 let Some(pool) = view(d, id).and_then(|v| v.pool.clone()) else {
                     return;
                 };
+                if let Some(state) = pool.state("pass") {
+                    state.update(cx, |s, cx| s.set_placeholder(placeholder, window, cx));
+                }
                 pool.set("ident", &identity, window, cx);
                 pool.set("pass", "", window, cx);
                 pool.set("domain", "", window, cx);

@@ -156,8 +156,9 @@ impl Field<'_> {
             .flex_none()
             .w_full()
             .h(px(32.0))
-            // The input has padding of its own.
-            .px(px((tk.pad_tight() - 8.0).max(0.0)))
+            // The input has padding of its own (8), and the border is inside the frame (1): the
+            // text sits `pad_tight` from the edge, as in Slint's `SilentTextField`.
+            .px(px((tk.pad_tight() - 9.0).max(0.0)))
             .rounded(px(tk.radius_small()))
             .bg(tk.subtle())
             .border_1()

@@ -727,6 +727,49 @@ fn wifi_hidden_network() {
     assert!(said(&mut h).starts_with("listitem \"Lighthouse\""));
 }
 
+/// The hidden form's choices (Open, WPA, 802.1X) take their text's width and share what is left,
+/// as Slint's stretch does: "802.1X" is wider than "Open", and they sit in one row.
+fn hidden_form_choices_follow_their_text() {
+    let mut h = tall_wifi();
+    send_wifi(&mut h, &Demo::new().wifi);
+    enter(&mut h, "Wi-Fi");
+    walk_to(&mut h, "Hidden network");
+    h.key("enter");
+    shown(&mut h);
+    let open = h.bounds_of("Security: Open").expect("the Open button");
+    let wpa = h.bounds_of("Security: WPA").expect("the WPA button");
+    let eap = h.bounds_of("Security: 802.1X").expect("the 802.1X button");
+    assert!(
+        open.size.width < eap.size.width,
+        "Open is {:?} wide, 802.1X {:?}",
+        open.size.width,
+        eap.size.width
+    );
+    assert_eq!(open.origin.y, wpa.origin.y);
+    assert_eq!(wpa.origin.y, eap.origin.y);
+    assert!(open.right() < wpa.left() && wpa.right() < eap.left());
+}
+
+/// The code to compare is drawn digit by digit, 3 px apart (GPUI has no letter spacing), and is
+/// still one thing for a screen reader.
+fn pairing_code_is_one_spaced_line() {
+    let mut h = tall_bt();
+    send_bt(&mut h, &Demo::new().bluetooth);
+    let mut state = Demo::new().bluetooth;
+    state.prompt = Some(bluetooth::Prompt {
+        serial: 9,
+        name: "Arc Mouse".into(),
+        address: "11:22:33:44:55:66".into(),
+        kind: bluetooth::PromptKind::Confirm(7_654),
+    });
+    send_bt(&mut h, &state);
+    shown(&mut h);
+    assert!(h.has("pairing code"));
+    let wide = h.bounds_of("pairing code").expect("the code");
+    // The code is centered in the prompt, which is as wide as the card's inside.
+    assert!(f32::from(wide.size.width) > 100.0);
+}
+
 /// The prompt's keys: Escape out of the field first, then the buttons; Escape cancels it.
 fn wifi_prompt_keys() {
     let mut h = dashboard();
@@ -1328,6 +1371,14 @@ fn main() {
         ("wifi_saved_networks", wifi_saved_networks),
         ("wifi_details_buttons", wifi_details_buttons),
         ("wifi_hidden_network", wifi_hidden_network),
+        (
+            "hidden_form_choices_follow_their_text",
+            hidden_form_choices_follow_their_text,
+        ),
+        (
+            "pairing_code_is_one_spaced_line",
+            pairing_code_is_one_spaced_line,
+        ),
         ("wifi_prompt_keys", wifi_prompt_keys),
         ("wifi_prompt_starts_empty", wifi_prompt_starts_empty),
         ("wifi_not_available", wifi_not_available),
