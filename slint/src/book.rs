@@ -202,7 +202,7 @@ fn generated() -> String {
 }
 
 fn book_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("book/src/reference")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../book/src/reference")
 }
 
 #[test]

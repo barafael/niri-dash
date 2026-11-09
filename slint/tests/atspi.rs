@@ -12,7 +12,7 @@
 //! (`harness = false`).
 
 mod bus;
-#[path = "../testbox/inside.rs"]
+#[path = "../../testbox/inside.rs"]
 mod inside;
 
 use niri_dash::testing::{Harness, Sandbox};
