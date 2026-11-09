@@ -425,7 +425,7 @@ impl Harness {
             self.quieten();
             monkey.step(&self.app, self.ui.window())?;
             self.turn();
-            if monkey.done() % every == 0 {
+            if monkey.done().is_multiple_of(every) {
                 self.render();
             }
         }
