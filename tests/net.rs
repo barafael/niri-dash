@@ -137,9 +137,9 @@ const LISTS: [&str; 6] = [
     "bt-detail-list",
 ];
 
-/// The stop under the cursor is on screen, and in sight of the list it is in: no more than a
-/// quarter of it cut off.
-fn in_sight(h: &mut Harness) -> String {
+/// What the cursor is on, and whether that is in sight of the list it is in: no more than a
+/// quarter of it cut off. (The list is that of the page; the row has to be on screen.)
+fn sight(h: &mut Harness) -> (String, bool) {
     let said = said(h);
     let label = label_of(&said);
     let row = h
@@ -153,10 +153,13 @@ fn in_sight(h: &mut Harness) -> String {
     let (lt, lb) = (f32::from(list.top()), f32::from(list.bottom()));
     let shown = rb.min(lb) - rt.max(lt);
     let height = (rb - rt).min(lb - lt);
-    assert!(
-        shown >= 0.75 * height,
-        "{said} is out of sight: it is at {rt:.0}..{rb:.0}, the list at {lt:.0}..{lb:.0}"
-    );
+    (said, shown >= 0.75 * height)
+}
+
+/// The stop under the cursor is in sight.
+fn in_sight(h: &mut Harness) -> String {
+    let (said, ok) = sight(h);
+    assert!(ok, "{said} is out of sight");
     said
 }
 
@@ -463,6 +466,26 @@ fn lighthouse_detail(state: &wifi::State, uuid: &str) -> wifi::Detail {
             ..Default::default()
         }),
     }
+}
+
+/// The wheel lets go of the cursor until the next key, which brings the list back to it.
+fn wheel_lets_go_until_the_next_key() {
+    let mut h = short("wifi");
+    hidden_enterprise_form(&mut h);
+    h.key("G");
+    assert!(sight(&mut h).1, "the last stop, in sight");
+    let list = h.bounds_of("hidden-list").expect("the form's list");
+    let (x, y) = (f32::from(list.center().x), f32::from(list.center().y));
+    h.scroll(x, y, 600.0);
+    shown(&mut h);
+    let (said, ok) = sight(&mut h);
+    assert!(!ok, "the wheel scrolled the list away from {said}");
+    // Redrawn for something else (a network drifting): the list stays where it was put.
+    send_wifi(&mut h, &Demo::new().wifi);
+    assert!(!sight(&mut h).1, "the list went back by itself");
+    h.key("k");
+    h.key("j");
+    assert!(sight(&mut h).1, "the next key brings it back");
 }
 
 /// A short tile: the details page of a saved network.
@@ -1291,6 +1314,10 @@ fn main() {
             cursor_stays_in_sight_as_a_list_grows,
         ),
         ("stops_in_sight_hidden_form", stops_in_sight_hidden_form),
+        (
+            "wheel_lets_go_until_the_next_key",
+            wheel_lets_go_until_the_next_key,
+        ),
         ("stops_in_sight_wifi_details", stops_in_sight_wifi_details),
         ("stops_in_sight_wifi_share", stops_in_sight_wifi_share),
         (

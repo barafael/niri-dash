@@ -840,9 +840,8 @@ pub fn digits_only(d: &Dash) -> bool {
     model(d).prompt.is_some_and(|p| p.kind == 3)
 }
 
-pub fn tab_order(d: &Dash, id: u32, name: &str) -> Vec<&'static str> {
-    // One field at a time on the pairing prompt; the details page has one too.
-    let _ = (d, id);
+pub fn tab_order(name: &str) -> Vec<&'static str> {
+    // One field at a time on the pairing prompt, and one on the details page.
     FIELDS
         .iter()
         .map(|s| s.name)
@@ -1462,11 +1461,9 @@ fn devices(
     let on = ctx.entered && m.prompt.is_none();
     let mut rows: Vec<AnyElement> = Vec::new();
     let mut follow = None;
-    let mut cursor_row = None;
     for (i, dev) in m.devices.iter().enumerate() {
         if kf(i as isize) {
             follow = Some(rows.len());
-            cursor_row = Some(i);
         }
         rows.push(device_row(
             ctx,
@@ -1479,7 +1476,6 @@ fn devices(
             cx,
         ));
     }
-    let _ = cursor_row;
     if m.devices.is_empty() && !m.discovering {
         rows.push(ui::empty_line("No paired devices", 48.0, tk));
     }

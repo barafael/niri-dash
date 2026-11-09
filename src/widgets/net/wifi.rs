@@ -1518,8 +1518,6 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
     let on = ctx.entered && m.prompt.is_none();
     let (scope, page) = (v.scope, v.page);
     let kf = move |i: isize| on && scope.cursor as isize == i;
-    let asking = m.prompt.is_some();
-
     // What appeared and what went since the last frame, as far as the keyboard goes.
     let form_up = m.available && m.enabled && page == Page::Hidden;
     reconcile(v, &m, form_up, id, cx);
@@ -1579,7 +1577,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
         );
     }
     if let Some(p) = &m.prompt {
-        card = card.child(prompt(ctx, v, &m, p, id, cx));
+        card = card.child(prompt(ctx, v, p, id, cx));
     }
     if !m.available {
         card = card.child(ui::empty_fill("No Wi-Fi device (NetworkManager)", tk));
@@ -1593,7 +1591,6 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
     if m.available && !m.blocked && !m.enabled && page == Page::Networks {
         card = card.child(ui::empty_fill("Wi-Fi is off", tk));
     }
-    let _ = asking;
     if m.available && m.enabled && page == Page::Networks {
         card = card.child(networks(ctx, v, &m, &l, &kf, id, cx));
     }
@@ -1773,7 +1770,6 @@ fn field<'a>(
 fn prompt(
     ctx: &Ctx,
     v: &View,
-    m: &Model,
     p: &Prompt,
     id: u32,
     cx: &mut Context<Dash>,
@@ -1795,7 +1791,6 @@ fn prompt(
         },
         p.ssid
     );
-    let _ = m;
     let mut col = div()
         .flex_none()
         .w_full()
@@ -2156,13 +2151,12 @@ fn networks(
         );
     }
     let list = v.scroll[0].list("net-list", rows, follow, 0.0, tk);
-    record(v, Page::Networks, on, follow, &v.scroll[0]);
+    record(v, Page::Networks, on, follow);
     list
 }
 
 /// Remember whether the cursor's row is in sight, for the stress run.
-fn record(v: &View, page: Page, on: bool, follow: Option<usize>, s: &Scroller) {
-    let _ = s;
+fn record(v: &View, page: Page, on: bool, follow: Option<usize>) {
     match (on, follow) {
         (true, Some(row)) => v.last.set(Some((page, v.scope.cursor, row))),
         _ => v.last.set(None),
@@ -2312,7 +2306,7 @@ fn detail(
     }
     rows.push(buttons.into_any_element());
     let list = v.scroll[1].list("detail-list", rows, follow, 0.0, tk);
-    record(v, Page::Detail, on, follow, &v.scroll[1]);
+    record(v, Page::Detail, on, follow);
     list
 }
 
@@ -2475,7 +2469,7 @@ fn hidden(
             .into_any_element(),
     );
     let list = v.scroll[2].list("hidden-list", rows, follow, 6.0, tk);
-    record(v, Page::Hidden, on, follow, &v.scroll[2]);
+    record(v, Page::Hidden, on, follow);
     list
 }
 
@@ -2527,7 +2521,7 @@ fn saved(
         );
     }
     let list = v.scroll[3].list("saved-list", rows, follow, 0.0, tk);
-    record(v, Page::Saved, on, follow, &v.scroll[3]);
+    record(v, Page::Saved, on, follow);
     list
 }
 

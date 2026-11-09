@@ -145,7 +145,7 @@ fn field_key(
         Pressed::Tab { back } => {
             let order = match w {
                 Wid::Wifi(id) => wifi::tab_order(d, id, name),
-                Wid::Bt(id) => bluetooth::tab_order(d, id, name),
+                Wid::Bt(_) => bluetooth::tab_order(name),
             };
             if let Some(at) = order.iter().position(|n| *n == name) {
                 let n = order.len() as isize;
