@@ -1,6 +1,6 @@
 //! Edit mode: arranging and styling the dashboard. A port of `legacy/ui/app.slint` and
 //! `legacy/ui/frame.slint` (the drawer, the settings card, the frames' handles and toolbar, the
-//! key hints in the top bar) and of `legacy/src/app/{edit,arrange,hold,look}.rs` (what they do to
+//! quick tips along the bottom) and of `legacy/src/app/{edit,arrange,hold,look}.rs` (what they do to
 //! the layout).
 //!
 //! - [`Edit`] is the state of it all, the properties of the Slint window: it hangs on the
@@ -8,8 +8,8 @@
 //! - `ops` changes the layout (move, resize, add, remove, grid), `settings` the open widget's
 //!   settings, `arrange` and `looks` the Arrange, Colors and Style tabs.
 //! - `keys` is the keyboard model, `pointer` the mouse (drags, carrying, long press), `hints` the
-//!   shortcuts the top bar shows.
-//! - `view` draws: the frames' edit controls, the drawer, the settings card, the top bar.
+//!   quick tips along the bottom.
+//! - `view` draws: the frames' edit controls, the drawer, the settings card, the top bar, the quick tips.
 //! - `anim` is what makes things glide.
 
 pub mod anim;

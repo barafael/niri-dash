@@ -10,13 +10,13 @@ use gpui::prelude::*;
 use gpui::{AnyElement, Context, FontWeight, SharedString, TextRun, Window, div, px};
 
 /// How wide `text` is at `size`, in pixels.
-fn text_width(window: &Window, text: &str, size: f32, bold: bool) -> f32 {
+pub(crate) fn text_width(window: &Window, text: &str, size: f32, weight: Option<FontWeight>) -> f32 {
     if text.is_empty() {
         return 0.0;
     }
     let mut font = window.text_style().font();
-    if bold {
-        font.weight = FontWeight::SEMIBOLD;
+    if let Some(weight) = weight {
+        font.weight = weight;
     }
     let run = TextRun {
         len: text.len(),
@@ -116,32 +116,26 @@ impl Dash {
                 )
             })
             .when(!self.editing, |bar| {
-                bar.child(
-                    icon_btn(
-                        "edit-dashboard",
-                        "edit",
-                        "Edit dashboard",
-                        34.0,
-                        tk.dim(),
-                        Look::default(),
-                        tk,
-                        cx.listener(|dash, _, _, cx| dash.set_editing(true, cx)),
-                    )
-                    .mt(px(-1.0)),
-                )
-                .child(
-                    icon_btn(
-                        "close-dashboard",
-                        "close",
-                        "Close dashboard",
-                        34.0,
-                        tk.dim(),
-                        Look::default(),
-                        tk,
-                        cx.listener(|_, _, _, cx| cx.emit(DashEvent::Hide)),
-                    )
-                    .mt(px(-1.0)),
-                )
+                bar.child(icon_btn(
+                    "edit-dashboard",
+                    "edit",
+                    "Edit dashboard",
+                    34.0,
+                    tk.dim(),
+                    Look::default(),
+                    tk,
+                    cx.listener(|dash, _, _, cx| dash.set_editing(true, cx)),
+                ))
+                .child(icon_btn(
+                    "close-dashboard",
+                    "close",
+                    "Close dashboard",
+                    34.0,
+                    tk.dim(),
+                    Look::default(),
+                    tk,
+                    cx.listener(|_, _, _, cx| cx.emit(DashEvent::Hide)),
+                ))
             })
             .into_any_element()
     }
@@ -164,11 +158,11 @@ impl Dash {
                 let cap = if h.key.is_empty() {
                     0.0
                 } else {
-                    text_width(window, &h.key, tk.font_small(), true) + 12.0
+                    text_width(window, &h.key, tk.font_small(), Some(FontWeight::SEMIBOLD)) + 12.0
                 };
                 let w = cap
                     + if cap > 0.0 { 6.0 } else { 0.0 }
-                    + text_width(window, &h.does, tk.font_body(), false);
+                    + text_width(window, &h.does, tk.font_body(), None);
                 let fits = x + w <= strip_w;
                 x += w + 16.0;
                 fits.then(|| key_chip(h, cap, tk))
