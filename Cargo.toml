@@ -87,6 +87,11 @@ name = "stress"
 harness = false
 required-features = ["testing"]
 
+[[test]]
+name = "desk"
+harness = false
+required-features = ["testing"]
+
 [profile.dev]
 opt-level = 1
 [profile.dev.package."*"]

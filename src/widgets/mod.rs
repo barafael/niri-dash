@@ -308,8 +308,8 @@ pub fn night_light_command(
 pub fn mascot_say(_d: &mut Dash, _say: crate::mascots::Say, _cx: &mut Context<Dash>) {}
 
 /// What a group draws over the whole window, above the frames (the tray's menu): in order.
-pub fn overlays(_d: &Dash, _tk: &Tk, _cx: &mut Context<Dash>) -> Vec<AnyElement> {
-    Vec::new()
+pub fn overlays(d: &Dash, tk: &Tk, cx: &mut Context<Dash>) -> Vec<AnyElement> {
+    desk::overlay(d, tk, cx)
 }
 
 // ---- edit mode: replaced by the edit mode port ---------------------------------------------
