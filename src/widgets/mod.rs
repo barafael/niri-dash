@@ -305,7 +305,9 @@ pub fn night_light_command(
 }
 
 /// `niri-dash say …` arrived on the control socket: `extras`' mascots'.
-pub fn mascot_say(_d: &mut Dash, _say: crate::mascots::Say, _cx: &mut Context<Dash>) {}
+pub fn mascot_say(d: &mut Dash, say: crate::mascots::Say, cx: &mut Context<Dash>) {
+    extras::mascot_say(d, say, cx);
+}
 
 /// What a group draws over the whole window, above the frames (the tray's menu): in order.
 pub fn overlays(_d: &Dash, _tk: &Tk, _cx: &mut Context<Dash>) -> Vec<AnyElement> {
