@@ -289,6 +289,11 @@ export component NotificationsWidget inherits Rectangle {
                             size: 24px;
                             tint: Theme.faint;
                             kfocus: keys.on && keys.cursor == root.choices + i && keys.sub == 1;
+                            changed kfocus => {
+                                if (self.kfocus) {
+                                    notif-list.reveal(self.absolute-position.y, self.height);
+                                }
+                            }
                             clicked => { Notifications.dismiss(n.id); }
                         }
                     }
