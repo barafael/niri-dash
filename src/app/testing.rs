@@ -391,6 +391,7 @@ impl Harness {
         ops: u64,
         rate: f64,
     ) -> Result<super::stress::Monkey, super::stress::Failure> {
+        let monkey = monkey.instant_looks();
         let mut pace = super::stress::Pace::new(rate);
         // A frame every tenth of a second: by the key, so that the same keys draw the same frames
         // (the clock decides when a frame lands, on a machine that is busy or slow).

@@ -236,8 +236,12 @@ pub struct Monkey {
     escapes: u64,
     /// Steps that weren't keys (themes, clicks, controls), for the summary.
     extras: u64,
+    /// A new look is shown at once, not blended over a third of a second on the real clock: a
+    /// headless run presses keys faster than that, and would check the dashboard half-way
+    /// between two looks, at moments that depend on how fast the machine is.
+    instant_looks: bool,
     /// A wheel turned since a key last moved a cursor: it may have scrolled the cursor's row out
-    /// of the sidebar's view, and that is as the person wanted it.
+    /// of a list's view (the sidebar's or a widget's), and that is as the person wanted it.
     wheeled: bool,
     /// Going on after problems: each different one, how often, and the keys that first led there.
     collected: Option<BTreeMap<String, (u64, Vec<String>)>>,
@@ -255,9 +259,17 @@ impl Monkey {
             seen: [0; 5],
             escapes: 0,
             extras: 0,
+            instant_looks: false,
             wheeled: false,
             collected: None,
         }
+    }
+
+    /// For a headless run: show new looks at once (there is no time to blend them in) and leave
+    /// the choice of font alone (it depends on the machine).
+    pub fn instant_looks(mut self) -> Self {
+        self.instant_looks = true;
+        self
     }
 
     /// Go on after a problem, and report each different one when the run ends.
@@ -344,7 +356,7 @@ impl Monkey {
         slint::platform::update_timers_and_animations();
         let place = place(app);
         if let Err(p) = check(app)
-            && !(self.wheeled && p.contains("scrolled out of view"))
+            && !(self.wheeled && scrolled_away(&p))
         {
             self.report(format!("{}: {p}", kind_name(app)))?;
         }
@@ -411,28 +423,38 @@ impl Monkey {
             0..=19 => {
                 let name = self.pick(theme::list(&theme::colorschemes_dir()));
                 ui.invoke_choose_colorscheme(name.as_str().into());
+                self.settle_look(app);
                 format!("color scheme {name}")
             }
             20..=34 => {
                 let name = self.pick(theme::list(&theme::styles_dir()));
                 ui.invoke_choose_style(name.as_str().into());
+                self.settle_look(app);
                 format!("style {name}")
             }
             35..=49 => {
                 let vars: Vec<theme::StyleVar> = theme::StyleVar::iter().collect();
-                let var = vars[self.rng.below(vars.len() as u64) as usize];
+                let mut var = vars[self.rng.below(vars.len() as u64) as usize];
                 let delta = if self.rng.below(2) == 0 { -1 } else { 1 };
+                // Fonts are whatever the machine has: a headless run, which has to come out the
+                // same everywhere, adjusts the text size instead.
+                if self.instant_looks && var == theme::StyleVar::FontFamily {
+                    var = theme::StyleVar::FontBody;
+                }
                 ui.invoke_style_step(style_var_to_ui(var), delta);
+                self.settle_look(app);
                 format!("{} {delta:+}", var.as_ref())
             }
             50..=53 => {
                 let vars: Vec<theme::StyleVar> = theme::StyleVar::iter().collect();
                 let var = vars[self.rng.below(vars.len() as u64) as usize];
                 ui.invoke_style_reset(style_var_to_ui(var));
+                self.settle_look(app);
                 format!("reset {}", var.as_ref())
             }
             54..=55 => {
                 ui.invoke_style_reset_all();
+                self.settle_look(app);
                 "reset all style adjustments".into()
             }
             56..=79 => {
@@ -479,6 +501,13 @@ impl Monkey {
                 app.control_in_place(Control::Toggle);
                 "hotkey toggle".into()
             }
+        }
+    }
+
+    /// With [`Monkey::instant_looks`]: the look just chosen, shown in full now.
+    fn settle_look(&self, app: &App) {
+        if self.instant_looks {
+            app.apply_look(false);
         }
     }
 
@@ -529,6 +558,17 @@ impl Monkey {
             None => "f".into(),
         }
     }
+}
+
+/// Whether the check's complaint is about a cursor whose row a list has been scrolled away from.
+fn scrolled_away(problem: &str) -> bool {
+    [
+        "scrolled out of view",
+        "cursor is on nothing",
+        "cursor is out of sight",
+    ]
+    .iter()
+    .any(|m| problem.contains(m))
 }
 
 fn place(app: &App) -> Place {
