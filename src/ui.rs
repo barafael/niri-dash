@@ -1,4 +1,4 @@
-//! Drawing the dashboard: the backdrop, the top bar, the grid of widget frames, the hint labels
+//! Drawing the dashboard: the backdrop, the top bar, the quick tips along the bottom, the grid of widget frames, the hint labels
 //! and the toast. What goes in a frame is `widgets`'; the small pieces they are made of are
 //! `kit`'s. Edit mode's parts (the frames, the sidebar, the settings card, the top bar) are drawn
 //! by `edit::view`.
@@ -15,6 +15,7 @@ impl Render for Dash {
         let vp = window.viewport_size();
         let (width, height) = (f32::from(vp.width), f32::from(vp.height));
         // The drawer's slide, as of this frame, before anything is laid out by it.
+        self.tidy_op();
         self.edit.sample(self.editing, self.look.style.motion);
         self.set_size(width, height);
         // The size the widgets are drawn at can have changed since the last key (the drawer
@@ -86,7 +87,8 @@ impl Render for Dash {
         let root = root
             .bg(backdrop.hsla())
             .child(self.backdrop(&tk, cx))
-            .child(self.top_bar(window, &tk, cx))
+            .child(self.top_bar(&tk, cx))
+            .children(self.tips_bar(window, &tk))
             .children(self.edit_grid(&g, &tk))
             .children(self.landing_ghost(&g, &tk))
             .children(below)

@@ -35,7 +35,6 @@ pub use settings::{RowKind, SettingRow, StyleRow};
 
 use crate::dash::{Dash, MARGIN};
 use crate::layout::{Kind, Layout, Reflow};
-use crate::nav::Dir;
 use gpui::{Context, ScrollHandle};
 use niri_dash_system::{Capabilities, Compositor};
 use strum::IntoEnumIterator;
@@ -269,11 +268,6 @@ fn palette(caps: Capabilities) -> Vec<PaletteItem> {
 
 // ---- the keys' entry points, called by the registry ----------------------------------------
 
-/// Move widget `id` one cell (Ctrl+Shift+h/j/k/l).
-pub fn nudge(d: &mut Dash, id: u32, dir: Dir, _cx: &mut Context<Dash>) {
-    d.nudge_widget(id, dir);
-}
-
 /// Open widget `id`'s settings (`s` in an entered widget).
 pub fn open_settings(d: &mut Dash, id: u32, cx: &mut Context<Dash>) {
     d.open_settings(id, cx);
@@ -296,6 +290,10 @@ pub fn escape(d: &mut Dash, cx: &mut Context<Dash>) -> bool {
     }
     if d.edit.dragging() {
         d.finish_drag(false);
+        return true;
+    }
+    if d.op() != crate::dash::NavOp::None {
+        d.op_end();
         return true;
     }
     if d.edit.adjust_id != 0 {

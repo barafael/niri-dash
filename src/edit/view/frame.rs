@@ -4,7 +4,7 @@
 //! the card follows the pointer and a ghost shows where the widget will land, green if it fits.
 
 use super::parts::{Look, eid, icon_btn};
-use crate::dash::{Dash, Geometry, NavMode, Tile};
+use crate::dash::{Dash, Geometry, NavMode, NavOp, Tile};
 use crate::edit::anim::Ease;
 use crate::edit::{DragMode, PressKind};
 use crate::kit::{self, Tk};
@@ -50,11 +50,105 @@ impl Dash {
         } else if e.press.as_ref().is_some_and(|p| p.id == id)
             || (e.drag.mode == DragMode::Carry && e.drag.id == id)
             || e.adjust_id == id
+            || self.op_of(id) != NavOp::None
         {
             1
         } else {
             0
         }
+    }
+
+    /// The keyboard's move or resize mode, if it is on widget `id`.
+    pub fn op_of(&self, id: u32) -> NavOp {
+        if self.op_target() == id {
+            self.op()
+        } else {
+            NavOp::None
+        }
+    }
+
+    /// What the veil on the widget in hand says besides the mode's name: how big it is, and the
+    /// keys.
+    fn op_tip(&self, op: NavOp) -> Vec<String> {
+        let mut lines = vec![self.edit.size_note.clone()];
+        lines.extend(
+            match op {
+                NavOp::Move => &["h j k l or arrows: one cell", "Ctrl+R resize · Esc done"][..],
+                _ => &[
+                    "h j k l: grow that side",
+                    "Shift: shrink it",
+                    "Ctrl+M move · Esc done",
+                ][..],
+            }
+            .iter()
+            .map(|l| l.to_string()),
+        );
+        lines
+    }
+
+    /// Move or resize mode: a veil with the mode's name and keys on the card. Slightly see-through,
+    /// so the widget stays recognisable under it. Resizing marks the four sides that can be pulled.
+    fn op_veil(&self, op: NavOp, round: bool, tk: &Tk) -> Div {
+        let arrow = |glyph: &'static str| {
+            div()
+                .absolute()
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_size(px(tk.font_small()))
+                .text_color(tk.accent())
+                .child(glyph)
+        };
+        let mut veil = div()
+            .absolute()
+            .top_0()
+            .left_0()
+            .size_full()
+            .bg(tk.c(ColorRole::Backdrop).with_alpha(0.85).hsla())
+            .debug_selector(|| "mode veil".into())
+            .child(
+                div()
+                    .absolute()
+                    .size_full()
+                    .rounded(px(if round { 1.0e4 } else { tk.radius() }))
+                    .border_2()
+                    .border_color(tk.accent()),
+            );
+        if op == NavOp::Resize {
+            veil = veil
+                .child(arrow("▲").top_0().left_0().w_full().h(px(18.0)))
+                .child(arrow("▼").bottom_0().left_0().w_full().h(px(18.0)))
+                .child(arrow("◀").left(px(2.0)).top_0().w(px(18.0)).h_full())
+                .child(arrow("▶").right(px(2.0)).top_0().w(px(18.0)).h_full());
+        }
+        veil.child(
+            div()
+                .absolute()
+                .size_full()
+                .p(px(22.0))
+                .flex()
+                .flex_col()
+                .gap(px(4.0))
+                .justify_center()
+                .items_center()
+                .text_center()
+                .child(
+                    div()
+                        .text_size(px(tk.font_body()))
+                        .font_weight(gpui::FontWeight::BOLD)
+                        .text_color(tk.accent())
+                        .child(if op == NavOp::Move { "MOVE" } else { "RESIZE" }),
+                )
+                .child(
+                    div()
+                        .text_size(px(tk.font_small()))
+                        .text_color(tk.text())
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .children(self.op_tip(op).into_iter().map(|l| div().child(l))),
+                ),
+        )
     }
 
     /// One placed widget: its card, with the widget inside.
@@ -79,6 +173,7 @@ impl Dash {
         let (pull_x, pull_y) = press.map_or((0, 0), |p| p.pull());
         let carried = self.edit.drag.mode == DragMode::Carry && self.edit.drag.id == id;
         let lifted = self.edit.adjust_id == id;
+        let op = self.op_of(id);
         let editing = self.editing || lifted;
         let selected = self.editing && self.edit.settings_id == id;
         let entered = self.nav.mode == NavMode::Widget && self.nav.active_id == id;
@@ -151,6 +246,18 @@ impl Dash {
             tk.accent().opacity(if in_hand { 0.9 } else { 0.35 })
         } else {
             tk.border()
+        };
+        // The border's colour glides to a new one (a widget picked, entered, let go).
+        let border: gpui::Hsla = {
+            let c = border.to_rgb();
+            let ch = |k: &'static str, v: f32| anim.follow((k, id), v, 160.0, m, Ease::Linear);
+            gpui::Rgba {
+                r: ch("bc-r", c.r),
+                g: ch("bc-g", c.g),
+                b: ch("bc-b", c.b),
+                a: ch("bc-a", c.a),
+            }
+            .into()
         };
         let bg = if expanded {
             tk.c(ColorRole::Card).with_alpha(1.0)
@@ -251,6 +358,10 @@ impl Dash {
                 )
             })
             .child(widgets::render(&ctx, cx));
+
+        if op != NavOp::None {
+            card = card.child(self.op_veil(op, shows_round, tk));
+        }
 
         // In edit mode the whole card is a drag handle and the content gets no input.
         if editing {

@@ -1,7 +1,8 @@
 //! The keyboard model of edit mode (`edit-key` in app.slint). The keys are on the widgets or on
-//! the sidebar: on the widgets, h j k l size the widget being worked on, Ctrl+h j k l move it and
-//! w a s d go to the next; on the sidebar (or the settings card), j k go down the rows, h l step
-//! one, Enter presses it, Backspace puts it back, Tab goes on to the next tab.
+//! the sidebar: on the widgets, w a s d and h j k l (and the arrows) go to the next widget; Ctrl+M
+//! and Ctrl+R start the move and resize modes (`dash`) for the widget picked. On the sidebar (or
+//! the settings card), j k go down the rows, h l step one, Enter presses it, Backspace puts it
+//! back, Tab goes on to the next tab.
 
 use super::DrawerTab;
 use super::settings::RowKind;
@@ -49,26 +50,18 @@ fn edit_key_inner(d: &mut Dash, key: &Key, cx: &mut Context<Dash>) -> bool {
         d.set_editing(false, cx);
         return true;
     }
-    // Ctrl+h j k l (or the arrows): move the widget a cell, the others make room.
-    if target != 0
-        && key.ctrl
-        && !key.alt
-        && !key.meta
-        && let Some(dir) = key_dir(key)
-    {
-        d.edit.side_keys = false;
-        d.edit.canvas_keys = true;
-        d.nudge_widget(target, dir);
-        return true;
-    }
-    // w a s d (and, with the keys on the widgets, the arrows): the focus goes to the next widget
-    // that way, or to the first one when none is picked.
-    let fd = focus_dir(key);
+    // w a s d (and, with the keys on the widgets, h j k l and the arrows): the focus goes to the
+    // next widget that way, or to the first one when none is picked. Moving and sizing are modes
+    // of their own (Ctrl+M, Ctrl+R).
+    let hjkl = target != 0
+        && !d.edit.side_keys
+        && matches!(key.code, Code::Char('h' | 'j' | 'k' | 'l'));
+    let fd = if hjkl { key_dir(key) } else { focus_dir(key) };
     let letter = matches!(key.code, Code::Char('w' | 'a' | 's' | 'd'));
     if plain
         && let Some(dir) = fd
         && !key.shift
-        && (letter || (target != 0 && !d.edit.side_keys))
+        && (letter || hjkl || (target != 0 && !d.edit.side_keys))
     {
         if target == 0 {
             if let Some(first) = d.tiles.first().map(|t| t.id()) {
@@ -81,21 +74,11 @@ fn edit_key_inner(d: &mut Dash, key: &Key, cx: &mut Context<Dash>) -> bool {
         d.edit.canvas_keys = true;
         return true;
     }
-    // h j k l: size the widget; Shift, or a capital, from the other side.
-    if target != 0 && plain && !d.edit.side_keys {
-        if let Code::Char(c @ ('h' | 'j' | 'k' | 'l' | 'H' | 'J' | 'K' | 'L')) = key.code
-            && let Some(dir) = key_dir(key)
-        {
-            d.edit.canvas_keys = true;
-            d.size_widget(target, dir, key.shift || c.is_ascii_uppercase());
-            return true;
-        }
-        // Enter shows the settings, with the cursor on their first row.
-        if key.is_named(Named::Enter) {
-            d.edit.canvas_keys = false;
-            d.edit.side_keys = true;
-            return true;
-        }
+    // Enter shows the settings, with the cursor on their first row.
+    if target != 0 && plain && !d.edit.side_keys && key.is_named(Named::Enter) {
+        d.edit.canvas_keys = false;
+        d.edit.side_keys = true;
+        return true;
     }
     if !plain {
         return false;
