@@ -168,24 +168,62 @@ const WIDGET: &[(u32, &str)] = &[
     (2, "0"),
 ];
 
-/// Edit mode: the keys its controls might take, and the ways out.
+/// Edit mode: the keys its controls might take (the sidebar's rows, the widget being worked on:
+/// size it, move it, pick the next, reshape, pin, remove), and the ways out.
 const EDIT: &[(u32, &str)] = &[
-    (15, "tab"),
+    (14, "tab"),
     (5, "backtab"),
-    (8, "left"),
-    (8, "right"),
-    (8, "up"),
-    (8, "down"),
+    (6, "left"),
+    (6, "right"),
+    (6, "up"),
+    (6, "down"),
     (6, "h"),
     (6, "j"),
     (6, "k"),
     (6, "l"),
+    (3, "H"),
+    (3, "J"),
+    (3, "K"),
+    (3, "L"),
+    (3, "ctrl+h"),
+    (3, "ctrl+j"),
+    (3, "ctrl+k"),
+    (3, "ctrl+l"),
+    (4, "w"),
+    (4, "a"),
+    (4, "s"),
+    (4, "d"),
     (8, "enter"),
     (4, "space"),
+    (4, "backspace"),
+    (2, "g"),
+    (2, "G"),
+    (1, "home"),
+    (1, "end"),
     (8, "esc"),
     (3, "ctrl+e"),
     (3, "f"),
-    (3, "x"),
+    (2, "o"),
+    (2, "p"),
+    (2, "x"),
+];
+
+/// A text field of the settings card has the keyboard: what is typed into it, and the ways out.
+const FIELD: &[(u32, &str)] = &[
+    (30, "a"),
+    (10, "b"),
+    (10, "1"),
+    (6, "/"),
+    (6, "space"),
+    (6, "backspace"),
+    (10, "enter"),
+    (8, "esc"),
+    (6, "tab"),
+    (4, "backtab"),
+    (3, "left"),
+    (3, "right"),
+    (2, "f"),
+    (2, "j"),
 ];
 
 /// The keys that move a list's cursor, and with it bring its row back into view.
@@ -344,7 +382,13 @@ impl Monkey {
             }
             (None, Place::Hints) => self.hint_key(h),
             (None, Place::Widget) => self.rng.weighted(WIDGET).into(),
-            (None, Place::Edit) => self.rng.weighted(EDIT).into(),
+            (None, Place::Edit) => {
+                if h.read(|d| d.edit.field.focused) {
+                    self.rng.weighted(FIELD).into()
+                } else {
+                    self.rng.weighted(EDIT).into()
+                }
+            }
             (None, _) => self.rng.weighted(OFF).into(),
         };
         self.done += 1;
@@ -408,7 +452,8 @@ impl Monkey {
                 });
                 "reset all style adjustments".into()
             }
-            56..=79 => {
+            56..=62 => self.pointer_edit(h),
+            63..=79 => {
                 let (x, y) = self.point(h);
                 h.click(x, y);
                 format!("click at {x:.0},{y:.0}")
@@ -437,6 +482,50 @@ impl Monkey {
                 "hotkey toggle".into()
             }
         }
+    }
+
+    /// The pointer at work on the widgets: drag one (by its card or from the middle of an edge)
+    /// somewhere, or double click one to pick it up and put it down.
+    fn pointer_edit(&mut self, h: &mut Harness) -> String {
+        let centres: Vec<(f32, f32, f32)> = h.read(|d| {
+            let g = d.geometry(d.size.0, d.size.1);
+            d.tiles
+                .iter()
+                .map(|t| {
+                    let r = t.rect();
+                    (
+                        g.x + (r.col as f32 + r.w as f32 / 2.0) * g.cell,
+                        g.y + (r.row as f32 + r.h as f32 / 2.0) * g.cell,
+                        g.cell,
+                    )
+                })
+                .collect()
+        });
+        let from = match centres.get(self.rng.below(centres.len() as u64) as usize) {
+            Some(&(x, y, _)) if self.rng.below(5) != 0 => (x, y),
+            _ => self.point(h),
+        };
+        if self.rng.below(4) == 0 {
+            h.double_click(from.0, from.1);
+            // Carried: put it down somewhere (or cancel).
+            if h.read(|d| d.edit.dragging()) {
+                let to = self.point(h);
+                h.move_to(to.0, to.1);
+                if self.rng.below(3) == 0 {
+                    h.click_with(to.0, to.1, gpui::MouseButton::Right);
+                } else {
+                    h.click(to.0, to.1);
+                }
+            }
+            return format!("double click at {:.0},{:.0}", from.0, from.1);
+        }
+        let to = self.point(h);
+        let steps = 1 + self.rng.below(8) as u32;
+        h.drag(from, to, steps);
+        format!(
+            "drag {:.0},{:.0} to {:.0},{:.0} in {steps}",
+            from.0, from.1, to.0, to.1
+        )
     }
 
     /// One of `names`, at random ("default" if there are none).
@@ -565,6 +654,7 @@ fn check(d: &Dash) -> Result<(), String> {
         _ => {}
     }
     crate::widgets::check(d)?;
+    crate::edit::probe::check(d)?;
     if !d.visible {
         if d.editing {
             return Err("closed while still in edit mode".into());

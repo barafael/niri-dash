@@ -18,6 +18,7 @@ mod config;
 mod cowfile;
 mod dash;
 mod desktop;
+mod edit;
 mod files;
 mod keys;
 mod kit;

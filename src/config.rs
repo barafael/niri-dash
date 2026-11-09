@@ -37,6 +37,7 @@ impl Dash {
         if text == self.last_written {
             // Our own write; only a color scheme or style file may have changed.
             self.apply_look(self.visible);
+            self.refresh_looks();
             cx.notify();
             return;
         }
@@ -47,6 +48,8 @@ impl Dash {
                 self.last_written = text;
                 self.apply_settings(self.visible);
                 self.sync_widgets();
+                self.refresh_looks();
+                self.tidy_edit();
                 if refit.changed() {
                     self.save_layout();
                 }

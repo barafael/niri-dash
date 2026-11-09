@@ -19,6 +19,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
 
+pub use crate::dash::NavMode;
+pub use crate::edit::probe::{Tile, can_be_round, kind_names, min_size, setting_labels, title};
+pub use crate::edit::{DrawerTab, RowKind, SettingRow};
 pub use crate::stress::{Failure, Monkey, Sandbox};
 
 /// The window of a harness, unless it is told another size: a large screen.
@@ -26,7 +29,7 @@ pub const SIZE: (u32, u32) = (1706, 1066);
 
 /// The dashboard, built as the daemon builds it, on channels instead of the system.
 pub struct Harness {
-    cx: TestAppContext,
+    pub(crate) cx: TestAppContext,
     pub dash: Entity<Dash>,
     window: WindowHandle<Dash>,
     /// Where the dashboard's commands arrive.
@@ -89,7 +92,9 @@ impl Harness {
             size(px(size_px.0 as f32), px(size_px.1 as f32)),
             |window, cx| {
                 gpui_kit::init(cx);
-                let dash = Dash::new(system, loaded, None, cx);
+                let mut dash = Dash::new(system, loaded, None, cx);
+                // Nothing glides in a headless run: what a key or click did is what is there.
+                dash.edit.anim.snap = true;
                 window.focus(&dash.focus, cx);
                 dash
             },
@@ -119,7 +124,7 @@ impl Harness {
         me
     }
 
-    fn vcx(&self) -> VisualTestContext {
+    pub(crate) fn vcx(&self) -> VisualTestContext {
         VisualTestContext::from_window(AnyWindowHandle::from(self.window), &self.cx)
     }
 

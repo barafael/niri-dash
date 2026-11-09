@@ -80,6 +80,7 @@ impl Dash {
         self.layout.colorscheme = name.to_string();
         self.save_layout();
         self.apply_look(true);
+        self.refresh_looks();
     }
 
     pub fn choose_style(&mut self, name: &str) {
@@ -98,6 +99,7 @@ impl Dash {
         });
         self.save_layout();
         self.apply_look(true);
+        self.refresh_looks();
     }
 
     /// Step style variable `var` up or down (`delta` is +1 or -1), or flip a switch.
@@ -153,6 +155,7 @@ impl Dash {
         }
         self.save_layout();
         self.apply_look(true);
+        self.refresh_style_vars();
     }
 
     /// Drop the adjustment of one style variable, or all of them.
@@ -163,6 +166,7 @@ impl Dash {
         }
         self.save_layout();
         self.apply_look(true);
+        self.refresh_style_vars();
     }
 
     /// The font families the Style tab offers (looked up on first use).
