@@ -10,7 +10,8 @@
 //!
 //! The keys are random but weighted by what the dashboard shows: with nothing entered they mostly
 //! open the hints, with the hints up they mostly type a label, inside a widget they move, adjust,
-//! activate and go back. Every so often the driver presses Escape until the dashboard closes, which
+//! activate and go back, and now and then start the move and resize modes (Ctrl+M, Ctrl+R) and
+//! press their keys. Every so often the driver presses Escape until the dashboard closes, which
 //! has to happen within a few presses from anywhere. A closed dashboard is opened again, as the
 //! hotkey would.
 //!
@@ -21,7 +22,7 @@ use super::enums::style_var_to_ui;
 use super::snapshot::press_key;
 use super::{App, Error, Result};
 use crate::layout::Loaded;
-use crate::{Control, Nav, NavMode, theme};
+use crate::{Control, Nav, NavMode, NavOp, theme};
 use niri_dash_system::Tell;
 use slint::platform::{PointerEventButton, WindowEvent};
 use slint::{ComponentHandle, LogicalPosition, Model};
@@ -169,11 +170,9 @@ const WIDGET: &[(u32, &str)] = &[
     (2, "ctrl+right"),
     (2, "w"),
     (2, "d"),
-    // Moving the widget, and sizing it in edit mode.
-    (2, "ctrl+shift+H"),
-    (2, "ctrl+shift+J"),
-    (1, "ctrl+shift+K"),
-    (1, "ctrl+shift+L"),
+    // The move and resize modes, and what their keys do.
+    (3, "ctrl+m"),
+    (3, "ctrl+r"),
     (2, "shift+J"),
     (1, "shift+L"),
     (2, "f"),
@@ -203,6 +202,8 @@ const EDIT: &[(u32, &str)] = &[
     (4, "space"),
     (8, "esc"),
     (3, "ctrl+e"),
+    (3, "ctrl+m"),
+    (3, "ctrl+r"),
     (3, "f"),
     (3, "x"),
 ];
@@ -669,6 +670,18 @@ fn check(app: &App) -> Result<(), String> {
         }
         _ => {}
     }
+    // The move and resize modes (Ctrl+M, Ctrl+R) belong to a widget in hand: one entered, or one
+    // picked in edit mode. Without one there is no mode.
+    if n.get_op() != NavOp::None {
+        let in_hand = if ui.get_editing() {
+            ui.get_settings_id() != 0
+        } else {
+            n.get_mode() == NavMode::Widget
+        };
+        if !in_hand {
+            return Err("move or resize mode with no widget in hand".into());
+        }
+    }
     app.spoken()?;
     if !app.visible.get() {
         if ui.get_editing() {
@@ -679,6 +692,9 @@ fn check(app: &App) -> Result<(), String> {
         }
         if n.get_expanded_id() != 0 {
             return Err("closed with a widget expanded".into());
+        }
+        if n.get_op() != NavOp::None {
+            return Err("closed in move or resize mode".into());
         }
     }
     Ok(())

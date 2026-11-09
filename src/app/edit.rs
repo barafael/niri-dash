@@ -163,7 +163,7 @@ impl App {
         self.note_picked();
     }
 
-    /// Tell the top bar's shortcuts about the widget being worked on: whether it is pinned.
+    /// Tell the quick tips about the widget being worked on: whether it is pinned.
     fn note_picked(&self) {
         let ui = self.ui();
         let id = ui.get_settings_id();
@@ -202,7 +202,7 @@ impl App {
         }
     }
 
-    /// Ctrl+Shift+h/j/k/l: move widget `id` one cell that way.
+    /// Move mode (Ctrl+M): move widget `id` one cell that way.
     fn nudge(&self, id: u32, dir: Dir) {
         let (dc, dr) = dir.step();
         let Some(r) = self.layout.borrow().get(id).map(Placed::rect) else {
@@ -216,12 +216,10 @@ impl App {
         self.place_by_key(id, target, (dc, dr));
     }
 
-    /// The keyboard's sizing mode: `key` (h narrower, l wider, k shorter, j taller) changes widget
-    /// `id` by a cell, from its right or bottom side, or from the left or top one when `flip`ped.
-    /// A widget that can't grow that way grows the other way instead.
-    fn size_by(&self, id: u32, key: Dir, flip: bool) {
-        let (first, second) = crate::nav::size_edges(key, flip);
-        let grow = second.is_some();
+    /// Resize mode (Ctrl+R): pull the `edge` side of widget `id` out by a cell, or in when not
+    /// `grow`ing. A widget that can't grow that way grows the other way instead.
+    fn size_by(&self, id: u32, edge: Dir, grow: bool) {
+        let (first, second) = crate::nav::size_edges(edge, grow);
         let mut refused = None;
         for edge in std::iter::once(first).chain(second) {
             let target = {
@@ -588,11 +586,13 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
         }
     });
     let a = app.clone();
-    ui.on_size_widget(move |id, key, flip| {
-        if let Some(key) = Dir::from_index(key) {
-            a.size_by(id as u32, key, flip);
+    ui.on_size_widget(move |id, edge, shrink| {
+        if let Some(edge) = Dir::from_index(edge) {
+            a.size_by(id as u32, edge, !shrink);
         }
     });
+    let a = app.clone();
+    ui.on_widget_note(move |id| a.size_note(id as u32));
     let a = app.clone();
     ui.on_resize_widget(move |id, col, row, w, h| {
         a.set_preview(None);
