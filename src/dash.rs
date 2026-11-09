@@ -246,6 +246,7 @@ impl Dash {
                 hint: String::new(),
             }];
             self.hidden_widgets = 0;
+            crate::widgets::layout_changed(self);
             return;
         }
         let placed: Vec<Placed> = self.layout.visible().into_iter().cloned().collect();
@@ -386,7 +387,8 @@ impl Dash {
     pub fn handle_event(&mut self, event: Event, cx: &mut Context<Self>) {
         self.delivered += 1;
         if let Some(control) = crate::widgets::event(self, event) {
-            self.control(control, cx);
+            // The window (opening it again, say) is the host's to deal with.
+            cx.emit(DashEvent::Control(control));
         }
         cx.notify();
     }
