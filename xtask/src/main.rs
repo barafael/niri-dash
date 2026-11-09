@@ -155,6 +155,10 @@ fn build_tests(root: &Path, package: &str, names: &[&str]) -> Result<Vec<(String
         "-p",
         package,
     ]);
+    // The dashboard's test programs are built on its headless harness, behind this feature.
+    if package == "niri-dash" {
+        cargo.args(["--features", "testing"]);
+    }
     for name in names {
         cargo.args(["--test", name]);
     }

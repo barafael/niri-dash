@@ -22,5 +22,5 @@ Color schemes and styles in `~/.config/niri-dash/` are not touched.
 
 ## In the web version
 
-Add `?reset` to the address and load it. The web version keeps its layout and settings in the
+The web version is the Slint variant. Add `?reset` to the address and load it. The web version keeps its layout and settings in the
 browser's localStorage, and this clears them.

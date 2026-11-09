@@ -116,8 +116,14 @@ fn resident(kind: Kind) -> bool {
 
 /// The real system, with the sources `solo`'s widget needs (all of them for the dashboard),
 /// reporting to `events`. Also decides which compositor this is, before anything asks. For
-/// development, `NIRI_DASH_MOCK=1` runs on the mock system's made-up data instead.
+/// development, `NIRI_DASH_MOCK=1` runs on the mock system's made-up data instead, and
+/// `NIRI_DASH_SIM=1` on the simulated system (the web version's, a made-up machine that keeps
+/// moving).
 pub fn start_system(events: sys::EventSender, solo: Option<Kind>) -> Result<Started> {
+    if std::env::var_os("NIRI_DASH_SIM").is_some() {
+        log::info!("running on the simulated system");
+        return Ok(sys::simulated(events)?);
+    }
     if std::env::var_os("NIRI_DASH_MOCK").is_some() {
         log::info!("running on the mock system");
         return Ok(sys::mock(events)?);
@@ -259,7 +265,12 @@ impl Host {
                     exclusive_zone: Some(px(-1.0)),
                     exclusive_edge: None,
                     margin: None,
-                    keyboard_interactivity: KeyboardInteractivity::Exclusive,
+                    // NIRI_DASH_NO_KEYBOARD=1 is for development: show without grabbing the keyboard.
+                    keyboard_interactivity: if std::env::var_os("NIRI_DASH_NO_KEYBOARD").is_some() {
+                        KeyboardInteractivity::None
+                    } else {
+                        KeyboardInteractivity::Exclusive
+                    },
                 }),
                 window_background: WindowBackgroundAppearance::Transparent,
                 app_id: Some("niri-dash".into()),
@@ -450,7 +461,7 @@ fn pump_inputs(host: &Host, inputs: async_channel::Receiver<Input>, cx: &mut App
 }
 
 /// Once a second, just after the second changes, while the dashboard is up.
-fn tick(dash: &Entity<Dash>, cx: &mut App) {
+pub fn tick(dash: &Entity<Dash>, cx: &mut App) {
     let dash = dash.clone();
     cx.spawn(async move |cx: &mut AsyncApp| {
         loop {

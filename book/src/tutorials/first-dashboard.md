@@ -2,7 +2,9 @@
 
 In this tutorial you use the dashboard from the keyboard, then open edit mode and change what it
 looks like. It all happens in the web version, on a simulated machine, so nothing on your own
-system is read or changed.
+system is read or changed. (The web version is built from the Slint variant, the only one that
+runs in a browser: see [Two variants](../explanation/two-variants.md). The keys and the edit mode
+are the same in the dashboard you install.)
 
 ## 1. Open the web version
 

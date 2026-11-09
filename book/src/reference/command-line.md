@@ -56,7 +56,12 @@ These are not in `niri-dash --help`.
 
 | Command | Does |
 |---|---|
-| `snapshot <OUT.png>` | Renders the dashboard offscreen to a PNG, without touching the screen. `--mock` uses made-up data. Other options choose the size (`--width`, `--height`, `--scale`), edit mode (`--edit`, `--tab`, `--configure`, `--arrange`), a standalone app (`--app`), a theme (`--colorscheme`, `--style`) and scripted input (`--events`). The manual's screenshots are made with it: see `book/screenshots.sh`. |
-| `stress` | Presses random keys at the dashboard, on made-up data, and checks what they do. Changes nothing on the system: its files go to a temporary directory. |
+| `snapshot <OUT.png>` | Renders the dashboard offscreen to a PNG, without a display and without touching the screen. `--mock` uses made-up data. Other options choose the size (`--width`, `--height`, `--scale`), edit mode (`--edit`, `--tab`, `--configure`, `--arrange`), a standalone app (`--app`), a theme (`--colorscheme`, `--style`) and scripted input (`--events`). The manual's screenshots are made with it: see `book/screenshots.sh`. |
+| `stress` | Presses random keys at the dashboard, on made-up data, and checks what they do. Changes nothing on the system: its files go to a temporary directory. By default it runs on screen, in a window of its own, at `--rate` keys a second (with `--ramp-up` and `--ramp-down` seconds of speeding up and slowing down, and a pause button and a pace panel in a second window) until `--ops` keys are done or a window is closed. `--headless` runs without a window as fast as it goes (2000 keys unless `--ops` says otherwise). `--seed` repeats a run, `--config` lays out your own `config.kdl`, `--keep-going` reports every problem at the end. |
+
+Both are only in a build made with the `testing` feature (`cargo build --features testing`, the
+headless harness the tests use): the program you install has neither. `snapshot` draws with GPUI's
+renderer into a texture, so it needs a GPU (or a software Vulkan such as lavapipe), but no display.
+The Slint variant's binary has both always.
 
 Each of these has its own `--help`.

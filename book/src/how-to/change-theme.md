@@ -32,4 +32,5 @@ To write a scheme or style of your own, copy a bundled file under a new name, ed
 new name on the `theme` line.
 
 To see a scheme or style without changing `config.kdl`, `niri-dash snapshot --colorscheme nord
---style soft out.png` renders one frame with them.
+--style soft out.png` renders one frame with them. (`snapshot` is a development command: it is in a
+build made with `cargo build --features testing`, see the [command line](../reference/command-line.md).)

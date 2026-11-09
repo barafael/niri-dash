@@ -56,4 +56,4 @@ A note keeps what you type. Two notes with the same name show the same note.
 
 {{#include ../widgets.generated.md:about}}
 
-The version, the license and the "Made with Slint" credit: [Slint](https://slint.dev) asks for it wherever its widgets are used. It has no settings and no keys.
+The version, the license, and "Made with GPUI". It has no settings and no keys. (The Slint variant's About card carries the "Made with Slint" credit that Slint's license asks for.)

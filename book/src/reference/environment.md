@@ -22,9 +22,8 @@ missing.
 |---|---|
 | `NIRI_DASH_CONFIG` | Path of the configuration file, instead of `~/.config/niri-dash/config.kdl`. |
 | `NIRI_DASH_STATE` | Path of the state file, instead of the default. |
-| `NIRI_DASH_HOME` | One directory for everything niri-dash keeps: `config/` and `state/` below it replace the XDG ones. Used by tests and by `niri-dash stress` to stay off your real files. |
-| `NIRI_DASH_RENDERER` | `auto`, `gpu` or `software`: overrides the `renderer` in `config.kdl`. |
-| `NIRI_DASH_SIM` | Any value runs on the web version's simulated machine instead of the real one. |
+| `NIRI_DASH_HOME` | One directory for everything niri-dash keeps: `config/`, `data/` and `state/` below it replace the XDG ones. Used by tests, `niri-dash stress` and `niri-dash snapshot` to stay off your real files. |
+| `NIRI_DASH_SIM` | Any value runs on the simulated machine (the web version's) instead of the real one. |
 | `NIRI_DASH_MOCK` | Any value runs on the mock system's made-up data. For development. |
 | `NIRI_DASH_NO_KEYBOARD` | Any value shows the dashboard without grabbing the keyboard. For development. |
 | `NIRI_DASH_ATSPI` | `0` turns off publishing the dashboard to screen readers (AT-SPI). Anything else, or unset, leaves it on. |

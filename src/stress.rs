@@ -13,6 +13,12 @@
 //! activate and go back. Every so often the driver presses Escape until the dashboard closes, which
 //! has to happen within a few presses from anywhere. A closed dashboard is opened again, as the
 //! hotkey would.
+//!
+//! On screen (the default) the keys go to a real window at `--rate` a second, with a pause button
+//! and a panel for the pace in a window of their own (`live`). `--headless` runs on GPUI's test
+//! platform instead, as fast as it goes (`tests/stress.rs` is that).
+
+mod live;
 
 use crate::Control;
 use crate::dash::{Dash, Place};
@@ -24,9 +30,21 @@ use strum::IntoEnumIterator;
 
 #[derive(clap::Args, Clone)]
 pub struct Args {
-    /// Stop after this many keys.
-    #[arg(long, default_value_t = 2000)]
-    pub ops: u64,
+    /// Keys per second on screen; 0 for as fast as it goes.
+    #[arg(long, default_value_t = 4.0)]
+    pub rate: f64,
+    /// Stop after this many keys [default: until the window is closed, or 2000 headless].
+    #[arg(long)]
+    pub ops: Option<u64>,
+    /// On screen: seconds to speed up from a crawl to --rate at the start.
+    #[arg(long, default_value_t = 0.0)]
+    pub ramp_up: f64,
+    /// On screen: seconds to slow down to a crawl before --ops keys are done.
+    #[arg(long, default_value_t = 0.0)]
+    pub ramp_down: f64,
+    /// Run on GPUI's test platform, without a window.
+    #[arg(long)]
+    pub headless: bool,
     /// Seed for the keys, to run the same sequence again [default: from the clock].
     #[arg(long)]
     pub seed: Option<u64>,
@@ -39,6 +57,66 @@ pub struct Args {
     /// Go on after a problem and report each different one at the end.
     #[arg(long)]
     pub keep_going: bool,
+}
+
+/// What the monkey does to the dashboard and reads of it: the headless harness, or a window on
+/// screen (`live`).
+pub trait Rig {
+    /// Read the dashboard.
+    fn read<R>(&self, f: impl FnOnce(&Dash) -> R) -> R;
+    /// Change the dashboard, as the app itself would.
+    fn update<R>(&mut self, f: impl FnOnce(&mut Dash, &mut gpui::Context<Dash>) -> R) -> R;
+    /// A control, as the hotkey or the control socket would send it.
+    fn control(&mut self, c: Control);
+    /// Press a key by name (`"j"`, `"ctrl+h"`, `"esc"`).
+    fn key(&mut self, name: &str);
+    fn click(&mut self, x: f32, y: f32);
+    fn click_with(&mut self, x: f32, y: f32, button: gpui::MouseButton);
+    fn double_click(&mut self, x: f32, y: f32);
+    /// The pointer moves, no button down.
+    fn move_to(&mut self, x: f32, y: f32);
+    /// Press at `from`, move to `to` in `steps` steps, release.
+    fn drag(&mut self, from: (f32, f32), to: (f32, f32), steps: u32);
+    /// Turn the wheel at a point.
+    fn scroll(&mut self, x: f32, y: f32, dy: f32);
+    /// The window's size in pixels.
+    fn size(&self) -> (u32, u32);
+}
+
+impl Rig for Harness {
+    fn read<R>(&self, f: impl FnOnce(&Dash) -> R) -> R {
+        Harness::read(self, f)
+    }
+    fn update<R>(&mut self, f: impl FnOnce(&mut Dash, &mut gpui::Context<Dash>) -> R) -> R {
+        Harness::update(self, f)
+    }
+    fn control(&mut self, c: Control) {
+        Harness::control(self, c)
+    }
+    fn key(&mut self, name: &str) {
+        Harness::key(self, name)
+    }
+    fn click(&mut self, x: f32, y: f32) {
+        Harness::click(self, x, y)
+    }
+    fn click_with(&mut self, x: f32, y: f32, button: gpui::MouseButton) {
+        Harness::click_with(self, x, y, button)
+    }
+    fn double_click(&mut self, x: f32, y: f32) {
+        Harness::double_click(self, x, y)
+    }
+    fn move_to(&mut self, x: f32, y: f32) {
+        Harness::move_to(self, x, y)
+    }
+    fn drag(&mut self, from: (f32, f32), to: (f32, f32), steps: u32) {
+        Harness::drag(self, from, to, steps)
+    }
+    fn scroll(&mut self, x: f32, y: f32, dy: f32) {
+        Harness::scroll(self, x, y, dy)
+    }
+    fn size(&self) -> (u32, u32) {
+        Harness::size(self)
+    }
 }
 
 /// How many presses of Escape may pass before the dashboard has to be closed.
@@ -343,7 +421,7 @@ impl Monkey {
     }
 
     /// Check the dashboard as the last key left it, then press the next one (or open it again).
-    fn step(&mut self, h: &mut Harness) -> Result<(), Failure> {
+    fn step(&mut self, h: &mut impl Rig) -> Result<(), Failure> {
         let (place, state, kind) = h.read(|d| (d.place(), describe(d), kind_name(d)));
         if self.wheeled
             && let Some(before) = &self.wheel_cursor
@@ -415,7 +493,7 @@ impl Monkey {
     /// Something a person does besides pressing a key, at random: change the color scheme or the
     /// style, adjust or reset a style variable, click or scroll somewhere, or ask for a control
     /// the way a hotkey or the control socket would. Says what it did.
-    fn extra(&mut self, h: &mut Harness) -> String {
+    fn extra(&mut self, h: &mut impl Rig) -> String {
         match self.rng.below(100) {
             0..=19 => {
                 let name = self.pick(theme::list(&theme::colorschemes_dir()));
@@ -499,7 +577,7 @@ impl Monkey {
 
     /// The pointer at work on the widgets: drag one (by its card or from the middle of an edge)
     /// somewhere, or double click one to pick it up and put it down.
-    fn pointer_edit(&mut self, h: &mut Harness) -> String {
+    fn pointer_edit(&mut self, h: &mut impl Rig) -> String {
         let centres: Vec<(f32, f32, f32)> = h.read(|d| {
             let g = d.geometry(d.size.0, d.size.1);
             d.tiles
@@ -551,7 +629,7 @@ impl Monkey {
     }
 
     /// A point in the window, a little past its edges now and then.
-    fn point(&mut self, h: &Harness) -> (f32, f32) {
+    fn point(&mut self, h: &impl Rig) -> (f32, f32) {
         let (w, hgt) = h.size();
         let along = |rng: &mut Rng, extent: f32| (rng.below(1100) as f32 / 1000.0 - 0.05) * extent;
         (
@@ -562,7 +640,7 @@ impl Monkey {
 
     /// With the hints up: mostly the next letter of some label, now and then a wrong one or a way
     /// out.
-    fn hint_key(&mut self, h: &Harness) -> String {
+    fn hint_key(&mut self, h: &impl Rig) -> String {
         let typed = h.read(|d| d.nav.typed.clone());
         let roll = self.rng.below(100);
         if roll < 4 {
@@ -710,17 +788,25 @@ pub fn run(args: &Args) -> crate::window::Result<()> {
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(1, |d| d.as_nanos() as u64)
     });
-    println!("stress run, seed {seed}; files in {}", sandbox.path().display());
+    println!(
+        "stress run, seed {seed}, {} keys a second; files in {}",
+        args.rate,
+        sandbox.path().display()
+    );
     let monkey = Monkey::new(seed, !args.quiet);
     let monkey = if args.keep_going {
         monkey.keep_going()
     } else {
         monkey
     };
-    let config = crate::layout::Layout::load().text;
-    let monkey = Harness::with_mock(&config)
-        .stress(monkey, args.ops)
-        .map_err(|f| crate::window::Error::Stress(f.to_string()))?;
+    let monkey = if args.headless {
+        let config = crate::layout::Layout::load().text;
+        Harness::with_mock(&config)
+            .stress(monkey, args.ops.unwrap_or(2000))
+            .map_err(|f| crate::window::Error::Stress(f.to_string()))?
+    } else {
+        live::run(monkey, args)?
+    };
     println!("{}", monkey.summary());
     monkey
         .finish()
