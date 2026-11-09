@@ -417,6 +417,9 @@ impl Dash {
         if self.typing && key.bare() {
             return false;
         }
+        if self.nav.mode == NavMode::Widget && crate::widgets::capturing(self) {
+            return crate::widgets::widget_key(self, key, cx);
+        }
         if self.nav.mode == NavMode::Hints {
             return self.hints_key(key, cx);
         }

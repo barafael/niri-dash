@@ -291,6 +291,12 @@ pub fn escape(d: &mut Dash, cx: &mut Context<Dash>) -> bool {
         || extras::escape(d, cx)
 }
 
+/// Whether the entered widget has a menu open that takes every key (the tray's): the dashboard's
+/// own keys (`e`, `s`, Shift+H…) wait until it is closed.
+pub fn capturing(d: &Dash) -> bool {
+    d.widgets.desk.tray.menu.is_some()
+}
+
 /// Do not disturb on or off (`niri-dash dnd`, the stress run): the notifications widget's.
 pub fn toggle_dnd(d: &mut Dash) {
     desk::toggle_dnd(d);
@@ -311,8 +317,8 @@ pub fn mascot_say(d: &mut Dash, say: crate::mascots::Say, cx: &mut Context<Dash>
 }
 
 /// What a group draws over the whole window, above the frames (the tray's menu): in order.
-pub fn overlays(_d: &Dash, _tk: &Tk, _cx: &mut Context<Dash>) -> Vec<AnyElement> {
-    Vec::new()
+pub fn overlays(d: &Dash, tk: &Tk, cx: &mut Context<Dash>) -> Vec<AnyElement> {
+    desk::overlay(d, tk, cx)
 }
 
 // ---- edit mode: replaced by the edit mode port ---------------------------------------------
