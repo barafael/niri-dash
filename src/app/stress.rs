@@ -243,6 +243,10 @@ pub struct Monkey {
     /// A wheel turned since a key last moved a cursor: it may have scrolled the cursor's row out
     /// of a list's view (the sidebar's or a widget's), and that is as the person wanted it.
     wheeled: bool,
+    /// What the cursor was on when a key that could move it was pressed after the wheel. If it is
+    /// on something else after that, the key moved it, and has to have brought its row into view;
+    /// if not (`up` on the first row), there was nothing to bring back.
+    wheel_cursor: Option<String>,
     /// Going on after problems: each different one, how often, and the keys that first led there.
     collected: Option<BTreeMap<String, (u64, Vec<String>)>>,
 }
@@ -261,6 +265,7 @@ impl Monkey {
             extras: 0,
             instant_looks: false,
             wheeled: false,
+            wheel_cursor: None,
             collected: None,
         }
     }
@@ -355,6 +360,13 @@ impl Monkey {
         // the cursor's row back into sight until then, and the check shouldn't look in between.
         slint::platform::update_timers_and_animations();
         let place = place(app);
+        if self.wheeled
+            && let Some(before) = &self.wheel_cursor
+            && app.cursor_signature() != *before
+        {
+            self.wheeled = false;
+            self.wheel_cursor = None;
+        }
         if let Err(p) = check(app)
             && !(self.wheeled && scrolled_away(&p))
         {
@@ -404,8 +416,8 @@ impl Monkey {
             (None, _) => self.rng.weighted(OFF).into(),
         };
         self.done += 1;
-        if CURSOR_KEYS.contains(&key.as_str()) {
-            self.wheeled = false;
+        if self.wheeled && CURSOR_KEYS.contains(&key.as_str()) {
+            self.wheel_cursor = Some(app.cursor_signature());
         }
         self.note(format!("{:>6}  {key:<10} at {state}", self.done));
         // The keyboard is the dashboard's, also while a watched window lacks the focus.
@@ -477,6 +489,7 @@ impl Monkey {
                     [-120.0, -40.0, 40.0, 120.0][self.rng.below(4) as usize],
                 );
                 self.wheeled = true;
+                self.wheel_cursor = None;
                 window.dispatch_event(WindowEvent::PointerMoved { position: at });
                 window.dispatch_event(WindowEvent::PointerScrolled {
                     position: at,

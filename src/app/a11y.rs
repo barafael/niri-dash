@@ -181,6 +181,26 @@ impl Element {
 }
 
 impl App {
+    /// What is under the keyboard cursor anywhere in the window, in sight or not, as one line. A
+    /// key moved the cursor if this differs from before it.
+    pub(super) fn cursor_signature(&self) -> String {
+        let ui = self.ui();
+        let Some(component) = WindowInner::from_pub(ui.window()).try_component() else {
+            return String::new();
+        };
+        let mut all = Vec::new();
+        ItemRc::new_root(component).visit_descendants(|item| {
+            if item.is_accessible() && prop(item, Prop::ItemSelected) == "true" {
+                // The role and the name, not the value: a key that changes a value (Columns 14,
+                // then 13) hasn't moved the cursor.
+                let spoken = speak(item);
+                all.push(format!("{} {}", spoken.role, spoken.label));
+            }
+            ControlFlow::<()>::Continue(())
+        });
+        all.join(" | ")
+    }
+
     /// The element labelled `label` with this role ("button", "listitem", as [`Spoken`] has it).
     pub(super) fn element(&self, label: &str, role: &str) -> Option<Element> {
         let ui = self.ui();
