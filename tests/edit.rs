@@ -1952,6 +1952,176 @@ fn drawer_makes_room(issues: &mut Issues) {
 }
 
 // ------------------------------------------------------------------------------------------
+// Carrying, expanding, and the card stepping aside.
+
+/// A widget picked up with a double click follows the pointer; Escape (or a right click) puts it
+/// back, a second Escape lets go of it, and a click drops it where it is.
+fn carrying(issues: &mut Issues) {
+    let mut h = dashboard(MIXED);
+    let cal = id_of(&h, "calendar");
+    let a0 = tile(&h, cal).unwrap();
+    let on = h.cell_origin(a0.col as f32 + 2.0, a0.row as f32 + 3.0);
+    let carried = |h: &Harness| h.read(|d| d.edit.dragging());
+    h.double_click(on.0, on.1);
+    if !carried(&h) || h.adjust_id() != cal {
+        issues.add("carry: a double click didn't pick the calendar up");
+    }
+    if !h.edit_hints().iter().any(|s| s.contains("place it")) {
+        issues.add(format!("carry: the top bar says {:?}", h.edit_hints()));
+    }
+    // Away over the free area: it is not where it was until it is dropped.
+    let free = h.cell_origin(14.0, 7.0);
+    h.move_to(free.0, free.1);
+    if tile(&h, cal).unwrap().col != a0.col {
+        issues.add("carry: the widget moved before it was dropped");
+    }
+    h.key("esc");
+    if carried(&h) || h.adjust_id() != cal {
+        issues.add("carry: Escape should end the carrying and keep the widget open");
+    }
+    if tile(&h, cal).unwrap().col != a0.col || tile(&h, cal).unwrap().row != a0.row {
+        issues.add("carry: Escape moved the widget");
+    }
+    h.key("esc");
+    if h.adjust_id() != 0 {
+        issues.add("carry: the second Escape didn't let go of the widget");
+    }
+    // A right click cancels too.
+    h.double_click(on.0, on.1);
+    h.move_to(free.0, free.1);
+    h.click_with(free.0, free.1, MouseButton::Right);
+    if carried(&h) || tile(&h, cal).unwrap().col != a0.col {
+        issues.add("carry: a right click should put the widget back");
+    }
+    h.key("esc");
+    // A click drops it.
+    h.double_click(on.0, on.1);
+    h.move_to(free.0, free.1);
+    h.click(free.0, free.1);
+    let a1 = tile(&h, cal).unwrap();
+    if carried(&h) || (a1.col, a1.row) == (a0.col, a0.row) {
+        issues.add(format!(
+            "carry: a click should drop the widget; it is at {},{} ({})",
+            a1.col,
+            a1.row,
+            h.toast_text()
+        ));
+    }
+    issues.check(&h, "carry: dropped");
+    // A pinned widget isn't picked up.
+    h.key("esc");
+    h.toggle_pin(cal);
+    let at = h.cell_origin(a1.col as f32 + 2.0, a1.row as f32 + 3.0);
+    h.double_click(at.0, at.1);
+    if carried(&h) {
+        issues.add("carry: a pinned widget was picked up");
+    }
+}
+
+/// `e` in an entered widget blows it up in the middle of the grid; Escape (or `e`) puts it back.
+fn expanding(issues: &mut Issues) {
+    let mut h = dashboard(MIXED);
+    let name = format!("widget {}", testing::title("clock"));
+    let before = h.bounds_of_named(&name).expect("the clock on screen");
+    h.key("f");
+    h.type_label("clock");
+    h.key("e");
+    let big = h.bounds_of_named(&name).expect("the clock on screen");
+    if big.size.width <= before.size.width || big.size.height <= before.size.height {
+        issues.add(format!("expand: the clock is {:?} blown up, {:?} before", big.size, before.size));
+    }
+    let (w, hgt) = h.size();
+    let (cx, cy) = (f32::from(big.center().x), f32::from(big.center().y));
+    if (cx - w as f32 / 2.0).abs() > w as f32 * 0.1 || (cy - hgt as f32 / 2.0).abs() > hgt as f32 * 0.15 {
+        issues.add(format!("expand: the blown-up clock is centered at {cx},{cy} in a {w}x{hgt} window"));
+    }
+    h.key("esc");
+    let back = h.bounds_of_named(&name).expect("the clock on screen");
+    if back != before {
+        issues.add(format!("expand: Escape left the clock {back:?}, it was {before:?}"));
+    }
+    if h.nav_mode() != NavMode::Widget {
+        issues.add("expand: Escape should only put the widget back, not leave it");
+    }
+    h.key("e");
+    h.key("e");
+    if h.bounds_of_named(&name) != Some(before) {
+        issues.add("expand: e twice should end where it began");
+    }
+    issues.check(&h, "expand");
+}
+
+/// The settings card steps aside while the keys are on the widgets or the hint labels are up.
+fn card_steps_aside(issues: &mut Issues) {
+    let mut h = dashboard("layout {\n    clock col=0 row=0 width=3 height=2\n}\n");
+    h.key("ctrl+e");
+    // `s` picks the widget, Enter puts the cursor on its settings.
+    h.key("s");
+    h.key("enter");
+    if !h.read(|d| d.card_up()) {
+        issues.add("card: Enter on a picked widget should show its settings");
+    }
+    h.key("f");
+    if h.read(|d| d.card_up()) {
+        issues.add("card: the hint labels should hide the settings card");
+    }
+    h.key("esc");
+    if !h.read(|d| d.card_up()) {
+        issues.add("card: Escape should take the labels down and show the card again");
+    }
+    // The keys on the widgets: the card keeps out of the way.
+    h.key("w");
+    if h.read(|d| d.card_up()) {
+        issues.add("card: with the keys on the widgets the card should be down");
+    }
+    h.key("tab");
+    if !h.read(|d| d.card_up()) {
+        issues.add("card: Tab should bring it back");
+    }
+    issues.check(&h, "card: stepping aside");
+}
+
+/// With animations on, the drawer slides in and the grid shrinks with it, over time; frames glide
+/// to their new places; nothing is left half way once the time is up, and none of it breaks the
+/// layout.
+fn gliding(issues: &mut Issues) {
+    let mut h = dashboard(MIXED);
+    h.animate(true);
+    let big = h.cell();
+    h.set_editing(true);
+    // The slide takes a while: the cells are not yet at their smallest.
+    let during = h.cell();
+    if during < big * 0.5 || during > big {
+        issues.add(format!("glide: the cells are {during} at the start of the slide, {big} before"));
+    }
+    std::thread::sleep(std::time::Duration::from_millis(700));
+    h.settle();
+    h.settle();
+    let small = h.cell();
+    if small >= big * 0.97 {
+        issues.add(format!("glide: the cells are {small} after the drawer slid in, {big} before"));
+    }
+    // A widget moved glides to its place: a moment later it is there.
+    let clock = id_of(&h, "clock");
+    h.move_widget(clock, 5, 6);
+    std::thread::sleep(std::time::Duration::from_millis(700));
+    h.settle();
+    h.settle();
+    let t = tile(&h, clock).unwrap();
+    if (t.col, t.row) != (5, 6) {
+        issues.add(format!("glide: the clock is at {},{} after moving to 5,6", t.col, t.row));
+    }
+    h.set_editing(false);
+    std::thread::sleep(std::time::Duration::from_millis(700));
+    h.settle();
+    h.settle();
+    if (h.cell() - big).abs() > 0.5 {
+        issues.add(format!("glide: the cells are {} after the drawer slid out, {big} before", h.cell()));
+    }
+    issues.check(&h, "glide");
+}
+
+// ------------------------------------------------------------------------------------------
 
 type Scenario = (&'static str, fn(&mut Issues));
 
@@ -1979,6 +2149,10 @@ fn main() {
         ("card: s opens it, Escape closes it", settings_card_keys),
         ("resize: pushed widgets come back when it shrinks", resize_gives_room_back),
         ("drawer: the cells shrink to make room", drawer_makes_room),
+        ("carry: a widget picked up with a double click", carrying),
+        ("expand: a widget blown up in the middle", expanding),
+        ("card: it steps aside for the keys and the labels", card_steps_aside),
+        ("glide: animations on", gliding),
     ];
     let only = std::env::var("NIRI_DASH_EDIT_ONLY").unwrap_or_default();
     let scenarios: Vec<_> = scenarios

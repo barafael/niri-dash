@@ -189,6 +189,8 @@ impl Dash {
                         .id(eid("palette-entry", i))
                         .role(Role::Button)
                         .aria_label(title)
+                        .aria_description(p.description.clone())
+                        .aria_selected(kfocus)
                         .debug_selector(move || title.to_string())
                         .size_full()
                         .p(px(10.0))

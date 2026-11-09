@@ -405,6 +405,75 @@ mod tests {
     use super::*;
     use crate::dash::BAR;
 
+    fn said(compositor: Compositor, kind: Kind) -> Option<(String, bool)> {
+        caveat(Capabilities::for_compositor(compositor, true, true), kind)
+    }
+
+    /// Where a widget can't work, it says so the same way, naming the platform.
+    #[test]
+    fn caveats_name_the_platform() {
+        assert_eq!(said(Compositor::Niri, Kind::Windows), None);
+        assert_eq!(
+            said(Compositor::Kwin, Kind::Windows),
+            Some((
+                "Open windows (KWin gives no window list: run niri-dash desktop-entries)".into(),
+                true
+            ))
+        );
+        assert_eq!(
+            said(Compositor::Other, Kind::Windows),
+            Some((
+                "Open windows by workspace (not available on this desktop)".into(),
+                true
+            ))
+        );
+        // Once KWin has let us bind the list.
+        let mut granted = Capabilities::for_compositor(Compositor::Kwin, true, true);
+        granted.windows = true;
+        assert_eq!(
+            caveat(granted, Kind::Windows),
+            Some(("Open windows".into(), false))
+        );
+        assert_eq!(
+            said(Compositor::Kwin, Kind::Privacy),
+            Some((
+                "Who uses the microphone or camera (screen sharing not available on KDE Plasma)"
+                    .into(),
+                false
+            ))
+        );
+        assert_eq!(
+            said(Compositor::Other, Kind::KeyboardLayout),
+            Some((
+                "Keyboard layouts (not available on this desktop)".into(),
+                true
+            ))
+        );
+        assert_eq!(
+            said(Compositor::Other, Kind::ColorPicker),
+            Some(("Color picker (not available on this desktop)".into(), true))
+        );
+        assert_eq!(said(Compositor::Kwin, Kind::ColorPicker), None);
+    }
+
+    /// The palette lists the widgets that can't work here last.
+    #[test]
+    fn the_palette_puts_what_cannot_work_last() {
+        let caps = Capabilities::for_compositor(Compositor::Other, true, true);
+        let items = palette(caps);
+        assert_eq!(items.len(), Kind::iter().count());
+        let first_out = items
+            .iter()
+            .position(|p| caveat(caps, p.kind).is_some_and(|(_, out)| out))
+            .expect("some widget can't work on an unknown desktop");
+        assert!(
+            items[first_out..]
+                .iter()
+                .all(|p| caveat(caps, p.kind).is_some_and(|(_, out)| out)),
+            "a widget that works comes after one that can't"
+        );
+    }
+
     #[test]
     fn a_closed_drawer_leaves_the_margins() {
         let r = Room::new(1000.0, 600.0, 8.0, 0.0);

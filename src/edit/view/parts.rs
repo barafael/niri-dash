@@ -9,7 +9,7 @@ use crate::theme::Color;
 use gpui::prelude::*;
 use gpui::{
     AnyElement, App, ClickEvent, Div, ElementId, Entity, FontWeight, Hsla, Role, SharedString,
-    Stateful, Window, div, px,
+    Stateful, Toggled, Window, div, px,
 };
 use gpui_kit::component::input::{Input, InputState};
 
@@ -52,6 +52,7 @@ pub fn eid(ns: &str, n: usize) -> ElementId {
 }
 
 /// A square button with an icon. Its name says what it does.
+#[allow(clippy::too_many_arguments)]
 pub fn icon_btn(
     id: impl Into<ElementId>,
     icon: &str,
@@ -76,6 +77,7 @@ pub fn icon_btn(
         .id(id)
         .role(Role::Button)
         .aria_label(label)
+        .aria_selected(look.kfocus)
         .debug_selector(move || name)
         .flex_none()
         .size(px(size))
@@ -100,7 +102,8 @@ pub fn icon_btn(
     }
 }
 
-/// A button with a label, `h` px high.
+/// A button with a label.
+#[allow(clippy::too_many_arguments)]
 pub fn text_btn(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
@@ -125,6 +128,7 @@ pub fn text_btn(
         .id(id)
         .role(Role::Button)
         .aria_label(label.clone())
+        .aria_selected(look.kfocus)
         .debug_selector(move || name)
         .h(px(30.0))
         .min_w_0()
@@ -245,6 +249,8 @@ pub fn setting_row(
         }
     };
     let on = row.on;
+    let on_toggle = row.kind == RowKind::Toggle;
+    let value_text = row.value.clone();
     let head = div()
         .h(px(40.0))
         .flex()
@@ -350,6 +356,8 @@ pub fn setting_row(
         .id(eid(&format!("{n}-row"), pos))
         .role(Role::ListItem)
         .aria_label(label.clone())
+        .aria_selected(kfocus)
+        .aria_value(if on_toggle { String::new() } else { value_text.clone() })
         .debug_selector({
             let name = format!("row {label}");
             move || name
@@ -378,6 +386,7 @@ pub fn switch_btn(
         .id(id)
         .role(Role::Switch)
         .aria_label(label)
+        .aria_toggled(if on { Toggled::True } else { Toggled::False })
         .debug_selector(move || name)
         .flex_none()
         .w(px(40.0))
@@ -429,6 +438,7 @@ pub fn text_field(state: Entity<InputState>, label: &str, live: bool, tk: &Tk) -
 
 /// One of the sidebar's choices (a color scheme, a style): a preview, its name and description,
 /// and a check mark on the current one.
+#[allow(clippy::too_many_arguments)]
 pub fn choice_card(
     id: impl Into<ElementId>,
     name: &str,
@@ -453,6 +463,9 @@ pub fn choice_card(
         .id(id)
         .role(Role::RadioButton)
         .aria_label(name.to_string())
+        .aria_description(description.to_string())
+        .aria_toggled(if current { Toggled::True } else { Toggled::False })
+        .aria_selected(kfocus)
         .debug_selector(move || label)
         .h(px(height))
         .flex_none()
@@ -513,6 +526,7 @@ pub fn segment(
         .id(id)
         .role(Role::Tab)
         .aria_label(label)
+        .aria_selected(active)
         .debug_selector(move || label.to_string())
         .flex_1()
         .min_w_0()

@@ -483,6 +483,11 @@ impl Harness {
         self.has(name)
     }
 
+    /// Let things glide again (the harness has them snap to their ends).
+    pub fn animate(&mut self, on: bool) {
+        self.update(|d, _| d.edit.anim.snap = !on);
+    }
+
     pub fn set_editing(&mut self, on: bool) {
         self.update(|d, cx| d.set_editing(on, cx));
     }

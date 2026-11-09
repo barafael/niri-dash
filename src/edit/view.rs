@@ -246,7 +246,7 @@ impl Dash {
         if d.mode != DragMode::Add {
             return None;
         }
-        let w = (d.w as f32 * g.cell).min(260.0).max(120.0);
+        let w = (d.w as f32 * g.cell).clamp(120.0, 260.0);
         Some(
             div()
                 .absolute()
