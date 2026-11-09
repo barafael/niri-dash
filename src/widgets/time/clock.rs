@@ -1,6 +1,6 @@
 //! The clock widget: the time of day, and the date under it.
 
-use super::Ctx;
+use crate::widgets::Ctx;
 use crate::dash::Dash;
 use chrono::{Local, Timelike};
 use gpui::prelude::*;
@@ -51,7 +51,7 @@ impl State {
 }
 
 pub fn render(ctx: &Ctx, _cx: &mut Context<Dash>) -> AnyElement {
-    let c = &ctx.d.widgets.clock;
+    let c = &ctx.d.widgets.time.clock;
     let tk = ctx.tk;
     let (hours12, seconds, date) = (ctx.opts.hours12, ctx.opts.seconds, ctx.opts.date);
     let size = (ctx.h * 0.42).min(ctx.w * 0.24).clamp(22.0, 160.0);

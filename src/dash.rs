@@ -169,7 +169,7 @@ impl Dash {
             toast: None,
             focus: cx.focus_handle(),
             size: (0.0, 0.0),
-            widgets: Widgets::restored(&state),
+            widgets: Widgets::default(),
             state,
             last_written: text,
             config_broken: broken,
@@ -185,6 +185,7 @@ impl Dash {
         if !notes.is_empty() {
             dash.toast(&notes.join("; "));
         }
+        crate::widgets::init(&mut dash);
         dash.sync_widgets();
         dash.reset_nav();
         dash
@@ -256,7 +257,7 @@ impl Dash {
             .map(|(placed, hint)| Tile { placed, hint })
             .collect();
         self.hidden_widgets = self.layout.hidden_count();
-        self.widgets.layout_changed(&self.tiles);
+        crate::widgets::layout_changed(self);
     }
 
     pub fn tile(&self, id: u32) -> Option<&Tile> {
@@ -287,21 +288,21 @@ impl Dash {
             self.go_down();
         }
         self.tx.host.tell(sys::host::Command::Visible(on));
-        self.widgets.awake(on, &self.tx);
+        crate::widgets::awake(self, on);
         cx.notify();
     }
 
     /// The dashboard's part of coming up: every widget back on its first page, no widget entered
     /// (a standalone app is in its one widget).
     fn come_up(&mut self) {
-        self.widgets.come_up();
+        crate::widgets::come_up(self);
         self.reset_nav();
     }
 
     /// Going away: out of edit mode, menus shut, no widget entered.
     fn go_down(&mut self) {
         self.editing = false;
-        self.widgets.go_down();
+        crate::widgets::go_down(self);
         self.reset_nav();
     }
 
@@ -341,7 +342,7 @@ impl Dash {
     }
 
     pub fn toggle_dnd(&mut self, cx: &mut Context<Self>) {
-        self.widgets.toggle_dnd(&mut self.state, &self.tx);
+        crate::widgets::toggle_dnd(self);
         cx.notify();
     }
 
@@ -366,7 +367,7 @@ impl Dash {
         if self.toast.as_ref().is_some_and(|t| Instant::now() >= t.until) {
             self.toast = None;
         }
-        self.widgets.tick();
+        crate::widgets::tick(self);
         cx.notify();
     }
 
@@ -529,7 +530,7 @@ impl Dash {
         self.nav.expanded_id = 0;
         self.nav.active_id = id;
         self.nav.mode = NavMode::Widget;
-        self.widgets.entered(id, &self.tiles);
+        crate::widgets::entered(self, id);
     }
 
     /// The tile next to `id` in direction `d`.

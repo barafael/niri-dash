@@ -26,11 +26,15 @@ The **Slint code is in `legacy/`** (not built; for reading, deleted when the por
   events, the control socket and a once-a-second `tick` into it.
 - `src/ui.rs`: `impl Render for Dash`: backdrop, top bar, a frame per tile at its grid position,
   hint labels, toast. A frame calls `widgets::render`.
-- `src/widgets/mod.rs`: the registry. A widget module has a `State` (field of `Widgets`), a
-  `render(&Ctx, cx) -> AnyElement`, `event(d, &sys::Event)` for what it listens to, `key(...)`
-  for the keys of an entered widget (through a `scope::Scope`), and invariants for the stress run.
-  **Every kind has a line in each `match` of `mod.rs`; adding one touches only those lines.**
-  `Ctx` has the card's size in pixels (`w`, `h`; widgets adapt to it as the Slint ones did to
+- `src/widgets/mod.rs`: the registry. Widgets are in **groups**, one module each (`time`,
+  `monitors`, `controls`, `net`, `tools`, `desk`, `devices`, `extras`), all with the same hooks
+  (`State`, `handles`, `render`, `event`, `key`, `escape`, `tick`, `init`, `come_up`, `go_down`,
+  `awake`, `entered`, `layout_changed`, `describe`, `check`; `time.rs` + `time/clock.rs` is the
+  model). `mod.rs` calls them in turn, so **a group is yours alone: you never edit `mod.rs`** (nor
+  another group's files). Put each widget in a submodule `widgets/<group>/<kind>.rs`. Inside a
+  group, a widget has its data (what `legacy/ui/data.slint` held for it, as plain structs in its
+  `State`), `render(&Ctx, cx) -> AnyElement`, event handling (`d: &mut Dash, &sys::Event`), keys
+  of an entered widget (through a `scope::Scope`), and invariants for the stress run. `Ctx` has the card's size in pixels (`w`, `h`; widgets adapt to it as the Slint ones did to
   `root.width`), `round`, `entered`, `opts` (the widget's settings) and the look (`tk`).
 - `src/scope.rs`: the keyboard cursor of an entered widget; port of Slint's `NavScope`
   (`legacy/ui/common.slint`). j/k/h/l/g/G/Tab/Enter/Space/Backspace are the scope's; a widget
@@ -66,9 +70,17 @@ The **Slint code is in `legacy/`** (not built; for reading, deleted when the por
    exists, …).
 7. Nothing in a test may touch the real system: use `Harness::with_mock` / `Harness::new` and a
    `Sandbox` (see `tests/stress.rs`).
-8. **Commit in your own branch/worktree; don't edit other widgets' modules.** The only shared
-   files you edit are `src/widgets/mod.rs` (your lines), `src/kit.rs` (additions), `Cargo.toml`
-   (new dependencies, justified).
+8. **Commit in your own branch/worktree; don't edit other groups' modules.** The only shared
+   files you may touch are `src/kit.rs` (additions only: new functions at the end; put anything
+   bigger in `src/widgets/<group>/` first) and `Cargo.toml` (new dependencies, justified). A
+   widget that needs something of `Dash` itself (a new field, a method) adds it in your group's
+   `State` or as `impl Dash { .. }` in your group's files, not in `dash.rs`.
+9. **Text input**: `gpui_kit::component::input` (`InputState`, `Input`, `InputEvent`) is the text
+   field; keep its state in your group's `State`, and make Escape/Enter behave as the Slint
+   `TextField` did (`legacy/ui/common.slint`).
+10. **Tests** that need a window go in `tests/<group>.rs` (a `fn main` program like
+    `tests/stress.rs`, `[[test]] harness = false, required-features = ["testing"]` in Cargo.toml)
+    or `#[cfg(test)]` unit tests next to the code.
 
 ## Commands
 

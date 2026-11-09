@@ -1,26 +1,30 @@
-//! The widgets, one module per kind (or per few related ones), and the registry that routes to
-//! them: what each kind draws, what the system's events do to it, and what the keys do inside it.
+//! The widgets, in groups (one module each, owned by whoever ports it), and the registry that
+//! routes to them: what each kind draws, what the system's events do to it, and what the keys do
+//! inside it.
 //!
-//! A widget module has:
-//! - a `State` (Default) in [`Widgets`]: everything it keeps that isn't the layout or the look.
-//!   Several instances of a kind share it (two clocks show the same time);
-//! - `fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement`: what it draws, in a card of
-//!   `ctx.w` by `ctx.h` pixels (`ctx.round`: as a circle);
-//! - `fn event(d: &mut Dash, e: &sys::Event) -> bool` for the system's reports it listens to;
-//! - `fn key(d: &mut Dash, tile_id: u32, key: &Key, cx) -> bool` for the keys of an entered widget,
-//!   usually by way of a [`crate::scope::Scope`].
+//! A group module has the same hooks (see any of them; `time.rs` is the model): `State`,
+//! `handles`, `render`, `event`, `key`, `escape`, `tick`, `init`, `come_up`, `go_down`, `awake`,
+//! `entered`, `layout_changed`, `describe`, `check`. This file calls each group's hook in turn
+//! (`groups!`), so a group is added or changed without touching the others.
 //!
-//! Adding a kind: add its module, its `State` to [`Widgets`], and a line to each of the `match`es
-//! below.
+//! Edit mode is `edit` (frames' handles, the drawer, the settings card, edit keys).
 
-use crate::dash::{Dash, Tile};
+use crate::Control;
+use crate::dash::{Dash, NavMode, Tile};
 use crate::keys::Key;
 use crate::kit::{self, Tk};
 use crate::layout::Kind;
 use gpui::{AnyElement, Context};
-use niri_dash_system::{self as sys, Event, Senders};
+use niri_dash_system::Event;
 
-mod clock;
+mod controls;
+mod desk;
+mod devices;
+mod extras;
+mod monitors;
+mod net;
+mod time;
+mod tools;
 
 /// What a widget draws with.
 pub struct Ctx<'a> {
@@ -103,7 +107,7 @@ impl<'a> Ctx<'a> {
             w,
             h,
             round: tile.round() && d.nav.expanded_id != tile.id(),
-            entered: d.nav.mode == crate::dash::NavMode::Widget && d.nav.active_id == tile.id(),
+            entered: d.nav.mode == NavMode::Widget && d.nav.active_id == tile.id(),
             opts: Opts::of(&tile.placed, d.locale.us),
         }
     }
@@ -111,96 +115,188 @@ impl<'a> Ctx<'a> {
     pub fn kind(&self) -> Kind {
         self.tile.kind()
     }
-
 }
 
-/// The state of every kind of widget.
+/// The state of every group of widgets.
 #[derive(Default)]
 pub struct Widgets {
-    pub clock: clock::State,
+    pub time: time::State,
+    pub monitors: monitors::State,
+    pub controls: controls::State,
+    pub net: net::State,
+    pub tools: tools::State,
+    pub desk: desk::State,
+    pub devices: devices::State,
+    pub extras: extras::State,
 }
 
-impl Widgets {
-    /// As the daemon left them: timers that were running, and so on.
-    pub fn restored(_state: &crate::state::State) -> Self {
-        Self::default()
-    }
+/// Calls `$hook` of every group, in order.
+macro_rules! groups {
+    ($hook:ident($($arg:expr),*)) => {{
+        time::$hook($($arg),*);
+        monitors::$hook($($arg),*);
+        controls::$hook($($arg),*);
+        net::$hook($($arg),*);
+        tools::$hook($($arg),*);
+        desk::$hook($($arg),*);
+        devices::$hook($($arg),*);
+        extras::$hook($($arg),*);
+    }};
+}
 
-    /// The tiles changed: what a widget keeps per instance (notes, mascots) follows.
-    pub fn layout_changed(&mut self, _tiles: &[Tile]) {}
+/// The first group that has `$hook`'s answer (`Some`).
+macro_rules! first {
+    ($hook:ident($($arg:expr),*)) => {
+        time::$hook($($arg),*)
+            .or_else(|| monitors::$hook($($arg),*))
+            .or_else(|| controls::$hook($($arg),*))
+            .or_else(|| net::$hook($($arg),*))
+            .or_else(|| tools::$hook($($arg),*))
+            .or_else(|| desk::$hook($($arg),*))
+            .or_else(|| devices::$hook($($arg),*))
+            .or_else(|| extras::$hook($($arg),*))
+    };
+}
 
-    /// The dashboard came up or went away: notes, timers and mascots only run while seen.
-    pub fn awake(&mut self, _on: bool, _tx: &Senders) {}
+/// The dashboard is built: what groups restore from the saved state (timers that were running).
+pub fn init(d: &mut Dash) {
+    groups!(init(d));
+}
 
-    /// The dashboard opens: every widget back on its first page.
-    pub fn come_up(&mut self) {
-        self.clock.come_up();
-    }
+/// The tiles changed: what a widget keeps per instance (notes, mascots) follows.
+pub fn layout_changed(d: &mut Dash) {
+    groups!(layout_changed(d));
+}
 
-    /// The dashboard goes away: menus shut.
-    pub fn go_down(&mut self) {}
+/// The dashboard came up or went away: notes, timers and mascots only run while seen.
+pub fn awake(d: &mut Dash, on: bool) {
+    groups!(awake(d, on));
+}
 
-    /// Widget `id` was entered.
-    pub fn entered(&mut self, _id: u32, _tiles: &[Tile]) {}
+/// The dashboard opens: every widget back on its first page.
+pub fn come_up(d: &mut Dash) {
+    groups!(come_up(d));
+}
 
-    /// Do not disturb on or off.
-    pub fn toggle_dnd(&mut self, _state: &mut crate::state::State, _tx: &Senders) {}
+/// The dashboard goes away: menus shut.
+pub fn go_down(d: &mut Dash) {
+    groups!(go_down(d));
+}
 
-    /// A second passed while the dashboard is up.
-    pub fn tick(&mut self) {
-        self.clock.tick();
+/// A second passed while the dashboard is up.
+pub fn tick(d: &mut Dash) {
+    groups!(tick(d));
+}
+
+/// Widget `id` was entered with the keyboard.
+pub fn entered(d: &mut Dash, id: u32) {
+    if let Some(kind) = d.tile(id).map(Tile::kind) {
+        groups!(entered(d, kind, id));
     }
 }
 
 /// What the system reports. Returns a control if the event asks for one (a color was picked, and
 /// the dashboard may now show itself again).
-pub fn event(d: &mut Dash, event: Event) -> Option<crate::Control> {
-    match event {
-        Event::Toast(text) => d.toast(&text),
-        other => log::trace!("not shown yet: {other:?}"),
+pub fn event(d: &mut Dash, event: Event) -> Option<Control> {
+    match &event {
+        Event::Toast(text) => {
+            d.toast(text);
+            return None;
+        }
+        _ => {}
     }
-    None
+    match first!(event(d, &event)) {
+        Some(control) => control,
+        None => {
+            log::trace!("not shown: {event:?}");
+            None
+        }
+    }
 }
 
 /// Draw the widget of `ctx.tile`.
 pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
-    match ctx.kind() {
-        Kind::Clock => clock::render(ctx, cx),
-        kind => placeholder(ctx, kind),
+    let kind = ctx.kind();
+    if time::handles(kind) {
+        time::render(ctx, cx)
+    } else if monitors::handles(kind) {
+        monitors::render(ctx, cx)
+    } else if controls::handles(kind) {
+        controls::render(ctx, cx)
+    } else if net::handles(kind) {
+        net::render(ctx, cx)
+    } else if tools::handles(kind) {
+        tools::render(ctx, cx)
+    } else if desk::handles(kind) {
+        desk::render(ctx, cx)
+    } else if devices::handles(kind) {
+        devices::render(ctx, cx)
+    } else if extras::handles(kind) {
+        extras::render(ctx, cx)
+    } else {
+        placeholder(ctx, kind)
     }
 }
 
 /// A kind that isn't ported yet.
-fn placeholder(ctx: &Ctx, kind: Kind) -> AnyElement {
+pub(crate) fn placeholder(ctx: &Ctx, kind: Kind) -> AnyElement {
     kit::empty(format!("{} …", kind.info().title), ctx.tk)
 }
 
 /// A key for the entered widget. True if it took it.
-pub fn widget_key(d: &mut Dash, key: &Key, _cx: &mut Context<Dash>) -> bool {
-    let Some(tile) = d.tile(d.nav.active_id) else {
+pub fn widget_key(d: &mut Dash, key: &Key, cx: &mut Context<Dash>) -> bool {
+    let id = d.nav.active_id;
+    let Some(kind) = d.tile(id).map(Tile::kind) else {
         return false;
     };
-    match tile.kind() {
-        _ => false,
-    }
+    time::handles(kind) && time::key(d, kind, id, key, cx)
+        || monitors::handles(kind) && monitors::key(d, kind, id, key, cx)
+        || controls::handles(kind) && controls::key(d, kind, id, key, cx)
+        || net::handles(kind) && net::key(d, kind, id, key, cx)
+        || tools::handles(kind) && tools::key(d, kind, id, key, cx)
+        || desk::handles(kind) && desk::key(d, kind, id, key, cx)
+        || devices::handles(kind) && devices::key(d, kind, id, key, cx)
+        || extras::handles(kind) && extras::key(d, kind, id, key, cx)
 }
 
 /// What the entered widget would say about where its cursor is, for the stress run's log.
-pub fn describe(_d: &Dash) -> Option<String> {
-    None
+pub fn describe(d: &Dash) -> Option<String> {
+    let kind = d.tile(d.nav.active_id)?.kind();
+    first!(describe(d, kind))
 }
 
 /// What has to hold of the widgets whatever keys came before (the stress run checks it after
 /// every key): the cursor is on a stop that exists, and so on. An error says what doesn't add up.
-pub fn check(_d: &Dash) -> Result<(), String> {
-    Ok(())
+pub fn check(d: &Dash) -> Result<(), String> {
+    time::check(d)?;
+    monitors::check(d)?;
+    controls::check(d)?;
+    net::check(d)?;
+    tools::check(d)?;
+    desk::check(d)?;
+    devices::check(d)?;
+    extras::check(d)
 }
 
 /// Escape inside a widget or one of its menus, before the dashboard takes it: true if something
 /// closed.
-pub fn escape(_d: &mut Dash, _cx: &mut Context<Dash>) -> bool {
-    false
+pub fn escape(d: &mut Dash, cx: &mut Context<Dash>) -> bool {
+    time::escape(d, cx)
+        || monitors::escape(d, cx)
+        || controls::escape(d, cx)
+        || net::escape(d, cx)
+        || tools::escape(d, cx)
+        || desk::escape(d, cx)
+        || devices::escape(d, cx)
+        || extras::escape(d, cx)
 }
+
+/// Do not disturb on or off (`niri-dash dnd`, the stress run): the notifications widget's.
+pub fn toggle_dnd(d: &mut Dash) {
+    desk::toggle_dnd(d);
+}
+
+// ---- edit mode: replaced by the edit mode port ---------------------------------------------
 
 /// A key in edit mode.
 pub fn edit_key(_d: &mut Dash, _key: &Key, _cx: &mut Context<Dash>) -> bool {
@@ -215,6 +311,3 @@ pub fn open_settings(_d: &mut Dash, _id: u32, _cx: &mut Context<Dash>) {}
 
 /// Pick widget `id` to work on in edit mode.
 pub fn configure(_d: &mut Dash, _id: u32, _cx: &mut Context<Dash>) {}
-
-#[allow(unused)]
-fn _uses(_: sys::Compositor) {}
