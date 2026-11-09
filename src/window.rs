@@ -244,7 +244,12 @@ impl Host {
         match &self.mode {
             Mode::Dashboard => WindowOptions {
                 titlebar: None,
-                window_bounds: None,
+                // Size 0 by 0: the compositor stretches a surface anchored to all four edges to
+                // the output; any size asked for would be kept instead.
+                window_bounds: Some(gpui::WindowBounds::Windowed(gpui::Bounds {
+                    origin: gpui::point(px(0.0), px(0.0)),
+                    size: size(px(0.0), px(0.0)),
+                })),
                 focus: true,
                 show: true,
                 kind: WindowKind::LayerShell(LayerShellOptions {
@@ -357,6 +362,9 @@ fn serve(
     let exit_when_closed = solo.is_some_and(|k| !resident(k));
     gpui_kit::application()
         .with_assets(crate::assets::Assets)
+        // Hiding the dashboard closes its window; the process stays (a standalone app that isn't
+        // resident quits itself when its window closes).
+        .with_quit_mode(gpui::QuitMode::Explicit)
         .run(move |cx: &mut App| {
             gpui_kit::init(cx);
             let dash = cx.new(|cx| Dash::new(system, config, solo, cx));

@@ -34,8 +34,10 @@ impl Render for Dash {
                     cx.stop_propagation();
                 }
             }));
+        // The style's font, or the one the component theme found for the system (GPUI's own
+        // ".SystemUIFont" names no installed family on Linux).
         let root = if tk.look.style.font_family.is_empty() {
-            root
+            root.font_family(gpui_kit::component::ActiveTheme::theme(&**cx).font_family.clone())
         } else {
             root.font_family(tk.look.style.font_family.clone())
         };
