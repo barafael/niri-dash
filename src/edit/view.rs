@@ -16,7 +16,7 @@ use crate::kit::Tk;
 use gpui::prelude::*;
 use gpui::{
     AnyElement, BorderStyle, Bounds, Context, DispatchPhase, Div, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, Window, canvas, div, point, px, size,
+    MouseMoveEvent, MouseUpEvent, Role, Window, canvas, div, point, px, size,
 };
 
 impl Dash {
@@ -150,6 +150,9 @@ impl Dash {
         Some(
             div()
                 .id("adjust-catcher")
+                .role(Role::Button)
+                .aria_label("Done adjusting")
+                .debug_selector(|| "Done adjusting".into())
                 .absolute()
                 .left(px(g.x))
                 .top(px(g.y))
@@ -177,6 +180,9 @@ impl Dash {
         Some(
             div()
                 .id("expand-shade")
+                .role(Role::Button)
+                .aria_label("Put the widget back")
+                .debug_selector(|| "Put the widget back".into())
                 .absolute()
                 .left(px(g.x))
                 .top(px(g.y))

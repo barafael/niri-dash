@@ -82,6 +82,11 @@ impl Fields {
         self.want = Some(Want::Field(n));
     }
 
+    /// A widget went: its fields go with it.
+    pub fn forget(&mut self, id: u32) {
+        self.states.retain(|(i, _), _| *i != id);
+    }
+
     pub fn state(&self, id: u32, row: usize) -> Option<&Entity<InputState>> {
         self.states.get(&(id, row))
     }

@@ -248,6 +248,7 @@ impl Dash {
             self.edit.adjust_id = 0;
         }
         self.edit.anim.forget(id);
+        self.edit.field.forget(id);
         // Closes the card if it was this widget's.
         self.layout_changed();
     }

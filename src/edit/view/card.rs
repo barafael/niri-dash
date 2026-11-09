@@ -159,6 +159,9 @@ impl Dash {
                 .child(
                     div()
                         .id("settings-scrim")
+                        .role(Role::Button)
+                        .aria_label("Close settings")
+                        .debug_selector(|| "settings scrim".into())
                         .absolute()
                         .size_full()
                         .bg(tk.c(crate::theme::ColorRole::Backdrop).with_alpha(0.6).hsla())

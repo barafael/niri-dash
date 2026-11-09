@@ -312,7 +312,7 @@ pub fn overlays(_d: &Dash, _tk: &Tk, _cx: &mut Context<Dash>) -> Vec<AnyElement>
     Vec::new()
 }
 
-// ---- edit mode: `crate::edit` -----------------------------------------------------------------
+// ---- edit mode: replaced by the edit mode port ---------------------------------------------
 
 /// A key in edit mode.
 pub fn edit_key(d: &mut Dash, key: &Key, cx: &mut Context<Dash>) -> bool {
