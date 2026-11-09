@@ -298,10 +298,11 @@ pub fn toggle_dnd(d: &mut Dash) {
 
 /// `niri-dash night-light …` arrived on the control socket: `controls`' night light's.
 pub fn night_light_command(
-    _d: &mut Dash,
-    _cmd: niri_dash_system::night_light::Cmd,
-    _cx: &mut Context<Dash>,
+    d: &mut Dash,
+    cmd: niri_dash_system::night_light::Cmd,
+    cx: &mut Context<Dash>,
 ) {
+    controls::night_light_command(d, cmd, cx);
 }
 
 /// `niri-dash say …` arrived on the control socket: `extras`' mascots'.

@@ -92,6 +92,11 @@ name = "monitors"
 harness = false
 required-features = ["testing"]
 
+[[test]]
+name = "controls"
+harness = false
+required-features = ["testing"]
+
 [profile.dev]
 opt-level = 1
 [profile.dev.package."*"]
