@@ -124,6 +124,18 @@ fn under_cursor(tile: &ItemRc) -> Vec<ItemRc> {
     found
 }
 
+/// Whether anything in `tile` is under the cursor, in sight or not.
+fn any_selected(tile: &ItemRc) -> bool {
+    tile.visit_descendants(|item| {
+        if item.is_accessible() && prop(item, Prop::ItemSelected) == "true" {
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
+        }
+    })
+    .is_some()
+}
+
 /// What in `tile` is under the cursor but out of sight: clipped away by the widget's edge or a
 /// scrolled list that didn't follow the cursor.
 fn out_of_sight(tile: &ItemRc) -> Vec<ItemRc> {
@@ -314,8 +326,9 @@ impl App {
     pub(super) fn cursor_now(&self) -> Result<Option<ItemRc>, String> {
         let ui = self.ui();
         let n = ui.global::<Nav>();
-        // Edit mode's sidebar has a cursor of its own; nothing else has one then.
-        if ui.get_editing() && ui.get_side_keys() {
+        // Edit mode's sidebar has a cursor of its own; nothing else has one then. Not while the
+        // hint labels are up (`f`): they hold the keys, and the settings card steps aside.
+        if ui.get_editing() && ui.get_side_keys() && n.get_mode() != NavMode::Hints {
             let root = ItemRc::new_root(
                 WindowInner::from_pub(ui.window())
                     .try_component()
@@ -323,6 +336,10 @@ impl App {
             );
             return match under_cursor(&root).as_slice() {
                 [one] => Ok(Some(one.clone())),
+                // A wheel can scroll the cursor's row out of the drawer's view; a key brings it back.
+                [] if any_selected(&root) => {
+                    Err("the sidebar's cursor is scrolled out of view".into())
+                }
                 [] => Err("the sidebar's cursor is on nothing".into()),
                 many => Err(format!(
                     "the sidebar's cursor is on {} things at once: {}",
