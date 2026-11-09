@@ -159,6 +159,12 @@ harness = false
 name = "orca"
 harness = false
 
+# A measuring tool that takes minutes: run it by name, see its header.
+[[test]]
+name = "perf_probe"
+harness = false
+test = false
+
 [build-dependencies]
 slint-build = "1.18"
 
