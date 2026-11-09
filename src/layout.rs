@@ -141,7 +141,7 @@ impl Kind {
                 title: "Bluetooth",
                 description: "Devices, connect, adapter on/off",
                 default_size: (3, 3),
-                min_size: (2, 2),
+                min_size: (2, 3),
                 max_size: (4, 5),
                 group: Group::Devices,
                 can_be_round: true,
