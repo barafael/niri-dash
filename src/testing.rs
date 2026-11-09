@@ -19,7 +19,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
 
-pub use crate::dash::NavMode;
+pub use crate::dash::{NavMode, NavOp};
 pub use crate::edit::probe::{Tile, can_be_round, kind_names, min_size, setting_labels, title};
 pub use crate::edit::{DrawerTab, RowKind, SettingRow};
 pub use crate::stress::{Failure, Monkey, Sandbox};

@@ -1,4 +1,4 @@
-//! Drawing the dashboard: the backdrop, the top bar, the grid of widget frames, the hint labels
+//! Drawing the dashboard: the backdrop, the top bar, the quick tips along the bottom, the grid of widget frames, the hint labels
 //! and the toast. What goes in a frame is `widgets`'; the small pieces they are made of are
 //! `kit`'s. Edit mode's parts (the frames, the sidebar, the settings card, the top bar) are drawn
 //! by `edit::view`.
@@ -15,6 +15,7 @@ impl Render for Dash {
         let vp = window.viewport_size();
         let (width, height) = (f32::from(vp.width), f32::from(vp.height));
         // The drawer's slide, as of this frame, before anything is laid out by it.
+        self.tidy_op();
         self.edit.sample(self.editing, self.look.style.motion);
         self.set_size(width, height);
         // The size the widgets are drawn at can have changed since the last key (the drawer
@@ -90,7 +91,8 @@ impl Render for Dash {
         let root = root
             .bg(backdrop.hsla())
             .child(self.backdrop(&tk, cx))
-            .child(self.top_bar(window, &tk, cx))
+            .child(self.top_bar(&tk, cx))
+            .children(self.tips_bar(window, &tk))
             .children(self.edit_grid(&g, &tk))
             .children(self.landing_ghost(&g, &tk))
             .children(below)
@@ -98,7 +100,7 @@ impl Render for Dash {
             .children(hand)
             .children(self.expand_shade(&g, &tk, cx))
             .children(above)
-            .children(self.hints(&g, &tk))
+            .children(self.hints(window, &g, &tk))
             .children(self.edit_buttons(&tk, cx))
             .children(self.drawer(&tk, cx))
             .children(self.card_layer(&tk, cx))
@@ -150,7 +152,7 @@ impl Dash {
     }
 
     /// The hint labels: on every widget while the hints are up, the others fading back.
-    fn hints(&self, g: &Geometry, tk: &Tk) -> Vec<Div> {
+    fn hints(&self, window: &Window, g: &Geometry, tk: &Tk) -> Vec<Div> {
         let pop = self.edit.anim.follow(
             ("hints", 0),
             if self.nav.mode == NavMode::Hints { 1.0 } else { 0.0 },
@@ -169,6 +171,10 @@ impl Dash {
             .w(px(g.cols as f32 * g.cell))
             .h(px(g.rows as f32 * g.cell))
             .bg(tk.c(crate::theme::ColorRole::Backdrop).with_alpha(0.35).hsla());
+        // The letters are big and heavy; a label is as wide as its letters and 24px, and as tall
+        // as they are and 10px (at least as wide as it is tall).
+        let (size, weight) = (26.0, gpui::FontWeight(800.0));
+        let height = size * 1.36 + 10.0;
         std::iter::once(shade)
             .chain(self.tiles.iter().map(|t| {
                 let r = t.rect();
@@ -180,27 +186,41 @@ impl Dash {
                     t.hint.chars().take(done).collect(),
                     t.hint.chars().skip(done).collect(),
                 );
-                let width = 24.0 + 13.0 * t.hint.chars().count() as f32;
+                let (head, tail) = (head.to_uppercase(), tail.to_uppercase());
+                let letters = crate::edit::view::bar::text_width(
+                    window,
+                    &t.hint.to_uppercase(),
+                    size,
+                    Some(weight),
+                );
+                let width = (letters + 24.0).max(height);
                 let label = t.hint.clone();
                 div()
                     .absolute()
                     .left(px(cx_ - width / 2.0))
-                    .top(px(cy_ - 20.0 + (1.0 - pop) * 6.0))
+                    .top(px(cy_ - height / 2.0 + (1.0 - pop) * 6.0))
                     .w(px(width))
-                    .h(px(40.0))
-                    .rounded(px(tk.look.style.radius_small + 4.0))
+                    .h(px(height))
+                    .rounded(px(tk.look.style.radius_small))
                     .bg(tk.accent())
-                    .border(px(2.0))
-                    .border_color(tk.on_accent().opacity(0.3))
+                    .border(px(1.0))
+                    .border_color(tk.on_accent().opacity(0.25))
+                    .shadow(vec![gpui::BoxShadow {
+                        color: tk.shadow(),
+                        offset: gpui::point(px(0.0), px(0.0)),
+                        blur_radius: px(14.0),
+                        spread_radius: px(0.0),
+                        inset: false,
+                    }])
                     .flex()
                     .items_center()
                     .justify_center()
-                    .text_size(px(tk.look.style.font_title + 3.0))
-                    .font_weight(gpui::FontWeight::BOLD)
+                    .text_size(px(size))
+                    .font_weight(weight)
                     .text_color(tk.on_accent())
                     .opacity(pop * if matches { 1.0 } else { 0.15 })
                     .debug_selector(move || format!("hint {label}"))
-                    .child(div().opacity(0.4).child(head))
+                    .child(div().opacity(0.45).child(head))
                     .child(tail)
             }))
             .collect()

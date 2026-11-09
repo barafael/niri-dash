@@ -4,7 +4,7 @@
 //! least the minimum, settings the sidebar can show); and the pointer as a person uses it.
 
 use super::{DrawerTab, RowKind, SettingRow};
-use crate::dash::{Dash, NavMode};
+use crate::dash::{Dash, NavMode, NavOp};
 use crate::layout::{Kind, Layout, Shape};
 use crate::testing::Harness;
 use gpui::{Modifiers, MouseButton, MouseDownEvent, Pixels, Point, point, px};
@@ -297,10 +297,15 @@ impl Harness {
         self.read(|d| d.nav.mode)
     }
 
-    /// The shortcuts the top bar offers, as "keys what-they-do".
-    pub fn edit_hints(&self) -> Vec<String> {
+    /// The keyboard's move or resize mode (Ctrl+M, Ctrl+R).
+    pub fn nav_op(&self) -> NavOp {
+        self.read(|d| d.op())
+    }
+
+    /// The quick tips along the bottom, as "keys what-they-do".
+    pub fn tips(&self) -> Vec<String> {
         self.read(|d| {
-            d.edit_hints()
+            d.tips()
                 .iter()
                 .map(|k| format!("{} {}", k.key, k.does))
                 .collect()
@@ -684,6 +689,19 @@ pub fn check(d: &Dash) -> Result<(), String> {
     }
     if !d.editing && e.settings_id != 0 {
         return Err("a widget is picked outside edit mode".into());
+    }
+    // The move and resize modes belong to a widget in hand: one entered, or one picked in edit
+    // mode. Without one there is no mode.
+    if d.nav.op != NavOp::None {
+        if d.op_target() == 0 {
+            return Err("move or resize mode with no widget in hand".into());
+        }
+        if !d.visible {
+            return Err("closed in move or resize mode".into());
+        }
+        if d.edit.field.focused {
+            return Err("move or resize mode while a text field has the keyboard".into());
+        }
     }
     let rows = d.setting_rows();
     if e.settings_id != 0 {

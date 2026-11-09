@@ -77,6 +77,11 @@ impl Fields {
         self.row = None;
     }
 
+    /// The keyboard goes back to the dashboard, whatever had it (a widget's text field too).
+    pub fn to_dash(&mut self) {
+        self.want = Some(Want::Dash);
+    }
+
     /// The keyboard goes into the field of row `n`.
     pub fn enter(&mut self, n: usize) {
         self.want = Some(Want::Field(n));

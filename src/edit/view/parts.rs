@@ -528,7 +528,8 @@ pub fn segment(
         .aria_label(label)
         .aria_selected(active)
         .debug_selector(move || label.to_string())
-        .flex_1()
+        // As Slint's layout does: each gets its text's width and an equal share of what is left.
+        .flex_auto()
         .min_w_0()
         .flex()
         .items_center()

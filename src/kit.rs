@@ -140,6 +140,9 @@ pub fn icon_button(
         .cursor_pointer()
         .hover(move |s| s.bg(hover))
         .active(move |s| s.bg(pressed))
+        // A press on a control is not a press on the card behind it (a double click on a control
+        // must not pick the widget up in edit mode).
+        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(on_click)
         .child(icon(name, size * 0.52, tint))
 }
@@ -174,6 +177,9 @@ pub fn text_button(
                 .hover(move |s| s.bg(hover))
                 .active(move |s| s.bg(pressed))
         })
+        // A press on a control is not a press on the card behind it (a double click on a control
+        // must not pick the widget up in edit mode).
+        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(on_click)
         .child(label)
 }
@@ -198,6 +204,9 @@ pub fn switch(
         .bg(if on { tk.accent() } else { tk.track() })
         .cursor_pointer()
         .relative()
+        // A press on a control is not a press on the card behind it (a double click on a control
+        // must not pick the widget up in edit mode).
+        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(on_click)
         .child(
             div()

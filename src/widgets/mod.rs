@@ -333,11 +333,6 @@ pub fn edit_key(d: &mut Dash, key: &Key, cx: &mut Context<Dash>) -> bool {
     crate::edit::edit_key(d, key, cx)
 }
 
-/// Move widget `id` one cell (Ctrl+Shift+h/j/k/l).
-pub fn nudge(d: &mut Dash, id: u32, dir: crate::nav::Dir, cx: &mut Context<Dash>) {
-    crate::edit::nudge(d, id, dir, cx);
-}
-
 /// Open widget `id`'s settings (`s`).
 pub fn open_settings(d: &mut Dash, id: u32, cx: &mut Context<Dash>) {
     crate::edit::open_settings(d, id, cx);
