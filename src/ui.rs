@@ -28,8 +28,13 @@ impl Render for Dash {
             .overflow_hidden()
             .text_size(px(tk.look.style.font_body))
             .text_color(tk.text())
-            .on_key_down(cx.listener(|dash, ev: &KeyDownEvent, _, cx| {
+            .on_key_down(cx.listener(|dash, ev: &KeyDownEvent, window, cx| {
                 let key = crate::keys::Key::from_keystroke(&ev.keystroke);
+                // A text field has the keyboard (the key came up from it): it keeps every key but
+                // Escape.
+                dash.typing = window
+                    .focused(cx)
+                    .is_some_and(|focused| focused != dash.focus);
                 if dash.key(&key, cx) {
                     cx.stop_propagation();
                 }

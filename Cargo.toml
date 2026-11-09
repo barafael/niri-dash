@@ -112,6 +112,11 @@ name = "tools"
 harness = false
 required-features = ["testing"]
 
+[[test]]
+name = "time"
+harness = false
+required-features = ["testing"]
+
 [profile.dev]
 opt-level = 1
 [profile.dev.package."*"]

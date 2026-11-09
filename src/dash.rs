@@ -133,6 +133,9 @@ pub struct Dash {
     pub config_broken: bool,
     /// How many events the system has delivered (for tests).
     pub delivered: u64,
+    /// A text field has the keyboard: set for the key being handled, which then isn't the
+    /// dashboard's (Escape apart).
+    pub typing: bool,
     /// Tells the config watcher which files to watch.
     pub watch: Option<std::sync::mpsc::Sender<Vec<std::path::PathBuf>>>,
     /// A look being blended into the next.
@@ -174,6 +177,7 @@ impl Dash {
             last_written: text,
             config_broken: broken,
             delivered: 0,
+            typing: false,
             watch: None,
             blend: None,
             fonts: None,
@@ -408,6 +412,10 @@ impl Dash {
         if key.is_named(Named::Escape) {
             self.escape(cx);
             return true;
+        }
+        // What a text field types is the field's; Ctrl and Alt keys stay the dashboard's.
+        if self.typing && key.bare() {
+            return false;
         }
         if self.nav.mode == NavMode::Hints {
             return self.hints_key(key, cx);
