@@ -434,23 +434,32 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
             }))
     });
 
+    // Centered while it fits, from the top when it doesn't (as Slint's layout does): the
+    // auto margins give way to the overflow.
     div()
         .size_full()
         .p(px(fit.pad))
         .flex()
         .flex_col()
-        .justify_center()
-        .gap(px(8.0))
-        .child(header)
-        .children(warmth)
-        .children(note)
-        .children(nothing)
-        .children(presets)
+        .child(
+            div()
+                .w_full()
+                .my_auto()
+                .flex()
+                .flex_col()
+                .gap(px(8.0))
+                .child(header)
+                .children(warmth)
+                .children(note)
+                .children(nothing)
+                .children(presets),
+        )
         .into_any_element()
 }
 
 fn muted(text: &str, tk: &Tk) -> gpui::Div {
     div()
+        .flex_none()
         .text_size(px(tk.font_small()))
         .text_color(tk.dim())
         .child(text.to_string())

@@ -271,21 +271,30 @@ pub fn row(
                 .hover(move |s| s.bg(hover))
                 .active(move |s| s.bg(pressed))
         })
-        .when(!enabled, |r| r.opacity(0.6))
         .when(kfocus, |r| r.child(cursor_ring(radius, tk)))
 }
 
 /// An arc from 12 o'clock clockwise, `frac` (0 to 1) of the way round, in a square: a track
 /// under it. `thickness` is the stroke's width in px.
-pub fn ring(frac: f32, thickness: f32, tint: Hsla, track: Hsla) -> gpui::Canvas<()> {
+pub fn ring(
+    key: u64,
+    ms: f32,
+    frac: f32,
+    thickness: f32,
+    tint: Hsla,
+    track: Hsla,
+) -> gpui::Canvas<()> {
     canvas(
         |_, _, _| (),
         move |bounds, _, window, _| {
             let side = f32::from(bounds.size.width.min(bounds.size.height));
-            let r = (side - thickness) / 2.0 - 0.5;
+            // The Slint ring's stroke sits a whole thickness in from the edge of its box.
+            let r = side / 2.0 - thickness;
             if r <= 0.0 {
                 return;
             }
+            // The arc glides to a new value over `ms` (0: it jumps); `key` says which ring.
+            let frac = kit::glide(key, frac.clamp(0.0, 1.0), ms, window);
             let c = point(
                 f32::from(bounds.origin.x) + f32::from(bounds.size.width) / 2.0,
                 f32::from(bounds.origin.y) + f32::from(bounds.size.height) / 2.0,
@@ -309,6 +318,13 @@ pub fn ring(frac: f32, thickness: f32, tint: Hsla, track: Hsla) -> gpui::Canvas<
             let frac = frac.clamp(0.0, 0.9999);
             if frac > 0.002 {
                 stroke(0.0, frac, tint);
+                // Round ends.
+                let t = px(thickness);
+                for p in [at(0.0), at(frac)] {
+                    let dot =
+                        gpui::Bounds::new(point(p.x - t / 2.0, p.y - t / 2.0), gpui::size(t, t));
+                    window.paint_quad(gpui::fill(dot, tint).corner_radii(t / 2.0));
+                }
             }
         },
     )

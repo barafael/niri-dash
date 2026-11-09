@@ -99,6 +99,8 @@ pub fn describe(d: &Dash) -> String {
 
 /// A progress bar `value` (0 to 1) full, 4 px thick.
 fn progress(value: f32, label: &'static str, tk: &crate::kit::Tk) -> impl IntoElement {
+    let (track, accent, ms) = (tk.track(), tk.accent(), 300.0 * tk.motion());
+    let value = value.clamp(0.0, 1.0);
     div()
         .id("media-progress")
         .role(Role::ProgressIndicator)
@@ -109,15 +111,22 @@ fn progress(value: f32, label: &'static str, tk: &crate::kit::Tk) -> impl IntoEl
         .w_full()
         .h(px(4.0))
         .flex_none()
-        .rounded_full()
-        .bg(tk.track())
-        .overflow_hidden()
         .child(
-            div()
-                .h_full()
-                .w(gpui::relative(value.clamp(0.0, 1.0)))
-                .rounded_full()
-                .bg(tk.accent()),
+            gpui::canvas(
+                |_, _, _| {},
+                move |b, _, window, _| {
+                    // New readings slide in rather than jump.
+                    let shown = crate::kit::glide(0x6d65_6469, value, ms, window);
+                    let r = b.size.height / 2.0;
+                    window.paint_quad(gpui::fill(b, track).corner_radii(r));
+                    let mut part = b;
+                    part.size.width = b.size.width * shown.clamp(0.0, 1.0);
+                    if part.size.width > px(0.0) {
+                        window.paint_quad(gpui::fill(part, accent).corner_radii(r));
+                    }
+                },
+            )
+            .size_full(),
         )
 }
 
@@ -181,6 +190,8 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                     .role(Role::ProgressIndicator)
                     .aria_label("Track progress")
                     .child(parts::ring(
+                        0x3ED1A + id as u64,
+                        0.0,
                         m.progress,
                         (w * 0.045).max(4.0),
                         tk.accent(),
@@ -277,8 +288,9 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
         .gap(px(6.0))
         .child(
             div()
-                .flex_1()
-                .min_h_0()
+                // With art the top takes the room (the art is as high as it is); without, it is
+                // as high as its text, and the whole is centered, as in Slint.
+                .when(m.art.is_some(), |t| t.flex_1().min_h_0())
                 .flex()
                 .flex_row()
                 .gap(px(12.0))

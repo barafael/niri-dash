@@ -314,7 +314,8 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                 cx,
                 &fit,
             )
-            .flex_1()
+            // Each starts from the width of its label and they share the rest, as in Slint.
+            .flex_auto()
         }))
         .into_any_element()
 }

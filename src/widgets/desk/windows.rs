@@ -236,7 +236,8 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                     .h(px(26.0))
                     .px(px(6.0))
                     .flex()
-                    .items_end()
+                    // Slint's label is asked to sit at the bottom but is drawn centered.
+                    .items_center()
                     .child(parts::section_label(r.title.clone(), tk).w_full())
                     .into_any_element();
             }

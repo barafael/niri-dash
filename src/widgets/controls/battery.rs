@@ -299,9 +299,9 @@ fn rect(ctx: &Ctx, fit: &Fit, b: &State, lay: &Layout, cx: &mut Context<Dash>) -
         .flex()
         .flex_row()
         .gap(px(12.0))
-        .min_h_0()
+        // As high as its ring: Slint's row can't grow past the fixed size of the ring.
+        .flex_none()
         .items_start()
-        .when(!lay.show_blockers, |r| r.flex_1())
         .child(
             div()
                 .relative()
@@ -334,19 +334,26 @@ fn rect(ctx: &Ctx, fit: &Fit, b: &State, lay: &Layout, cx: &mut Context<Dash>) -
             div()
                 .flex()
                 .flex_col()
-                .justify_center()
                 .flex_1()
                 .min_w_0()
                 .h_full()
+                // Centered while it fits, from the top when it doesn't, as in Slint.
                 .child(
                     div()
-                        .text_size(px(26.0))
-                        .font_weight(tk.display_weight())
-                        .text_color(tk.text())
-                        .child(percent_text(p)),
-                )
-                .child(muted(&p.status_text, tk))
-                .when(!p.power_text.is_empty(), |c| c.child(muted(&p.power_text, tk))),
+                        .my_auto()
+                        .flex()
+                        .flex_col()
+                        .child(
+                            div()
+                                .flex_none()
+                                .text_size(px(26.0))
+                                .font_weight(tk.display_weight())
+                                .text_color(tk.text())
+                                .child(percent_text(p)),
+                        )
+                        .child(muted(&p.status_text, tk))
+                        .when(!p.power_text.is_empty(), |c| c.child(muted(&p.power_text, tk))),
+                ),
         );
 
     let profiles = lay.has_profiles.then(|| {
@@ -368,7 +375,9 @@ fn rect(ctx: &Ctx, fit: &Fit, b: &State, lay: &Layout, cx: &mut Context<Dash>) -
                     .aria_toggled(if current { Toggled::True } else { Toggled::False })
                     .aria_selected(lit)
                     .debug_selector(move || name.to_string())
-                    .flex_1()
+                    // Narrow, they share what there is and the names are cut short; each
+                    // starts from the width of its name, as the Slint row did.
+                    .flex_auto()
                     .min_w_0()
                     .flex()
                     .items_center()
@@ -425,7 +434,7 @@ fn rect(ctx: &Ctx, fit: &Fit, b: &State, lay: &Layout, cx: &mut Context<Dash>) -
                     .text_color(if b.inhibited { tk.text() } else { tk.dim() })
                     .child(label),
             )
-            .child(switch_view(b.inhibited, true, on_inhibit, tk))
+            .child(switch_view(0x5717_0000 + id as u64, b.inhibited, true, on_inhibit, tk))
     });
 
     let named = fit.w >= 380.0;
@@ -541,6 +550,7 @@ fn rect(ctx: &Ctx, fit: &Fit, b: &State, lay: &Layout, cx: &mut Context<Dash>) -
 
 fn muted(text: &str, tk: &Tk) -> gpui::Div {
     div()
+        .flex_none()
         .truncate()
         .text_size(px(tk.font_small()))
         .text_color(tk.dim())

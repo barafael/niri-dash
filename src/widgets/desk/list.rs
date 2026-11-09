@@ -105,7 +105,10 @@ impl ScrollList {
         };
         // The scrollbar sits in the card's padding, beside the rows, so they are as wide as the
         // header above them.
-        let inset = (tk.pad() - 4.0) / 2.0;
+        // Slint puts the bar's left edge half the padding less its own width past the rows (a
+        // tight padding has no room, and the bar goes inside, in a gutter of 10 px).
+        let in_padding = tk.pad() >= 8.0;
+        let inset = if in_padding { (tk.pad() + 4.0) / 2.0 } else { -1.0 };
         div()
             .relative()
             .flex_1()
@@ -115,6 +118,7 @@ impl ScrollList {
                 div()
                     .id(id)
                     .size_full()
+                    .when(!in_padding, |l| l.pr(px(10.0)))
                     .flex()
                     .flex_col()
                     .overflow_y_scroll()
@@ -127,7 +131,7 @@ impl ScrollList {
                         .absolute()
                         .top_0()
                         .bottom_0()
-                        .right(px(-inset.max(0.0)))
+                        .right(px(-inset))
                         .w(px(4.0))
                         .rounded(px(2.0))
                         .bg(tk.subtle())

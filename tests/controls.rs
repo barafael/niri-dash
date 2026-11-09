@@ -485,9 +485,93 @@ fn night_light_kwin() {
     assert_eq!((status.as_str(), note.as_str()), ("Paused", "Paused by another program"));
 }
 
+fn top_of(h: &Harness, selector: &'static str) -> f32 {
+    f32::from(
+        h.bounds_of(selector)
+            .unwrap_or_else(|| panic!("nothing called {selector:?} on screen"))
+            .top(),
+    )
+}
+
+fn width_of(h: &Harness, selector: &'static str) -> f32 {
+    f32::from(
+        h.bounds_of(selector)
+            .unwrap_or_else(|| panic!("nothing called {selector:?} on screen"))
+            .size
+            .width,
+    )
+}
+
+/// What the Slint widgets' layout did that a flexbox does not by itself: the profile row sits
+/// under the ring whatever the height of the card (the ring row can't grow past its ring), and
+/// each profile starts from the width of its name.
+fn battery_layout_follows_slint() {
+    let saver_top = |rows: u32| {
+        let mut h = dashboard(&format!("    battery col=0 row=0 width=4 height={rows}"));
+        h.send(power::Event::State(Demo::new().power));
+        top_of(&h, "Saver")
+    };
+    assert!(near(saver_top(3), saver_top(4)), "the profiles moved with the height");
+    let mut h = dashboard("    battery col=0 row=0 width=4 height=3");
+    h.send(power::Event::State(Demo::new().power));
+    assert!(
+        width_of(&h, "Performance") > width_of(&h, "Saver"),
+        "the profiles share the row equally instead of by their names"
+    );
+}
+
+/// The session buttons are as wide as their labels and share what is left, as in Slint.
+fn session_buttons_follow_their_labels() {
+    let h = dashboard("    session col=0 row=0 width=5 height=1");
+    assert!(
+        width_of(&h, "Power off") > width_of(&h, "Lock"),
+        "the buttons are all as wide as each other"
+    );
+}
+
+/// A widget whose content is taller than its card starts at the top (Slint's centered layout
+/// does); one that fits is centered. The night light's header is at the card's padding on a card
+/// one cell high.
+fn night_light_overflow_starts_at_the_top() {
+    let h = dashboard("    night-light col=0 row=0 width=3 height=1");
+    let (_, y, _, height) = h
+        .read(|d| d.card_rect(d.tiles[0].id()))
+        .expect("the night light's card");
+    let switch = h.bounds_of("Night light").expect("the switch");
+    let top = f32::from(switch.top()) - y;
+    // Header 28 high under the padding; the switch 22 in the middle of it. Header, slider and
+    // the space between them are 60 high.
+    let overflows = height - 32.0 < 60.0;
+    let expected = if overflows { 16.0 + 3.0 } else { 3.0 + (height - 60.0) / 2.0 };
+    assert!(
+        (top - expected).abs() < 1.5,
+        "the switch is {top} px under the top of a card {height} px high, not {expected}"
+    );
+}
+
+/// `Dash::card_size` and `card_rect` say how the frame draws a card, round or not.
+fn card_geometry() {
+    let h = dashboard(
+        "    volume col=0 row=0 width=3 height=3\n    volume col=4 row=0 size=3 shape=\"round\"",
+    );
+    let (w, hh, round) = h.read(|d| d.card_size(d.tiles[0].id())).unwrap();
+    assert!(!round && w > 0.0 && hh > 0.0);
+    let (rw, rh, rround) = h.read(|d| d.card_size(d.tiles[1].id())).unwrap();
+    assert!(rround && near(rw, rh));
+    let (_, _, cw, ch) = h.read(|d| d.card_rect(d.tiles[0].id())).unwrap();
+    assert!(near(cw, w) && near(ch, hh));
+    // The slider row fills the card's width inside its padding.
+    let slider = h.bounds_of("Volume").unwrap();
+    assert!(f32::from(slider.size.width) < w);
+}
+
 fn main() {
     let _sandbox = Sandbox::enter(None).expect("a temporary directory for the dashboard's files");
     let scenarios: &[(&str, fn())] = &[
+        ("battery: layout follows Slint", battery_layout_follows_slint),
+        ("session: buttons follow their labels", session_buttons_follow_their_labels),
+        ("night light: overflow starts at the top", night_light_overflow_starts_at_the_top),
+        ("card geometry", card_geometry),
         ("volume: j and k", volume_keys),
         ("volume: the round knob", volume_knob),
         ("volume: slider mouse and hold", volume_slider_mouse_and_hold),

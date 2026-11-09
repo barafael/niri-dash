@@ -40,11 +40,12 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
         .devices
         .seen
         .note(ctx.tile.id(), parts::Card::of(ctx));
-    match ctx.kind() {
+    let widget = match ctx.kind() {
         Kind::Privacy => privacy::render(ctx, cx),
         Kind::RemovableDrives => drives::render(ctx, cx),
         _ => phone::render(ctx, cx),
-    }
+    };
+    crate::kit::slint_lines(widget)
 }
 
 /// The tile of `kind` the keys are on, else the first one there is.

@@ -182,6 +182,8 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                     .role(gpui::Role::ProgressIndicator)
                     .aria_label("Claude sessions working")
                     .child(parts::ring(
+                        0xC1A0 + u64::from(id),
+                        400.0 * tk.motion(),
                         frac,
                         (w * 0.06).max(6.0),
                         tk.accent(),

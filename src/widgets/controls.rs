@@ -121,6 +121,47 @@ impl Fit {
     }
 }
 
+impl Dash {
+    /// The size, in pixels, a widget's card is drawn in (the frame in `ui` minus the gaps, a
+    /// square when round, the expanded size when blown up with `e`) and whether it is round.
+    /// Every group that needs it for its keys (what fits decides what has a stop) can use this
+    /// instead of deriving it again.
+    pub fn card_size(&self, id: u32) -> Option<(f32, f32, bool)> {
+        Fit::of_dash(self, id).map(|f| (f.w, f.h, f.round))
+    }
+
+    /// Where the card of widget `id` is in the window, as `ui` draws it: x, y, width and height
+    /// in pixels (a round one is a circle in the middle of its cells, an expanded one is blown up
+    /// in the middle of the window). For the tests, which measure what a widget draws against it.
+    pub fn card_rect(&self, id: u32) -> Option<(f32, f32, f32, f32)> {
+        let tile = self.tile(id)?;
+        let (aw, ah) = self.size;
+        let g = self.geometry(aw, ah);
+        let gap = self.look.style.gap;
+        let r = tile.rect();
+        let expanded = self.nav.expanded_id == id;
+        let (x, y, w, h) = if expanded {
+            let bw = aw.min((r.w as f32 * g.cell).max(aw * 0.55).max(8.0 * g.cell));
+            let bh = ah.min((r.h as f32 * g.cell).max(ah * 0.8).max(6.0 * g.cell));
+            ((aw - bw) / 2.0, (ah - bh) / 2.0, bw, bh)
+        } else {
+            (
+                g.x + r.col as f32 * g.cell,
+                g.y + r.row as f32 * g.cell,
+                r.w as f32 * g.cell,
+                r.h as f32 * g.cell,
+            )
+        };
+        let (cw, ch) = ((w - 2.0 * gap).max(0.0), (h - 2.0 * gap).max(0.0));
+        if tile.round() && !expanded {
+            let side = cw.min(ch);
+            Some((x + (w - side) / 2.0, y + (h - side) / 2.0, side, side))
+        } else {
+            Some((x + gap, y + gap, cw, ch))
+        }
+    }
+}
+
 /// Stops with nothing skipped, for `Scope::set_count`.
 pub(super) struct NoStops;
 impl crate::scope::Stops for NoStops {}
@@ -161,14 +202,15 @@ pub(super) fn digit_level(key: &Key) -> Option<f32> {
 
 /// What the widget of `ctx.tile` draws, in a card of `ctx.w` by `ctx.h` pixels.
 pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
-    match ctx.kind() {
+    let widget = match ctx.kind() {
         Kind::Battery => battery::render(ctx, cx),
         Kind::Volume => volume::render(ctx, cx),
         Kind::Brightness => brightness::render(ctx, cx),
         Kind::NightLight => night_light::render(ctx, cx),
         Kind::Session => session::render(ctx, cx),
-        kind => placeholder(ctx, kind),
-    }
+        kind => return placeholder(ctx, kind),
+    };
+    crate::kit::slint_lines(widget)
 }
 
 /// What the system reports. `None`: not this group's; `Some(control)`: taken, and the event asks
