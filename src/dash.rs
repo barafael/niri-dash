@@ -372,10 +372,14 @@ impl Dash {
     }
 
     /// `niri-dash night-light …` arrived on the control socket.
-    pub fn night_light_command(&mut self, _cmd: sys::night_light::Cmd, _cx: &mut Context<Self>) {}
+    pub fn night_light_command(&mut self, cmd: sys::night_light::Cmd, cx: &mut Context<Self>) {
+        crate::widgets::night_light_command(self, cmd, cx);
+    }
 
     /// `niri-dash say …` arrived on the control socket.
-    pub fn mascot_say(&mut self, _say: crate::mascots::Say, _cx: &mut Context<Self>) {}
+    pub fn mascot_say(&mut self, say: crate::mascots::Say, cx: &mut Context<Self>) {
+        crate::widgets::mascot_say(self, say, cx);
+    }
 
     // ---- what the system reports ----------------------------------------------------------
 

@@ -71,6 +71,7 @@ impl Render for Dash {
                     .filter(|t| t.id() == expanded)
                     .map(|t| self.frame(t, &g, &tk, true, cx)),
             )
+            .children(widgets::overlays(self, &tk, cx))
             .children(self.hints(&g, &tk))
             .children(self.toast_view(&tk))
     }

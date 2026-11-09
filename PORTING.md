@@ -75,6 +75,10 @@ The **Slint code is in `legacy/`** (not built; for reading, deleted when the por
    bigger in `src/widgets/<group>/` first) and `Cargo.toml` (new dependencies, justified). A
    widget that needs something of `Dash` itself (a new field, a method) adds it in your group's
    `State` or as `impl Dash { .. }` in your group's files, not in `dash.rs`.
+   The exceptions, each a one-line edit in `src/widgets/mod.rs` by the group named: `controls`
+   fills `night_light_command` (to call its own), `extras` `mascot_say`, `desk` `overlays` (the
+   tray's menu is drawn over the whole window) and `toggle_dnd` (already routed to `desk`). If
+   your widget needs a new hook that every group could have, say so in your report instead.
 9. **Text input**: `gpui_kit::component::input` (`InputState`, `Input`, `InputEvent`) is the text
    field; keep its state in your group's `State`, and make Escape/Enter behave as the Slint
    `TextField` did (`legacy/ui/common.slint`).

@@ -296,6 +296,22 @@ pub fn toggle_dnd(d: &mut Dash) {
     desk::toggle_dnd(d);
 }
 
+/// `niri-dash night-light …` arrived on the control socket: `controls`' night light's.
+pub fn night_light_command(
+    _d: &mut Dash,
+    _cmd: niri_dash_system::night_light::Cmd,
+    _cx: &mut Context<Dash>,
+) {
+}
+
+/// `niri-dash say …` arrived on the control socket: `extras`' mascots'.
+pub fn mascot_say(_d: &mut Dash, _say: crate::mascots::Say, _cx: &mut Context<Dash>) {}
+
+/// What a group draws over the whole window, above the frames (the tray's menu): in order.
+pub fn overlays(_d: &Dash, _tk: &Tk, _cx: &mut Context<Dash>) -> Vec<AnyElement> {
+    Vec::new()
+}
+
 // ---- edit mode: replaced by the edit mode port ---------------------------------------------
 
 /// A key in edit mode.
