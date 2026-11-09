@@ -151,6 +151,18 @@ impl Harness {
         me
     }
 
+    /// The dashboard on the simulated system (`NIRI_DASH_SIM=1`): a made-up machine that keeps
+    /// moving, as the web version runs on. For soak runs and measuring.
+    pub fn with_sim(config: &str, size: (u32, u32)) -> Self {
+        let (events, events_rx) = super::loop_channel::<Event>();
+        let system = niri_dash_system::simulated(events).expect("the simulated system");
+        let mut me = Self::on(config, system, channels().1, size);
+        me.listen(events_rx);
+        me.app.set_visible(true);
+        me.pump();
+        me
+    }
+
     fn on(config: &str, system: Started, inbox: Inboxes, size: (u32, u32)) -> Self {
         // Already set by an earlier harness, which is fine.
         let _ = slint::platform::set_platform(Box::new(TestPlatform));
@@ -301,6 +313,46 @@ impl Harness {
         crate::shell::render_into(&self.window, &mut self.pixels, self.width, false);
     }
 
+    /// How many events from the system have reached the dashboard.
+    pub fn delivered(&self) -> u64 {
+        self.delivered.get()
+    }
+
+    /// Draw what changed (or, with `full`, everything), and say what was repainted: the bounding
+    /// box (x, y, width, height) and the rectangles it is made of. For measuring.
+    #[allow(clippy::type_complexity)]
+    pub fn draw(
+        &mut self,
+        full: bool,
+    ) -> Option<((i32, i32, u32, u32), Vec<(i32, i32, u32, u32)>)> {
+        use slint::platform::software_renderer::RepaintBufferType;
+        if full {
+            self.window.request_redraw();
+        }
+        let mut out = None;
+        let (pixels, width) = (&mut self.pixels, self.width);
+        self.window.draw_if_needed(|renderer| {
+            renderer.set_repaint_buffer_type(if full {
+                RepaintBufferType::NewBuffer
+            } else {
+                RepaintBufferType::ReusedBuffer
+            });
+            let region = renderer.render(pixels, width);
+            let b = (
+                region.bounding_box_origin().x,
+                region.bounding_box_origin().y,
+                region.bounding_box_size().width,
+                region.bounding_box_size().height,
+            );
+            let rects = region
+                .iter()
+                .map(|(o, s)| (o.x, o.y, s.width, s.height))
+                .collect();
+            out = Some((b, rects));
+        });
+        out
+    }
+
     /// One turn of the dashboard's loop in a stress run: what is pending, and the controls it
     /// asks for applied in place.
     fn turn(&mut self) {
@@ -331,8 +383,8 @@ impl Harness {
 
     /// Let `monkey` press `ops` keys, `rate` a second (0: as fast as it goes), on the mock
     /// system (see [`Harness::with_mock`]). Hiding and showing keep the window, as on screen.
-    /// Frames are drawn ten times a second, as a screen would show them, however fast the keys
-    /// come. Gives the monkey back for its summary, or what went wrong.
+    /// Frames are drawn ten times a second of keys, as a screen would show them, however fast the
+    /// keys come (at full speed, one in 75). Gives the monkey back for its summary, or what went wrong.
     pub fn stress(
         &mut self,
         monkey: super::stress::Monkey,
@@ -340,11 +392,17 @@ impl Harness {
         rate: f64,
     ) -> Result<super::stress::Monkey, super::stress::Failure> {
         let mut pace = super::stress::Pace::new(rate);
-        let mut frames = super::stress::Pace::new(10.0);
+        // A frame every tenth of a second: by the key, so that the same keys draw the same frames
+        // (the clock decides when a frame lands, on a machine that is busy or slow).
+        let every = if rate > 0.0 {
+            (rate / 10.0).ceil() as u64
+        } else {
+            75
+        };
         // From here on, time passes by the key, not by the clock.
         let start = clock_now();
         CLOCK.with(|c| c.set(Some(start)));
-        let result = self.stress_keys(monkey, ops, &mut pace, &mut frames);
+        let result = self.stress_keys(monkey, ops, &mut pace, every);
         let end = CLOCK.with(|c| c.take()).unwrap_or(start);
         AHEAD.with(|a| a.set(end.saturating_sub(STARTED.with(|s| s.elapsed()))));
         result
@@ -355,7 +413,7 @@ impl Harness {
         mut monkey: super::stress::Monkey,
         ops: u64,
         pace: &mut super::stress::Pace,
-        frames: &mut super::stress::Pace,
+        every: u64,
     ) -> Result<super::stress::Monkey, super::stress::Failure> {
         while monkey.done() < ops {
             CLOCK.with(|c| c.set(c.get().map(|t| t + KEY_TIME)));
@@ -367,7 +425,7 @@ impl Harness {
             self.quieten();
             monkey.step(&self.app, self.ui.window())?;
             self.turn();
-            if frames.due() {
+            if monkey.done() % every == 0 {
                 self.render();
             }
         }
