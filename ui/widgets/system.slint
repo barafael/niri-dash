@@ -781,6 +781,10 @@ component SessionButton inherits Rectangle {
     animate background { duration: 100ms * Theme.motion; }
     border-width: kfocus ? 2px : 0px;
     border-color: Theme.accent;
+    // The buttons share the tile's width, down to its smallest size, in any font: a label that is
+    // too wide for its button is cut short, and doesn't push the last button out of the tile.
+    min-width: 0px;
+    clip: true;
     VerticalLayout {
         alignment: center;
         spacing: 2px;
@@ -795,6 +799,7 @@ component SessionButton inherits Rectangle {
         if !root.compact && root.height > 54px: Text {
             text: root.armed ? "Confirm" : root.label;
             horizontal-alignment: center;
+            overflow: elide;
             font-size: Theme.font-small;
             color: root.armed ? Theme.bad : Theme.dim;
         }

@@ -994,6 +994,29 @@ fn edit_mode_cursor_is_read_out() {
     assert!(!now.is_empty(), "nothing to say in the sidebar");
 }
 
+/// The hint labels in edit mode (`f`) hide the settings card, and the cursor that was on its rows
+/// goes with it: nothing is left to say, and that is not a cursor on nothing.
+fn edit_mode_hints_over_the_settings_card() {
+    let mut h = testing::Harness::new("layout {\n    clock col=0 row=0 width=3 height=2\n}\n");
+    h.press("ctrl+e");
+    // `s` picks the widget, Enter puts the cursor on its settings.
+    h.press("s");
+    h.press("enter");
+    h.settle(300);
+    h.spoken().expect("a cursor on the settings");
+    h.press("f");
+    h.settle(300);
+    assert_eq!(
+        h.spoken()
+            .expect("a cursor that adds up under the hint labels"),
+        None
+    );
+    // Esc takes the labels down, and the settings are there again.
+    h.press("escape");
+    h.settle(300);
+    h.spoken().expect("a cursor on the settings again");
+}
+
 /// Shrinking a tile with the cursor on a row near the bottom keeps that row in sight.
 fn cursor_stays_in_sight_as_a_tile_shrinks() {
     let mut h = testing::Harness::new("layout {\n    wifi col=0 row=0 width=3 height=3\n}\n");
@@ -1273,6 +1296,10 @@ fn main() {
             battery_without_a_current_profile,
         ),
         ("edit_mode_cursor_is_read_out", edit_mode_cursor_is_read_out),
+        (
+            "edit_mode_hints_over_the_settings_card",
+            edit_mode_hints_over_the_settings_card,
+        ),
         (
             "cursor_stays_in_sight_as_a_tile_shrinks",
             cursor_stays_in_sight_as_a_tile_shrinks,

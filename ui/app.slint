@@ -528,6 +528,18 @@ export component Dash inherits Window {
     in-out property <int> grid-refusals-rows;
     // The cell size of the automatic grid (layout::AUTO_CELL).
     property <length> auto-cell: 100px;
+    // A stress run on screen (`niri-dash stress`): a pause button and a panel for its pace float
+    // over the dashboard. The run's own keys and clicks arrive with `stress-synthetic` set, so they
+    // never press its controls; only the person at the mouse and keyboard does.
+    in property <bool> stress;
+    in property <bool> stress-paused;
+    in property <bool> stress-synthetic;
+    in property <string> stress-status;
+    // The panel's values, in the order of its rows: rate, events, ramp up, ramp down.
+    in property <[string]> stress-values;
+    in-out property <bool> stress-panel;
+    callback stress-toggle();
+    callback stress-step(int, int);
     // Set by Rust once the surface is on screen, cleared just before it is hidden.
     in property <bool> shown: true;
     property <float> reveal: self.shown ? 1 : 0;
@@ -548,6 +560,7 @@ export component Dash inherits Window {
     changed editing => {
         if (self.editing && Nav.mode != NavMode.off) {
             Nav.mode = NavMode.off;
+            Nav.typed = "";
         }
         Nav.expanded-id = 0;
         self.side-keys = false;
@@ -1073,6 +1086,13 @@ export component Dash inherits Window {
         focus-on-click: false;
         focus-on-tab-navigation: false;
         key-pressed(e) => {
+            // Space pauses and resumes a stress run, unless a text field has the keyboard (then
+            // this is never reached).
+            if (root.stress && e.text == " " && !e.repeat && !root.stress-synthetic
+                && !e.modifiers.control && !e.modifiers.alt && !e.modifiers.meta) {
+                root.stress-toggle();
+                return accept;
+            }
             if (e.text == Key.Escape) {
                 if (root.editing && !keys.has-focus) {
                     // Out of a sidebar text field, back to the keys of edit mode.
@@ -1990,6 +2010,98 @@ export component Dash inherits Window {
                 text: root.toast;
                 color: Theme.text;
                 font-size: Theme.font-body;
+            }
+        }
+
+        if root.stress: Rectangle {
+            z: 1000;
+            x: 12px;
+            y: 12px;
+            width: 244px;
+            height: stress-box.preferred-height;
+            background: Theme.panel;
+            border-radius: Theme.radius-small + 4px;
+            border-width: 1px;
+            border-color: Theme.border;
+            // Nothing under the panel hears a click on it.
+            TouchArea { }
+            stress-box := VerticalLayout {
+                padding: 6px;
+                spacing: 4px;
+                HorizontalLayout {
+                    spacing: 6px;
+                    IconButton {
+                        icon: root.stress-paused ? Icons.play : Icons.pause;
+                        fill: Theme.card-raised;
+                        accessible-label: root.stress-paused ? "Resume the stress run" : "Pause the stress run";
+                        clicked => {
+                            if (!root.stress-synthetic) {
+                                root.stress-toggle();
+                            }
+                        }
+                    }
+                    Text {
+                        text: root.stress-status;
+                        color: Theme.dim;
+                        font-size: Theme.font-small;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                    }
+                    IconButton {
+                        icon: Icons.settings;
+                        active: root.stress-panel;
+                        accessible-label: "Pace of the stress run";
+                        clicked => {
+                            if (!root.stress-synthetic) {
+                                root.stress-panel = !root.stress-panel;
+                            }
+                        }
+                    }
+                }
+                if root.stress-panel: VerticalLayout {
+                    spacing: 2px;
+                    for label[i] in ["Rate", "Events", "Ramp up", "Ramp down"]: HorizontalLayout {
+                        spacing: 6px;
+                        Text {
+                            text: label;
+                            color: Theme.dim;
+                            font-size: Theme.font-small;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                        IconButton {
+                            size: 26px;
+                            icon: Icons.minus;
+                            accessible-label: "Less " + label;
+                            clicked => {
+                                if (!root.stress-synthetic) {
+                                    root.stress-step(i, -1);
+                                }
+                            }
+                        }
+                        Text {
+                            width: 64px;
+                            text: root.stress-values[i];
+                            color: Theme.text;
+                            font-size: Theme.font-body;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            accessible-role: text;
+                            accessible-label: label + " " + root.stress-values[i];
+                        }
+                        IconButton {
+                            size: 26px;
+                            icon: Icons.plus;
+                            accessible-label: "More " + label;
+                            clicked => {
+                                if (!root.stress-synthetic) {
+                                    root.stress-step(i, 1);
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

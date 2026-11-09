@@ -17,15 +17,20 @@
 //! On screen the dashboard runs in a normal window (closing it ends the run). Hiding and showing
 //! keep that window and only play the animations.
 
+use super::enums::style_var_to_ui;
 use super::snapshot::press_key;
 use super::{App, Error, Result};
 use crate::layout::Loaded;
-use crate::{Control, Nav, NavMode};
+use crate::{Control, Nav, NavMode, theme};
 use niri_dash_system::Tell;
-use slint::{ComponentHandle, Model};
+use slint::platform::{PointerEventButton, WindowEvent};
+use slint::{ComponentHandle, LogicalPosition, Model};
+use std::cell::Cell;
 use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::time::{Duration, Instant};
+use strum::IntoEnumIterator;
 
 #[derive(clap::Args, Clone)]
 pub struct Args {
@@ -35,6 +40,12 @@ pub struct Args {
     /// Stop after this many keys [default: until the window is closed, or 2000 headless].
     #[arg(long)]
     pub ops: Option<u64>,
+    /// On screen: seconds to speed up from a crawl to --rate at the start.
+    #[arg(long, default_value_t = 0.0)]
+    pub ramp_up: f64,
+    /// On screen: seconds to slow down to a crawl before --ops keys are done.
+    #[arg(long, default_value_t = 0.0)]
+    pub ramp_down: f64,
     /// Seed for the keys, to run the same sequence again [default: from the clock].
     #[arg(long)]
     pub seed: Option<u64>,
@@ -56,6 +67,9 @@ pub struct Args {
 const ESCAPE_BOUND: u32 = 12;
 /// About how often (in keys) the driver checks that Escape gets out.
 const ESCAPE_EVERY: u64 = 60;
+/// About how many steps in a hundred are something other than a key: a new theme, a click, a
+/// control. Zero keeps a run to keys alone.
+const EXTRA_PERCENT: u64 = 12;
 /// How many of the last keys a failure report shows.
 const RECENT: usize = 30;
 
@@ -203,6 +217,11 @@ enum Place {
     Edit,
 }
 
+/// The keys that move a list's cursor, and with it bring its row back into view.
+const CURSOR_KEYS: [&str; 10] = [
+    "j", "k", "g", "G", "up", "down", "home", "end", "tab", "backtab",
+];
+
 /// Presses the keys and checks what they did.
 pub struct Monkey {
     seed: u64,
@@ -215,6 +234,15 @@ pub struct Monkey {
     /// How often each place was seen, and how often Escape got out, for the summary.
     seen: [u64; 5],
     escapes: u64,
+    /// Steps that weren't keys (themes, clicks, controls), for the summary.
+    extras: u64,
+    /// A new look is shown at once, not blended over a third of a second on the real clock: a
+    /// headless run presses keys faster than that, and would check the dashboard half-way
+    /// between two looks, at moments that depend on how fast the machine is.
+    instant_looks: bool,
+    /// A wheel turned since a key last moved a cursor: it may have scrolled the cursor's row out
+    /// of a list's view (the sidebar's or a widget's), and that is as the person wanted it.
+    wheeled: bool,
     /// Going on after problems: each different one, how often, and the keys that first led there.
     collected: Option<BTreeMap<String, (u64, Vec<String>)>>,
 }
@@ -230,8 +258,18 @@ impl Monkey {
             verbose,
             seen: [0; 5],
             escapes: 0,
+            extras: 0,
+            instant_looks: false,
+            wheeled: false,
             collected: None,
         }
+    }
+
+    /// For a headless run: show new looks at once (there is no time to blend them in) and leave
+    /// the choice of font alone (it depends on the machine).
+    pub fn instant_looks(mut self) -> Self {
+        self.instant_looks = true;
+        self
     }
 
     /// Go on after a problem, and report each different one when the run ends.
@@ -295,19 +333,31 @@ impl Monkey {
     pub fn summary(&self) -> String {
         let [closed, off, hints, widget, edit] = self.seen;
         format!(
-            "{} keys (seed {}): {widget} inside widgets, {hints} with the hints up, {off} with \
-             nothing entered, {edit} in edit mode, {closed} reopenings; Escape got out {} times",
-            self.done, self.seed, self.escapes
+            "{} steps (seed {}), {} of them other than keys: {widget} inside widgets, {hints} \
+             with the hints up, {off} with nothing entered, {edit} in edit mode, {closed} \
+             reopenings; Escape got out {} times",
+            self.done, self.seed, self.extras, self.escapes
         )
     }
 
     /// Check the dashboard as the last key left it, then press the next one (or open it again).
+    /// What it does to the window is marked as the run's own, so that it never presses the run's
+    /// pause button or its pace controls.
     pub(super) fn step(&mut self, app: &App, window: &slint::Window) -> Result<(), Failure> {
+        app.ui().set_stress_synthetic(true);
+        let result = self.step_inner(app, window);
+        app.ui().set_stress_synthetic(false);
+        result
+    }
+
+    fn step_inner(&mut self, app: &App, window: &slint::Window) -> Result<(), Failure> {
         // Slint runs `changed` handlers on its next pass: a list that just grew hasn't scrolled
         // the cursor's row back into sight until then, and the check shouldn't look in between.
         slint::platform::update_timers_and_animations();
         let place = place(app);
-        if let Err(p) = check(app) {
+        if let Err(p) = check(app)
+            && !(self.wheeled && scrolled_away(&p))
+        {
             self.report(format!("{}: {p}", kind_name(app)))?;
         }
         if let Some(n) = self.escaping {
@@ -334,6 +384,15 @@ impl Monkey {
         if self.escaping.is_none() && self.rng.below(ESCAPE_EVERY) == 0 {
             self.escaping = Some(0);
         }
+        // Now and then something other than a key: a new theme, a click, a control.
+        if self.escaping.is_none() && self.rng.below(100) < EXTRA_PERCENT {
+            window.dispatch_event(WindowEvent::WindowActiveChanged(true));
+            let what = self.extra(app, window);
+            self.done += 1;
+            self.extras += 1;
+            self.note(format!("{:>6}  {what} at {state}", self.done));
+            return Ok(());
+        }
         let key: String = match (self.escaping.as_mut(), place) {
             (Some(n), _) => {
                 *n += 1;
@@ -345,11 +404,130 @@ impl Monkey {
             (None, _) => self.rng.weighted(OFF).into(),
         };
         self.done += 1;
+        if CURSOR_KEYS.contains(&key.as_str()) {
+            self.wheeled = false;
+        }
         self.note(format!("{:>6}  {key:<10} at {state}", self.done));
         // The keyboard is the dashboard's, also while a watched window lacks the focus.
         window.dispatch_event(slint::platform::WindowEvent::WindowActiveChanged(true));
         press_key(window, &key);
         Ok(())
+    }
+
+    /// Something a person does besides pressing a key, at random: change the color scheme or the
+    /// style, adjust or reset a style variable, click or scroll somewhere, or ask for a control
+    /// the way a hotkey or the control socket would. Says what it did.
+    fn extra(&mut self, app: &App, window: &slint::Window) -> String {
+        let ui = app.ui();
+        match self.rng.below(100) {
+            0..=19 => {
+                let name = self.pick(theme::list(&theme::colorschemes_dir()));
+                ui.invoke_choose_colorscheme(name.as_str().into());
+                self.settle_look(app);
+                format!("color scheme {name}")
+            }
+            20..=34 => {
+                let name = self.pick(theme::list(&theme::styles_dir()));
+                ui.invoke_choose_style(name.as_str().into());
+                self.settle_look(app);
+                format!("style {name}")
+            }
+            35..=49 => {
+                let vars: Vec<theme::StyleVar> = theme::StyleVar::iter().collect();
+                let mut var = vars[self.rng.below(vars.len() as u64) as usize];
+                let delta = if self.rng.below(2) == 0 { -1 } else { 1 };
+                // Fonts are whatever the machine has: a headless run, which has to come out the
+                // same everywhere, adjusts the text size instead.
+                if self.instant_looks && var == theme::StyleVar::FontFamily {
+                    var = theme::StyleVar::FontBody;
+                }
+                ui.invoke_style_step(style_var_to_ui(var), delta);
+                self.settle_look(app);
+                format!("{} {delta:+}", var.as_ref())
+            }
+            50..=53 => {
+                let vars: Vec<theme::StyleVar> = theme::StyleVar::iter().collect();
+                let var = vars[self.rng.below(vars.len() as u64) as usize];
+                ui.invoke_style_reset(style_var_to_ui(var));
+                self.settle_look(app);
+                format!("reset {}", var.as_ref())
+            }
+            54..=55 => {
+                ui.invoke_style_reset_all();
+                self.settle_look(app);
+                "reset all style adjustments".into()
+            }
+            56..=79 => {
+                let at = self.point(window);
+                window.dispatch_event(WindowEvent::PointerMoved { position: at });
+                window.dispatch_event(WindowEvent::PointerPressed {
+                    position: at,
+                    button: PointerEventButton::Left,
+                });
+                window.dispatch_event(WindowEvent::PointerReleased {
+                    position: at,
+                    button: PointerEventButton::Left,
+                });
+                format!("click at {:.0},{:.0}", at.x, at.y)
+            }
+            80..=87 => {
+                let at = self.point(window);
+                let (dx, dy) = (
+                    0.0,
+                    [-120.0, -40.0, 40.0, 120.0][self.rng.below(4) as usize],
+                );
+                self.wheeled = true;
+                window.dispatch_event(WindowEvent::PointerMoved { position: at });
+                window.dispatch_event(WindowEvent::PointerScrolled {
+                    position: at,
+                    delta_x: dx,
+                    delta_y: dy,
+                });
+                format!("scroll {dy:+} at {:.0},{:.0}", at.x, at.y)
+            }
+            88..=91 => {
+                app.toggle_dnd();
+                "Do Not Disturb toggled".into()
+            }
+            92..=94 => {
+                app.control_in_place(Control::Inhibit);
+                "idle inhibit toggled".into()
+            }
+            95..=97 => {
+                app.control_in_place(Control::Edit);
+                "edit mode asked for".into()
+            }
+            _ => {
+                app.control_in_place(Control::Toggle);
+                "hotkey toggle".into()
+            }
+        }
+    }
+
+    /// With [`Monkey::instant_looks`]: the look just chosen, shown in full now.
+    fn settle_look(&self, app: &App) {
+        if self.instant_looks {
+            app.apply_look(false);
+        }
+    }
+
+    /// One of `names`, at random ("default" if there are none).
+    fn pick(&mut self, names: Vec<String>) -> String {
+        let at = self.rng.below(names.len() as u64) as usize;
+        names
+            .into_iter()
+            .nth(at)
+            .unwrap_or_else(|| "default".into())
+    }
+
+    /// A point in the window, a little past its edges now and then.
+    fn point(&mut self, window: &slint::Window) -> LogicalPosition {
+        let size = window.size().to_logical(window.scale_factor());
+        let along = |rng: &mut Rng, extent: f32| (rng.below(1100) as f32 / 1000.0 - 0.05) * extent;
+        LogicalPosition::new(
+            along(&mut self.rng, size.width),
+            along(&mut self.rng, size.height),
+        )
     }
 
     /// With the hints up: mostly the next letter of some label, now and then a wrong one or a way
@@ -380,6 +558,17 @@ impl Monkey {
             None => "f".into(),
         }
     }
+}
+
+/// Whether the check's complaint is about a cursor whose row a list has been scrolled away from.
+fn scrolled_away(problem: &str) -> bool {
+    [
+        "scrolled out of view",
+        "cursor is on nothing",
+        "cursor is out of sight",
+    ]
+    .iter()
+    .any(|m| problem.contains(m))
 }
 
 fn place(app: &App) -> Place {
@@ -586,6 +775,15 @@ impl Pace {
         }
     }
 
+    /// Keys at `rate` a second from now on (0: as fast as it goes).
+    pub(super) fn set_rate(&mut self, rate: f64) {
+        self.every = if rate > 0.0 {
+            Duration::from_secs_f64(1.0 / rate)
+        } else {
+            Duration::ZERO
+        };
+    }
+
     /// How long until the next key (zero if it is due).
     pub(super) fn wait(&self) -> Duration {
         self.next.saturating_duration_since(Instant::now())
@@ -602,11 +800,235 @@ impl Pace {
     }
 }
 
+/// What the pace panel on screen sets: all of it can change while the run goes.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Tuning {
+    paused: bool,
+    /// Keys a second; 0 for as fast as it goes.
+    rate: f64,
+    /// Stop after this many, or never.
+    total: Option<u64>,
+    /// Seconds from a crawl up to `rate` at the start, and back down before the `total` is reached.
+    ramp_up: f64,
+    ramp_down: f64,
+}
+
+/// The values the panel's − and + step through, in order. Infinity stands for "as fast as it goes"
+/// and "never stops".
+const RATES: &[f64] = &[
+    0.5,
+    1.0,
+    2.0,
+    4.0,
+    8.0,
+    16.0,
+    32.0,
+    64.0,
+    128.0,
+    f64::INFINITY,
+];
+const TOTALS: &[f64] = &[
+    100.0,
+    250.0,
+    500.0,
+    1000.0,
+    2500.0,
+    5000.0,
+    10_000.0,
+    25_000.0,
+    100_000.0,
+    f64::INFINITY,
+];
+const RAMPS: &[f64] = &[0.0, 1.0, 2.0, 5.0, 10.0, 20.0, 30.0, 60.0];
+
+/// The next value of `ladder` above `now` (or below, with a negative `delta`); `now` itself when
+/// there is none.
+fn stepped(ladder: &[f64], now: f64, delta: i32) -> f64 {
+    let found = if delta > 0 {
+        ladder.iter().copied().find(|v| *v > now)
+    } else {
+        ladder.iter().rev().copied().find(|v| *v < now)
+    };
+    found.unwrap_or(now)
+}
+
+impl Tuning {
+    /// A panel row's − (negative `delta`) or +. The rows are rate, events, ramp up and ramp down.
+    fn step(&mut self, row: i32, delta: i32) {
+        let unbounded = |v: f64| if v > 0.0 { v } else { f64::INFINITY };
+        match row {
+            0 => {
+                let v = stepped(RATES, unbounded(self.rate), delta);
+                self.rate = if v.is_finite() { v } else { 0.0 };
+            }
+            1 => {
+                let now = self.total.map_or(f64::INFINITY, |n| n as f64);
+                let v = stepped(TOTALS, now, delta);
+                self.total = v.is_finite().then_some(v as u64);
+            }
+            2 => self.ramp_up = stepped(RAMPS, self.ramp_up, delta),
+            3 => self.ramp_down = stepped(RAMPS, self.ramp_down, delta),
+            _ => {}
+        }
+    }
+
+    /// The panel's values as text, in the order of its rows.
+    fn texts(&self) -> Vec<slint::SharedString> {
+        let seconds = |s: f64| {
+            if s > 0.0 {
+                format!("{s}s")
+            } else {
+                "off".into()
+            }
+        };
+        vec![
+            if self.rate > 0.0 {
+                format!("{}/s", self.rate)
+            } else {
+                "max".into()
+            }
+            .into(),
+            self.total.map_or("∞".into(), |n| n.to_string()).into(),
+            seconds(self.ramp_up).into(),
+            seconds(self.ramp_down).into(),
+        ]
+    }
+
+    /// Keys a second right now (0: as fast as it goes), `running` seconds into the run with `done`
+    /// keys pressed. The rate climbs in a straight line over `ramp_up`; at the end it falls in a
+    /// straight line to a crawl, starting when just as many keys are left as that fall will press
+    /// (at half the rate on average, over `ramp_down`), so that the last key comes as it ends.
+    fn rate_now(&self, running: f64, done: u64) -> f64 {
+        if self.rate <= 0.0 {
+            return 0.0;
+        }
+        let crawl = (self.rate * 0.05).max(0.5).min(self.rate);
+        let mut share = 1.0_f64;
+        if self.ramp_up > 0.0 {
+            share = share.min(running / self.ramp_up);
+        }
+        if let (Some(total), true) = (self.total, self.ramp_down > 0.0) {
+            let left = total.saturating_sub(done) as f64;
+            share = share.min((left / (self.rate * self.ramp_down / 2.0)).sqrt());
+        }
+        (self.rate * share).max(crawl)
+    }
+}
+
 /// A stress run in the daemon's loop: the keys, their pace and when to stop.
 pub(super) struct Run {
     pub(super) monkey: Monkey,
     pub(super) pace: Pace,
-    pub(super) ops: Option<u64>,
+    /// What the panel on screen sets, shared with its callbacks.
+    tuning: Rc<Cell<Tuning>>,
+    /// What the window shows of it was last made from this.
+    shown: Option<(Tuning, u64, u64)>,
+    /// How long the run has gone on, not counting the time it was paused.
+    running: Duration,
+    last: Option<Instant>,
+}
+
+/// What a turn of the loop found.
+#[derive(PartialEq, Eq)]
+pub(super) enum Drive {
+    Going,
+    Finished,
+}
+
+impl Run {
+    pub(super) fn new(monkey: Monkey, args: &Args) -> Self {
+        let tuning = Tuning {
+            paused: false,
+            rate: args.rate.max(0.0),
+            total: args.ops,
+            ramp_up: args.ramp_up.max(0.0),
+            ramp_down: args.ramp_down.max(0.0),
+        };
+        Self {
+            monkey,
+            pace: Pace::new(tuning.rate_now(0.0, 0)),
+            tuning: Rc::new(Cell::new(tuning)),
+            shown: None,
+            running: Duration::ZERO,
+            last: None,
+        }
+    }
+
+    /// Put the pause button and the pace panel on the dashboard, and hear from them.
+    pub(super) fn attach(&self, app: &App) {
+        let ui = app.ui();
+        ui.set_stress(true);
+        let tuning = self.tuning.clone();
+        ui.on_stress_toggle(move || {
+            let mut t = tuning.get();
+            t.paused = !t.paused;
+            tuning.set(t);
+        });
+        let tuning = self.tuning.clone();
+        ui.on_stress_step(move |row, delta| {
+            let mut t = tuning.get();
+            t.step(row, delta);
+            tuning.set(t);
+        });
+    }
+
+    /// How long the loop may sleep before the next key is due: for as long as it likes when the
+    /// run is paused.
+    pub(super) fn wait(&self) -> Duration {
+        if self.tuning.get().paused {
+            Duration::MAX
+        } else {
+            self.pace.wait()
+        }
+    }
+
+    /// One turn of the loop: show what the panel shows, and press the next key if one is due.
+    pub(super) fn drive(&mut self, app: &App, window: &slint::Window) -> Result<Drive, Failure> {
+        let now = Instant::now();
+        let tuning = self.tuning.get();
+        if let Some(last) = self.last.replace(now)
+            && !tuning.paused
+        {
+            self.running += now.saturating_duration_since(last);
+        }
+        let done = self.monkey.done();
+        let rate = tuning.rate_now(self.running.as_secs_f64(), done);
+        self.show(app, tuning, rate);
+        if tuning.total.is_some_and(|n| done >= n) {
+            return Ok(Drive::Finished);
+        }
+        if !tuning.paused {
+            self.pace.set_rate(rate);
+            if self.pace.due() {
+                self.monkey.step(app, window)?;
+            }
+        }
+        Ok(Drive::Going)
+    }
+
+    /// Update the window's pause button and panel when something they show has changed.
+    fn show(&mut self, app: &App, tuning: Tuning, rate: f64) {
+        let key = (tuning, self.monkey.done(), (rate * 10.0).round() as u64);
+        if self.shown == Some(key) {
+            return;
+        }
+        self.shown = Some(key);
+        let ui = app.ui();
+        ui.set_stress_paused(tuning.paused);
+        ui.set_stress_values(slint::ModelRc::new(slint::VecModel::from(tuning.texts())));
+        let pace = if rate > 0.0 {
+            format!("{rate:.1}/s")
+        } else {
+            "max".into()
+        };
+        let status = match (tuning.paused, tuning.total) {
+            (true, Some(n)) => format!("paused · {} of {n}", key.1),
+            (true, None) => format!("paused · {}", key.1),
+            (false, Some(n)) => format!("{} of {n} · {pace}", key.1),
+            (false, None) => format!("{} · {pace}", key.1),
+        };
+        ui.set_stress_status(status.into());
+    }
 }
 
 /// `niri-dash stress`.
@@ -633,11 +1055,7 @@ pub fn run(args: &Args) -> Result<()> {
         h.stress(monkey, args.ops.unwrap_or(2000), args.rate)
             .map_err(|f| Error::Stress(f.to_string()))?
     } else {
-        super::stress_window(Run {
-            monkey,
-            pace: Pace::new(args.rate),
-            ops: args.ops,
-        })?
+        super::stress_window(Run::new(monkey, args))?
     };
     println!("{}", monkey.summary());
     monkey
@@ -650,4 +1068,93 @@ pub fn run(args: &Args) -> Result<()> {
 fn config_text() -> String {
     let Loaded { text, .. } = crate::layout::Layout::load();
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tuning() -> Tuning {
+        Tuning {
+            paused: false,
+            rate: 10.0,
+            total: Some(1000),
+            ramp_up: 0.0,
+            ramp_down: 0.0,
+        }
+    }
+
+    #[test]
+    fn the_rate_is_steady_without_ramps() {
+        assert_eq!(tuning().rate_now(0.0, 0), 10.0);
+        assert_eq!(tuning().rate_now(100.0, 999), 10.0);
+    }
+
+    #[test]
+    fn the_rate_climbs_over_the_ramp_up_and_holds() {
+        let t = Tuning {
+            ramp_up: 10.0,
+            ..tuning()
+        };
+        assert_eq!(t.rate_now(0.0, 0), 0.5);
+        assert!((t.rate_now(5.0, 0) - 5.0).abs() < 1e-9);
+        assert_eq!(t.rate_now(10.0, 0), 10.0);
+        assert_eq!(t.rate_now(60.0, 0), 10.0);
+    }
+
+    #[test]
+    fn the_rate_falls_over_the_last_keys_and_never_stops() {
+        let t = Tuning {
+            ramp_down: 10.0,
+            ..tuning()
+        };
+        // 10 keys a second falling to nothing over 10 s presses 50 keys.
+        assert_eq!(t.rate_now(0.0, 900), 10.0);
+        assert_eq!(t.rate_now(0.0, 950), 10.0);
+        assert!(t.rate_now(0.0, 975) < 10.0);
+        // One key left: sqrt(1 / 50) of the rate, a bit over the crawl; none left: the crawl.
+        assert!((t.rate_now(0.0, 999) - 10.0 * (1.0_f64 / 50.0).sqrt()).abs() < 1e-9);
+        assert_eq!(t.rate_now(0.0, 1000), 0.5);
+    }
+
+    #[test]
+    fn as_fast_as_it_goes_has_no_ramps() {
+        let t = Tuning {
+            rate: 0.0,
+            ramp_up: 10.0,
+            ramp_down: 10.0,
+            ..tuning()
+        };
+        assert_eq!(t.rate_now(0.0, 999), 0.0);
+    }
+
+    #[test]
+    fn the_panel_steps_through_the_ladders_and_stops_at_their_ends() {
+        let mut t = tuning();
+        t.step(0, 1);
+        assert_eq!(t.rate, 16.0);
+        t.rate = 128.0;
+        t.step(0, 1);
+        assert_eq!(t.rate, 0.0, "past the top is as fast as it goes");
+        t.step(0, 1);
+        assert_eq!(t.rate, 0.0);
+        t.step(0, -1);
+        assert_eq!(t.rate, 128.0);
+        t.total = Some(1000);
+        t.step(1, 1);
+        assert_eq!(t.total, Some(2500));
+        t.total = Some(100_000);
+        t.step(1, 1);
+        assert_eq!(t.total, None);
+        t.step(1, -1);
+        assert_eq!(t.total, Some(100_000));
+        t.total = Some(777);
+        t.step(1, -1);
+        assert_eq!(t.total, Some(500));
+        t.step(2, -1);
+        assert_eq!(t.ramp_up, 0.0);
+        t.step(3, 1);
+        t.step(3, 1);
+        assert_eq!(t.ramp_down, 2.0);
+    }
 }

@@ -358,6 +358,9 @@ fn serve(
         app.access_attach(super::a11y::bridge::unix(input_tx.clone()));
     }
 
+    if let Some(run) = stress.as_deref() {
+        run.attach(&app);
+    }
     shell.watch_pointer(super::hold::watcher(&app));
     let a = app.clone();
     event_loop
@@ -411,9 +414,7 @@ fn serve(
         };
         let timeout = shell.frame_wait().map_or(timeout, |w| w.min(timeout));
         let timeout = app.access_wait().map_or(timeout, |w| w.min(timeout));
-        let timeout = stress
-            .as_ref()
-            .map_or(timeout, |r| r.pace.wait().min(timeout));
+        let timeout = stress.as_ref().map_or(timeout, |r| r.wait().min(timeout));
         event_loop.dispatch(Some(timeout).filter(|t| *t != Duration::MAX), &mut shell)?;
         slint::platform::update_timers_and_animations();
         app.keep_keyboard();
@@ -427,13 +428,13 @@ fn serve(
             if shell.closed_by_compositor {
                 return Ok(());
             }
-            if shell.is_configured() && run.pace.due() {
-                if run.ops.is_some_and(|n| run.monkey.done() >= n) {
+            if shell.is_configured() {
+                let drive = run
+                    .drive(&app, window.window())
+                    .map_err(|f| Error::Stress(f.to_string()))?;
+                if drive == stress::Drive::Finished {
                     return Ok(());
                 }
-                run.monkey
-                    .step(&app, window.window())
-                    .map_err(|f| Error::Stress(f.to_string()))?;
             }
         }
         if shell.closed_by_compositor {
