@@ -80,8 +80,13 @@ export struct HintChars {
 // Keyboard navigation. `f` shows a label on every widget (hints); typing one enters that widget
 // (widget), whose controls j/k/h/l/Enter then work.
 export enum NavMode { off, hints, widget }
+// What the direction keys do to the widget in hand (Ctrl+M, Ctrl+R): move it, or resize it.
+export enum NavOp { none, move, resize }
 export global Nav {
     in-out property <NavMode> mode;
+    // Move or resize mode: the widget in hand (the entered one, or the picked one in edit mode)
+    // keeps the keyboard, and h/j/k/l or the arrows act on it until Escape.
+    in-out property <NavOp> op;
     // The widget entered (0 = none).
     in-out property <int> active-id;
     // The widget blown up in the middle of the dashboard with `e` (0 = none); only while entered.

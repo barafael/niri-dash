@@ -71,7 +71,9 @@ Every widget, with its sizes and settings, is in the [widget reference](https://
 
 `f` labels every widget with the start of its name, and typing a label goes into that widget;
 `j`/`k`/`h`/`l` move inside it, `e` blows it up, `s` opens its settings, and Escape steps back.
-Ctrl+E opens edit mode. Lists have letters of their own: `d` closes a window or dismisses a
+Ctrl+M moves the widget and Ctrl+R resizes it (`h`/`j`/`k`/`l` act on it until Escape; in resize
+mode Shift pulls a side in). Ctrl+E opens edit mode. The tips along the bottom of the screen
+always list the keys that work just now. Lists have letters of their own: `d` closes a window or dismisses a
 notification, `r` rescans Wi-Fi, `t` turns it on and off, `m` mutes, `1`–`0` set a slider to
 10–100 %, `x` ejects a drive, and so on. The calendar has a day cursor: `h`/`l` a day, `j`/`k` a
 week, `n`/`p` a month, `t` back to today, `Ctrl+C` copies the day as `YYYY-MM-DD`.

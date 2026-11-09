@@ -377,10 +377,12 @@ impl Dashboard {
         }
         let ctrl = ev.ctrl_key();
         let lower = ev.key().to_ascii_lowercase();
-        // With nothing entered, Ctrl+R is free for the browser, where it reloads. Pasting comes as
-        // a paste event, which only happens if the browser gets to see the key.
-        let entered = self.ui.global::<Nav>().get_mode() != NavMode::Off;
-        if ctrl && ((lower == "r" && !entered) || lower == "v") {
+        // Ctrl+R is the dashboard's (resize mode) with a widget entered or, in edit mode, picked;
+        // with none it is free for the browser, where it reloads. Pasting comes as a paste event,
+        // which only happens if the browser gets to see the key.
+        let has_widget = self.ui.global::<Nav>().get_mode() != NavMode::Off
+            || (self.ui.get_editing() && self.ui.get_settings_id() != 0);
+        if ctrl && ((lower == "r" && !has_widget) || lower == "v") {
             return;
         }
         // The browser keeps the zoom keys.
