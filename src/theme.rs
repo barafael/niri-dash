@@ -7,9 +7,8 @@
 //! themes blends the current look into the new one.
 
 use crate::layout::parse_doc;
-use crate::{Dash, Theme as UiTheme};
+use gpui::SharedString;
 use kdl::{KdlDocument, KdlValue};
-use slint::{Color, ComponentHandle, SharedString};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use strum::{AsRefStr, EnumCount, EnumIter, EnumString, IntoEnumIterator};
@@ -275,7 +274,84 @@ impl Style {
     }
 }
 
-/// Everything the Slint `Theme` global holds: one color per role, and the style.
+/// An 8-bit RGBA color, not premultiplied; transparent by default.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Color {
+    r: u8,
+    g: u8,
+    b: u8,
+    a: u8,
+}
+
+impl Color {
+    pub const fn from_argb_u8(a: u8, r: u8, g: u8, b: u8) -> Self {
+        Self { r, g, b, a }
+    }
+
+    pub const fn from_rgb_u8(r: u8, g: u8, b: u8) -> Self {
+        Self::from_argb_u8(255, r, g, b)
+    }
+
+    pub const fn red(self) -> u8 {
+        self.r
+    }
+
+    pub const fn green(self) -> u8 {
+        self.g
+    }
+
+    pub const fn blue(self) -> u8 {
+        self.b
+    }
+
+    pub const fn alpha(self) -> u8 {
+        self.a
+    }
+
+    /// The same color with its alpha multiplied by `k` (0 to 1).
+    pub fn faded(self, k: f32) -> Self {
+        Self {
+            a: (self.a as f32 * k.clamp(0.0, 1.0)).round() as u8,
+            ..self
+        }
+    }
+
+    /// This color with `alpha` (0 to 1) instead of its own.
+    pub fn with_alpha(self, alpha: f32) -> Self {
+        Self {
+            a: (alpha.clamp(0.0, 1.0) * 255.0).round() as u8,
+            ..self
+        }
+    }
+
+    /// How GPUI draws it.
+    pub fn rgba(self) -> gpui::Rgba {
+        gpui::Rgba {
+            r: self.r as f32 / 255.0,
+            g: self.g as f32 / 255.0,
+            b: self.b as f32 / 255.0,
+            a: self.a as f32 / 255.0,
+        }
+    }
+
+    pub fn hsla(self) -> gpui::Hsla {
+        self.rgba().into()
+    }
+}
+
+impl From<Color> for gpui::Hsla {
+    fn from(c: Color) -> Self {
+        c.hsla()
+    }
+}
+
+impl From<Color> for gpui::Rgba {
+    fn from(c: Color) -> Self {
+        c.rgba()
+    }
+}
+
+/// One color per role, and the style: everything the dashboard's look is made of.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Look {
     pub colors: [Color; ColorRole::COUNT],
@@ -286,97 +362,6 @@ impl Look {
     pub fn color(&self, role: ColorRole) -> Color {
         self.colors[role as usize]
     }
-}
-
-pub fn current(ui: &Dash) -> Look {
-    let t = ui.global::<UiTheme>();
-    let colors = ColorRole::iter()
-        .map(|r| match r {
-            ColorRole::Backdrop => t.get_backdrop(),
-            ColorRole::Card => t.get_card(),
-            ColorRole::CardRaised => t.get_card_raised(),
-            ColorRole::Panel => t.get_panel(),
-            ColorRole::Hover => t.get_hover(),
-            ColorRole::Pressed => t.get_pressed(),
-            ColorRole::Border => t.get_border(),
-            ColorRole::Subtle => t.get_subtle(),
-            ColorRole::Shadow => t.get_shadow(),
-            ColorRole::Text => t.get_text(),
-            ColorRole::Dim => t.get_dim(),
-            ColorRole::Faint => t.get_faint(),
-            ColorRole::Accent => t.get_accent(),
-            ColorRole::AccentSoft => t.get_accent_soft(),
-            ColorRole::OnAccent => t.get_on_accent(),
-            ColorRole::Good => t.get_good(),
-            ColorRole::Warn => t.get_warn(),
-            ColorRole::Bad => t.get_bad(),
-            ColorRole::Track => t.get_track(),
-            ColorRole::Knob => t.get_knob(),
-        })
-        .collect::<Vec<_>>()
-        .try_into()
-        .expect("one color per role");
-    let style = Style {
-        radius: t.get_radius(),
-        radius_small: t.get_radius_small(),
-        gap: t.get_gap(),
-        padding: t.get_pad(),
-        border_width: t.get_border_width(),
-        font_family: t.get_font_family(),
-        font_small: t.get_font_small(),
-        font_body: t.get_font_body(),
-        font_title: t.get_font_title(),
-        font_weight_display: t.get_font_weight_display(),
-        motion: t.get_motion(),
-        glass: t.get_glass(),
-        backdrop_opacity: t.get_backdrop_opacity(),
-        card_opacity: t.get_card_opacity(),
-    };
-    Look { colors, style }
-}
-
-pub fn set(ui: &Dash, look: &Look) {
-    let t = ui.global::<UiTheme>();
-    for role in ColorRole::iter() {
-        let c = look.color(role);
-        match role {
-            ColorRole::Backdrop => t.set_backdrop(c),
-            ColorRole::Card => t.set_card(c),
-            ColorRole::CardRaised => t.set_card_raised(c),
-            ColorRole::Panel => t.set_panel(c),
-            ColorRole::Hover => t.set_hover(c),
-            ColorRole::Pressed => t.set_pressed(c),
-            ColorRole::Border => t.set_border(c),
-            ColorRole::Subtle => t.set_subtle(c),
-            ColorRole::Shadow => t.set_shadow(c),
-            ColorRole::Text => t.set_text(c),
-            ColorRole::Dim => t.set_dim(c),
-            ColorRole::Faint => t.set_faint(c),
-            ColorRole::Accent => t.set_accent(c),
-            ColorRole::AccentSoft => t.set_accent_soft(c),
-            ColorRole::OnAccent => t.set_on_accent(c),
-            ColorRole::Good => t.set_good(c),
-            ColorRole::Warn => t.set_warn(c),
-            ColorRole::Bad => t.set_bad(c),
-            ColorRole::Track => t.set_track(c),
-            ColorRole::Knob => t.set_knob(c),
-        }
-    }
-    let s = &look.style;
-    t.set_radius(s.radius);
-    t.set_radius_small(s.radius_small);
-    t.set_gap(s.gap);
-    t.set_pad(s.padding);
-    t.set_border_width(s.border_width);
-    t.set_font_family(s.font_family.clone());
-    t.set_font_small(s.font_small);
-    t.set_font_body(s.font_body);
-    t.set_font_title(s.font_title);
-    t.set_font_weight_display(s.font_weight_display);
-    t.set_motion(s.motion);
-    t.set_glass(s.glass);
-    t.set_backdrop_opacity(s.backdrop_opacity);
-    t.set_card_opacity(s.card_opacity);
 }
 
 /// Blend two looks: colors and sizes in between; font family and weight switch halfway, and

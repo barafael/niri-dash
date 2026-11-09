@@ -45,7 +45,7 @@ fn main() {
         let seed_name = format!("{seed} on a {screen} screen");
         let run = std::panic::catch_unwind(AssertUnwindSafe(|| {
             Harness::with_mock_sized(&config, size)
-                .stress(Monkey::new(seed, verbose).keep_going(), ops, 0.0)
+                .stress(Monkey::new(seed, verbose).keep_going(), ops)
                 .map(|monkey| (monkey.summary(), monkey.finish()))
         }));
         let run = run.map(|r| match r {

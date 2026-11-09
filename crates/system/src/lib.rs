@@ -45,7 +45,7 @@ pub mod windows;
 #[cfg(not(target_arch = "wasm32"))]
 pub use compositor::guess as guess_compositor;
 #[cfg(not(target_arch = "wasm32"))]
-pub use live::{Options, live};
+pub use live::{Options, live, wayland_connection};
 #[cfg(not(target_arch = "wasm32"))]
 pub use mock::mock;
 pub use mock::{Demo, MockSystem, Received};

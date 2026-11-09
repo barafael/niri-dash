@@ -17,6 +17,14 @@ use std::future::Future;
 use std::time::Duration;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
+/// A Wayland connection of the process's own, for [`Options::wayland`]: the dashboard's window
+/// library keeps its connection to itself. None if there is no compositor to connect to.
+pub fn wayland_connection() -> Option<Connection> {
+    Connection::connect_to_env()
+        .map_err(|e| log::warn!("connecting to Wayland for the clipboard and night light: {e}"))
+        .ok()
+}
+
 /// How the live system is started.
 pub struct Options {
     /// The feeds to run; None runs all of them (the dashboard).
