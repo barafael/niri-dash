@@ -72,7 +72,11 @@ impl Dash {
             .edit
             .anim
             .follow(("grid-fade", 0), if self.editing { 1.0 } else { 0.0 }, 160.0, tk.motion(), Ease::Out);
-        let fade = fade.max(if self.edit.dragging() { 1.0 } else { 0.0 });
+        let fade = fade.max(if self.edit.dragging() || self.op() != crate::dash::NavOp::None {
+            1.0
+        } else {
+            0.0
+        });
         if fade <= 0.01 {
             return None;
         }
@@ -299,7 +303,12 @@ impl Dash {
                     });
                     let d = dash.clone();
                     window.on_mouse_event(move |ev: &MouseDownEvent, phase, window, cx| {
-                        if phase != DispatchPhase::Capture || ev.button != MouseButton::Left {
+                        if phase != DispatchPhase::Capture {
+                            return;
+                        }
+                        // Another button in the middle of a press ends the wait for a long one.
+                        if ev.button != MouseButton::Left {
+                            d.update(cx, |d, _| d.edit.hold.cancel());
                             return;
                         }
                         let pos = (f32::from(ev.position.x), f32::from(ev.position.y));

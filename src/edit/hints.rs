@@ -1,9 +1,10 @@
-//! The shortcuts the top bar shows in edit mode, for what the keys do just now.
+//! The quick tips along the bottom of the screen: the keys that work right now, in every mode
+//! (`tips` in app.slint).
 
 use super::DragMode;
-use crate::dash::{Dash, NavMode};
+use crate::dash::{Dash, NavMode, NavOp};
 
-/// A keyboard shortcut for the top bar: the keys, and what they do. No keys: a plain note.
+/// A keyboard shortcut for the quick tips: the keys, and what they do. No keys: a plain note.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyHint {
     pub key: String,
@@ -20,8 +21,11 @@ fn hints(list: &[(&str, &str)]) -> Vec<KeyHint> {
 }
 
 impl Dash {
-    /// What the keys do now (`edit-hints` in app.slint).
-    pub fn edit_hints(&self) -> Vec<KeyHint> {
+    /// What the keys do now (`tips` in app.slint). Nothing in a standalone app.
+    pub fn tips(&self) -> Vec<KeyHint> {
+        if self.solo.is_some() {
+            return Vec::new();
+        }
         let e = &self.edit;
         if e.drag.mode == DragMode::Carry {
             return hints(&[("Click", "place it"), ("Esc", "cancel")]);
@@ -34,8 +38,53 @@ impl Dash {
                 ("Esc", "done"),
             ]);
         }
-        if !self.editing {
-            return Vec::new();
+        let note = || e.size_note.clone();
+        match self.op() {
+            NavOp::Move => {
+                let mut out = vec![KeyHint {
+                    key: String::new(),
+                    does: format!("MOVE {}", note()),
+                }];
+                out.extend(hints(&[
+                    ("h j k l", "one cell (arrows too)"),
+                    ("Ctrl+R", "resize instead"),
+                    ("Esc", "done"),
+                ]));
+                return out;
+            }
+            NavOp::Resize => {
+                let mut out = vec![KeyHint {
+                    key: String::new(),
+                    does: format!("RESIZE {}", note()),
+                }];
+                out.extend(hints(&[
+                    ("h j k l", "pull that side out"),
+                    ("Shift + h j k l", "pull it in"),
+                    ("Ctrl+M", "move instead"),
+                    ("Esc", "done"),
+                ]));
+                return out;
+            }
+            NavOp::None => {}
+        }
+        if self.nav.mode == NavMode::Widget && !self.editing {
+            return hints(&[
+                ("Ctrl+M", "move"),
+                ("Ctrl+R", "resize"),
+                ("Ctrl + h j k l", "next widget"),
+                ("e", "expand"),
+                ("s", "settings"),
+                ("f", "pick another"),
+                ("Ctrl+E", "edit mode"),
+                ("Esc", "leave"),
+            ]);
+        }
+        if !self.editing && self.nav.mode != NavMode::Hints {
+            return hints(&[
+                ("f", "pick a widget"),
+                ("Ctrl+E", "edit mode"),
+                ("Esc", "close"),
+            ]);
         }
         if self.nav.mode == NavMode::Hints {
             return hints(&[
@@ -100,10 +149,9 @@ impl Dash {
                 does: note,
             }];
             out.extend(hints(&[
-                ("h j k l", "size"),
-                ("Shift", "from the other side"),
-                ("Ctrl + h j k l", "move"),
-                ("w a s d", "pick another"),
+                ("Ctrl+M", "move"),
+                ("Ctrl+R", "resize"),
+                ("h j k l", "pick another"),
                 ("o", "shape"),
                 ("p", "pin"),
                 ("x", "remove"),

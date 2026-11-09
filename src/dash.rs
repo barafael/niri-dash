@@ -43,9 +43,24 @@ pub enum NavMode {
     Widget,
 }
 
+/// What the direction keys do to the widget in hand (Ctrl+M, Ctrl+R): move it, or resize it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum NavOp {
+    #[default]
+    None,
+    Move,
+    Resize,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Nav {
     pub mode: NavMode,
+    /// Move or resize mode: the widget in hand (the entered one, or the picked one in edit mode)
+    /// keeps the keyboard, and h j k l or the arrows act on it until Escape. Read it through
+    /// [`Dash::op`], which lets go of a mode whose widget is gone.
+    pub op: NavOp,
+    /// The widget the mode was started on.
+    pub op_for: u32,
     /// The widget entered (0 = none).
     pub active_id: u32,
     /// The widget blown up in the middle of the dashboard with `e` (0 = none).
@@ -327,6 +342,7 @@ impl Dash {
 
     /// Back to no widget entered. A standalone app is always in its one widget.
     pub fn reset_nav(&mut self) {
+        self.nav.op = NavOp::None;
         self.nav.typed.clear();
         self.nav.expanded_id = 0;
         match self.solo {
@@ -375,6 +391,7 @@ impl Dash {
             self.nav.typed.clear();
         }
         self.nav.expanded_id = 0;
+        self.nav.op = NavOp::None;
         crate::edit::editing_changed(self, on);
         cx.notify();
     }
@@ -417,6 +434,7 @@ impl Dash {
     /// A key press, with the dashboard focused. True if it was taken.
     pub fn key(&mut self, key: &Key, cx: &mut Context<Self>) -> bool {
         let taken = self.key_inner(key, cx);
+        self.tidy_op();
         if taken {
             // A key may have changed what a widget is drawn as (expanded, left): its cursor
             // stays on a stop of the new shape.
@@ -434,6 +452,30 @@ impl Dash {
         // A text field of edit mode has the keyboard: its keys are its own.
         if self.editing && self.edit.field.focused {
             return crate::edit::field_key(self, key, cx);
+        }
+        // Ctrl+M moves the widget in hand, Ctrl+R resizes it.
+        if let Some(op) = op_key(key)
+            && self.solo.is_none()
+            && !self.edit.dragging()
+            && self.edit.adjust_id == 0
+            && self.op_target() != 0
+        {
+            self.op_toggle(op);
+            return true;
+        }
+        if self.op() != NavOp::None && self.solo.is_none() && !self.edit.dragging() && key.bare() {
+            // In the mode h j k l (and the arrows) act on the widget in hand, Shift pulling a side
+            // in instead of out; the rest of the keys wait for Escape.
+            if let Some(d) = key_dir(key) {
+                let id = self.op_target();
+                if self.nav.op == NavOp::Move {
+                    self.nudge_widget(id, d);
+                } else {
+                    let shrink = key.shift || matches!(key.code, Code::Char(c) if c.is_ascii_uppercase());
+                    self.size_widget(id, d, !shrink);
+                }
+            }
+            return true;
         }
         // What a text field types is the field's; Ctrl and Alt keys stay the dashboard's.
         if self.typing && key.bare() {
@@ -460,14 +502,6 @@ impl Dash {
             return crate::widgets::edit_key(self, key, cx);
         }
         if self.nav.mode == NavMode::Widget && self.solo.is_none() {
-            // Ctrl+Shift+h/j/k/l moves the widget a cell, pushing others aside.
-            if key.ctrl && key.shift && !key.alt && !key.meta
-                && let Some(d) = key_dir(key)
-            {
-                self.nav.expanded_id = 0;
-                crate::widgets::nudge(self, self.nav.active_id, d, cx);
-                return true;
-            }
             // s opens the widget's settings, in every widget.
             if key.is('s') && key.bare() {
                 crate::widgets::open_settings(self, self.nav.active_id, cx);
@@ -507,7 +541,7 @@ impl Dash {
 
     /// Escape closes the innermost thing that is open.
     fn escape(&mut self, cx: &mut Context<Self>) {
-        // A text field of edit mode, a drag, a widget opened alone.
+        // A text field of edit mode, a drag, a mode of the widget in hand, a widget opened alone.
         if crate::edit::escape(self, cx) {
             return;
         }
@@ -567,8 +601,67 @@ impl Dash {
         true
     }
 
+    /// The widget the keyboard's move and resize modes act on: the one entered, or in edit mode
+    /// the picked one (0 = none, and no mode).
+    pub fn op_target(&self) -> u32 {
+        if self.solo.is_some() {
+            0
+        } else if self.editing {
+            self.edit.settings_id
+        } else if self.nav.mode == NavMode::Widget {
+            self.nav.active_id
+        } else {
+            0
+        }
+    }
+
+    /// The mode in force: none once another widget (or none) is in hand.
+    pub fn op(&self) -> NavOp {
+        if self.nav.op != NavOp::None && self.op_target() == self.nav.op_for {
+            self.nav.op
+        } else {
+            NavOp::None
+        }
+    }
+
+    /// Let go of a mode whose widget is not in hand any more.
+    pub fn tidy_op(&mut self) {
+        if self.op() == NavOp::None {
+            self.nav.op = NavOp::None;
+            self.nav.op_for = 0;
+        }
+    }
+
+    /// Ctrl+M / Ctrl+R: start the mode, switch to it from the other one, or end it. The widget
+    /// gives up the keyboard while it lasts, so h j k l reach the mode and not the widget.
+    fn op_toggle(&mut self, op: NavOp) {
+        let id = self.op_target();
+        if id == 0 {
+            return;
+        }
+        if self.op() == op {
+            self.op_end();
+        } else {
+            self.size_note(id);
+            self.nav.expanded_id = 0;
+            self.edit.side_keys = false;
+            self.edit.canvas_keys = true;
+            self.edit.field.to_dash();
+            self.nav.op = op;
+            self.nav.op_for = id;
+        }
+    }
+
+    /// Escape, or the mode's key again: the entered widget takes the keyboard back.
+    pub fn op_end(&mut self) {
+        self.nav.op = NavOp::None;
+        self.nav.op_for = 0;
+        self.edit.field.to_dash();
+    }
+
     /// The hints go down, nothing entered.
     pub fn nav_off(&mut self) {
+        self.nav.op = NavOp::None;
         self.nav.typed.clear();
         self.nav.expanded_id = 0;
         self.nav.mode = NavMode::Off;
@@ -639,6 +732,18 @@ pub fn key_dir(key: &Key) -> Option<Dir> {
         Code::Char('j' | 'J') | Code::Named(Named::Down) => Some(Dir::Down),
         Code::Char('k' | 'K') | Code::Named(Named::Up) => Some(Dir::Up),
         Code::Char('l' | 'L') | Code::Named(Named::Right) => Some(Dir::Right),
+        _ => None,
+    }
+}
+
+/// Ctrl+M (move) or Ctrl+R (resize), without Alt, Meta or Shift.
+fn op_key(key: &Key) -> Option<NavOp> {
+    if !key.ctrl || key.alt || key.meta || key.shift {
+        return None;
+    }
+    match key.code {
+        Code::Char('m') => Some(NavOp::Move),
+        Code::Char('r') => Some(NavOp::Resize),
         _ => None,
     }
 }
