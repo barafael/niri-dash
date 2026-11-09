@@ -203,12 +203,9 @@ pub fn entered(d: &mut Dash, id: u32) {
 /// What the system reports. Returns a control if the event asks for one (a color was picked, and
 /// the dashboard may now show itself again).
 pub fn event(d: &mut Dash, event: Event) -> Option<Control> {
-    match &event {
-        Event::Toast(text) => {
-            d.toast(text);
-            return None;
-        }
-        _ => {}
+    if let Event::Toast(text) = &event {
+        d.toast(text);
+        return None;
     }
     match first!(event(d, &event)) {
         Some(control) => control,

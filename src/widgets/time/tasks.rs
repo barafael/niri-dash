@@ -11,7 +11,7 @@ use crate::timer::Run;
 use gpui::{AsyncApp, Context, WeakEntity};
 use std::cell::Cell;
 use std::time::Duration;
-use web_time::SystemTime;
+use std::time::SystemTime;
 
 /// The sleep timer counts this often; it shows whole seconds.
 pub const SLEEP_TICK: Duration = Duration::from_millis(250);

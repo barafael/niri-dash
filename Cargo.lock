@@ -2935,6 +2935,7 @@ dependencies = [
  "gpui-pre",
  "gpui-pre-collections",
  "gpui-pre-util",
+ "image",
  "itertools 0.14.0",
  "log",
  "parking_lot",
@@ -4243,6 +4244,7 @@ dependencies = [
  "env_logger",
  "gpui-kit",
  "gpui-pre",
+ "gpui-pre-wgpu",
  "image",
  "kdl",
  "log",
@@ -4255,7 +4257,6 @@ dependencies = [
  "serde_json",
  "strum",
  "thiserror 2.0.21",
- "web-time",
 ]
 
 [[package]]

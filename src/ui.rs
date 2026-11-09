@@ -8,7 +8,7 @@ use crate::edit::anim::Ease;
 use crate::kit::Tk;
 use crate::widgets::{self, Ctx};
 use gpui::prelude::*;
-use gpui::{Context, Div, KeyDownEvent, MouseButton, Pixels, Render, Window, div, px};
+use gpui::{Context, Div, KeyDownEvent, MouseButton, Render, Window, div, px};
 
 impl Render for Dash {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -242,9 +242,4 @@ impl Dash {
                 ),
         )
     }
-}
-
-/// Pixels as a plain number.
-pub fn px_f(p: Pixels) -> f32 {
-    f32::from(p)
 }

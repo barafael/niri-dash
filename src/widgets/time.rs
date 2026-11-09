@@ -13,7 +13,7 @@ use crate::layout::{Kind, Placed};
 use gpui::{AnyElement, Context};
 use niri_dash_system::Event;
 use std::time::Duration;
-use web_time::SystemTime;
+use std::time::SystemTime;
 
 mod calendar;
 mod clock;

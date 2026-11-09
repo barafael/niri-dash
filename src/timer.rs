@@ -2,7 +2,7 @@
 //! as its `mode` setting picks.
 
 use std::time::Duration;
-use web_time::SystemTime;
+use std::time::SystemTime;
 
 /// A countdown. Its end is wall-clock time so it survives a restart of the daemon.
 #[derive(Debug, Clone, PartialEq)]

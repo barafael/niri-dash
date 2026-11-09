@@ -112,11 +112,10 @@ impl Key {
     pub fn parse(name: &str) -> Option<Self> {
         let mut key = Self::char(' ');
         let mut rest = name;
-        loop {
-            let Some((head, tail)) = rest.split_once('+').filter(|(h, t)| !h.is_empty() && !t.is_empty())
-            else {
-                break;
-            };
+        while let Some((head, tail)) = rest
+            .split_once('+')
+            .filter(|(h, t)| !h.is_empty() && !t.is_empty())
+        {
             match head {
                 "ctrl" => key.ctrl = true,
                 "alt" => key.alt = true,
@@ -179,7 +178,7 @@ impl Key {
 
     /// The key as GPUI's keystroke syntax writes it (`"ctrl-shift-h"`), for tests that send keys
     /// through the window.
-    pub fn to_gpui(&self) -> String {
+    pub fn to_gpui(self) -> String {
         let mut s = String::new();
         let (mut shift, mut key) = (self.shift, String::new());
         match self.code {

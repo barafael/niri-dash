@@ -127,6 +127,10 @@ enum Command {
         #[arg(long)]
         remove: bool,
     },
+    /// Render the dashboard offscreen to a PNG (for development; the manual's pictures).
+    #[cfg(feature = "testing")]
+    #[command(hide = true)]
+    Snapshot(crate::snapshot::Args),
     /// Press random keys at the dashboard, on made-up data, and check what they do (for
     /// development). Changes nothing on the system: its files go to a temporary directory.
     #[cfg(feature = "testing")]
@@ -264,6 +268,8 @@ fn run() -> Result<()> {
         } => say(text, to, outfit, secs, show),
         Command::DesktopEntries { remove } => Ok(desktop::entries(remove)?),
         Command::WindowRules { output } => Ok(desktop::window_rules(output.as_deref())?),
+        #[cfg(feature = "testing")]
+        Command::Snapshot(args) => Ok(crate::snapshot::run(&args)?),
         #[cfg(feature = "testing")]
         Command::Stress(args) => Ok(crate::stress::run(&args)?),
         Command::NightLight { value } => {

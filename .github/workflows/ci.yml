@@ -1,5 +1,6 @@
-# Format, lints, tests, and both builds (desktop and browser) on every push and pull request. The
-# release workflow runs this one first.
+# Format, lints and tests of the dashboard (the root crate, on GPUI), and builds and tests of the
+# Slint variant in slint/ (its own workspace, kept for comparison and for the web version) on every
+# push and pull request. The release workflow runs this one first.
 # The tests that run system code (atspi, orca, `live`) skip themselves here: they belong in the
 # test box (testbox/README.md).
 name: CI
@@ -20,8 +21,14 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # What the desktop build links against: fontconfig, xkbcommon, Wayland and its EGL glue.
-  LIBS: pkg-config libfontconfig1-dev libxkbcommon-dev libwayland-dev
+  # What the GPUI build links against: fontconfig and FreeType (the text), xkbcommon and Wayland
+  # (the window and the keyboard), and the X11 pieces GPUI's X11 backend is built with.
+  LIBS: >-
+    pkg-config libfontconfig1-dev libfreetype-dev libxkbcommon-dev libxkbcommon-x11-dev
+    libwayland-dev libx11-xcb-dev libxcb1-dev
+  # What the Slint variant links against: fontconfig, xkbcommon and Wayland (EGL is loaded when
+  # it runs).
+  SLINT_LIBS: pkg-config libfontconfig1-dev libxkbcommon-dev libwayland-dev
 
 jobs:
   fmt:
@@ -40,18 +47,34 @@ jobs:
         run: sudo apt-get update && sudo apt-get install --yes $LIBS
       - run: rustup component add clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      # `testing` is the headless harness the tests are built on: lint it too.
+      - run: cargo clippy --workspace --all-targets --features testing --locked -- -D warnings
 
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      # mesa-vulkan-drivers: lavapipe, a software Vulkan, for the snapshot test (it skips itself
+      # where there is no GPU).
       - name: Install system libraries
-        run: sudo apt-get update && sudo apt-get install --yes $LIBS
+        run: sudo apt-get update && sudo apt-get install --yes $LIBS mesa-vulkan-drivers
       - uses: Swatinem/rust-cache@v2
-      # Everything, headless. The tests that run system code (atspi, orca, live) skip themselves
-      # outside the test box.
-      - run: cargo test --workspace --locked
+      # Everything, headless: GPUI's test platform needs no compositor. The tests that run system
+      # code (atspi, orca, live) skip themselves outside the test box.
+      - run: cargo test --workspace --features testing --locked --no-fail-fast
+
+  # The Slint variant, its own workspace: it builds and its tests pass, so the two stay
+  # comparable. Its UI tests draw with Slint's software renderer, no display needed.
+  slint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install system libraries
+        run: sudo apt-get update && sudo apt-get install --yes $SLINT_LIBS
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: slint
+      - run: cargo test --manifest-path slint/Cargo.toml --locked --no-fail-fast
 
   # The README and Cargo.toml say Rust 1.95 or newer (what the kdl crate needs). RUSTUP_TOOLCHAIN
   # beats rust-toolchain.toml, which says stable.
@@ -67,6 +90,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --workspace --locked
 
+  # The browser build is the Slint variant's: GPUI has no wasm build. It stays buildable.
   web:
     runs-on: ubuntu-latest
     steps:
@@ -78,9 +102,11 @@ jobs:
 
       - run: rustup target add wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: slint
 
       - name: Check the browser build
-        run: cargo check --target wasm32-unknown-unknown --lib --profile web --locked
+        run: cargo check --manifest-path slint/Cargo.toml --target wasm32-unknown-unknown --lib --profile web --locked
 
   # Packaging problems (missing metadata, files left out) show up here, not at the release. Only
   # niri-dash-system: the dashboard itself can't be packaged until that one is on crates.io.

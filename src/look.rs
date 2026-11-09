@@ -49,6 +49,13 @@ impl Dash {
     /// the current look over a third of a second (scaled by the new style's motion).
     pub fn apply_look(&mut self, animate: bool) {
         let (target, problems) = self.configured_look();
+        self.watch_files();
+        self.show_look(target, &problems, animate);
+    }
+
+    /// Tell the config watcher which files matter now: config.kdl and the files of the color
+    /// scheme and the style it picks.
+    pub fn watch_files(&self) {
         if let Some(watch) = &self.watch {
             let l = &self.layout;
             let _ = watch.send(vec![
@@ -57,7 +64,6 @@ impl Dash {
                 theme::style_path(&l.style),
             ]);
         }
-        self.show_look(target, &problems, animate);
     }
 
     /// Show `target` (blending over to it with `animate`), toasting any `problems` loading it.

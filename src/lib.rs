@@ -38,6 +38,8 @@ mod window;
 mod zones;
 
 #[cfg(feature = "testing")]
+pub mod snapshot;
+#[cfg(feature = "testing")]
 pub mod stress;
 #[doc(hidden)]
 #[cfg(feature = "testing")]

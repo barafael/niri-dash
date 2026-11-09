@@ -53,7 +53,6 @@ strum.workspace = true
 chrono.workspace = true
 chrono-tz = "0.10"
 png.workspace = true
-web-time = "1"
 clap = { version = "4", features = ["derive"] }
 env_logger = "0.11"
 notify.workspace = true
@@ -68,10 +67,14 @@ rust-embed = { version = "8", features = ["debug-embed"] }
 gpui-kit = "0.9"
 # The `gpui` that `gpui-kit` re-exports, named directly: the dashboard's own types are built on it.
 gpui = { package = "gpui-pre", version = "=0.3.11" }
+# GPUI's renderer and text system, for the snapshot command's headless window (`testing` only).
+gpui-wgpu = { package = "gpui-pre-wgpu", version = "=0.3.11", features = ["test-support"], optional = true }
 
 [features]
-# The headless harness (`src/testing.rs`) the tests and the stress run drive the dashboard with.
-testing = ["gpui/test-support"]
+# The headless harness (`src/testing.rs`) the tests and the stress run drive the dashboard with,
+# and `niri-dash snapshot` (`src/snapshot.rs`), which draws it into a PNG with GPUI's wgpu renderer
+# on a texture. Both are development tools: the shipped binary doesn't have them.
+testing = ["gpui/test-support", "dep:gpui-wgpu"]
 
 [dev-dependencies]
 # The tests use the harness: this turns the feature on for them.
@@ -84,6 +87,12 @@ gpui = { package = "gpui-pre", version = "=0.3.11", features = ["test-support"] 
 # The test programs are plain programs, not libtest's: the stress run reports its own way.
 [[test]]
 name = "stress"
+harness = false
+required-features = ["testing"]
+
+# `niri-dash snapshot`: the dashboard drawn headlessly into a PNG (skips where there is no GPU).
+[[test]]
+name = "snapshot"
 harness = false
 required-features = ["testing"]
 

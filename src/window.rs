@@ -368,6 +368,13 @@ fn serve(
         .run(move |cx: &mut App| {
             gpui_kit::init(cx);
             let dash = cx.new(|cx| Dash::new(system, config, solo, cx));
+            // config.kdl and the theme files are watched: an edit in an editor shows at once.
+            let (watch, watched) = std::sync::mpsc::channel();
+            crate::config::watch_config(watched, input_tx.clone());
+            dash.update(cx, |d, _| {
+                d.watch = Some(watch);
+                d.watch_files();
+            });
             let host = Host::new(dash.clone(), mode);
             cx.subscribe(&dash, {
                 let host = host.clone();
@@ -404,7 +411,7 @@ pub fn pump_events(dash: &Entity<Dash>, events: async_channel::Receiver<Event>, 
         const BATCH_TIME: Duration = Duration::from_millis(8);
         while let Ok(first) = events.recv().await {
             let started = std::time::Instant::now();
-            let _ = dash.update(cx, |d, cx| {
+            dash.update(cx, |d, cx| {
                 d.handle_event(first, cx);
                 while started.elapsed() < BATCH_TIME
                     && let Ok(next) = events.try_recv()
@@ -425,7 +432,7 @@ fn pump_inputs(host: &Host, inputs: async_channel::Receiver<Input>, cx: &mut App
     cx.spawn(async move |cx: &mut AsyncApp| {
         while let Ok(input) = inputs.recv().await {
             let host = host.clone();
-            let _ = cx.update(|cx| match input {
+            cx.update(|cx| match input {
                 Input::Control(c) => host.control(c, cx),
                 Input::ConfigChanged => {
                     host.dash.update(cx, |d, cx| d.reload_config(cx));

@@ -22,7 +22,7 @@ use gpui_kit::component::input::{Input, InputEvent, InputState};
 use niri_dash_system::{Tell, notifications, sleep};
 use std::cell::Cell;
 use std::path::PathBuf;
-use web_time::SystemTime;
+use std::time::SystemTime;
 
 const PLACEHOLDER: &str = "45s, 30 min, 1h30m, 23:45";
 

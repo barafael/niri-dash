@@ -4,7 +4,7 @@
 use crate::theme::{Color, ColorRole, Look};
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, ClickEvent, ElementId, Hsla, Pixels, Role, SharedString, Window, div, px, svg,
+    AnyElement, App, ClickEvent, ElementId, Hsla, Role, SharedString, Window, div, px, svg,
 };
 
 /// The current look, for the views that draw with it.
@@ -257,9 +257,4 @@ pub fn empty(text: impl Into<SharedString>, tk: &Tk) -> AnyElement {
         .text_color(tk.faint())
         .child(text.into())
         .into_any_element()
-}
-
-/// A length in pixels.
-pub fn p(v: f32) -> Pixels {
-    px(v)
 }

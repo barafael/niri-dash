@@ -619,14 +619,7 @@ pub const KNOBS: &[Knob] = &[
     },
 ];
 
-/// Font families offered for `font-family`: in a browser, only what comes with the page.
-#[cfg(target_arch = "wasm32")]
-pub fn font_choices() -> Vec<String> {
-    vec![String::new()]
-}
-
 /// Font families offered for `font-family`, of those installed ("" is the system default).
-#[cfg(not(target_arch = "wasm32"))]
 pub fn font_choices() -> Vec<String> {
     const CANDIDATES: [&str; 13] = [
         "Inter",

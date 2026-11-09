@@ -1,4 +1,7 @@
-# Screen reader support (AccessKit / AT-SPI)
+# Screen reader support in the Slint variant (AccessKit / AT-SPI)
+
+This describes the Slint variant in `slint/` (the paths below are inside that directory). The
+GPUI dashboard has its own accessibility support, described in its own document in this directory.
 
 Status after the first spike, on branch `accesskit`. It supersedes `accesskit-handover.md` (which
 was written before any of this existed) where they differ; what still stands there is noted below.

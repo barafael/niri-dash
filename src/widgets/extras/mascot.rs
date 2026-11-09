@@ -30,7 +30,7 @@ use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::Duration;
-use web_time::Instant;
+use std::time::Instant;
 
 /// The bubble's own colours, the tooltip yellow of the assistant they parody.
 const PAPER: u32 = 0xffffe1;

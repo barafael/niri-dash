@@ -16,7 +16,7 @@ use gpui::prelude::*;
 use gpui::{AnyElement, ClickEvent, Context, Role, div, px};
 use niri_dash_system::{Tell, host, notifications};
 use std::time::Duration;
-use web_time::{SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Default)]
 pub struct State {
