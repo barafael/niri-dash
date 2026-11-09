@@ -259,27 +259,3 @@ pub fn insert(pool: &Pool, name: &str, text: &str, window: &mut Window, cx: &mut
     }
 }
 
-/// Make the text input and selection colors those of the look: inputs take them from the
-/// component library's own theme, which knows nothing of ours.
-pub fn sync_theme(tk: &Tk, cx: &mut App) {
-    use gpui_kit::component::Theme;
-    let want = (
-        tk.text(),
-        tk.faint(),
-        tk.accent_soft(),
-        tk.accent(),
-    );
-    let have = {
-        let c = &Theme::global(cx).colors;
-        (c.foreground, c.muted_foreground, c.selection, c.caret)
-    };
-    if have == want {
-        return;
-    }
-    Theme::update(cx, |theme| {
-        theme.colors.foreground = want.0;
-        theme.colors.muted_foreground = want.1;
-        theme.colors.selection = want.2;
-        theme.colors.caret = want.3;
-    });
-}

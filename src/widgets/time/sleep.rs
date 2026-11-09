@@ -560,6 +560,20 @@ pub fn sync(d: &mut Dash) {
             continue;
         };
         d.widgets.time.sleep.scopes.fit(id, layout.count(), |c| layout.subs(c));
+        // The picked mode is where the cursor is, when it is on a mode: a list drawn after the
+        // widget was blown up may have the cursor on another mode than the picked one, and the
+        // cursor goes to the picked one.
+        let picked = d.widgets.time.sleep.ctl.selected;
+        let mut scope = d.widgets.time.sleep.scopes.get(id);
+        if !layout.round
+            && layout.list
+            && scope.cursor >= 1
+            && scope.cursor <= layout.modes
+            && picked != scope.cursor - 1
+        {
+            scope.cursor = picked + 1;
+            d.widgets.time.sleep.scopes.set(id, scope);
+        }
     }
     let all: Vec<u32> = d.tiles.iter().map(|t| t.id()).collect();
     d.widgets.time.sleep.scopes.retain(&all);

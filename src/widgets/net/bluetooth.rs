@@ -1061,7 +1061,6 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
         return div().into_any_element();
     };
     let m = model(d);
-    field::sync_theme(tk, cx);
     if ctx.round {
         return round(&m, ctx, id, cx);
     }

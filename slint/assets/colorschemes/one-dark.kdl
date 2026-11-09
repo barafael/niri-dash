@@ -1,0 +1,24 @@
+// niri-dash color scheme: "one-dark" (One Dark). See default.kdl for what each color is for.
+
+colors {
+    backdrop    "#1b1e24d9"
+    card        "#282c34f2"
+    card-raised "#2f343d"
+    panel       "#21252b"
+    hover       "#d7dae01f"
+    pressed     "#d7dae036"
+    border      "#d7dae01a"
+    subtle      "#d7dae00a"
+    shadow      "#00000090"
+    text        "#d7dae0"
+    dim         "#abb2bf"
+    faint       "#7f848e"
+    accent      "#61afef"
+    accent-soft "#61afef33"
+    on-accent   "#1b1e24"
+    good        "#98c379"
+    warn        "#e5c07b"
+    bad         "#e06c75"
+    track       "#d7dae01f"
+    knob        "#d7dae0"
+}

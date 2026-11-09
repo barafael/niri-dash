@@ -1,0 +1,24 @@
+// niri-dash color scheme: "rose-pine" (Rosé Pine). See default.kdl for what each color is for.
+
+colors {
+    backdrop    "#12101cd9"
+    card        "#191724f2"
+    card-raised "#211f31"
+    panel       "#15131f"
+    hover       "#e0def41f"
+    pressed     "#e0def436"
+    border      "#e0def41a"
+    subtle      "#e0def40a"
+    shadow      "#00000090"
+    text        "#e0def4"
+    dim         "#908caa"
+    faint       "#6e6a86"
+    accent      "#c4a7e7"
+    accent-soft "#c4a7e733"
+    on-accent   "#12101c"
+    good        "#9ccfd8"
+    warn        "#f6c177"
+    bad         "#eb6f92"
+    track       "#e0def41f"
+    knob        "#e0def4"
+}

@@ -300,7 +300,14 @@ pub fn check(d: &Dash) -> Result<(), String> {
         let n = count_of(d, t.id()).unwrap_or(0);
         let scope = d.widgets.time.pomo.scopes.get(t.id());
         if scope.cursor >= n.max(1) {
-            return Err(format!("cursor is on stop {} of {n} in the pomodoro", scope.cursor));
+            return Err(format!(
+                "cursor is on stop {} of {n} in the pomodoro (tile {}, size {:?}, visible {}, expanded {})",
+                scope.cursor,
+                d.tile(t.id()).is_some(),
+                d.size,
+                d.visible,
+                d.nav.expanded_id
+            ));
         }
     }
     Ok(())

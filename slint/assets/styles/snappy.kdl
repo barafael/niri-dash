@@ -1,0 +1,5 @@
+// niri-dash style: "snappy". Default look, animations twice as fast.
+
+style {
+    motion 0.5
+}

@@ -1,0 +1,406 @@
+//! Per-widget settings. They live as children of the widget's node in config.kdl:
+//!
+//! ```kdl
+//! clock col=0 row=0 width=4 height=2 {
+//!     hours 12
+//!     seconds #false
+//! }
+//! ```
+//!
+//! Only values that differ from the default are written. Each kind of widget has a fixed list of
+//! settings ([`KindInfo::settings`](crate::layout::KindInfo::settings)); the edit sidebar shows
+//! them in that order.
+
+use kdl::KdlValue;
+use strum::{AsRefStr, EnumIter, EnumString, VariantNames};
+
+use crate::layout::Kind;
+use crate::mascots::Character;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, EnumString, AsRefStr)]
+#[strum(serialize_all = "kebab-case")]
+pub enum Opt {
+    // Clock.
+    Hours,
+    Seconds,
+    Date,
+    Zones,
+    // Notes.
+    Note,
+    // Calendar.
+    FirstDay,
+    WeekNumbers,
+    // Monitors.
+    History,
+    Cores,
+    TopApps,
+    HideSystem,
+    // Weather.
+    Location,
+    Units,
+    // Session.
+    Lock,
+    Suspend,
+    Logout,
+    Restart,
+    PowerOff,
+    Confirm,
+    // Mascot.
+    Character,
+    Wildness,
+    Interval,
+    Command,
+    Cowfile,
+    // Sleep timer.
+    SleepWhen,
+    SleepScript,
+    DryRun,
+    KeepAwake,
+    // Pomodoro.
+    FocusMinutes,
+    ShortBreak,
+    LongBreak,
+    Rounds,
+    AutoStart,
+}
+
+/// What kind of value a setting takes, and how it is edited.
+pub enum Ty {
+    Toggle,
+    /// Stepped through a fixed list of numbers.
+    Steps(&'static [i64]),
+    /// Stepped through a fixed list of words.
+    Choice(&'static [&'static str]),
+    /// Free text; empty means the default.
+    Text {
+        placeholder: &'static str,
+    },
+}
+
+const HISTORY: &[i64] = &[30, 60, 90, 120, 180];
+
+/// How each wildness (0 to 4) is shown.
+const WILDNESS: [&str; 5] = ["calm", "dry", "cheeky", "wild", "unhinged"];
+
+impl Opt {
+    pub fn label(self) -> &'static str {
+        match self {
+            Opt::Hours => "Time format",
+            Opt::Seconds => "Seconds",
+            Opt::Date => "Date",
+            Opt::Zones => "Other time zones",
+            Opt::Note => "Note",
+            Opt::FirstDay => "Week starts on",
+            Opt::WeekNumbers => "Week numbers",
+            Opt::History => "Chart covers",
+            Opt::Cores => "Per-core bars",
+            Opt::TopApps => "Top apps",
+            Opt::HideSystem => "Hide /boot and /efi",
+            Opt::Location => "Location",
+            Opt::Units => "Units",
+            Opt::Lock => "Lock",
+            Opt::Suspend => "Suspend",
+            Opt::Logout => "Log out",
+            Opt::Restart => "Restart",
+            Opt::PowerOff => "Power off",
+            Opt::Confirm => "Confirm restart and power off",
+            Opt::Character => "Mascot",
+            Opt::Wildness => "Wildness",
+            Opt::Interval => "New remark every",
+            Opt::Command => "Lines from command",
+            Opt::Cowfile => "Cow file",
+            Opt::SleepWhen => "Starts with",
+            Opt::SleepScript => "Script to run",
+            Opt::DryRun => "Dry run",
+            Opt::KeepAwake => "Keep the screen on",
+            Opt::FocusMinutes => "Focus session",
+            Opt::ShortBreak => "Short break",
+            Opt::LongBreak => "Long break",
+            Opt::Rounds => "Sessions before the long break",
+            Opt::AutoStart => "Start the next part by itself",
+        }
+    }
+
+    pub fn ty(self) -> Ty {
+        match self {
+            Opt::Hours => Ty::Steps(&[12, 24]),
+            Opt::Seconds | Opt::Date => Ty::Toggle,
+            Opt::Zones => Ty::Text {
+                placeholder: "e.g. Asia/Tokyo, New York",
+            },
+            Opt::Note => Ty::Text {
+                placeholder: "notes (same name, same note)",
+            },
+            Opt::FirstDay => Ty::Choice(&["monday", "sunday"]),
+            Opt::WeekNumbers => Ty::Toggle,
+            Opt::History => Ty::Steps(HISTORY),
+            Opt::Cores => Ty::Toggle,
+            Opt::TopApps => Ty::Steps(&[0, 1, 2, 3, 4, 5, 6, 8, 10]),
+            Opt::HideSystem => Ty::Toggle,
+            Opt::Location => Ty::Text {
+                placeholder: "City of your time zone",
+            },
+            Opt::Units => Ty::Choice(&["celsius", "fahrenheit"]),
+            Opt::Lock
+            | Opt::Suspend
+            | Opt::Logout
+            | Opt::Restart
+            | Opt::PowerOff
+            | Opt::Confirm => Ty::Toggle,
+            Opt::Character => Ty::Choice(Character::VARIANTS),
+            Opt::Wildness => Ty::Steps(&[0, 1, 2, 3, 4]),
+            Opt::Interval => Ty::Steps(&[15, 30, 45, 60, 120, 300, 600]),
+            Opt::Command => Ty::Text {
+                placeholder: "Built-in remarks",
+            },
+            Opt::Cowfile => Ty::Text {
+                placeholder: "e.g. tux, or a path (the cow only)",
+            },
+            Opt::SleepWhen => Ty::Text {
+                placeholder: "30 min (or 45s, 1h30m, 23:45)",
+            },
+            Opt::SleepScript => Ty::Text {
+                placeholder: "sleep.sh next to config.kdl",
+            },
+            Opt::DryRun | Opt::KeepAwake | Opt::AutoStart => Ty::Toggle,
+            Opt::FocusMinutes => Ty::Steps(&[10, 15, 20, 25, 30, 40, 45, 50, 60, 90]),
+            Opt::ShortBreak => Ty::Steps(&[3, 5, 7, 10, 15]),
+            Opt::LongBreak => Ty::Steps(&[10, 15, 20, 25, 30, 45]),
+            Opt::Rounds => Ty::Steps(&[2, 3, 4, 5, 6, 8]),
+        }
+    }
+
+    /// The default value. `us` is whether the locale is American (12-hour clock etc).
+    pub fn default(self, us: bool) -> KdlValue {
+        let text = |s: &str| KdlValue::String(s.into());
+        match self {
+            Opt::Hours => KdlValue::Integer(if us { 12 } else { 24 }),
+            Opt::Seconds | Opt::Date => KdlValue::Bool(true),
+            Opt::Zones => text(""),
+            Opt::Note => text(""),
+            Opt::FirstDay => text(if us { "sunday" } else { "monday" }),
+            Opt::WeekNumbers => KdlValue::Bool(false),
+            Opt::History => KdlValue::Integer(90),
+            Opt::Cores => KdlValue::Bool(true),
+            Opt::TopApps => KdlValue::Integer(5),
+            Opt::HideSystem => KdlValue::Bool(false),
+            Opt::Location => text(""),
+            Opt::Units => text(if us { "fahrenheit" } else { "celsius" }),
+            Opt::Lock
+            | Opt::Suspend
+            | Opt::Logout
+            | Opt::Restart
+            | Opt::PowerOff
+            | Opt::Confirm => KdlValue::Bool(true),
+            Opt::Character => text(Character::Schraubi.name()),
+            Opt::Wildness => KdlValue::Integer(2),
+            Opt::Interval => KdlValue::Integer(45),
+            Opt::Command => text(""),
+            Opt::Cowfile => text(""),
+            Opt::SleepWhen | Opt::SleepScript => text(""),
+            Opt::DryRun | Opt::KeepAwake | Opt::AutoStart => KdlValue::Bool(false),
+            Opt::FocusMinutes => KdlValue::Integer(25),
+            Opt::ShortBreak => KdlValue::Integer(5),
+            Opt::LongBreak => KdlValue::Integer(15),
+            Opt::Rounds => KdlValue::Integer(4),
+        }
+    }
+
+    /// How a value is shown in the sidebar.
+    pub fn value_text(self, v: &KdlValue) -> String {
+        match (self, v) {
+            (Opt::Hours, KdlValue::Integer(h)) => format!("{h}-hour"),
+            (Opt::History | Opt::Interval, KdlValue::Integer(s)) if *s % 60 == 0 => {
+                format!("{} min", s / 60)
+            }
+            (Opt::History | Opt::Interval, KdlValue::Integer(s)) if *s > 60 => {
+                format!("{:.1} min", *s as f32 / 60.0)
+            }
+            (Opt::History | Opt::Interval, KdlValue::Integer(s)) => format!("{s} s"),
+            (Opt::Wildness, KdlValue::Integer(w))
+                if let Some(word) = usize::try_from(*w).ok().and_then(|w| WILDNESS.get(w)) =>
+            {
+                (*word).into()
+            }
+            (Opt::FocusMinutes | Opt::ShortBreak | Opt::LongBreak, KdlValue::Integer(m)) => {
+                format!("{m} min")
+            }
+            (Opt::TopApps, KdlValue::Integer(0)) => "none".into(),
+            (_, KdlValue::Integer(i)) => i.to_string(),
+            (_, KdlValue::String(s)) => {
+                let mut c = s.chars();
+                c.next()
+                    .map(|f| f.to_uppercase().chain(c).collect())
+                    .unwrap_or_default()
+            }
+            (_, KdlValue::Bool(b)) => if *b { "on" } else { "off" }.into(),
+            _ => String::new(),
+        }
+    }
+
+    /// Whether `v` is an acceptable value for this setting.
+    pub fn accepts(self, v: &KdlValue) -> bool {
+        match (self.ty(), v) {
+            (Ty::Toggle, KdlValue::Bool(_)) => true,
+            (Ty::Steps(s), KdlValue::Integer(i)) => s.iter().any(|x| *x as i128 == *i),
+            (Ty::Choice(c), KdlValue::String(s)) => c.contains(&s.as_str()),
+            (Ty::Text { .. }, KdlValue::String(_)) => true,
+            _ => false,
+        }
+    }
+
+    /// The value one step from `cur` (toggles flip; lists clamp at their ends).
+    pub fn step(self, cur: &KdlValue, delta: i32) -> KdlValue {
+        match (self.ty(), cur) {
+            (Ty::Toggle, KdlValue::Bool(b)) => KdlValue::Bool(!b),
+            (Ty::Steps(s), KdlValue::Integer(i)) => {
+                // The nearest listed value, then move along the list.
+                let at = s
+                    .iter()
+                    .enumerate()
+                    .min_by_key(|(_, v)| (**v as i128 - i).abs())
+                    .map_or(0, |(k, _)| k) as i32;
+                KdlValue::Integer(s[(at + delta).clamp(0, s.len() as i32 - 1) as usize] as i128)
+            }
+            (Ty::Choice(c), KdlValue::String(v)) => {
+                let at = c.iter().position(|x| x == v).unwrap_or(0) as i32;
+                KdlValue::String(c[(at + delta).rem_euclid(c.len() as i32) as usize].into())
+            }
+            _ => cur.clone(),
+        }
+    }
+
+    /// Whether `step(cur, delta)` would change anything.
+    pub fn can_step(self, cur: &KdlValue, delta: i32) -> bool {
+        match self.ty() {
+            Ty::Steps(_) => self.step(cur, delta) != *cur,
+            Ty::Choice(c) => c.len() > 1,
+            _ => false,
+        }
+    }
+}
+
+/// A widget's settings as written in the file: `(name, value)` pairs, unknown ones included so
+/// they survive saving.
+pub type Values = Vec<(String, KdlValue)>;
+
+/// The effective value of `opt`: the stored one if valid, else the default.
+pub fn get(values: &[(String, KdlValue)], opt: Opt, us: bool) -> KdlValue {
+    values
+        .iter()
+        .find(|(k, v)| k == opt.as_ref() && opt.accepts(v))
+        .map(|(_, v)| v.clone())
+        .unwrap_or_else(|| opt.default(us))
+}
+
+pub fn get_bool(values: &[(String, KdlValue)], opt: Opt, us: bool) -> bool {
+    matches!(get(values, opt, us), KdlValue::Bool(true))
+}
+
+pub fn get_int(values: &[(String, KdlValue)], opt: Opt, us: bool) -> i64 {
+    match get(values, opt, us) {
+        KdlValue::Integer(i) => i as i64,
+        _ => 0,
+    }
+}
+
+pub fn get_str(values: &[(String, KdlValue)], opt: Opt, us: bool) -> String {
+    match get(values, opt, us) {
+        KdlValue::String(s) => s,
+        _ => String::new(),
+    }
+}
+
+/// Store `value` for `opt`, dropping the entry when it equals the default.
+pub fn set(values: &mut Values, opt: Opt, value: KdlValue, us: bool) {
+    let is_default = value == opt.default(us);
+    match values.iter_mut().find(|(k, _)| k == opt.as_ref()) {
+        Some(_) if is_default => values.retain(|(k, _)| k != opt.as_ref()),
+        Some(e) => e.1 = value,
+        None if is_default => {}
+        None => values.push((opt.as_ref().to_string(), value)),
+    }
+}
+
+/// Warnings for settings that don't exist for `kind` or have a bad value.
+pub fn check(kind: Kind, values: &[(String, KdlValue)]) -> Vec<String> {
+    let name = kind.name();
+    values
+        .iter()
+        .filter_map(|(k, v)| match k.parse::<Opt>() {
+            Ok(opt) if kind.info().settings.contains(&opt) => match (opt, v) {
+                (_, v) if !opt.accepts(v) => {
+                    Some(format!("{name} {{ {k} }}: unexpected value {v}"))
+                }
+                (Opt::Zones, KdlValue::String(list)) => {
+                    crate::zones::complaint(list).map(|c| format!("{name} {{ {k} }}: {c}"))
+                }
+                (Opt::Cowfile, KdlValue::String(cow)) => {
+                    crate::cowfile::complaint(cow).map(|c| format!("{name} {{ {k} }}: {c}"))
+                }
+                _ => None,
+            },
+            _ => Some(format!("{name} has no setting `{k}`")),
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use strum::IntoEnumIterator;
+
+    #[test]
+    fn steps_clamp_and_choices_wrap() {
+        let h = KdlValue::Integer(90);
+        assert_eq!(Opt::History.step(&h, 1), KdlValue::Integer(120));
+        assert_eq!(
+            Opt::History.step(&KdlValue::Integer(180), 1),
+            KdlValue::Integer(180)
+        );
+        assert!(!Opt::History.can_step(&KdlValue::Integer(30), -1));
+        // An unlisted value snaps to the nearest one first.
+        assert_eq!(
+            Opt::History.step(&KdlValue::Integer(100), 1),
+            KdlValue::Integer(120)
+        );
+        let d = KdlValue::String("monday".into());
+        assert_eq!(Opt::FirstDay.step(&d, 1), KdlValue::String("sunday".into()));
+        assert_eq!(
+            Opt::FirstDay.step(&d, -1),
+            KdlValue::String("sunday".into())
+        );
+    }
+
+    #[test]
+    fn defaults_are_accepted() {
+        for opt in Opt::iter() {
+            for us in [false, true] {
+                assert!(opt.accepts(&opt.default(us)), "{opt:?}");
+            }
+        }
+        assert_eq!(Opt::Wildness.value_text(&KdlValue::Integer(4)), "unhinged");
+    }
+
+    #[test]
+    fn defaults_are_not_stored() {
+        let mut v = Values::new();
+        set(&mut v, Opt::Seconds, KdlValue::Bool(false), false);
+        assert_eq!(v.len(), 1);
+        assert!(!get_bool(&v, Opt::Seconds, false));
+        set(&mut v, Opt::Seconds, KdlValue::Bool(true), false);
+        assert!(v.is_empty());
+    }
+
+    #[test]
+    fn bad_values_fall_back_and_warn() {
+        let v: Values = vec![
+            ("hours".into(), KdlValue::Integer(7)),
+            ("colour".into(), KdlValue::Bool(true)),
+        ];
+        assert_eq!(get_int(&v, Opt::Hours, false), 24);
+        assert_eq!(check(Kind::Clock, &v).len(), 2);
+        let v: Values = vec![("hours".into(), KdlValue::String("x".into()))];
+        assert_eq!(check(Kind::Clock, &v).len(), 1);
+    }
+}

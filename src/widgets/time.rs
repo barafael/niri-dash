@@ -76,6 +76,11 @@ fn sync_scopes(d: &mut Dash) {
     sleep::sync(d);
 }
 
+/// A widget's shape changed under its cursor.
+pub fn resized(d: &mut Dash) {
+    sync_scopes(d);
+}
+
 /// The kinds of widget this group draws.
 pub fn handles(kind: Kind) -> bool {
     matches!(
@@ -167,6 +172,7 @@ pub fn come_up(d: &mut Dash) {
 /// The dashboard goes away: the sleep timer's field lets go of the keyboard.
 pub fn go_down(d: &mut Dash) {
     d.widgets.time.sleep.stop_editing();
+    sync_scopes(d);
 }
 
 /// The dashboard came up (`true`) or went away: what shows time redraws itself while it is

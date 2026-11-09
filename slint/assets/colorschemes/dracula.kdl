@@ -1,0 +1,24 @@
+// niri-dash color scheme: "dracula" (Dracula). See default.kdl for what each color is for.
+
+colors {
+    backdrop    "#191a21d9"
+    card        "#282a36f2"
+    card-raised "#313341"
+    panel       "#21222c"
+    hover       "#f8f8f21f"
+    pressed     "#f8f8f236"
+    border      "#f8f8f21a"
+    subtle      "#f8f8f20a"
+    shadow      "#00000090"
+    text        "#f8f8f2"
+    dim         "#bdbdc9"
+    faint       "#6d7db3"
+    accent      "#bd93f9"
+    accent-soft "#bd93f933"
+    on-accent   "#191a21"
+    good        "#50fa7b"
+    warn        "#ffb86c"
+    bad         "#ff6e6e"
+    track       "#f8f8f21f"
+    knob        "#f8f8f2"
+}

@@ -16,7 +16,6 @@ use gpui::{
     AnyElement, Context, Entity, EntityInputHandler as _, Focusable as _, KeyDownEvent, Render,
     Subscription, WeakEntity, Window, div, px,
 };
-use gpui_kit::component::Theme;
 use gpui_kit::component::input::{InputEvent, MoveToEnd, Textarea, TextareaState};
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
@@ -309,19 +308,6 @@ impl Render for NoteView {
             )
         };
         let state = self.state(window, cx);
-        // The text area's colors are the component theme's: make them the dashboard's.
-        let theme = Theme::global_mut(cx);
-        let (fg, faint, sel) = (tk.text(), tk.faint(), tk.accent_soft());
-        if theme.colors.foreground != fg
-            || theme.colors.muted_foreground != faint
-            || theme.colors.selection != sel
-            || theme.colors.caret != fg
-        {
-            theme.colors.foreground = fg;
-            theme.colors.muted_foreground = faint;
-            theme.colors.selection = sel;
-            theme.colors.caret = fg;
-        }
         // What the note says elsewhere (another widget of the same note, the file read again)
         // reaches the text area; what is typed here has come the other way already.
         let handle = state.read(cx).focus_handle(cx);

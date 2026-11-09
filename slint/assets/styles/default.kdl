@@ -1,0 +1,21 @@
+// niri-dash style: "default".
+//
+// A style holds everything but colors: corners, spacing, fonts and animation speed. Pair it with
+// any color scheme. Copy this file to make your own; anything left out keeps the default.
+
+style {
+    radius 20               // widget corner radius (px)
+    radius-small 12         // inner cards and list items
+    gap 7                   // half the space between widgets
+    padding 16              // inside widgets
+    border-width 1
+    font-family ""          // empty: the system default
+    font-small 12
+    font-body 14
+    font-title 15
+    font-weight-display 300 // big numbers (clock, battery)
+    motion 1.0              // animation speed: 1 normal, 0.5 twice as fast, 0 off
+    glass #false            // frosted glass: blur what's behind the dashboard
+    backdrop-opacity 1.0    // how much the screen behind is dimmed, 0..1
+    card-opacity 1.0        // how opaque widgets are, 0..1
+}

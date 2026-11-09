@@ -1,0 +1,24 @@
+// niri-dash color scheme: "nord" (Nord). See default.kdl for what each color is for.
+
+colors {
+    backdrop    "#242933d9"
+    card        "#2e3440f2"
+    card-raised "#353b49"
+    panel       "#292e39"
+    hover       "#eceff41f"
+    pressed     "#eceff436"
+    border      "#eceff41a"
+    subtle      "#eceff40a"
+    shadow      "#00000090"
+    text        "#eceff4"
+    dim         "#aeb6c4"
+    faint       "#77839b"
+    accent      "#88c0d0"
+    accent-soft "#88c0d033"
+    on-accent   "#242933"
+    good        "#a3be8c"
+    warn        "#ebcb8b"
+    bad         "#cf727b"
+    track       "#eceff41f"
+    knob        "#eceff4"
+}

@@ -97,6 +97,8 @@ pub struct Geometry {
     pub y: f32,
     pub width: f32,
     pub height: f32,
+    /// The width the grid and the cards have: less the drawer, when it is out.
+    pub avail_w: f32,
 }
 
 /// A line that comes up over the dashboard for a while.
@@ -142,6 +144,8 @@ pub struct Dash {
     pub blend: Option<crate::look::Blend>,
     /// Installed font families for the Style tab (looked up on first use).
     pub fonts: Option<Vec<String>>,
+    /// Edit mode: the drawer, the settings card, drags and the keyboard's place in them.
+    pub edit: crate::edit::Edit,
 }
 
 impl Dash {
@@ -157,6 +161,7 @@ impl Dash {
         let (look, look_notes) =
             theme::load_look(&layout.colorscheme, &layout.style, &layout.style_overrides);
         let state = crate::state::load();
+        let edit = crate::edit::Edit::new(caps, &layout);
         let mut dash = Self {
             tx: senders,
             caps,
@@ -181,6 +186,7 @@ impl Dash {
             watch: None,
             blend: None,
             fonts: None,
+            edit,
         };
         for w in warnings.iter().chain(&look_notes) {
             log::warn!("{w}");
@@ -197,23 +203,26 @@ impl Dash {
 
     // ---- geometry -------------------------------------------------------------------------
 
-    /// How the grid sits in a window of `width` by `height` pixels.
+    /// How the grid sits in a window of `width` by `height` pixels. With the drawer out the cells
+    /// shrink to leave it room; the number of cells stays.
     pub fn geometry(&self, width: f32, height: f32) -> Geometry {
         let (cols, rows) = match self.layout.grid {
             Some((c, r)) => (c, r),
             None => auto_grid(width, height),
         };
-        let side = MARGIN;
-        let (top, bottom) = (BAR, height - MARGIN);
-        let cell = ((width - 2.0 * side) / cols as f32).min((bottom - top) / rows as f32);
+        let room = crate::edit::Room::new(width, height, self.look.style.gap, self.edit.drawer_shift());
+        let cell = ((room.avail_w - 2.0 * room.side) / cols as f32)
+            .min((room.bottom - room.top) / rows as f32);
         Geometry {
             cols,
             rows,
             cell,
-            x: (width - cols as f32 * cell) / 2.0,
-            y: top + (bottom - top - rows as f32 * cell) / 2.0,
+            x: (room.avail_w - cols as f32 * cell) / 2.0,
+            y: room.top
+                + (1.0 - room.shift) * (room.bottom - room.top - rows as f32 * cell) / 2.0,
             width,
             height,
+            avail_w: room.avail_w,
         }
     }
 
@@ -253,7 +262,8 @@ impl Dash {
             crate::widgets::layout_changed(self);
             return;
         }
-        let placed: Vec<Placed> = self.layout.visible().into_iter().cloned().collect();
+        let mut placed: Vec<Placed> = self.layout.visible().into_iter().cloned().collect();
+        crate::edit::previewed(&self.edit.preview, &mut placed);
         let ids: Vec<(u32, Kind)> = placed.iter().map(|p| (p.id, p.kind)).collect();
         let hints = nav::assign_hints(&ids);
         self.tiles = placed
@@ -300,6 +310,7 @@ impl Dash {
     /// The dashboard's part of coming up: every widget back on its first page, no widget entered
     /// (a standalone app is in its one widget).
     fn come_up(&mut self) {
+        crate::edit::come_up(self);
         crate::widgets::come_up(self);
         self.reset_nav();
     }
@@ -307,8 +318,11 @@ impl Dash {
     /// Going away: out of edit mode, menus shut, no widget entered.
     fn go_down(&mut self) {
         self.editing = false;
-        crate::widgets::go_down(self);
+        crate::edit::go_down(self);
+        // Nothing entered or expanded first: the widgets keep their cursors on stops of the
+        // sizes they have from now on (nothing is drawn to do it while the dashboard is away).
         self.reset_nav();
+        crate::widgets::go_down(self);
     }
 
     /// Back to no widget entered. A standalone app is always in its one widget.
@@ -361,6 +375,7 @@ impl Dash {
             self.nav.typed.clear();
         }
         self.nav.expanded_id = 0;
+        crate::edit::editing_changed(self, on);
         cx.notify();
     }
 
@@ -403,6 +418,9 @@ impl Dash {
     pub fn key(&mut self, key: &Key, cx: &mut Context<Self>) -> bool {
         let taken = self.key_inner(key, cx);
         if taken {
+            // A key may have changed what a widget is drawn as (expanded, left): its cursor
+            // stays on a stop of the new shape.
+            crate::widgets::resized(self);
             cx.notify();
         }
         taken
@@ -412,6 +430,10 @@ impl Dash {
         if key.is_named(Named::Escape) {
             self.escape(cx);
             return true;
+        }
+        // A text field of edit mode has the keyboard: its keys are its own.
+        if self.editing && self.edit.field.focused {
+            return crate::edit::field_key(self, key, cx);
         }
         // What a text field types is the field's; Ctrl and Alt keys stay the dashboard's.
         if self.typing && key.bare() {
@@ -423,7 +445,12 @@ impl Dash {
         if self.nav.mode == NavMode::Hints {
             return self.hints_key(key, cx);
         }
-        if self.solo.is_none() && key.is('f') && key.bare() {
+        if self.solo.is_none()
+            && !self.edit.dragging()
+            && self.edit.adjust_id == 0
+            && key.is('f')
+            && key.bare()
+        {
             self.nav.typed.clear();
             self.nav.expanded_id = 0;
             self.nav.mode = NavMode::Hints;
@@ -480,6 +507,10 @@ impl Dash {
 
     /// Escape closes the innermost thing that is open.
     fn escape(&mut self, cx: &mut Context<Self>) {
+        // A text field of edit mode, a drag, a widget opened alone.
+        if crate::edit::escape(self, cx) {
+            return;
+        }
         if crate::widgets::escape(self, cx) {
             return;
         }
@@ -488,7 +519,8 @@ impl Dash {
         } else if self.nav.mode != NavMode::Off && self.solo.is_none() {
             self.nav_off();
         } else if self.editing {
-            self.set_editing(false, cx);
+            // The settings card closes and the widget is let go, or edit mode ends.
+            crate::edit::escape_editing(self, cx);
         } else {
             cx.emit(DashEvent::Hide);
         }
@@ -528,7 +560,8 @@ impl Dash {
                     self.enter(id);
                 }
             }
-            Ok(None) => self.nav.typed = typed,
+            // Labels are lowercase and `pick` ignores the case; what is kept is what was matched.
+            Ok(None) => self.nav.typed = typed.to_lowercase(),
             Err(()) => self.nav_off(),
         }
         true

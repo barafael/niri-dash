@@ -19,7 +19,7 @@ exclude = [
     "/book/screenshots.sh",
     "/book/src/images",
     "/docs",
-    "/legacy",
+    "/slint",
     "/testbox",
     "/xtask",
 ]
@@ -125,6 +125,11 @@ required-features = ["testing"]
 # Wi-Fi and Bluetooth: what they send, what they show, and the tricky parts of their keyboard.
 [[test]]
 name = "net"
+harness = false
+required-features = ["testing"]
+
+[[test]]
+name = "edit"
 harness = false
 required-features = ["testing"]
 

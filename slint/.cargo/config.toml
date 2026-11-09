@@ -1,0 +1,3 @@
+[alias]
+# The test box's commands (the xtask lives at the repository's root, next to this directory).
+testbox = "run --quiet --manifest-path ../xtask/Cargo.toml --"

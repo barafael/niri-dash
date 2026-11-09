@@ -188,6 +188,11 @@ pub fn tick(d: &mut Dash) {
     groups!(tick(d));
 }
 
+/// What a widget is drawn as changed (blown up, put back): cursors move to stops that exist.
+pub fn resized(d: &mut Dash) {
+    time::resized(d);
+}
+
 /// Widget `id` was entered with the keyboard.
 pub fn entered(d: &mut Dash, id: u32) {
     if let Some(kind) = d.tile(id).map(Tile::kind) {
@@ -324,15 +329,21 @@ pub fn overlays(d: &Dash, tk: &Tk, cx: &mut Context<Dash>) -> Vec<AnyElement> {
 // ---- edit mode: replaced by the edit mode port ---------------------------------------------
 
 /// A key in edit mode.
-pub fn edit_key(_d: &mut Dash, _key: &Key, _cx: &mut Context<Dash>) -> bool {
-    false
+pub fn edit_key(d: &mut Dash, key: &Key, cx: &mut Context<Dash>) -> bool {
+    crate::edit::edit_key(d, key, cx)
 }
 
 /// Move widget `id` one cell (Ctrl+Shift+h/j/k/l).
-pub fn nudge(_d: &mut Dash, _id: u32, _dir: crate::nav::Dir, _cx: &mut Context<Dash>) {}
+pub fn nudge(d: &mut Dash, id: u32, dir: crate::nav::Dir, cx: &mut Context<Dash>) {
+    crate::edit::nudge(d, id, dir, cx);
+}
 
 /// Open widget `id`'s settings (`s`).
-pub fn open_settings(_d: &mut Dash, _id: u32, _cx: &mut Context<Dash>) {}
+pub fn open_settings(d: &mut Dash, id: u32, cx: &mut Context<Dash>) {
+    crate::edit::open_settings(d, id, cx);
+}
 
 /// Pick widget `id` to work on in edit mode.
-pub fn configure(_d: &mut Dash, _id: u32, _cx: &mut Context<Dash>) {}
+pub fn configure(d: &mut Dash, id: u32, cx: &mut Context<Dash>) {
+    crate::edit::configure(d, id, cx);
+}

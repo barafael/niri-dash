@@ -1,3 +1,5 @@
 /target
 /dist
 /book/book
+/slint/target
+/slint/dist

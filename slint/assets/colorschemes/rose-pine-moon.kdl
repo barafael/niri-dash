@@ -1,0 +1,24 @@
+// niri-dash color scheme: "rose-pine-moon" (Rosé Pine Moon). See default.kdl for what each color is for.
+
+colors {
+    backdrop    "#191724d9"
+    card        "#232136f2"
+    card-raised "#2a283e"
+    panel       "#1e1c2e"
+    hover       "#e0def41f"
+    pressed     "#e0def436"
+    border      "#e0def41a"
+    subtle      "#e0def40a"
+    shadow      "#00000090"
+    text        "#e0def4"
+    dim         "#9f9bb8"
+    faint       "#7b7793"
+    accent      "#c4a7e7"
+    accent-soft "#c4a7e733"
+    on-accent   "#191724"
+    good        "#9ccfd8"
+    warn        "#f6c177"
+    bad         "#eb6f92"
+    track       "#e0def41f"
+    knob        "#e0def4"
+}

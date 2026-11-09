@@ -15,6 +15,29 @@ pub struct Blend {
     pub duration: Duration,
 }
 
+/// Make the text input and selection colors those of the look: inputs take them from the
+/// component library's own theme, which knows nothing of ours. Called once per frame by the
+/// dashboard's draw (never by a widget: two writers with different ideas would undo each other
+/// forever), and it touches the global only when something differs, as a write notifies every
+/// observer of the theme.
+pub fn sync_component_theme(tk: &crate::kit::Tk, cx: &mut gpui::App) {
+    use gpui_kit::component::Theme;
+    let want = (tk.text(), tk.faint(), tk.accent_soft(), tk.accent());
+    let have = {
+        let c = &Theme::global(cx).colors;
+        (c.foreground, c.muted_foreground, c.selection, c.caret)
+    };
+    if have == want {
+        return;
+    }
+    Theme::update(cx, |theme| {
+        theme.colors.foreground = want.0;
+        theme.colors.muted_foreground = want.1;
+        theme.colors.selection = want.2;
+        theme.colors.caret = want.3;
+    });
+}
+
 impl Dash {
     /// The look config.kdl asks for, with notes on anything missing or wrong.
     pub fn configured_look(&self) -> (theme::Look, Vec<String>) {
@@ -80,6 +103,7 @@ impl Dash {
         self.layout.colorscheme = name.to_string();
         self.save_layout();
         self.apply_look(true);
+        self.refresh_looks();
     }
 
     pub fn choose_style(&mut self, name: &str) {
@@ -98,6 +122,7 @@ impl Dash {
         });
         self.save_layout();
         self.apply_look(true);
+        self.refresh_looks();
     }
 
     /// Step style variable `var` up or down (`delta` is +1 or -1), or flip a switch.
@@ -153,6 +178,7 @@ impl Dash {
         }
         self.save_layout();
         self.apply_look(true);
+        self.refresh_style_vars();
     }
 
     /// Drop the adjustment of one style variable, or all of them.
@@ -163,6 +189,7 @@ impl Dash {
         }
         self.save_layout();
         self.apply_look(true);
+        self.refresh_style_vars();
     }
 
     /// The font families the Style tab offers (looked up on first use).
