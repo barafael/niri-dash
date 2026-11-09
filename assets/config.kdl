@@ -22,7 +22,7 @@ layout {
     volume          col=9  row=7 size=2 shape="round"
     brightness      col=11 row=7 size=2 shape="round"
     wifi            col=13 row=0 width=3 height=3
-    bluetooth       col=13 row=3 width=3 height=2
-    battery         col=13 row=5 width=3 height=2
+    bluetooth       col=13 row=3 width=3 height=3
+    battery         col=13 row=6 width=3 height=1
     system-monitor  col=13 row=7 width=3 height=2
 }
