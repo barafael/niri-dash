@@ -171,24 +171,20 @@ impl Dir {
     }
 }
 
-/// What a sizing key does (h narrower, l wider, k shorter, j taller): the edge it moves, which is
-/// the right or bottom one unless `flip`ped (Shift) to the left or top one, and, for a key that
-/// grows the widget, the opposite edge to try if that one is blocked.
-pub fn size_edges(key: Dir, flip: bool) -> (Dir, Option<Dir>) {
-    let sideways = matches!(key, Dir::Left | Dir::Right);
-    let grows = matches!(key, Dir::Right | Dir::Down);
-    let (far, near) = if sideways {
-        (Dir::Right, Dir::Left)
-    } else {
-        (Dir::Down, Dir::Up)
+/// What a key of the resize mode does: it pulls the `edge` side out (`grow`) or in. A widget that
+/// can't grow that way (something is in the way, or the grid ends) tries the opposite side.
+pub fn size_edges(edge: Dir, grow: bool) -> (Dir, Option<Dir>) {
+    let opposite = match edge {
+        Dir::Left => Dir::Right,
+        Dir::Right => Dir::Left,
+        Dir::Up => Dir::Down,
+        Dir::Down => Dir::Up,
     };
-    let (first, second) = if flip { (near, far) } else { (far, near) };
-    (first, grows.then_some(second))
+    (edge, grow.then_some(opposite))
 }
 
-/// `r` with its `edge` side pushed out one cell (`grow`) or pulled in, for the keyboard's sizing
-/// mode (see [`size_edges`]). Round
-/// widgets stay square, so either side changes both. None if it would go below `min`.
+/// `r` with its `edge` side pushed out one cell (`grow`) or pulled in, for the keyboard's resize
+/// mode (see [`size_edges`]). Round widgets stay square, so either side changes both. None if it would go below `min`.
 pub fn resized(r: Rect, edge: Dir, grow: bool, round: bool, min: (i32, i32)) -> Option<Rect> {
     let d = if grow { 1 } else { -1 };
     let sideways = matches!(edge, Dir::Left | Dir::Right);
@@ -226,17 +222,16 @@ mod tests {
     use strum::IntoEnumIterator;
 
     #[test]
-    fn sizing_keys_grow_and_shrink_from_the_far_side_unless_flipped() {
-        // l widens: the right edge, then the left if the right is blocked. h narrows from the right.
-        assert_eq!(size_edges(Dir::Right, false), (Dir::Right, Some(Dir::Left)));
-        assert_eq!(size_edges(Dir::Left, false), (Dir::Right, None));
-        assert_eq!(size_edges(Dir::Down, false), (Dir::Down, Some(Dir::Up)));
-        assert_eq!(size_edges(Dir::Up, false), (Dir::Down, None));
-        // Shift anchors the other side.
-        assert_eq!(size_edges(Dir::Right, true), (Dir::Left, Some(Dir::Right)));
-        assert_eq!(size_edges(Dir::Left, true), (Dir::Left, None));
-        assert_eq!(size_edges(Dir::Down, true), (Dir::Up, Some(Dir::Down)));
-        assert_eq!(size_edges(Dir::Up, true), (Dir::Up, None));
+    fn resize_keys_pull_their_own_side_and_fall_back_to_the_other() {
+        assert_eq!(size_edges(Dir::Right, true), (Dir::Right, Some(Dir::Left)));
+        assert_eq!(size_edges(Dir::Left, true), (Dir::Left, Some(Dir::Right)));
+        assert_eq!(size_edges(Dir::Down, true), (Dir::Down, Some(Dir::Up)));
+        assert_eq!(size_edges(Dir::Up, true), (Dir::Up, Some(Dir::Down)));
+        // Shift pulls the same side in, and has no fallback.
+        assert_eq!(size_edges(Dir::Right, false), (Dir::Right, None));
+        assert_eq!(size_edges(Dir::Left, false), (Dir::Left, None));
+        assert_eq!(size_edges(Dir::Down, false), (Dir::Down, None));
+        assert_eq!(size_edges(Dir::Up, false), (Dir::Up, None));
     }
 
     fn rect(col: i32, row: i32, w: i32, h: i32) -> Rect {

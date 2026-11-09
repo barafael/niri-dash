@@ -22,6 +22,12 @@ stateDiagram-v2
     Widget --> Inside: Enter in a text field, or s
     Inside --> Widget: Escape
     Widget --> Dashboard: Escape
+    Widget --> Move: Ctrl+M
+    Widget --> Resize: Ctrl+R
+    Move --> Resize: Ctrl+R
+    Resize --> Move: Ctrl+M
+    Move --> Widget: Escape
+    Resize --> Widget: Escape
     Dashboard --> [*]: Escape
 ```
 
@@ -50,11 +56,29 @@ two-word rule: the name is `claude-sessions`, and the key is `cs`.
 ## Edit mode: two places for the keys
 
 Edit mode has the same idea with two places the keys can be: the widgets and the sidebar. The same
-letters mean something in each. `h`, `j`, `k` and `l` size the picked widget when the keys are on
-the widgets, and move between rows and step values when they are in the sidebar. Tab goes from one
-to the other, and `w`, `a`, `s` and `d` (or a move with Ctrl) go back. The bar at the top of the
-screen always lists the keys that work in the place you are, so you don't have to remember which
+letters mean something in each. `h`, `j`, `k` and `l` pick the neighbouring widget when the keys
+are on the widgets, and move between rows and step values when they are in the sidebar. Tab goes
+from one to the other, and `w`, `a`, `s` and `d` go back. The quick tips along the bottom of the
+screen always list the keys that work in the place you are, so you don't have to remember which
 it is.
+
+## Modes: moving and resizing
+
+Moving and resizing a widget are modes, entered with Ctrl+`m` and Ctrl+`r`. A mode takes
+`h`, `j`, `k`, `l` (or the arrows) away from whatever they meant, so they can act on the widget as
+a whole: in move mode they push it a cell, in resize mode they pull the side they point to
+outwards, and with Shift inwards. Ctrl is what keeps the modes out of a widget's way: inside a
+widget every plain letter is the widget's own (`m` mutes the volume, `r` restarts the
+Pomodoro), but no widget uses Ctrl+`m` or Ctrl+`r`.
+
+A mode is also a level, and Escape leaves it first. While one lasts the keyboard belongs to the
+mode, which is why other keys do nothing: there is no way to press `d` and close a window by
+mistake while arranging.
+
+The state of the keys has to be visible, since a mode you can't see is a trap. Two places show it:
+the quick tips along the bottom of the screen list the keys that work right now in every state
+(from the idle dashboard to a mode), and the widget in hand wears a slightly transparent veil
+with the mode's name, its keys and its size.
 
 ## Moving between widgets without going out
 
