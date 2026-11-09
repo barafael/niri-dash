@@ -56,6 +56,8 @@ pub struct State {
     /// The keyboard is in the when field: keys are its own, but Ctrl+D.
     pub editing: bool,
     field: Option<Field>,
+    /// The field went away while it had the focus: the dashboard takes it back at the next frame.
+    refocus: Cell<bool>,
 }
 
 impl Default for State {
@@ -69,6 +71,7 @@ impl Default for State {
             scopes: Scopes::default(),
             editing: false,
             field: None,
+            refocus: Cell::new(false),
         }
     }
 }
@@ -96,7 +99,14 @@ impl State {
     /// The keyboard leaves the when field (the dashboard went away).
     pub fn stop_editing(&mut self) {
         self.editing = false;
-        self.field = None;
+        if self.field.take().is_some() {
+            self.refocus.set(true);
+        }
+    }
+
+    /// Whether the dashboard has to take the keyboard back from a field that is gone (once).
+    pub fn take_refocus(&self) -> bool {
+        self.refocus.replace(false)
     }
 }
 
@@ -247,6 +257,11 @@ fn with_window(
     .detach();
 }
 
+/// The dashboard takes the keyboard back, after the field it was in went away.
+pub fn refocus(cx: &mut Context<Dash>) {
+    with_window(cx, |d, window, cx| window.focus(&d.focus, cx));
+}
+
 /// The keyboard goes into the when field (`i`, Enter on it, a click).
 pub fn begin_edit(d: &mut Dash, cx: &mut Context<Dash>) {
     if d.widgets.time.sleep.editing {
@@ -280,7 +295,7 @@ pub fn begin_edit(d: &mut Dash, cx: &mut Context<Dash>) {
                     });
                 }
                 InputEvent::Blur => {
-                    with_window(cx, |d, window, cx| end_edit(d, window, cx));
+                    with_window(cx, end_edit);
                 }
                 InputEvent::Focus => {}
             }
@@ -311,7 +326,7 @@ pub fn escape(d: &mut Dash, cx: &mut Context<Dash>) -> bool {
         return false;
     }
     d.widgets.time.sleep.editing = false;
-    with_window(cx, |d, window, cx| end_edit(d, window, cx));
+    with_window(cx, end_edit);
     cx.notify();
     true
 }
@@ -461,9 +476,7 @@ impl Stops for Keys<'_, '_> {
         let l = &self.layout;
         let (d, cx) = (&mut *self.d, &mut *self.cx);
         let counting = d.widgets.time.sleep.counting();
-        if key.is(' ') && counting {
-            act(d, cx, sleep::Act::PauseResume);
-        } else if key.is('p') {
+        if (key.is(' ') && counting) || key.is('p') {
             act(d, cx, sleep::Act::PauseResume);
         } else if key.is('+') || key.is('=') {
             act(d, cx, sleep::Act::Longer);

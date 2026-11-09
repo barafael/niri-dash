@@ -446,6 +446,65 @@ fn sleep_timer_fires() {
     }
 }
 
+/// `i` (or Enter on the field) types in the when field: the letters are the field's, Enter arms
+/// with what was typed and gives the keyboard back, Escape gives it back and keeps the text.
+fn sleep_timer_field() {
+    let mut h = dashboard(SLEEP);
+    h.send(sleep::Event::Modes(vec![sleep::Mode::Suspend]));
+    enter(&mut h, "sleep-timer");
+    let editing = |h: &Harness| h.read(|d| d.widgets.time.sleep.editing);
+    h.key("i");
+    assert!(editing(&h));
+    // Everything typed goes in the field, which starts with what was there; Ctrl+D still works.
+    h.key("ctrl+a");
+    h.type_text("90 min");
+    assert_eq!(sleeper(&h, |c| c.input.clone()), "90 min");
+    h.key("ctrl+d");
+    assert!(sleeper(&h, |c| c.dry_run));
+    assert!(editing(&h));
+    // Escape: the keyboard is the dashboard's again, and so are the keys.
+    h.key("esc");
+    assert!(!editing(&h));
+    assert_eq!(sleeper(&h, |c| c.input.clone()), "90 min");
+    assert_eq!(sleeper(&h, |c| c.timer.status()), sleep::Status::Idle);
+    h.key("d");
+    assert!(!sleeper(&h, |c| c.dry_run));
+    // Enter in the field arms with what is typed.
+    h.key("i");
+    h.key("ctrl+a");
+    h.type_text("45 min");
+    h.key("enter");
+    assert!(!editing(&h));
+    assert_eq!(sleeper(&h, |c| c.timer.status()), sleep::Status::Armed);
+    assert!(sleeper(&h, |c| c.headline(&chrono::Local::now())).starts_with("suspend in 45m"));
+    // The dashboard going away takes the keyboard out of the field.
+    h.key("esc");
+    h.key("i");
+    assert!(editing(&h));
+    h.control(Control::Hide);
+    assert!(!editing(&h));
+}
+
+/// Leaving the widget with the keyboard in the field doesn't leave the keys in it.
+fn sleep_timer_field_left_behind() {
+    let mut h = dashboard(
+        "    sleep-timer col=0 row=0 width=4 height=3\n    pomodoro col=4 row=0 width=4 height=3",
+    );
+    enter(&mut h, "sleep-timer");
+    h.key("i");
+    assert!(h.read(|d| d.widgets.time.sleep.editing));
+    h.key("ctrl+l");
+    assert_eq!(h.read(|d| d.tile(d.nav.active_id).unwrap().kind().name()), "pomodoro");
+    // Whatever is typed now is the dashboard's, not the field's.
+    assert!(!h.read(|d| d.widgets.time.sleep.editing), "still typing in a field of a widget left");
+    h.key(" ");
+    assert!(h.read(|d| d.widgets.time.pomo.pomodoro.running()));
+    for _ in 0..4 {
+        h.key("esc");
+    }
+    assert!(h.controls().contains(&Control::Hide), "Escape got nowhere");
+}
+
 /// The sleep timer counts while the dashboard is away.
 fn sleep_timer_counts_while_hidden() {
     let mut h = dashboard("    sleep-timer col=0 row=0 width=4 height=4");
@@ -718,10 +777,19 @@ fn stress_on_the_time_widgets() {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(1200u64);
-    for seed in [1, 2, 3] {
-        for size in [(1706, 1066), (1280, 800)] {
+    let verbose = std::env::var_os("NIRI_DASH_STRESS_LOG").is_some();
+    let seeds: Vec<u64> = std::env::var("NIRI_DASH_STRESS_SEEDS")
+        .ok()
+        .map(|s| s.split(',').filter_map(|n| n.trim().parse().ok()).collect())
+        .unwrap_or_else(|| vec![1, 2, 3]);
+    let only_screen = std::env::var("NIRI_DASH_STRESS_SCREEN").ok();
+    for seed in seeds {
+        for (name, size) in [("large", (1706, 1066)), ("small", (1280, 800))] {
+            if only_screen.as_deref().is_some_and(|o| o != name) {
+                continue;
+            }
             let monkey = Harness::with_mock_sized(&layout, size)
-                .stress(Monkey::new(seed, false).keep_going(), ops)
+                .stress(Monkey::new(seed, verbose).keep_going(), ops)
                 .unwrap_or_else(|f| panic!("seed {seed}: {f}"));
             if let Err(f) = monkey.finish() {
                 panic!("seed {seed} on {size:?}: {f}");
@@ -747,6 +815,8 @@ fn main() {
         ("sleep_timer_keys", sleep_timer_keys),
         ("sleep_timer_lists_modes", sleep_timer_lists_modes),
         ("sleep_timer_fires", sleep_timer_fires),
+        ("sleep_timer_field", sleep_timer_field),
+        ("sleep_timer_field_left_behind", sleep_timer_field_left_behind),
         ("sleep_timer_counts_while_hidden", sleep_timer_counts_while_hidden),
         ("sleep_timer_clicks", sleep_timer_clicks),
         ("calendar_cursor_survives_other_keys", calendar_cursor_survives_other_keys),

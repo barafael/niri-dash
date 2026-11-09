@@ -92,6 +92,9 @@ pub fn handles(kind: Kind) -> bool {
 
 /// What the widget of `ctx.tile` draws, in a card of `ctx.w` by `ctx.h` pixels.
 pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
+    if ctx.d.widgets.time.sleep.take_refocus() {
+        sleep::refocus(cx);
+    }
     match ctx.kind() {
         Kind::Clock => clock::render(ctx, cx),
         Kind::Calendar => calendar::render(ctx, cx),
@@ -147,6 +150,11 @@ pub fn escape(d: &mut Dash, cx: &mut Context<Dash>) -> bool {
 /// A second passed while the dashboard is up.
 pub fn tick(d: &mut Dash) {
     clock::tick(d);
+    if d.solo.is_some() {
+        // A standalone app isn't told when its settings change.
+        pomo::sync_plan(d);
+        sleep::sync_settings(d);
+    }
     sync_scopes(d);
 }
 
@@ -165,8 +173,11 @@ pub fn go_down(d: &mut Dash) {
 /// shown (`tasks`); what counts and goes off does so either way.
 pub fn awake(_d: &mut Dash, _on: bool) {}
 
-/// Widget `id` of `kind` was entered with the keyboard.
-pub fn entered(_d: &mut Dash, _kind: Kind, _id: u32) {}
+/// Widget `id` of `kind` was entered with the keyboard: the keys are the dashboard's, not the
+/// sleep timer's field's (if the keyboard was in it, it is given back at the next frame).
+pub fn entered(d: &mut Dash, _kind: Kind, _id: u32) {
+    d.widgets.time.sleep.stop_editing();
+}
 
 /// The tiles changed (a widget added, removed, moved): the pomodoro and the sleep timer follow
 /// the settings of the first widget of their kind, and the zones are those of the clocks there.

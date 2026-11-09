@@ -18,18 +18,10 @@ use niri_dash_system::{Tell, host, notifications};
 use std::time::Duration;
 use web_time::{SystemTime, UNIX_EPOCH};
 
+#[derive(Default)]
 pub struct State {
     pub pomodoro: Pomodoro,
     pub scopes: Scopes,
-}
-
-impl Default for State {
-    fn default() -> Self {
-        Self {
-            pomodoro: Pomodoro::default(),
-            scopes: Scopes::default(),
-        }
-    }
 }
 
 impl State {

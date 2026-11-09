@@ -89,7 +89,6 @@ struct Layout {
     round: bool,
     sw: bool,
     has_lap: bool,
-    has_reset: bool,
     /// Room for presets, lap buttons and the list of laps.
     extras: bool,
     lap_list: bool,
@@ -115,7 +114,6 @@ impl Layout {
             round,
             sw,
             has_lap,
-            has_reset,
             extras,
             lap_list: sw && h > 260.0 && !v.laps.is_empty(),
             buttons: 1 + usize::from(has_lap) + usize::from(has_reset),
