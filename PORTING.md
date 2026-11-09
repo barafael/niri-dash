@@ -68,6 +68,8 @@ The **Slint code is in `legacy/`** (not built; for reading, deleted when the por
    tests next to the code when the logic is pure). The stress run's `widgets::check` /
    `widgets::describe` hooks are where a widget says what must hold (cursor on a stop that
    exists, …).
+   `Harness::new` does not show the dashboard (only `with_mock*` do): call
+   `h.control(Control::Show)` first when you build on `new`.
 7. Nothing in a test may touch the real system: use `Harness::with_mock` / `Harness::new` and a
    `Sandbox` (see `tests/stress.rs`).
 8. **Commit in your own branch/worktree; don't edit other groups' modules.** The only shared
