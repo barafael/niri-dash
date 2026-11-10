@@ -247,7 +247,8 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
             .items_center()
             .gap(px(10.0))
             .when(has_window, |r| {
-                r.on_click(cx.listener(move |d, _: &ClickEvent, _, cx| {
+                r.on_mouse_down(gpui::MouseButton::Left, crate::kit::own_press)
+                    .on_click(cx.listener(move |d, _: &ClickEvent, _, cx| {
                     let c = &d.widgets.desk.claude;
                     if focus(&d.tx, &c.windows, pid) {
                         shared::hide(d, cx);

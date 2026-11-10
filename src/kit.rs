@@ -258,3 +258,10 @@ pub fn empty(text: impl Into<SharedString>, tk: &Tk) -> AnyElement {
         .child(text.into())
         .into_any_element()
 }
+
+/// For the mouse-down of a control a widget builds itself: a press on a control is not a press on
+/// the card behind it (a double click on a control must not pick the widget up in edit mode).
+/// `.on_mouse_down(MouseButton::Left, kit::own_press)`
+pub fn own_press(_: &gpui::MouseDownEvent, _: &mut Window, cx: &mut App) {
+    cx.stop_propagation();
+}

@@ -168,6 +168,7 @@ pub fn icon_button(
             b.cursor_pointer()
                 .hover(move |s| s.bg(hover))
                 .active(move |s| s.bg(pressed))
+                .on_mouse_down(gpui::MouseButton::Left, crate::kit::own_press)
                 .on_click(move |ev, window, cx| {
                     cx.stop_propagation();
                     on_click(ev, window, cx);
@@ -224,6 +225,7 @@ pub fn text_button(
                 .active(move |s| s.bg(pressed))
         })
         .cursor_pointer()
+        .on_mouse_down(gpui::MouseButton::Left, crate::kit::own_press)
         .on_click(move |ev, window, cx| {
             cx.stop_propagation();
             on_click(ev, window, cx);

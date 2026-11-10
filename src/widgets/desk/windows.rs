@@ -277,6 +277,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
             .pl(px(pad_l))
             .pr(px(4.0))
             .gap(px(gap))
+            .on_mouse_down(gpui::MouseButton::Left, crate::kit::own_press)
             .on_click(cx.listener(move |d, _: &ClickEvent, _, cx| {
                 d.tx.windows.tell(Command::Focus(wid));
                 shared::hide(d, cx);

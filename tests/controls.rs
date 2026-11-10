@@ -485,6 +485,30 @@ fn night_light_kwin() {
     assert_eq!((status.as_str(), note.as_str()), ("Paused", "Paused by another program"));
 }
 
+/// A double click on a widget's own control is two presses of that control, not the double click
+/// that picks the widget up.
+fn double_click_on_a_control_does_not_pick_the_widget_up() {
+    let mut h = dashboard(
+        "    battery col=0 row=0 width=4 height=4\n    session col=4 row=0 width=5 height=2\n    volume col=0 row=4 size=3 shape=\"round\"",
+    );
+    h.send(power::Event::State(Demo::new().power));
+    h.send(audio::Event::State(audio::State {
+        volume: 0.5,
+        ..Default::default()
+    }));
+    for control in ["Saver", "Block sleep and screen locking", "Lock", "Volume"] {
+        let b = h
+            .bounds_of(control)
+            .unwrap_or_else(|| panic!("no {control:?} on screen"));
+        let c = b.center();
+        h.double_click(f32::from(c.x), f32::from(c.y));
+        let carried = h.read(|d| d.edit.dragging() || d.edit.adjust_id != 0);
+        assert!(!carried, "a double click on {control:?} picked a widget up");
+        // Lock hides the dashboard: up again.
+        h.control(Control::Show);
+    }
+}
+
 fn main() {
     let _sandbox = Sandbox::enter(None).expect("a temporary directory for the dashboard's files");
     let scenarios: &[(&str, fn())] = &[
@@ -501,6 +525,10 @@ fn main() {
         ("battery: round cycles", battery_round_cycles),
         ("night light: gamma", night_light_gamma),
         ("night light: KWin", night_light_kwin),
+        (
+            "controls: a double click doesn't pick the widget up",
+            double_click_on_a_control_does_not_pick_the_widget_up,
+        ),
     ];
     let mut failed = 0;
     for (name, scenario) in scenarios {
