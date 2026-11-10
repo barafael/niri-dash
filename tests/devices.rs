@@ -564,9 +564,38 @@ fn phone_ring_hugs_the_header() {
     assert!((tall - 54.0).abs() < 1.5, "the ring is {tall} px under the top of the card");
 }
 
+/// A double click on a control is not a double click on the card behind it: the widget is not
+/// picked up (the carry).
+fn double_click_on_controls_does_not_carry() {
+    let mut h = show("removable-drives col=0 row=0 width=4 height=5");
+    h.send(drives::Event::State(two_drives()));
+    for control in ["Unmount STICK", "Eject Card", "STICK"] {
+        let c = h
+            .bounds_of(control)
+            .unwrap_or_else(|| panic!("nothing called {control:?}"))
+            .center();
+        h.double_click(f32::from(c.x), f32::from(c.y));
+        assert_eq!(h.adjust_id(), 0, "a double click on {control:?} picked the widget up");
+    }
+    let mut h = show("phone col=0 row=0 width=4 height=2");
+    h.send(phones_state(vec![phone("pixel", Some(82), true)]));
+    for control in ["Ring", "Send files"] {
+        let c = h
+            .bounds_of(control)
+            .unwrap_or_else(|| panic!("nothing called {control:?}"))
+            .center();
+        h.double_click(f32::from(c.x), f32::from(c.y));
+        assert_eq!(h.adjust_id(), 0, "a double click on {control:?} picked the widget up");
+    }
+}
+
 fn main() {
     let _sandbox = Sandbox::enter(None).expect("a temporary directory for the dashboard's files");
     let tests: &[(&str, fn())] = &[
+        (
+            "double click on controls does not carry",
+            double_click_on_controls_does_not_carry,
+        ),
         ("privacy: the empty line wraps", privacy_empty_line_wraps),
         ("phone: the ring hugs the header", phone_ring_hugs_the_header),
         ("privacy: the dots say what they watch", privacy_dots),

@@ -220,6 +220,7 @@ pub fn icon_button(
         .cursor_pointer()
         .hover(move |s| s.bg(hover))
         .active(move |s| s.bg(pressed))
+        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(on_click)
         .child(kit::icon(icon, size * 0.55, tint))
 }
@@ -455,6 +456,7 @@ pub fn ring_knob(
         .rounded_full()
         .when(kfocus, |d| d.bg(tk.hover()))
         .cursor_pointer()
+        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(on_click)
         .on_scroll(move |ev: &ScrollEvent, window, cx| {
             cx.stop_propagation();
@@ -593,7 +595,7 @@ pub fn switch_button(
         .flex_none()
         .child(switch_view(key_of(id) ^ 0x5717, on, enabled, kfocus, tk));
     if enabled {
-        b.cursor_pointer().on_click(on_click)
+        b.cursor_pointer().on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation()).on_click(on_click)
     } else {
         b
     }

@@ -565,9 +565,47 @@ fn card_geometry() {
     assert!(f32::from(slider.size.width) < w);
 }
 
+/// A double click on a control is not a double click on the card behind it: it must not pick
+/// the widget up (the carry), whatever the control.
+fn double_click_on_controls_does_not_carry() {
+    let mut h = dashboard(
+        "    battery col=0 row=0 width=4 height=3\n    volume col=4 row=0 width=4 height=3\n    \
+         session col=0 row=3 width=5 height=1\n    night-light col=5 row=3 width=4 height=2\n    \
+         brightness col=9 row=0 width=3 height=1",
+    );
+    h.send(power::Event::State(Demo::new().power));
+    for control in [
+        "Saver",
+        "Block sleep and screen locking",
+        "Mute",
+        "Lock",
+        "Suspend",
+        "3400 K",
+        "Night light",
+    ] {
+        let b = h
+            .bounds_of(control)
+            .unwrap_or_else(|| panic!("nothing called {control:?} on screen"));
+        let c = b.center();
+        h.double_click(f32::from(c.x), f32::from(c.y));
+        assert_eq!(h.adjust_id(), 0, "a double click on {control:?} picked its widget up");
+    }
+    // The sliders and the round knob too (a slider that is switched off lets the press through,
+    // as Slint's disabled touch area does).
+    h.send(brightness::Event::Level(Some(0.7)));
+    let (x, y) = slider_at(&h, "Brightness", 0.5);
+    h.double_click(x, y);
+    assert_eq!(h.adjust_id(), 0, "a double click on the brightness slider picked it up");
+    let mut round = dashboard("    volume col=0 row=0 size=3 shape=\"round\"");
+    let c = round.bounds_of("Volume").expect("the knob").center();
+    round.double_click(f32::from(c.x), f32::from(c.y));
+    assert_eq!(round.adjust_id(), 0, "a double click on the round knob picked it up");
+}
+
 fn main() {
     let _sandbox = Sandbox::enter(None).expect("a temporary directory for the dashboard's files");
     let scenarios: &[(&str, fn())] = &[
+        ("double click on controls does not carry", double_click_on_controls_does_not_carry),
         ("battery: layout follows Slint", battery_layout_follows_slint),
         ("session: buttons follow their labels", session_buttons_follow_their_labels),
         ("night light: overflow starts at the top", night_light_overflow_starts_at_the_top),

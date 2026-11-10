@@ -429,6 +429,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                             .hover(move |s| s.bg(hover))
                             .active(move |s| s.bg(pressed))
                     })
+                    .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_click(on(cx, move |d, _| set_kelvin(d, k)))
                     .child(div().truncate().child(name))
             }))

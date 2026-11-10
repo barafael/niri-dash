@@ -399,6 +399,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
             .when(kf, |s| s.bg(hover))
             .hover(move |s| s.bg(hover))
             .cursor_pointer()
+            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(on(cx, |d, _| {
                 let v = &mut d.widgets.controls.volume;
                 v.picking = !v.picking;
@@ -461,6 +462,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                     .cursor_pointer()
                     .text_size(px(tk.font_small()))
                     .text_color(if k.default { accent } else { tk.text() })
+                    .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_click(on(cx, move |d, _| {
                         d.tx.audio.tell(Command::SetDefaultSink(sink_id));
                         d.widgets.controls.volume.picking = false;

@@ -155,6 +155,7 @@ pub fn icon_button(
             b.cursor_pointer()
                 .hover(move |s| s.bg(hover))
                 .active(move |s| s.bg(pressed))
+                .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_click(move |e, w, c| {
                     // A button in a row is not a click on the row.
                     c.stop_propagation();
@@ -221,6 +222,7 @@ pub fn text_button(
             b.cursor_pointer()
                 .hover(move |s| s.bg(hover))
                 .active(move |s| s.bg(pressed))
+                .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_click(move |e, w, c| {
                     c.stop_propagation();
                     on_click(e, w, c)
@@ -279,7 +281,7 @@ pub fn row(
             r.hover(move |s| s.bg(hover))
                 .active(move |s| s.bg(pressed))
                 .when_some(on_click, |r, f| {
-                    r.cursor_pointer().on_click(move |e, w, c| f(e, w, c))
+                    r.cursor_pointer().on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation()).on_click(move |e, w, c| f(e, w, c))
                 })
         })
 }

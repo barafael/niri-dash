@@ -98,7 +98,7 @@ pub fn describe(d: &Dash) -> String {
 }
 
 /// A progress bar `value` (0 to 1) full, 4 px thick.
-fn progress(value: f32, label: &'static str, tk: &crate::kit::Tk) -> impl IntoElement {
+fn progress(key: u64, value: f32, label: &'static str, tk: &crate::kit::Tk) -> impl IntoElement {
     let (track, accent, ms) = (tk.track(), tk.accent(), 300.0 * tk.motion());
     let value = value.clamp(0.0, 1.0);
     div()
@@ -116,7 +116,7 @@ fn progress(value: f32, label: &'static str, tk: &crate::kit::Tk) -> impl IntoEl
                 |_, _, _| {},
                 move |b, _, window, _| {
                     // New readings slide in rather than jump.
-                    let shown = crate::kit::glide(0x6d65_6469, value, ms, window);
+                    let shown = crate::kit::glide(key, value, ms, window);
                     let r = b.size.height / 2.0;
                     window.paint_quad(gpui::fill(b, track).corner_radii(r));
                     let mut part = b;
@@ -317,7 +317,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                                 parts::muted(sub, tk)
                                     .when(m.art.is_none(), |c| c.text_center()),
                             )
-                            .child(progress(m.progress, "Track progress", tk))
+                            .child(progress(0x6d65_0000 + id as u64, m.progress, "Track progress", tk))
                         }),
                 ),
         )

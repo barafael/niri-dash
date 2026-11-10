@@ -280,6 +280,7 @@ fn round(ctx: &Ctx, fit: &Fit, b: &State, cx: &mut Context<Dash>) -> AnyElement 
                 .size_full()
                 .rounded_full()
                 .when(can, |t| t.cursor_pointer())
+                .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_click(on(cx, |d, _| cycle(d))),
         )
         .into_any_element()
@@ -397,6 +398,7 @@ fn rect(ctx: &Ctx, fit: &Fit, b: &State, lay: &Layout, cx: &mut Context<Dash>) -
                     .cursor_pointer()
                     .text_size(px(tk.font_small()))
                     .text_color(if current { tk.on_accent() } else { tk.text() })
+                    .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_click(on(cx, move |d, _| set_profile(d, prof)))
                     .child(div().truncate().child(name))
             }))
@@ -419,6 +421,7 @@ fn rect(ctx: &Ctx, fit: &Fit, b: &State, lay: &Layout, cx: &mut Context<Dash>) -
             .gap(px(8.0))
             .cursor_pointer()
             // The whole row flips the switch, as in Plasma.
+            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(on(cx, |d, _| toggle_inhibit(d)))
             .child(kit::icon(
                 "coffee",
