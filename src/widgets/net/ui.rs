@@ -15,16 +15,12 @@ use gpui::{
 use niri_dash_system::IconSrc;
 
 /// A line of text is as high as Slint draws it (the font's ascent and descent, about 1.36 times
-/// its size), not GPUI's 1.6: lines that wrap, and a column of centered texts, come out as tall.
-pub const LINE: f32 = 1.362;
+/// its size), not GPUI's 1.6.
+pub const LINE: f32 = kit::LINE;
 
 /// `inner` with that line height for all the text in it.
 pub fn lined(inner: AnyElement) -> AnyElement {
-    div()
-        .size_full()
-        .line_height(gpui::relative(LINE))
-        .child(inner)
-        .into_any_element()
+    kit::slint_lines(inner)
 }
 
 /// How a button, row or switch stands.

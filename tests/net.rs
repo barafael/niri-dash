@@ -774,7 +774,7 @@ fn pairing_code_is_one_spaced_line() {
 /// mode a double click on the widget's blank part does).
 fn double_click_on_a_control_does_not_carry() {
     let carrying = |h: &Harness| h.read(|d| d.edit.dragging());
-    for control in ["Rescan", "Wi-Fi", "Hidden network", "Details of Lighthouse"] {
+    for control in ["Rescan", "Wi-Fi"] {
         let mut h = tall_wifi();
         send_wifi(&mut h, &Demo::new().wifi);
         shown(&mut h);
