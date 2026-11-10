@@ -315,7 +315,6 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                 .flex_none()
                 .items_center()
                 .h(px(28.0))
-                .gap(px(8.0))
                 .child(
                     parts::elided(g.title.clone())
                         .flex_1()
@@ -340,7 +339,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                     "circle",
                     "This month",
                     28.0,
-                    Face::default().enabled(!showing_current),
+                    Face::default().enabled(!showing_current).icon_size(10.0),
                     tk,
                     cx.listener(|d, _: &ClickEvent, _, cx| {
                         d.widgets.time.calendar.shift(0);

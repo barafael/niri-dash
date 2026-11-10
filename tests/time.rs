@@ -124,6 +124,20 @@ fn pomodoro_buttons() {
     );
 }
 
+/// A round pomodoro with room has both the play and the skip button under its dots (as Slint's
+/// does; the round timer's only has the face to click).
+fn pomodoro_round_buttons() {
+    let mut h = dashboard("    pomodoro col=0 row=0 size=4 shape=\"round\"");
+    assert!(h.has("Skip to the next part"));
+    h.click_on("Skip to the next part");
+    assert_eq!(
+        h.read(|d| d.widgets.time.pomo.pomodoro.phase.label()),
+        "Short break"
+    );
+    let h = dashboard("    timer col=0 row=0 size=4 shape=\"round\"");
+    assert!(!h.has("Lap") && !h.has("Reset"));
+}
+
 /// A part that runs out says so, moves on, and is remembered across a restart.
 fn pomodoro_goes_off() {
     let mut h = dashboard(POMODORO);
@@ -806,6 +820,7 @@ fn main() {
         ("pomodoro_keys", pomodoro_keys),
         ("pomodoro_follows_its_settings", pomodoro_follows_its_settings),
         ("pomodoro_buttons", pomodoro_buttons),
+        ("pomodoro_round_buttons", pomodoro_round_buttons),
         ("pomodoro_goes_off", pomodoro_goes_off),
         ("timer_keys", timer_keys),
         ("timer_clicks", timer_clicks),

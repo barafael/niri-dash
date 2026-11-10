@@ -94,8 +94,9 @@ pub fn render(ctx: &Ctx, _cx: &mut Context<Dash>) -> AnyElement {
         .gap(px(8.0))
         .child(
             div()
-                .flex_1()
-                .min_h_0()
+                // Slint's top row is no taller than its content (it can't grow past its tallest
+                // part): what there is sits at the top of the card, forecast or not.
+                .flex_none()
                 .flex()
                 .flex_row()
                 .items_center()
@@ -136,8 +137,10 @@ pub fn render(ctx: &Ctx, _cx: &mut Context<Dash>) -> AnyElement {
                     .children(f.days.iter().enumerate().map(|(i, day)| {
                         div()
                             .id(("day", i))
+                            // As wide as its text at the least: too many days overflow (and
+                            // are cut) rather than wrap, as in Slint.
                             .flex_1()
-                            .min_w_0()
+                            .whitespace_nowrap()
                             .flex()
                             .flex_col()
                             .items_center()

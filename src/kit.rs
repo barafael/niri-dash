@@ -371,3 +371,42 @@ mod tests {
         assert_eq!(eased(0.0, 1.0, 0.0, 0.0), (0.0, false));
     }
 }
+
+/// Values that glide (Slint's `animate`), for one widget: what a bar or a ring shows eases over to
+/// a new reading. The style's `motion` scales the time and 0 turns it off.
+#[derive(Clone, Copy)]
+pub struct Glide<'a> {
+    anims: &'a crate::edit::anim::Anims,
+    id: u32,
+    motion: f32,
+}
+
+impl<'a> Glide<'a> {
+    pub fn new(ctx: &'a crate::widgets::Ctx) -> Self {
+        Self {
+            anims: &ctx.d.edit.anim,
+            id: ctx.tile.id(),
+            motion: ctx.tk.motion(),
+        }
+    }
+
+    /// Where `what` (one of the widget's values, `n` for several of a kind) is, on its way to
+    /// `target` over `ms`.
+    pub fn to(&self, what: &'static str, n: u32, target: f32, ms: f32) -> f32 {
+        self.anims.follow(
+            (what, self.id << 8 | n.min(255)),
+            target,
+            ms,
+            self.motion,
+            crate::edit::anim::Ease::Out,
+        )
+    }
+}
+
+/// The radius of a ring's middle line in a `size` square, for a stroke `thickness` thick. Slint
+/// fits a stroked path's own box inside the item with half the stroke to spare on every side, so
+/// the whole path (this radius included) shrinks by `(size - thickness) / size`: the ring does not
+/// touch the edge of its card but leaves a gap of about half its thickness.
+pub fn ring_radius(size: f32, thickness: f32) -> f32 {
+    (size / 2.0 - thickness / 2.0 - size * 0.005) * ((size - thickness) / size).max(0.0)
+}

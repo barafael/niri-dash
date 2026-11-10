@@ -37,6 +37,9 @@ impl Render for Dash {
             .relative()
             .overflow_hidden()
             .text_size(px(tk.look.style.font_body))
+            // Slint's text line is the font's ascent plus descent (1.36 em for Noto Sans); GPUI's
+            // default is 1.618 em, which pushes every stacked line of text apart.
+            .line_height(gpui::relative(1.36))
             .text_color(tk.text())
             .on_key_down(cx.listener(|dash, ev: &KeyDownEvent, window, cx| {
                 dash.note_field_focus(window, cx);

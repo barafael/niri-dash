@@ -16,7 +16,7 @@ pub fn render(ctx: &Ctx, _cx: &mut Context<Dash>) -> AnyElement {
         g.inner = Some(("Memory", s.mem, tk.good()));
         g.big = percent(s.cpu);
         g.caption = format!("CPU · RAM {}", percent(s.mem));
-        return g.element(ctx.w, tk, Vec::new());
+        return g.element(ctx, Vec::new());
     }
     let capacity = ctx.opts.history;
     let line = |title: &'static str, text: &str, extra: Option<&str>| {

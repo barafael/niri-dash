@@ -39,8 +39,7 @@ pub fn render(ctx: &Ctx, _cx: &mut Context<Dash>) -> AnyElement {
                 .into_any_element()
         };
         return g.element(
-            ctx.w,
-            tk,
+            ctx,
             vec![line(down, tk.accent()), line(up, tk.warn())],
         );
     }

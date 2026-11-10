@@ -6,6 +6,7 @@ use super::parts::{self, Face, Scopes, card};
 use super::{draw, placed_of, tasks};
 use crate::dash::Dash;
 use crate::keys::Key;
+use crate::kit::Glide;
 use crate::layout::Kind;
 use crate::pomodoro::{Phase, Plan, Pomodoro};
 use crate::scope::Stops;
@@ -459,7 +460,9 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                                         .h(px(34.0))
                                         .flex()
                                         .items_center()
-                                        .child(buttons(cx, ctx, &v, 30.0, false, None)),
+                                        // Slint's face asks for the play button too (the timer's
+                                        // does not).
+                                        .child(buttons(cx, ctx, &v, 30.0, true, None)),
                                 )
                             }),
                     ),
@@ -515,7 +518,14 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                 .child(buttons(cx, ctx, &v, 36.0, true, kfocus)),
         )
         .when(extras, |col| {
-            col.child(parts::bar("part bar", "Time left in this part", value, ring_tint, tk))
+            col.child(parts::bar(
+                "part bar",
+                "Time left in this part",
+                value,
+                Glide::new(ctx).to("bar", 0, value.clamp(0.0, 1.0), 300.0),
+                ring_tint,
+                tk,
+            ))
                 .child(
                     div()
                         .flex()

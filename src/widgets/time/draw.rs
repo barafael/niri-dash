@@ -161,7 +161,9 @@ pub fn ring(
         .size_full()
         .child(painter(move |bounds, window| {
             let (c, side) = centre(bounds);
-            let r = side / 2.0 - thickness / 2.0 - side * 0.005;
+            // As Slint's `Ring` is drawn: its stroked path is fitted inside the box with half the
+            // stroke to spare, so the ring floats a little in from the card's edge.
+            let r = crate::kit::ring_radius(side, thickness);
             let mut shape = Shape::new();
             shape.ring(c, r, thickness);
             shape.paint(track, window);

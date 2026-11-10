@@ -7,7 +7,7 @@ use super::parts::{self, Face, Scopes, card};
 use super::{draw, placed_of, tasks};
 use crate::dash::Dash;
 use crate::keys::Key;
-use crate::kit;
+use crate::kit::{self, Glide};
 use crate::layout::Kind;
 use crate::scope::{Scope, Stops};
 use crate::widget_settings::{Opt, get_bool, get_str};
@@ -801,6 +801,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
         act(d, cx, sleep::Act::Select((sel + 1) % n));
     };
     let field = field(ctx, cx, kf(0, 0));
+    let glide = Glide::new(ctx);
     div()
         .size_full()
         .p(px(tk.pad()))
@@ -941,14 +942,19 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                 .h(px(24.0))
                 .items_center()
                 .gap(px(16.0))
+                // Each half is as wide as its content plus an equal share of what is left over,
+                // which goes to the label: the switch ends up at the half's right edge.
                 .child(
                     div()
                         .flex()
                         .flex_row()
+                        .flex_auto()
+                        .min_w_0()
                         .items_center()
                         .gap(px(6.0))
                         .child(
                             div()
+                                .flex_auto()
                                 .text_size(px(tk.font_small()))
                                 .text_color(if dry { tk.text() } else { tk.dim() })
                                 .child("Dry run"),
@@ -956,6 +962,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                         .child(parts::switch(
                             "dry run",
                             dry,
+                            glide.to("switch", 0, if dry { 1.0 } else { 0.0 }, 120.0),
                             "Dry run",
                             kf(layout.k_toggles, 0),
                             tk,
@@ -968,16 +975,20 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                     div()
                         .flex()
                         .flex_row()
+                        .flex_auto()
+                        .min_w_0()
                         .items_center()
                         .gap(px(6.0))
                         .child(
                             parts::elided("Keep screen on")
+                                .flex_auto()
                                 .text_size(px(tk.font_small()))
                                 .text_color(if keep { tk.text() } else { tk.dim() }),
                         )
                         .child(parts::switch(
                             "keep awake",
                             keep,
+                            glide.to("switch", 1, if keep { 1.0 } else { 0.0 }, 120.0),
                             "Keep screen on",
                             kf(layout.k_toggles, 1),
                             tk,
@@ -1066,6 +1077,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                         "time left bar",
                         "Time left",
                         fraction,
+                        Glide::new(ctx).to("bar", 0, fraction.clamp(0.0, 1.0), 300.0),
                         if paused { tk.faint() } else { tk.accent() },
                         tk,
                     ))

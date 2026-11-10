@@ -6,8 +6,8 @@ use crate::kit::{self, Tk, with_alpha};
 use crate::scope::{Scope, Stops};
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, ClickEvent, Div, ElementId, Hsla, Role, SharedString, Stateful, Window, div,
-    px,
+    AnyElement, App, ClickEvent, Div, ElementId, Hsla, Rgba, Role, SharedString, Stateful, Window,
+    div, px,
 };
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -85,6 +85,8 @@ pub struct Face {
     pub enabled: bool,
     /// Under the keyboard cursor.
     pub kfocus: bool,
+    /// The icon's size, if it is not 0.55 of the button's.
+    pub icon: Option<f32>,
 }
 
 impl Default for Face {
@@ -94,6 +96,7 @@ impl Default for Face {
             tint: None,
             enabled: true,
             kfocus: false,
+            icon: None,
         }
     }
 }
@@ -116,6 +119,11 @@ impl Face {
 
     pub fn kfocus(mut self, on: bool) -> Self {
         self.kfocus = on;
+        self
+    }
+
+    pub fn icon_size(mut self, size: f32) -> Self {
+        self.icon = Some(size);
         self
     }
 }
@@ -156,7 +164,7 @@ pub fn icon_button(
                 .active(move |s| s.bg(pressed))
                 .on_click(on_click)
         })
-        .child(kit::icon(icon, size * 0.55, tint));
+        .child(kit::icon(icon, face.icon.unwrap_or(size * 0.55), tint));
     button.into_any_element()
 }
 
@@ -173,6 +181,7 @@ pub fn text_button(
     let text: SharedString = text.into();
     let name = name.unwrap_or_else(|| text.to_string());
     let (hover, pressed, accent) = (tk.hover(), tk.pressed(), tk.accent());
+    let accent_fill = accent;
     let button = div()
         .id(id)
         .role(Role::Button)
@@ -198,23 +207,32 @@ pub fn text_button(
         .when(!face.enabled, |b| b.opacity(0.45))
         .when(face.enabled, |b| {
             b.cursor_pointer()
-                .hover(move |s| if primary { s } else { s.bg(hover) })
-                .active(move |s| if primary { s } else { s.bg(pressed) })
+                .hover(move |s| s.bg(if primary { value_scaled(accent_fill, 1.1) } else { hover }))
+                .active(move |s| {
+                    s.bg(if primary { value_scaled(accent_fill, 1.0 / 1.2) } else { pressed })
+                })
                 .on_click(on_click)
         })
         .child(text);
     button.into_any_element()
 }
 
-/// An on/off switch with a keyboard cursor ring around it.
+/// An on/off switch with a keyboard cursor ring around it. `slide` is how far the knob has got
+/// to its "on" place (0 to 1): it glides there, and the track's color with it.
 pub fn switch(
     id: impl Into<ElementId>,
     on: bool,
+    slide: f32,
     label: &'static str,
     kfocus: bool,
     tk: &Tk,
     on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> Stateful<Div> {
+    let s = slide.clamp(0.0, 1.0);
+    let (off_track, on_track) = (Rgba::from(tk.track()), Rgba::from(tk.accent()));
+    let track = lerp(off_track, on_track, s);
+    let (off_knob, on_knob) = (Rgba::from(tk.dim()), Rgba::from(tk.on_accent()));
+    let knob = lerp(off_knob, on_knob, s);
     div()
         .id(id)
         .role(Role::Switch)
@@ -232,7 +250,7 @@ pub fn switch(
         .w(px(40.0))
         .h(px(22.0))
         .rounded(px((tk.radius_small()).min(11.0)))
-        .bg(if on { tk.accent() } else { tk.track() })
+        .bg(track)
         .cursor_pointer()
         .on_click(on_click)
         .when(kfocus, |s| {
@@ -252,15 +270,48 @@ pub fn switch(
             div()
                 .absolute()
                 .top(px(3.0))
-                .left(px(if on { 21.0 } else { 3.0 }))
+                .left(px(3.0 + 18.0 * s))
                 .size(px(16.0))
                 .rounded(px((tk.radius_small() - 3.0).clamp(0.0, 8.0)))
-                .bg(if on { tk.on_accent() } else { tk.dim() }),
+                .bg(knob),
         )
 }
 
-/// A thin progress bar `frac` (0 to 1) full, for screen readers a gauge called `label`.
-pub fn bar(id: &'static str, label: &'static str, frac: f32, tint: Hsla, tk: &Tk) -> Stateful<Div> {
+/// `c` with its brightness (the largest of its channels) times `f`: Slint's `brighter(f - 1)` and
+/// `darker(1 / f - 1)`.
+fn value_scaled(c: Hsla, f: f32) -> Hsla {
+    let c = Rgba::from(c);
+    Rgba {
+        r: (c.r * f).min(1.0),
+        g: (c.g * f).min(1.0),
+        b: (c.b * f).min(1.0),
+        a: c.a,
+    }
+    .into()
+}
+
+/// `a` of the way to `b` (`t` of 0 to 1), as a color.
+fn lerp(a: Rgba, b: Rgba, t: f32) -> Hsla {
+    let m = |x: f32, y: f32| x + (y - x) * t;
+    Rgba {
+        r: m(a.r, b.r),
+        g: m(a.g, b.g),
+        b: m(a.b, b.b),
+        a: m(a.a, b.a),
+    }
+    .into()
+}
+
+/// A thin progress bar `frac` (0 to 1) full, for screen readers a gauge called `label`. The fill
+/// shows `shown`, which glides to `frac` (Slint's bar slides to a new reading).
+pub fn bar(
+    id: &'static str,
+    label: &'static str,
+    frac: f32,
+    shown: f32,
+    tint: Hsla,
+    tk: &Tk,
+) -> Stateful<Div> {
     let frac = frac.clamp(0.0, 1.0);
     div()
         .id(id)
@@ -279,7 +330,7 @@ pub fn bar(id: &'static str, label: &'static str, frac: f32, tint: Hsla, tk: &Tk
         .child(
             div()
                 .h_full()
-                .w(gpui::relative(frac))
+                .w(gpui::relative(shown.clamp(0.0, 1.0)))
                 .rounded_full()
                 .bg(tint),
         )

@@ -1,7 +1,7 @@
 //! Claude usage: the current 5-hour window, the models in it, tokens per hour, today and the
 //! week. Round: the window's progress as a ring.
 
-use super::charts::{Gauge, Graph, bar, percent};
+use super::charts::{Gauge, Glide, Graph, bar, percent};
 use super::parts::{head, muted, page, stat};
 use crate::dash::Dash;
 use crate::widgets::Ctx;
@@ -21,7 +21,7 @@ pub fn render(ctx: &Ctx, _cx: &mut Context<Dash>) -> AnyElement {
             g.big = "idle".into();
             g.caption = u.plan.clone();
         }
-        return g.element(ctx.w, tk, Vec::new());
+        return g.element(ctx, Vec::new());
     }
     let plan = {
         let text = u.plan.clone();
@@ -99,6 +99,7 @@ pub fn render(ctx: &Ctx, _cx: &mut Context<Dash>) -> AnyElement {
             "claude-window",
             "5-hour window",
             u.window_progress,
+            Glide::new(ctx).to("bar", 0, u.window_progress.clamp(0.0, 1.0), 300.0),
             tk.accent(),
             true,
             tk,
