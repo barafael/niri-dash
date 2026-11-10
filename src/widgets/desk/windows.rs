@@ -236,7 +236,8 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                     .h(px(26.0))
                     .px(px(6.0))
                     .flex()
-                    .items_end()
+                    // Slint's label is asked to sit at the bottom but is drawn centered.
+                    .items_center()
                     .child(parts::section_label(r.title.clone(), tk).w_full())
                     .into_any_element();
             }
@@ -277,7 +278,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
             .pl(px(pad_l))
             .pr(px(4.0))
             .gap(px(gap))
-            .on_mouse_down(gpui::MouseButton::Left, crate::kit::own_press)
+            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(move |d, _: &ClickEvent, _, cx| {
                 d.tx.windows.tell(Command::Focus(wid));
                 shared::hide(d, cx);

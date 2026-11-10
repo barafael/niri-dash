@@ -86,12 +86,18 @@ pub fn empty(text: impl Into<SharedString>, tk: &Tk) -> Div {
         .flex_1()
         .min_h_0()
         .flex()
+        .flex_col()
         .items_center()
         .justify_center()
-        .text_center()
         .text_size(px(tk.font_body()))
         .text_color(tk.faint())
-        .child(text.into())
+        .child(
+            div()
+                .w_full()
+                .text_center()
+                .debug_selector(|| "empty state".into())
+                .child(text.into()),
+        )
 }
 
 /// A widget's header: icon, title, and what goes at the right end.
@@ -149,7 +155,7 @@ pub fn icon_button(
             b.cursor_pointer()
                 .hover(move |s| s.bg(hover))
                 .active(move |s| s.bg(pressed))
-                .on_mouse_down(gpui::MouseButton::Left, crate::kit::own_press)
+                .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_click(move |e, w, c| {
                     // A button in a row is not a click on the row.
                     c.stop_propagation();
@@ -216,7 +222,7 @@ pub fn text_button(
             b.cursor_pointer()
                 .hover(move |s| s.bg(hover))
                 .active(move |s| s.bg(pressed))
-                .on_mouse_down(gpui::MouseButton::Left, crate::kit::own_press)
+                .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_click(move |e, w, c| {
                     c.stop_propagation();
                     on_click(e, w, c)
@@ -256,21 +262,26 @@ pub fn row(
         .flex_none()
         .w_full()
         .h(px(height))
+        .relative()
         .rounded(px(tk.radius_small().min(height / 2.0)))
-        .border_2()
-        .border_color(if focus {
-            tk.accent()
-        } else {
-            gpui::transparent_black()
+        // The cursor's ring is drawn over the row, as in Slint, where a border takes no room:
+        // what is in the row stays where the row's padding puts it.
+        .when(focus, |r| {
+            r.child(
+                div()
+                    .absolute()
+                    .inset_0()
+                    .rounded(px(tk.radius_small().min(height / 2.0)))
+                    .border_2()
+                    .border_color(tk.accent()),
+            )
         })
         .when(focus, |r| r.bg(hover))
         .when(enabled, |r| {
             r.hover(move |s| s.bg(hover))
                 .active(move |s| s.bg(pressed))
                 .when_some(on_click, |r, f| {
-                    r.cursor_pointer()
-                        .on_mouse_down(gpui::MouseButton::Left, crate::kit::own_press)
-                        .on_click(move |e, w, c| f(e, w, c))
+                    r.cursor_pointer().on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation()).on_click(move |e, w, c| f(e, w, c))
                 })
         })
 }
@@ -349,7 +360,8 @@ pub fn ring(value: f32, thickness: f32, tint: Hsla, track: Hsla) -> impl IntoEle
                 bounds.origin.x + bounds.size.width / 2.0,
                 bounds.origin.y + bounds.size.height / 2.0,
             );
-            let r = (side / 2.0 - thickness / 2.0 - 0.5).max(1.0);
+            // The Slint ring's stroke sits a whole thickness in from the edge of its box.
+            let r = (side / 2.0 - thickness).max(1.0);
             let at = |frac: f32| {
                 let a = frac * std::f32::consts::TAU;
                 point(c.x + px(r * a.sin()), c.y - px(r * a.cos()))

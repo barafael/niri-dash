@@ -21,7 +21,7 @@
 mod live;
 
 use crate::Control;
-use crate::dash::{Dash, Place};
+use crate::dash::{Dash, NavOp, Place};
 use crate::testing::Harness;
 use crate::theme;
 use std::collections::{BTreeMap, HashSet, VecDeque};
@@ -228,11 +228,9 @@ const WIDGET: &[(u32, &str)] = &[
     (2, "ctrl+right"),
     (2, "w"),
     (2, "d"),
-    // Moving the widget, and sizing it in edit mode.
-    (2, "ctrl+shift+H"),
-    (2, "ctrl+shift+J"),
-    (1, "ctrl+shift+K"),
-    (1, "ctrl+shift+L"),
+    // The move and resize modes, and what their keys do.
+    (3, "ctrl+m"),
+    (3, "ctrl+r"),
     (2, "shift+J"),
     (1, "shift+L"),
     (2, "f"),
@@ -247,7 +245,7 @@ const WIDGET: &[(u32, &str)] = &[
 ];
 
 /// Edit mode: the keys its controls might take (the sidebar's rows, the widget being worked on:
-/// size it, move it, pick the next, reshape, pin, remove), and the ways out.
+/// pick the next, move or resize it, reshape, pin, remove), and the ways out.
 const EDIT: &[(u32, &str)] = &[
     (14, "tab"),
     (5, "backtab"),
@@ -263,10 +261,8 @@ const EDIT: &[(u32, &str)] = &[
     (3, "J"),
     (3, "K"),
     (3, "L"),
-    (3, "ctrl+h"),
-    (3, "ctrl+j"),
-    (3, "ctrl+k"),
-    (3, "ctrl+l"),
+    (3, "ctrl+m"),
+    (3, "ctrl+r"),
     (4, "w"),
     (4, "a"),
     (4, "s"),
@@ -284,6 +280,37 @@ const EDIT: &[(u32, &str)] = &[
     (2, "o"),
     (2, "p"),
     (2, "x"),
+];
+
+/// The move or resize mode (Ctrl+M, Ctrl+R) is on: its keys, the ones that switch or end it, and
+/// others that must do nothing until it ends.
+const OP: &[(u32, &str)] = &[
+    (8, "h"),
+    (8, "j"),
+    (8, "k"),
+    (8, "l"),
+    (4, "H"),
+    (4, "J"),
+    (4, "K"),
+    (4, "L"),
+    (3, "left"),
+    (3, "down"),
+    (3, "up"),
+    (3, "right"),
+    (2, "shift+left"),
+    (2, "shift+right"),
+    (3, "ctrl+m"),
+    (3, "ctrl+r"),
+    (6, "esc"),
+    (1, "ctrl+e"),
+    (1, "f"),
+    (1, "x"),
+    (1, "o"),
+    (1, "p"),
+    (1, "enter"),
+    (1, "tab"),
+    (1, "e"),
+    (1, "s"),
 ];
 
 /// A text field of the settings card has the keyboard: what is typed into it, and the ways out.
@@ -471,6 +498,9 @@ impl Monkey {
                 "esc".into()
             }
             (None, Place::Hints) => self.hint_key(h),
+            (None, Place::Widget | Place::Edit) if h.read(|d| d.op() != NavOp::None) => {
+                self.rng.weighted(OP).into()
+            }
             (None, Place::Widget) => self.rng.weighted(WIDGET).into(),
             (None, Place::Edit) => {
                 if h.read(|d| d.edit.field.focused) {
@@ -696,16 +726,21 @@ fn kind_name(d: &Dash) -> String {
 
 /// Where the dashboard is, for the log.
 fn describe(d: &Dash) -> String {
+    let mode = match d.op() {
+        NavOp::None => "",
+        NavOp::Move => " (move mode)",
+        NavOp::Resize => " (resize mode)",
+    };
     match d.place() {
         Place::Closed => "closed".into(),
-        Place::Edit => "editing".into(),
+        Place::Edit => format!("editing{mode}"),
         Place::Off => "nothing entered".into(),
         Place::Hints => format!("hints, typed {:?}", d.nav.typed),
         Place::Widget => {
             let name = kind_name(d);
             match crate::widgets::describe(d) {
-                Some(what) => format!("in {name}: {what}"),
-                None => format!("in {name}"),
+                Some(what) => format!("in {name}{mode}: {what}"),
+                None => format!("in {name}{mode}"),
             }
         }
     }

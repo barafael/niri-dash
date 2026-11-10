@@ -644,7 +644,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                     .bg(if here { parts::brighter(raised, 0.15) } else { raised })
                     .hover(move |s| s.bg(parts::brighter(raised, 0.15)))
                     .when(has_default, |c| c.cursor_pointer())
-                    .on_mouse_down(gpui::MouseButton::Left, crate::kit::own_press)
+                    .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_click(cx.listener(move |d, _: &ClickEvent, _, cx| {
                         if has_default {
                             d.tx.notifications.tell(Command::Invoke(nid));

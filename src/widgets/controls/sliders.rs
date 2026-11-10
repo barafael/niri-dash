@@ -87,6 +87,7 @@ pub fn slider(
         ((f32::from(x - bounds.left()) - KNOB / 2.0) / span).clamp(0.0, 1.0)
     };
     let (track, accent, knob, ring) = (tk.track(), tint, tk.knob(), tk.accent());
+    let ms = 100.0 * tk.motion();
     let paint_bounds = bounds.clone();
     let surface = canvas(
         move |b, _, _| {
@@ -95,6 +96,9 @@ pub fn slider(
         move |b, _, window, cx| {
             let mid = b.center().y;
             let width = f32::from(b.size.width);
+            // It glides to a new value (a key step, a change from elsewhere), but follows the
+            // pointer without lag while it drags.
+            let shown = kit::glide(key, value, if cx.has_active_drag() { 0.0 } else { ms }, window);
             window.paint_quad(
                 quad(
                     Bounds::new(point(b.left(), mid - px(3.0)), size(b.size.width, px(6.0))),
@@ -105,7 +109,7 @@ pub fn slider(
                     BorderStyle::default(),
                 ),
             );
-            let x = value * (width - KNOB);
+            let x = shown * (width - KNOB);
             window.paint_quad(quad(
                 Bounds::new(
                     point(b.left(), mid - px(3.0)),
@@ -216,7 +220,7 @@ pub fn icon_button(
         .cursor_pointer()
         .hover(move |s| s.bg(hover))
         .active(move |s| s.bg(pressed))
-        .on_mouse_down(gpui::MouseButton::Left, crate::kit::own_press)
+        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(on_click)
         .child(kit::icon(icon, size * 0.55, tint))
 }
@@ -315,7 +319,8 @@ pub fn paint_ring(
     track: Hsla,
 ) {
     let side = f32::from(b.size.width).min(f32::from(b.size.height));
-    let r = (side / 2.0 - thickness / 2.0 - side * 0.005).max(1.0);
+    // The Slint ring's stroke sits a whole thickness in from the edge of its box.
+    let r = (side / 2.0 - thickness).max(1.0);
     let c = b.center();
     let top = point(c.x, c.y - px(r));
     let radii = point(px(r), px(r));
@@ -366,6 +371,9 @@ pub fn ring(
 ) -> Stateful<gpui::Div> {
     let track = tk.track();
     let value = value.clamp(0.0, 1.0);
+    // Gauges glide to a new value.
+    let key = key_of(id) ^ 0x5151;
+    let ms = 400.0 * tk.motion();
     let label: SharedString = label.into();
     let selector = label.to_string();
     div()
@@ -382,7 +390,10 @@ pub fn ring(
         .child(
             canvas(
                 |_, _, _| {},
-                move |b, _, window, _| paint_ring(window, b, value, thickness, tint, track),
+                move |b, _, window, _| {
+                    let shown = kit::glide(key, value, ms, window);
+                    paint_ring(window, b, shown, thickness, tint, track)
+                },
             )
             .absolute()
             .size_full(),
@@ -445,7 +456,7 @@ pub fn ring_knob(
         .rounded_full()
         .when(kfocus, |d| d.bg(tk.hover()))
         .cursor_pointer()
-        .on_mouse_down(gpui::MouseButton::Left, crate::kit::own_press)
+        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(on_click)
         .on_scroll(move |ev: &ScrollEvent, window, cx| {
             cx.stop_propagation();
@@ -463,7 +474,12 @@ pub fn ring_knob(
                 {
                     let track = tk.track();
                     let thickness = (side * 0.07).max(6.0);
-                    move |b, _, window, _| paint_ring(window, b, value, thickness, tint, track)
+                    let key = key_of(id) ^ 0xA0A0;
+                    let ms = 100.0 * tk.motion();
+                    move |b, _, window, _| {
+                        let shown = kit::glide(key, value, ms, window);
+                        paint_ring(window, b, shown, thickness, tint, track)
+                    }
                 },
             )
             .absolute()
@@ -493,15 +509,55 @@ pub fn ring_knob(
 }
 
 /// A switch that is only drawn: the row or button around it is what is clicked.
-pub fn switch_view(on: bool, enabled: bool, kfocus: bool, tk: &Tk) -> gpui::Div {
+pub fn switch_view(key: u64, on: bool, enabled: bool, kfocus: bool, tk: &Tk) -> gpui::Div {
     let radius = tk.radius_small().min(11.0);
+    let thumb_radius = (tk.radius_small() - 3.0).clamp(0.0, 8.0);
+    let (accent, track, on_accent, dim) = (tk.accent(), tk.track(), tk.on_accent(), tk.dim());
+    let ms = 120.0 * tk.motion();
+    // The track changes color and the knob slides over `ms`, as Slint's switch does.
+    let surface = canvas(
+        |_, _, _| {},
+        move |b, _, window, _| {
+            let t = kit::glide(key, if on { 1.0 } else { 0.0 }, ms, window);
+            let mix = |a: Hsla, z: Hsla| -> Hsla {
+                let (a, z) = (gpui::Rgba::from(a), gpui::Rgba::from(z));
+                gpui::Rgba {
+                    r: a.r + (z.r - a.r) * t,
+                    g: a.g + (z.g - a.g) * t,
+                    b: a.b + (z.b - a.b) * t,
+                    a: a.a + (z.a - a.a) * t,
+                }
+                .into()
+            };
+            window.paint_quad(quad(
+                b,
+                px(radius),
+                mix(track, accent),
+                0.0,
+                gpui::transparent_black(),
+                BorderStyle::default(),
+            ));
+            window.paint_quad(quad(
+                Bounds::new(
+                    point(b.left() + px(3.0 + 18.0 * t), b.top() + px(3.0)),
+                    size(px(16.0), px(16.0)),
+                ),
+                px(thumb_radius),
+                if on { on_accent } else { dim },
+                0.0,
+                gpui::transparent_black(),
+                BorderStyle::default(),
+            ));
+        },
+    )
+    .absolute()
+    .size_full();
     div()
         .flex_none()
         .relative()
         .w(px(40.0))
         .h(px(22.0))
-        .rounded(px(radius))
-        .bg(if on { tk.accent() } else { tk.track() })
+        .child(surface)
         .when(!enabled, |s| s.opacity(0.4))
         .when(kfocus, |s| {
             // Outside the track, so that it shows on the accent of a switch that is on.
@@ -517,15 +573,6 @@ pub fn switch_view(on: bool, enabled: bool, kfocus: bool, tk: &Tk) -> gpui::Div 
                     .border_color(tk.accent()),
             )
         })
-        .child(
-            div()
-                .absolute()
-                .top(px(3.0))
-                .left(px(if on { 21.0 } else { 3.0 }))
-                .size(px(16.0))
-                .rounded(px((radius - 3.0).clamp(0.0, 8.0)))
-                .bg(if on { tk.on_accent() } else { tk.dim() }),
-        )
 }
 
 /// A switch with a name, which is the whole of the control: it flips on a click anywhere in it.
@@ -546,11 +593,9 @@ pub fn switch_button(
         .aria_selected(kfocus)
         .debug_selector(move || label.to_string())
         .flex_none()
-        .child(switch_view(on, enabled, kfocus, tk));
+        .child(switch_view(key_of(id) ^ 0x5717, on, enabled, kfocus, tk));
     if enabled {
-        b.cursor_pointer()
-            .on_mouse_down(gpui::MouseButton::Left, crate::kit::own_press)
-            .on_click(on_click)
+        b.cursor_pointer().on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation()).on_click(on_click)
     } else {
         b
     }
@@ -566,6 +611,10 @@ pub fn scroll_list(
 ) -> gpui::Div {
     let (subtle, faint) = (tk.subtle(), tk.faint());
     let for_bar = handle.clone();
+    // The bar sits in the card's padding, beside the rows (so they are as wide as the header
+    // above them); a tight padding has no room for it and keeps a gutter of 10 px.
+    let in_padding = tk.pad() >= 8.0;
+    let beside = if in_padding { (tk.pad() + 4.0) / 2.0 } else { -1.0 };
     div()
         .relative()
         .flex_1()
@@ -575,6 +624,7 @@ pub fn scroll_list(
             div()
                 .id(ElementId::from(id))
                 .size_full()
+                .when(!in_padding, |l| l.pr(px(10.0)))
                 .overflow_y_scroll()
                 .track_scroll(handle)
                 .flex()
@@ -619,7 +669,7 @@ pub fn scroll_list(
             )
             .absolute()
             .top_0()
-            .right_0()
+            .right(px(-beside))
             .h_full()
             .w(px(4.0)),
         )

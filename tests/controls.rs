@@ -485,33 +485,131 @@ fn night_light_kwin() {
     assert_eq!((status.as_str(), note.as_str()), ("Paused", "Paused by another program"));
 }
 
-/// A double click on a widget's own control is two presses of that control, not the double click
-/// that picks the widget up.
-fn double_click_on_a_control_does_not_pick_the_widget_up() {
+fn top_of(h: &Harness, selector: &'static str) -> f32 {
+    f32::from(
+        h.bounds_of(selector)
+            .unwrap_or_else(|| panic!("nothing called {selector:?} on screen"))
+            .top(),
+    )
+}
+
+fn width_of(h: &Harness, selector: &'static str) -> f32 {
+    f32::from(
+        h.bounds_of(selector)
+            .unwrap_or_else(|| panic!("nothing called {selector:?} on screen"))
+            .size
+            .width,
+    )
+}
+
+/// What the Slint widgets' layout did that a flexbox does not by itself: the profile row sits
+/// under the ring whatever the height of the card (the ring row can't grow past its ring), and
+/// each profile starts from the width of its name.
+fn battery_layout_follows_slint() {
+    let saver_top = |rows: u32| {
+        let mut h = dashboard(&format!("    battery col=0 row=0 width=4 height={rows}"));
+        h.send(power::Event::State(Demo::new().power));
+        top_of(&h, "Saver")
+    };
+    assert!(near(saver_top(3), saver_top(4)), "the profiles moved with the height");
+    let mut h = dashboard("    battery col=0 row=0 width=4 height=3");
+    h.send(power::Event::State(Demo::new().power));
+    assert!(
+        width_of(&h, "Performance") > width_of(&h, "Saver"),
+        "the profiles share the row equally instead of by their names"
+    );
+}
+
+/// The session buttons are as wide as their labels and share what is left, as in Slint.
+fn session_buttons_follow_their_labels() {
+    let h = dashboard("    session col=0 row=0 width=5 height=1");
+    assert!(
+        width_of(&h, "Power off") > width_of(&h, "Lock"),
+        "the buttons are all as wide as each other"
+    );
+}
+
+/// A widget whose content is taller than its card starts at the top (Slint's centered layout
+/// does); one that fits is centered. The night light's header is at the card's padding on a card
+/// one cell high.
+fn night_light_overflow_starts_at_the_top() {
+    let h = dashboard("    night-light col=0 row=0 width=3 height=1");
+    let (_, y, _, height) = h
+        .read(|d| d.card_rect(d.tiles[0].id()))
+        .expect("the night light's card");
+    let switch = h.bounds_of("Night light").expect("the switch");
+    let top = f32::from(switch.top()) - y;
+    // Header 28 high under the padding; the switch 22 in the middle of it. Header, slider and
+    // the space between them are 60 high.
+    let overflows = height - 32.0 < 60.0;
+    let expected = if overflows { 16.0 + 3.0 } else { 3.0 + (height - 60.0) / 2.0 };
+    assert!(
+        (top - expected).abs() < 1.5,
+        "the switch is {top} px under the top of a card {height} px high, not {expected}"
+    );
+}
+
+/// `Dash::card_size` and `card_rect` say how the frame draws a card, round or not.
+fn card_geometry() {
+    let h = dashboard(
+        "    volume col=0 row=0 width=3 height=3\n    volume col=4 row=0 size=3 shape=\"round\"",
+    );
+    let (w, hh, round) = h.read(|d| d.card_size(d.tiles[0].id())).unwrap();
+    assert!(!round && w > 0.0 && hh > 0.0);
+    let (rw, rh, rround) = h.read(|d| d.card_size(d.tiles[1].id())).unwrap();
+    assert!(rround && near(rw, rh));
+    let (_, _, cw, ch) = h.read(|d| d.card_rect(d.tiles[0].id())).unwrap();
+    assert!(near(cw, w) && near(ch, hh));
+    // The slider row fills the card's width inside its padding.
+    let slider = h.bounds_of("Volume").unwrap();
+    assert!(f32::from(slider.size.width) < w);
+}
+
+/// A double click on a control is not a double click on the card behind it: it must not pick
+/// the widget up (the carry), whatever the control.
+fn double_click_on_controls_does_not_carry() {
     let mut h = dashboard(
-        "    battery col=0 row=0 width=4 height=4\n    session col=4 row=0 width=5 height=2\n    volume col=0 row=4 size=3 shape=\"round\"",
+        "    battery col=0 row=0 width=4 height=3\n    volume col=4 row=0 width=4 height=3\n    \
+         session col=0 row=3 width=5 height=1\n    night-light col=5 row=3 width=4 height=2\n    \
+         brightness col=9 row=0 width=3 height=1",
     );
     h.send(power::Event::State(Demo::new().power));
-    h.send(audio::Event::State(audio::State {
-        volume: 0.5,
-        ..Default::default()
-    }));
-    for control in ["Saver", "Block sleep and screen locking", "Lock", "Volume"] {
+    for control in [
+        "Saver",
+        "Block sleep and screen locking",
+        "Mute",
+        "Lock",
+        "Suspend",
+        "3400 K",
+        "Night light",
+    ] {
         let b = h
             .bounds_of(control)
-            .unwrap_or_else(|| panic!("no {control:?} on screen"));
+            .unwrap_or_else(|| panic!("nothing called {control:?} on screen"));
         let c = b.center();
         h.double_click(f32::from(c.x), f32::from(c.y));
-        let carried = h.read(|d| d.edit.dragging() || d.edit.adjust_id != 0);
-        assert!(!carried, "a double click on {control:?} picked a widget up");
-        // Lock hides the dashboard: up again.
-        h.control(Control::Show);
+        assert_eq!(h.adjust_id(), 0, "a double click on {control:?} picked its widget up");
     }
+    // The sliders and the round knob too (a slider that is switched off lets the press through,
+    // as Slint's disabled touch area does).
+    h.send(brightness::Event::Level(Some(0.7)));
+    let (x, y) = slider_at(&h, "Brightness", 0.5);
+    h.double_click(x, y);
+    assert_eq!(h.adjust_id(), 0, "a double click on the brightness slider picked it up");
+    let mut round = dashboard("    volume col=0 row=0 size=3 shape=\"round\"");
+    let c = round.bounds_of("Volume").expect("the knob").center();
+    round.double_click(f32::from(c.x), f32::from(c.y));
+    assert_eq!(round.adjust_id(), 0, "a double click on the round knob picked it up");
 }
 
 fn main() {
     let _sandbox = Sandbox::enter(None).expect("a temporary directory for the dashboard's files");
     let scenarios: &[(&str, fn())] = &[
+        ("double click on controls does not carry", double_click_on_controls_does_not_carry),
+        ("battery: layout follows Slint", battery_layout_follows_slint),
+        ("session: buttons follow their labels", session_buttons_follow_their_labels),
+        ("night light: overflow starts at the top", night_light_overflow_starts_at_the_top),
+        ("card geometry", card_geometry),
         ("volume: j and k", volume_keys),
         ("volume: the round knob", volume_knob),
         ("volume: slider mouse and hold", volume_slider_mouse_and_hold),
@@ -525,10 +623,6 @@ fn main() {
         ("battery: round cycles", battery_round_cycles),
         ("night light: gamma", night_light_gamma),
         ("night light: KWin", night_light_kwin),
-        (
-            "controls: a double click doesn't pick the widget up",
-            double_click_on_a_control_does_not_pick_the_widget_up,
-        ),
     ];
     let mut failed = 0;
     for (name, scenario) in scenarios {

@@ -182,6 +182,8 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                     .role(gpui::Role::ProgressIndicator)
                     .aria_label("Claude sessions working")
                     .child(parts::ring(
+                        0xC1A0 + u64::from(id),
+                        400.0 * tk.motion(),
                         frac,
                         (w * 0.06).max(6.0),
                         tk.accent(),
@@ -247,8 +249,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
             .items_center()
             .gap(px(10.0))
             .when(has_window, |r| {
-                r.on_mouse_down(gpui::MouseButton::Left, crate::kit::own_press)
-                    .on_click(cx.listener(move |d, _: &ClickEvent, _, cx| {
+                r.on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation()).on_click(cx.listener(move |d, _: &ClickEvent, _, cx| {
                     let c = &d.widgets.desk.claude;
                     if focus(&d.tx, &c.windows, pid) {
                         shared::hide(d, cx);

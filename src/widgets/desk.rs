@@ -47,13 +47,14 @@ pub fn handles(kind: Kind) -> bool {
 
 /// What the widget of `ctx.tile` draws, in a card of `ctx.w` by `ctx.h` pixels.
 pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
-    match ctx.kind() {
+    let widget = match ctx.kind() {
         Kind::Windows => windows::render(ctx, cx),
         Kind::Notifications => notifications::render(ctx, cx),
         Kind::Tray => tray::render(ctx, cx),
         Kind::Media => media::render(ctx, cx),
         _ => claude::render(ctx, cx),
-    }
+    };
+    crate::kit::slint_lines(widget)
 }
 
 /// What the system reports. `None`: not this group's; `Some(control)`: taken, and the event asks

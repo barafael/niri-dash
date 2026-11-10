@@ -61,7 +61,7 @@ impl Dash {
         }
     }
 
-    /// Ctrl+Shift+h/j/k/l: move widget `id` one cell that way.
+    /// Move mode (Ctrl+M): move widget `id` one cell that way.
     pub fn nudge_widget(&mut self, id: u32, dir: Dir) {
         let (dc, dr) = dir.step();
         let Some(r) = self.layout.get(id).map(Placed::rect) else {
@@ -75,12 +75,10 @@ impl Dash {
         self.place_by_key(id, target, (dc, dr));
     }
 
-    /// The keyboard's sizing: `key` (h narrower, l wider, k shorter, j taller) changes widget `id`
-    /// by a cell, from its right or bottom side, or from the left or top one when `flip`ped. A
-    /// widget that can't grow that way grows the other way instead.
-    pub fn size_widget(&mut self, id: u32, key: Dir, flip: bool) {
-        let (first, second) = nav::size_edges(key, flip);
-        let grow = second.is_some();
+    /// Resize mode (Ctrl+R): pull the `edge` side of widget `id` out by a cell, or in when not
+    /// `grow`ing. A widget that can't grow that way grows the other way instead.
+    pub fn size_widget(&mut self, id: u32, edge: Dir, grow: bool) {
+        let (first, second) = nav::size_edges(edge, grow);
         let mut refused = None;
         for edge in std::iter::once(first).chain(second) {
             let target = {
@@ -103,8 +101,8 @@ impl Dash {
         }
     }
 
-    /// Tell the status line how big the widget is now.
-    fn size_note(&mut self, id: u32) {
+    /// Tell the quick tips how big the widget is now ("Volume 3×2").
+    pub fn size_note(&mut self, id: u32) {
         let note = self.layout.get(id).map(|p| {
             let r = p.rect();
             format!("{} {}×{}", p.kind.info().title, r.w, r.h)

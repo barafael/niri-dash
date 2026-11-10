@@ -3,6 +3,9 @@
 
 use crate::theme::{Color, ColorRole, Look};
 use gpui::prelude::*;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::time::Instant;
 use gpui::{
     AnyElement, App, ClickEvent, ElementId, Hsla, Role, SharedString, Window, div, px, svg,
 };
@@ -137,6 +140,9 @@ pub fn icon_button(
         .cursor_pointer()
         .hover(move |s| s.bg(hover))
         .active(move |s| s.bg(pressed))
+        // A press on a control is not a press on the card behind it (a double click on a control
+        // must not pick the widget up in edit mode).
+        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(on_click)
         .child(icon(name, size * 0.52, tint))
 }
@@ -171,6 +177,9 @@ pub fn text_button(
                 .hover(move |s| s.bg(hover))
                 .active(move |s| s.bg(pressed))
         })
+        // A press on a control is not a press on the card behind it (a double click on a control
+        // must not pick the widget up in edit mode).
+        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(on_click)
         .child(label)
 }
@@ -195,6 +204,9 @@ pub fn switch(
         .bg(if on { tk.accent() } else { tk.track() })
         .cursor_pointer()
         .relative()
+        // A press on a control is not a press on the card behind it (a double click on a control
+        // must not pick the widget up in edit mode).
+        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(on_click)
         .child(
             div()
@@ -259,9 +271,103 @@ pub fn empty(text: impl Into<SharedString>, tk: &Tk) -> AnyElement {
         .into_any_element()
 }
 
-/// For the mouse-down of a control a widget builds itself: a press on a control is not a press on
-/// the card behind it (a double click on a control must not pick the widget up in edit mode).
-/// `.on_mouse_down(MouseButton::Left, kit::own_press)`
-pub fn own_press(_: &gpui::MouseDownEvent, _: &mut Window, cx: &mut App) {
-    cx.stop_propagation();
+/// The family the system's fontconfig gives "sans-serif" (Noto Sans on most desktops), which is
+/// what the Slint version drew with. GPUI's own default lands on a variable font whose semibold
+/// and bold weights it cannot pick, so titles came out regular. `None` where `fc-match` is not
+/// there: the caller keeps GPUI's choice. Asked once.
+pub fn system_font() -> Option<SharedString> {
+    use std::sync::OnceLock;
+    static FAMILY: OnceLock<Option<String>> = OnceLock::new();
+    FAMILY
+        .get_or_init(|| {
+            let out = std::process::Command::new("fc-match")
+                .args(["-f", "%{family[0]}", "sans-serif"])
+                .output()
+                .ok()?;
+            let name = String::from_utf8(out.stdout).ok()?;
+            let name = name.trim();
+            (out.status.success() && !name.is_empty()).then(|| name.to_string())
+        })
+        .clone()
+        .map(SharedString::from)
+}
+
+/// The height of a line of text, in em: Noto Sans's ascent plus descent, which is what the Slint
+/// version's `Text` was as high as. GPUI's own default (1.618) makes every text row taller, so
+/// cards wrapped in [`slint_lines`] lay out as the Slint ones did.
+pub const LINE: f32 = 1.362;
+
+/// `content` with the line height of the Slint version, for the whole widget.
+pub fn slint_lines(content: AnyElement) -> AnyElement {
+    div()
+        .size_full()
+        .line_height(gpui::relative(LINE))
+        .child(content)
+        .into_any_element()
+}
+
+/// A value on its way to a new one, for what glides (Slint's `animate`).
+struct Glide {
+    from: f32,
+    to: f32,
+    since: Instant,
+}
+
+thread_local! {
+    /// What each slider, knob and gauge shows right now, by a key of its own.
+    static GLIDES: RefCell<HashMap<u64, Glide>> = RefCell::new(HashMap::new());
+}
+
+/// Where a value is `elapsed` ms into gliding from `from` to `to` over `ms` (ease-out), and
+/// whether it has arrived.
+pub fn eased(from: f32, to: f32, elapsed: f32, ms: f32) -> (f32, bool) {
+    let t = (elapsed / ms.max(0.001)).clamp(0.0, 1.0);
+    (from + (to - from) * (1.0 - (1.0 - t) * (1.0 - t)), t >= 1.0)
+}
+
+/// What `key` shows now when it should be at `target`: it glides there over `ms` (0: at once),
+/// easing out, and asks for frames until it has arrived. Call it while painting.
+pub fn glide(key: u64, target: f32, ms: f32, window: &mut gpui::Window) -> f32 {
+    GLIDES.with(|g| {
+        let mut g = g.borrow_mut();
+        let now = Instant::now();
+        let at = |s: &Glide| eased(s.from, s.to, now.duration_since(s.since).as_secs_f32() * 1000.0, ms);
+        let Some(state) = g.get_mut(&key) else {
+            g.insert(key, Glide { from: target, to: target, since: now });
+            return target;
+        };
+        if ms <= 0.0 {
+            *state = Glide { from: target, to: target, since: now };
+            return target;
+        }
+        if (state.to - target).abs() > f32::EPSILON {
+            let (shown, _) = at(state);
+            *state = Glide { from: shown, to: target, since: now };
+        }
+        let (shown, done) = at(state);
+        if !done {
+            window.request_animation_frame();
+        }
+        shown
+    })
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_glide_eases_out_and_arrives() {
+        let (start, done) = eased(0.0, 1.0, 0.0, 100.0);
+        assert!(start == 0.0 && !done);
+        let (half, done) = eased(0.0, 1.0, 50.0, 100.0);
+        // Ease-out: more than half of the way at half of the time.
+        assert!(half > 0.5 && half < 1.0 && !done);
+        let (end, done) = eased(0.2, 0.8, 100.0, 100.0);
+        assert!(end == 0.8 && done);
+        // Past the end it stays, and a time of nothing arrives at once.
+        assert_eq!(eased(0.0, 1.0, 500.0, 100.0), (1.0, true));
+        assert_eq!(eased(0.0, 1.0, 0.0, 0.0), (0.0, false));
+    }
 }

@@ -674,6 +674,44 @@ fn media_shapes() {
     }
 }
 
+/// How far the play button is from the bottom of the media card.
+fn media_gap_below(h: &Harness) -> f32 {
+    let (_, y, _, height) = h.read(|d| d.card_rect(d.tiles[0].id())).expect("the card");
+    let play = h.bounds_of("Pause").expect("the play button");
+    y + height - f32::from(play.bottom())
+}
+
+/// With art the media card's top takes the room and the controls sit at the bottom; without it
+/// the text, the bar and the controls are one block in the middle, as in Slint.
+fn media_layout_with_and_without_art() {
+    let mut h = alone("media", 5, 3);
+    h.send(media::Event::State(Some(playing())));
+    let with = media_gap_below(&h);
+    assert!(with < 15.0, "with art the controls are {with} px from the bottom");
+    let mut plain = playing();
+    plain.art = None;
+    h.send(media::Event::State(Some(plain)));
+    let without = media_gap_below(&h);
+    assert!(without > 30.0, "without art the controls are {without} px from the bottom");
+}
+
+/// A double click on a control is not a double click on the card behind it: the widget is not
+/// picked up (the carry). Rows, buttons and the media controls.
+fn double_click_on_controls_does_not_carry() {
+    let mut h = dashboard();
+    h.send(windows::Event::State(Demo::new().windows));
+    h.send(media::Event::State(Some(playing())));
+    for control in ["Mozilla Firefox", "Close Mozilla Firefox", "Pause", "Next track"] {
+        let Some(b) = h.bounds_of(control) else {
+            continue;
+        };
+        let c = b.center();
+        h.double_click(f32::from(c.x), f32::from(c.y));
+        assert_eq!(h.adjust_id(), 0, "a double click on {control:?} picked the widget up");
+    }
+    assert!(h.has("Pause") || h.has("Play"), "the media controls were never exercised");
+}
+
 // ---- stress --------------------------------------------------------------------------------
 
 /// Random keys, clicks and wheel turns on a dashboard of nothing but the desk's widgets, on the
@@ -790,6 +828,8 @@ fn main() {
         ("notifications_dnd", notifications_dnd),
         ("media_controls", media_controls),
         ("media_shapes", media_shapes),
+        ("double_click_on_controls_does_not_carry", double_click_on_controls_does_not_carry),
+        ("media_layout_with_and_without_art", media_layout_with_and_without_art),
         ("tray_menu_fuzz", tray_menu_fuzz),
         ("desk_stress", desk_stress),
     ];
