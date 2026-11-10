@@ -39,6 +39,8 @@ dbus-run-session -- bash -c '
   kwin_wayland --virtual --no-lockscreen --no-global-shortcuts --socket dump-$$ --width "$W" --height "$Hh" \
     >"$DUMP_HOME/kwin.log" 2>&1 &
   KW=$!
+  # However this ends (an error, a timeout, Ctrl-C), the compositor and the dashboard go with it.
+  trap '"'"'kill $KW $DP 2>/dev/null'"'"' EXIT
   for i in $(seq 60); do [ -S "$XDG_RUNTIME_DIR/dump-$$" ] && break; sleep 0.2; done
   export WAYLAND_DISPLAY=dump-$$ NIRI_DASH_MOCK=1
   # A desktop turns accessibility on when a screen reader starts.

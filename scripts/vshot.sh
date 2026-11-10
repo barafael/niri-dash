@@ -50,6 +50,8 @@ dbus-run-session -- bash -c '
   kwin_wayland --virtual --no-lockscreen --socket "$VSHOT_SOCKET" --width "$W" --height "$Hh" \
     >"$VSHOT_OUT/kwin.log" 2>&1 &
   KW=$!
+  # However this ends (an error, a timeout, Ctrl-C), the compositor and what ran on it go with it.
+  trap '"'"'kill $KW $(jobs -p) 2>/dev/null'"'"' EXIT
   for i in $(seq 60); do [ -S "$XDG_RUNTIME_DIR/$VSHOT_SOCKET" ] && break; sleep 0.2; done
   export WAYLAND_DISPLAY=$VSHOT_SOCKET
   [ "$VSHOT_MOCK" = 1 ] && export NIRI_DASH_MOCK=1
