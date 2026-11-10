@@ -313,8 +313,9 @@ impl Dash {
             .role(Role::Group)
             .aria_label(title)
             // A widget without a cursor of its own is what the screen reader is on while it is
-            // entered; one with a cursor has a part of it claim the focus instead.
-            .aria_cursor(entered)
+            // entered; one with a cursor has a part of it claim the focus instead (GPUI allows one
+            // claim at a time: a debug build panics on two, nested or not).
+            .aria_cursor(entered && widgets::describe(self).is_none())
             // A screen reader asks for the focus on a part of the widget (GPUI hands it up to
             // here): that enters the widget, as typing its letters does.
             .on_a11y_action(gpui::AccessibleAction::Focus, {

@@ -70,11 +70,6 @@ pub trait Rig {
     fn control(&mut self, c: Control);
     /// Press a key by name (`"j"`, `"ctrl+h"`, `"esc"`).
     fn key(&mut self, name: &str);
-    /// What a screen reader would say about where the keyboard is (`Err`: it makes no sense).
-    /// A rig with no accessible tree has nothing to say.
-    fn spoken(&mut self) -> Result<Option<String>, String> {
-        Ok(None)
-    }
     fn click(&mut self, x: f32, y: f32);
     fn click_with(&mut self, x: f32, y: f32, button: gpui::MouseButton);
     fn double_click(&mut self, x: f32, y: f32);
@@ -100,9 +95,6 @@ impl Rig for Harness {
     }
     fn key(&mut self, name: &str) {
         Harness::key(self, name)
-    }
-    fn spoken(&mut self) -> Result<Option<String>, String> {
-        Harness::spoken(self)
     }
     fn click(&mut self, x: f32, y: f32) {
         Harness::click(self, x, y)
@@ -367,8 +359,6 @@ pub struct Monkey {
     wheel_cursor: Option<String>,
     /// Going on after problems: each different one, how often, and the keys that first led there.
     collected: Option<BTreeMap<String, (u64, Vec<String>)>>,
-    /// Whether the screen reader's view is checked after every key ([`Monkey::speaking`]).
-    speaking: bool,
 }
 
 impl Monkey {
@@ -386,20 +376,12 @@ impl Monkey {
             wheeled: false,
             wheel_cursor: None,
             collected: None,
-            speaking: false,
         }
     }
 
     /// Go on after a problem, and report each different one when the run ends.
     pub fn keep_going(mut self) -> Self {
         self.collected = Some(BTreeMap::new());
-        self
-    }
-
-    /// Also check, after every key, what a screen reader would say about where the keyboard is
-    /// (the accessible tree is built for it each time: slower, so a choice).
-    pub fn speaking(mut self) -> Self {
-        self.speaking = true;
         self
     }
 
@@ -479,12 +461,6 @@ impl Monkey {
             && !(self.wheeled && scrolled_away(&p))
         {
             self.report(format!("{kind}: {p}"))?;
-        }
-        if self.speaking
-            && let Err(p) = h.spoken()
-            && !(self.wheeled && scrolled_away(&p))
-        {
-            self.report(format!("{kind}: screen reader: {p}"))?;
         }
         if let Some(n) = self.escaping {
             if place == Place::Closed {

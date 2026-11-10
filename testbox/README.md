@@ -37,11 +37,11 @@ Each test program is run in a box of its own, so none sees what another left.
   It mounts nothing but the test programs and the dashboard's own program (read-only), and the one
   file the AT-SPI test reads beside itself.
 - **The tests that don't need it stay on the host.** The UI tests of the GPUI dashboard
-  (`cargo test --features testing`: `tests/*.rs`, `edit`, `stress`, `a11y`, `access`, `snapshot`
-  and the widget groups') run it on the mock system in GPUI's headless test platform, in a
-  throwaway home (`Sandbox`), and start nothing. `a11y` and `access` read the accessibility tree
-  GPUI builds in the process (`docs/accessibility.md`); only `atspi` and `orca` put a real window
-  on a real bus. The Slint variant's tests (`cargo test` in `slint/`) do the same.
+  (`cargo test --features testing`: `tests/*.rs`, `edit`, `stress`, `snapshot` and the widget
+  groups') run it on the mock system in GPUI's headless test platform, in a throwaway home
+  (`Sandbox`), and start nothing. GPUI's test window has no screen reader, so only `atspi` and
+  `orca` look at the accessibility tree, on a real bus (`docs/accessibility.md`). The Slint
+  variant's tests (`cargo test` in `slint/`) do the same.
 
 What is left on the host: the app asks fontconfig (`fc-match`, `fc-list`) for fonts, and so does
 every test that draws. They only read. (`snapshot` also opens the GPU, to draw into a texture,

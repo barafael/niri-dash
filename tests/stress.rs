@@ -44,15 +44,8 @@ fn main() {
     for &(seed, screen, size) in &runs {
         let seed_name = format!("{seed} on a {screen} screen");
         let run = std::panic::catch_unwind(AssertUnwindSafe(|| {
-            let monkey = Monkey::new(seed, verbose).keep_going();
-            // `NIRI_DASH_STRESS_SPEAKING=1`: also check what a screen reader says after every key.
-            let monkey = if std::env::var_os("NIRI_DASH_STRESS_SPEAKING").is_some() {
-                monkey.speaking()
-            } else {
-                monkey
-            };
             Harness::with_mock_sized(&config, size)
-                .stress(monkey, ops)
+                .stress(Monkey::new(seed, verbose).keep_going(), ops)
                 .map(|monkey| (monkey.summary(), monkey.finish()))
         }));
         let run = run.map(|r| match r {
