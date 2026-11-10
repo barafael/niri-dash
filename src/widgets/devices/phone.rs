@@ -422,9 +422,10 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                 } else {
                     "–".into()
                 };
+                // As high as the ring and at the top: Slint's row can't grow past its fixed-size
+                // ring.
                 div()
-                    .flex_1()
-                    .min_h_0()
+                    .flex_none()
                     .flex()
                     .flex_row()
                     .items_center()

@@ -549,6 +549,7 @@ pub fn overlay(d: &Dash, tk: &Tk, cx: &mut Context<Dash>) -> Option<AnyElement> 
                 row = row
                     .cursor_pointer()
                     .hover(move |s| s.bg(hover))
+                    .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_click(cx.listener(move |d, _, _, cx| {
                         cx.stop_propagation();
                         menu_activate(d, eid, cx);
@@ -646,6 +647,7 @@ pub fn overlay(d: &Dash, tk: &Tk, cx: &mut Context<Dash>) -> Option<AnyElement> 
             .absolute()
             .size_full()
             .occlude()
+            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(|d, _, _, cx| {
                 close_menu(d);
                 cx.notify();

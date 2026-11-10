@@ -231,6 +231,7 @@ fn button_view(
         })
         .when(!armed, |b| b.hover(move |s| s.bg(hover)).active(move |s| s.bg(pressed)))
         .cursor_pointer()
+        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(on(cx, move |d, cx| press(d, &fit, button, cx)))
         .child(kit::icon(
             button.icon(),
@@ -314,7 +315,8 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                 cx,
                 &fit,
             )
-            .flex_1()
+            // Each starts from the width of its label and they share the rest, as in Slint.
+            .flex_auto()
         }))
         .into_any_element()
 }

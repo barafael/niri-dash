@@ -383,12 +383,23 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
             .items_center()
             .gap(px(4.0))
             .pl(px(4.0))
+            .relative()
             .rounded(px(tk.radius_small().min(6.0)))
-            .border(px(2.0))
-            .border_color(if kf { accent } else { gpui::transparent_black() })
+            // The cursor's ring is drawn over the button; a border takes no room in Slint.
+            .when(kf, |s| {
+                s.child(
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .rounded(px(tk.radius_small().min(6.0)))
+                        .border_2()
+                        .border_color(accent),
+                )
+            })
             .when(kf, |s| s.bg(hover))
             .hover(move |s| s.bg(hover))
             .cursor_pointer()
+            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(on(cx, |d, _| {
                 let v = &mut d.widgets.controls.volume;
                 v.picking = !v.picking;
@@ -428,9 +439,18 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                     .flex()
                     .items_center()
                     .px(px(10.0))
+                    .relative()
                     .rounded(px(tk.radius_small().min(15.0)))
-                    .border(px(2.0))
-                    .border_color(if kf { accent } else { gpui::transparent_black() })
+                    .when(kf, |s| {
+                        s.child(
+                            div()
+                                .absolute()
+                                .inset_0()
+                                .rounded(px(tk.radius_small().min(15.0)))
+                                .border_2()
+                                .border_color(accent),
+                        )
+                    })
                     .bg(if k.default {
                         soft
                     } else if kf {
@@ -442,6 +462,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                     .cursor_pointer()
                     .text_size(px(tk.font_small()))
                     .text_color(if k.default { accent } else { tk.text() })
+                    .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_click(on(cx, move |d, _| {
                         d.tx.audio.tell(Command::SetDefaultSink(sink_id));
                         d.widgets.controls.volume.picking = false;
@@ -565,20 +586,29 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
         scroll_list(("volume-apps", id), &v.scroll, rows, tk)
     });
 
+    // Centered while it fits, from the top when it doesn't (as Slint's layout does).
+    let from_top = lay.show_apps || lay.picking;
     div()
         .size_full()
         .p(px(fit.pad))
         .flex()
         .flex_col()
-        .gap(px(6.0))
-        .when(!(lay.show_apps || lay.picking), |c| c.justify_center())
-        .child(output)
-        .children(sinks)
-        .child(main)
-        .children(mic)
-        .children(separator)
-        .children(nothing)
-        .children(list)
+        .child(
+            div()
+                .w_full()
+                .flex()
+                .flex_col()
+                .gap(px(6.0))
+                .when(from_top, |c| c.h_full())
+                .when(!from_top, |c| c.my_auto())
+                .child(output)
+                .children(sinks)
+                .child(main)
+                .children(mic)
+                .children(separator)
+                .children(nothing)
+                .children(list),
+        )
         .into_any_element()
 }
 
