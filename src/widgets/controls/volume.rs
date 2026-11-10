@@ -19,6 +19,8 @@ use gpui::{
 use niri_dash_system::audio::{Command, Event, Sink};
 use niri_dash_system::{IconSrc, Tell};
 use std::sync::Arc;
+use crate::kit::AriaCursor;
+use crate::kit::AriaState;
 
 /// An app's row in the mixer.
 pub struct Stream {
@@ -370,8 +372,8 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
             .id(ElementId::from(("volume-output", id)))
             .role(Role::Button)
             .aria_label(if lay.picking { "Close output list" } else { "Choose output" })
-            .aria_value(v.sink_name.clone())
-            .aria_selected(kf)
+            .aria_state(v.sink_name.clone())
+            .aria_cursor(kf)
             .debug_selector({
                 let name = if lay.picking { "Close output list" } else { "Choose output" };
                 move || name.to_string()
@@ -428,8 +430,8 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                     .id(ElementId::from(("volume-sink", slot(i))))
                     .role(Role::ListItem)
                     .aria_label(k.name.clone())
-                    .aria_value(if k.default { "default" } else { "" })
-                    .aria_selected(kf)
+                    .aria_state(if k.default { "default" } else { "" })
+                    .aria_cursor(kf)
                     .debug_selector({
                         let name = k.name.clone();
                         move || name.clone()

@@ -18,6 +18,7 @@ use gpui::{AnyElement, ClickEvent, Context, Role, div, px};
 use niri_dash_system::{Tell, host, notifications};
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
+use crate::kit::AriaCursor;
 
 #[derive(Default)]
 pub struct State {
@@ -395,7 +396,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                     .id("pomodoro face")
                     .role(Role::Button)
                     .aria_label(label)
-                    .aria_selected(on)
+                    .aria_cursor(on)
                     .debug_selector(move || label.to_string())
                     .relative()
                     .flex_none()

@@ -9,6 +9,7 @@ use crate::scope::{Scope, Stops};
 use crate::widgets::Ctx;
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, Role, div, px};
+use crate::kit::AriaCursor;
 
 /// Where the project lives.
 pub const REPOSITORY: &str = "github.com/barafael/niri-dash";
@@ -62,7 +63,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                 .id("about-repository")
                 .role(Role::Link)
                 .aria_label(format!("Open {REPOSITORY}"))
-                .aria_selected(ctx.entered)
+                .aria_cursor(ctx.entered)
                 .debug_selector(|| "Open repository".into())
                 .rounded(px(tk.radius_small()))
                 .border_2()

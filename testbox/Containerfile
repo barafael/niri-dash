@@ -3,15 +3,18 @@
 # mounts the test binaries in; nothing else of the host is here.
 #
 #   system   mocks of NetworkManager, BlueZ and UPower on buses of their own (mocks.py)
-#   atspi    a private session bus and accessibility bus, and libatspi's Python bindings
-#   orca     Orca, and KWin as the display it needs
+#   atspi    a private session bus and accessibility bus, and libatspi's Python bindings; the
+#            dashboard itself (GPUI) runs on KWin and publishes its tree through AccessKit
+#   orca     Orca, and KWin as the display it and the dashboard need
 FROM docker.io/library/archlinux:latest
 
 # -u: a partial upgrade leaves libraries the test binaries and the programs disagree about.
+# vulkan-swrast (lavapipe) is the GPU the dashboard's renderer (wgpu) finds in a box that has none.
 RUN pacman -Syu --noconfirm --needed \
         dbus glib2 python-dbusmock python-dbus python-gobject \
         at-spi2-core orca kwin \
         fontconfig freetype2 libxkbcommon wayland ttf-dejavu \
+        vulkan-icd-loader vulkan-swrast mesa libxcb \
     && pacman -Scc --noconfirm
 
 # KWin comes with a file capability (cap_sys_nice, for realtime scheduling), which the box's

@@ -12,6 +12,8 @@ use gpui::prelude::*;
 use gpui::{AnyElement, ClickEvent, Context, Role, div, px};
 use niri_dash_system::{Tell, clipboard};
 use std::sync::Arc;
+use crate::kit::AriaCursor;
+use crate::kit::AriaState;
 
 #[derive(Default)]
 pub struct State {
@@ -428,8 +430,8 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                         } else {
                             day.date.day().to_string()
                         })
-                        .aria_value(if day.today { "today" } else { "" })
-                        .aria_selected(selected)
+                        .aria_state(if day.today { "today" } else { "" })
+                        .aria_cursor(selected)
                         .absolute()
                         .left(px(wn + col as f32 * cw))
                         .top(px((i / 7 + 1) as f32 * ch))

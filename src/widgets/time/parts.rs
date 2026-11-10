@@ -11,6 +11,7 @@ use gpui::{
 };
 use std::cell::RefCell;
 use std::collections::BTreeMap;
+use crate::kit::AriaCursor;
 
 /// The card of widget `id` in pixels, as `ui::frame` draws it, and whether it is drawn round. The
 /// keys need the size the widget is drawn at (which stops there are depends on it).
@@ -146,7 +147,7 @@ pub fn icon_button(
         .id(id)
         .role(Role::Button)
         .aria_label(label)
-        .aria_selected(face.kfocus)
+        .aria_cursor(face.kfocus)
         .debug_selector(move || name)
         .occlude()
         .flex_none()
@@ -186,7 +187,7 @@ pub fn text_button(
         .id(id)
         .role(Role::Button)
         .aria_label(name.clone())
-        .aria_selected(face.kfocus)
+        .aria_cursor(face.kfocus)
         .debug_selector(move || name)
         .occlude()
         .flex_none()
@@ -242,7 +243,7 @@ pub fn switch(
         } else {
             gpui::Toggled::False
         })
-        .aria_selected(kfocus)
+        .aria_cursor(kfocus)
         .debug_selector(move || label.to_string())
         .occlude()
         .flex_none()

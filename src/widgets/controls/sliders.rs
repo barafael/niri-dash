@@ -17,6 +17,7 @@ use std::cell::Cell;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
+use crate::kit::AriaCursor;
 
 /// The knob's diameter, and so how far the slider's ends are from its value.
 const KNOB: f32 = 16.0;
@@ -146,7 +147,7 @@ pub fn slider(
         .aria_min_numeric_value(0.0)
         .aria_max_numeric_value(100.0)
         .aria_numeric_value_step(5.0)
-        .aria_selected(kfocus)
+        .aria_cursor(kfocus)
         .debug_selector(move || selector.clone())
         .relative()
         .flex_none()
@@ -206,7 +207,7 @@ pub fn icon_button(
         .id(ElementId::from(id))
         .role(Role::Button)
         .aria_label(label)
-        .aria_selected(kfocus)
+        .aria_cursor(kfocus)
         .debug_selector(move || selector.clone())
         .flex_none()
         .size(px(size))
@@ -449,7 +450,7 @@ pub fn ring_knob(
         .aria_min_numeric_value(0.0)
         .aria_max_numeric_value(100.0)
         .aria_numeric_value_step(5.0)
-        .aria_selected(kfocus)
+        .aria_cursor(kfocus)
         .debug_selector(move || selector.clone())
         .relative()
         .size_full()
@@ -590,7 +591,7 @@ pub fn switch_button(
         .role(Role::Switch)
         .aria_label(label)
         .aria_toggled(if on { Toggled::True } else { Toggled::False })
-        .aria_selected(kfocus)
+        .aria_cursor(kfocus)
         .debug_selector(move || label.to_string())
         .flex_none()
         .child(switch_view(key_of(id) ^ 0x5717, on, enabled, kfocus, tk));

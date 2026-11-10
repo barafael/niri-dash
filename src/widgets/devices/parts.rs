@@ -12,6 +12,8 @@ use gpui::{
 };
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use crate::kit::AriaCursor;
+use crate::kit::AriaState;
 
 /// How a widget's card was drawn.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -197,7 +199,7 @@ pub fn text_button(
         .id(id)
         .role(Role::Button)
         .aria_label(label)
-        .aria_selected(focus)
+        .aria_cursor(focus)
         .debug_selector(move || name_)
         .flex_none()
         .h(px(30.0))
@@ -256,8 +258,8 @@ pub fn row(
         .id(id)
         .role(Role::ListItem)
         .aria_label(label)
-        .when_some(value, |r, v| r.aria_value(v))
-        .aria_selected(focus)
+        .when_some(value, |r, v| r.aria_state(v))
+        .aria_cursor(focus)
         .debug_selector(move || name_)
         .flex_none()
         .w_full()

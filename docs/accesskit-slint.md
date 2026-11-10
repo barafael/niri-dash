@@ -1,7 +1,11 @@
-# Screen reader support in the Slint variant (AccessKit / AT-SPI)
+# Screen reader support in the Slint version (AccessKit / AT-SPI)
 
-This describes the Slint variant in `slint/` (the paths below are inside that directory). The
-GPUI dashboard has its own accessibility support, described in its own document in this directory.
+> This is the note of the Slint version, kept for comparison (`slint/`: its own tree builder in
+> `slint/src/app/a11y/`, its tests in `slint/tests/`). The GPUI version, which is the dashboard
+> now, is in [accessibility.md](accessibility.md): GPUI builds the tree itself, so most of what is
+> below (the tree builder, the bridge, the recording sink) has no counterpart there. What the
+> findings say about AT-SPI and Orca (what libatspi calls a switch, what Orca says, how to run
+> them without a display) still holds.
 
 Status after the first spike, on branch `accesskit`. It supersedes `accesskit-handover.md` (which
 was written before any of this existed) where they differ; what still stands there is noted below.

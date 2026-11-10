@@ -11,6 +11,7 @@ use chrono::{Local, Timelike};
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, Role, div, px};
 use std::collections::BTreeMap;
+use crate::kit::AriaState;
 
 /// What the clock shows, as of the last tick.
 pub struct State {
@@ -245,7 +246,7 @@ fn round(ctx: &Ctx, c: &State) -> AnyElement {
         .id("analog clock")
         .role(Role::Image)
         .aria_label("Clock")
-        .aria_value(value)
+        .aria_state(value)
         .relative()
         .size_full()
         .child(draw::painter(move |b, window| {

@@ -2,7 +2,7 @@
 //! cursor (`kfocus`), and a round widget's face. Ports of `common.slint`'s `Row`, `IconButton`,
 //! `TextButton`, `ScrollList` and `RoundFace`.
 //!
-//! The element under the keyboard cursor says so (`aria_selected`), so what the keyboard is on can
+//! The element under the keyboard cursor says so (`aria_cursor`), so what the keyboard is on can
 //! be found and read out; see `NavScope` in `legacy/ui/common.slint`.
 
 use crate::kit::{self, Tk};
@@ -11,6 +11,8 @@ use gpui::{
     AnyElement, App, ClickEvent, Div, ElementId, Hsla, Role, ScrollHandle, SharedString, Stateful,
     Window, div, px, transparent_black,
 };
+use crate::kit::AriaCursor;
+use crate::kit::AriaState;
 
 /// A row of a list: `label` and `value` are what a screen reader says (the tests find it by
 /// `label`); `selected` is the look of the current entry, `kfocus` the keyboard cursor. The caller
@@ -38,8 +40,8 @@ pub fn row(
         .id(id)
         .role(Role::ListItem)
         .aria_label(label)
-        .aria_selected(kfocus)
-        .when_some(value, |d, v| d.aria_value(v))
+        .aria_cursor(kfocus)
+        .when_some(value, |d, v| d.aria_state(v))
         .debug_selector(move || name)
         .w_full()
         .h(px(height))
@@ -78,7 +80,7 @@ pub fn icon_button(
         .id(id)
         .role(Role::Button)
         .aria_label(label)
-        .aria_selected(kfocus)
+        .aria_cursor(kfocus)
         .debug_selector(move || label.to_string())
         .flex_none()
         .size(px(size))
@@ -115,7 +117,7 @@ pub fn text_button(
         .id(id)
         .role(Role::Button)
         .aria_label(label)
-        .aria_selected(kfocus)
+        .aria_cursor(kfocus)
         .debug_selector(move || label.to_string())
         .flex_none()
         .h(px(30.0))

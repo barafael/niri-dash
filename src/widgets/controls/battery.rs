@@ -13,6 +13,7 @@ use gpui::prelude::*;
 use gpui::{AnyElement, Context, ElementId, Hsla, Role, ScrollHandle, Toggled, div, px};
 use niri_dash_system::Tell;
 use niri_dash_system::power::{Blocker, Command, DeviceKind, Event, Profile, State as Power};
+use crate::kit::AriaCursor;
 
 #[derive(Default)]
 pub struct State {
@@ -374,7 +375,7 @@ fn rect(ctx: &Ctx, fit: &Fit, b: &State, lay: &Layout, cx: &mut Context<Dash>) -
                     .role(Role::RadioButton)
                     .aria_label(name)
                     .aria_toggled(if current { Toggled::True } else { Toggled::False })
-                    .aria_selected(lit)
+                    .aria_cursor(lit)
                     .debug_selector(move || name.to_string())
                     // Narrow, they share what there is and the names are cut short; each
                     // starts from the width of its name, as the Slint row did.
@@ -411,7 +412,7 @@ fn rect(ctx: &Ctx, fit: &Fit, b: &State, lay: &Layout, cx: &mut Context<Dash>) -
             .role(Role::Switch)
             .aria_label(label)
             .aria_toggled(if b.inhibited { Toggled::True } else { Toggled::False })
-            .aria_selected(on_inhibit)
+            .aria_cursor(on_inhibit)
             .debug_selector(move || label.to_string())
             .flex_none()
             .h(px(22.0))

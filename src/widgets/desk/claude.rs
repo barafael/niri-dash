@@ -15,6 +15,7 @@ use niri_dash_system::claude::{State as Sys, Status};
 use niri_dash_system::windows::Command as Windows;
 use niri_dash_system::{Senders, Tell};
 use std::collections::HashMap;
+use crate::kit::AriaState;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Session {
@@ -241,7 +242,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                 tk,
             )
             .aria_label(name.clone())
-            .aria_value(format!("{} · {}", s.place, s.status))
+            .aria_state(format!("{} · {}", s.place, s.status))
             .debug_selector(move || name)
             .px(px(10.0))
             .flex()

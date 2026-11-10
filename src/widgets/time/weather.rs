@@ -7,6 +7,7 @@ use crate::widgets::Ctx;
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, Role, div, px};
 use niri_dash_system::weather;
+use crate::kit::AriaState;
 
 #[derive(Default)]
 pub struct State {
@@ -63,7 +64,7 @@ pub fn render(ctx: &Ctx, _cx: &mut Context<Dash>) -> AnyElement {
             .id("weather")
             .role(Role::Image)
             .aria_label("Weather")
-            .aria_value(f.description.clone())
+            .aria_state(f.description.clone())
             .size_full()
             .flex()
             .flex_col()

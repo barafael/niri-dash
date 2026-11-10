@@ -31,6 +31,9 @@ impl Render for Dash {
         crate::look::sync_component_theme(&tk, cx);
         let root = div()
             .id("niri-dash")
+            // The node that holds the keyboard for a screen reader; the element under the cursor
+            // is its active descendant (`kit::AriaCursor`).
+            .role(gpui::Role::Group)
             .key_context("Dash")
             .track_focus(&self.focus)
             .size_full()
@@ -264,6 +267,10 @@ impl Dash {
                         .bg(tk.panel())
                         .border(px(1.0))
                         .border_color(tk.border())
+                        // An alert a screen reader reads out when it appears.
+                        .id("toast")
+                        .role(gpui::Role::Alert)
+                        .aria_label(text.clone())
                         .debug_selector(|| "toast".into())
                         .child(text),
                 ),

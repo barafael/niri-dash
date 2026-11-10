@@ -14,6 +14,8 @@ use gpui::{AnyElement, ClickEvent, Context, div, px};
 use niri_dash_system::notifications::{Command, Dnd, State as Sys, next_hour};
 use niri_dash_system::{Senders, Tell};
 use std::collections::HashMap;
+use crate::kit::AriaCursor;
+use crate::kit::AriaState;
 
 /// "Until tomorrow" ends at this hour.
 const MORNING: u32 = 7;
@@ -631,8 +633,8 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                     .id(("notification", id as usize * 10_000 + i))
                     .role(gpui::Role::ListItem)
                     .aria_label(label.clone())
-                    .aria_value(if x.urgent { "urgent" } else { "" })
-                    .aria_selected(here && scope.sub == 0)
+                    .aria_state(if x.urgent { "urgent" } else { "" })
+                    .aria_cursor(here && scope.sub == 0)
                     .debug_selector(move || label)
                     .relative()
                     .w_full()

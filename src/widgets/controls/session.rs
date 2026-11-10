@@ -15,6 +15,8 @@ use gpui::prelude::*;
 use gpui::{AnyElement, Context, ElementId, Role, div, px};
 use niri_dash_system::Tell;
 use niri_dash_system::session::Command;
+use crate::kit::AriaCursor;
+use crate::kit::AriaState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Button {
@@ -207,8 +209,8 @@ fn button_view(
         .id(ElementId::from(("session", id * 8 + index)))
         .role(Role::Button)
         .aria_label(name)
-        .aria_value(if armed { "Press again to confirm" } else { "" })
-        .aria_selected(kfocus)
+        .aria_state(if armed { "Press again to confirm" } else { "" })
+        .aria_cursor(kfocus)
         .debug_selector(move || name.to_string())
         // The buttons share the tile's width, down to its smallest size, in any font: a label
         // that is too wide for its button is cut short, and doesn't push the last button out.

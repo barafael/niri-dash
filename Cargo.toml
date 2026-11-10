@@ -19,6 +19,7 @@ exclude = [
     "/book/screenshots.sh",
     "/book/src/images",
     "/docs",
+    "/patches",
     "/slint",
     "/testbox",
     "/xtask",
@@ -69,6 +70,13 @@ gpui-kit = "0.9"
 gpui = { package = "gpui-pre", version = "=0.3.11" }
 # GPUI's renderer and text system, for the snapshot command's headless window (`testing` only).
 gpui-wgpu = { package = "gpui-pre-wgpu", version = "=0.3.11", features = ["test-support"], optional = true }
+
+# GPUI's test platform never connects a screen reader, so a test can't read the accessibility tree
+# the dashboard builds. `patches/gpui-pre` is gpui-pre 0.3.11 with a screen reader for the test
+# window (see its NIRI-DASH-PATCH.md); nothing else is changed. Without this patch the `a11y` and
+# `access` tests don't build.
+[patch.crates-io]
+gpui-pre = { path = "patches/gpui-pre" }
 
 [features]
 # The headless harness (`src/testing.rs`) the tests and the stress run drive the dashboard with,
@@ -139,6 +147,28 @@ required-features = ["testing"]
 
 [[test]]
 name = "edit"
+harness = false
+required-features = ["testing"]
+
+# What a screen reader is given: each widget's tree and keyboard walk, and the actions it can ask.
+[[test]]
+name = "a11y"
+harness = false
+required-features = ["testing"]
+
+[[test]]
+name = "access"
+harness = false
+required-features = ["testing"]
+
+# The real accessibility bus (needs the test box: a private bus, KWin and libatspi, or Orca).
+[[test]]
+name = "atspi"
+harness = false
+required-features = ["testing"]
+
+[[test]]
+name = "orca"
 harness = false
 required-features = ["testing"]
 

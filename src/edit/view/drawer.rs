@@ -15,6 +15,7 @@ use gpui::{
     AnyElement, BoxShadow, Context, Div, FontWeight, MouseButton, MouseDownEvent, Role, ScrollHandle,
     Stateful, div, point, px,
 };
+use crate::kit::AriaCursor;
 
 impl Dash {
     /// Where the drawer's left edge is, and how far out it is (0 to 1).
@@ -190,7 +191,7 @@ impl Dash {
                         .role(Role::Button)
                         .aria_label(title)
                         .aria_description(p.description.clone())
-                        .aria_selected(kfocus)
+                        .aria_cursor(kfocus)
                         .debug_selector(move || title.to_string())
                         .size_full()
                         .p(px(10.0))

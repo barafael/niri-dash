@@ -7,7 +7,7 @@ use super::parts::{Look, eid, icon_btn};
 use crate::dash::{Dash, Geometry, NavMode, NavOp, Tile};
 use crate::edit::anim::Ease;
 use crate::edit::{DragMode, PressKind};
-use crate::kit::{self, Tk};
+use crate::kit::{self, AriaCursor, Tk};
 use crate::theme::ColorRole;
 use crate::widgets::{self, Ctx};
 use gpui::prelude::*;
@@ -297,6 +297,22 @@ impl Dash {
             .id(("widget", id as usize))
             .role(Role::Group)
             .aria_label(title)
+            // A widget without a cursor of its own is what the screen reader is on while it is
+            // entered; one with a cursor has a part of it claim the focus instead.
+            .aria_cursor(entered)
+            // A screen reader asks for the focus on a part of the widget (GPUI hands it up to
+            // here): that enters the widget, as typing its letters does.
+            .on_a11y_action(gpui::AccessibleAction::Focus, {
+                let dash = cx.entity();
+                move |_, _, cx| {
+                    dash.update(cx, |d, cx| {
+                        if d.visible && !d.editing {
+                            d.enter(id);
+                            cx.notify();
+                        }
+                    });
+                }
+            })
             .absolute()
             .left(px(x))
             .top(px(y))

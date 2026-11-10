@@ -21,8 +21,8 @@ cargo test -p xtask -- --ignored      # every phase, as a test
 | Phase | Tests | What runs in the box |
 |---|---|---|
 | `system` | `crates/system/tests/live.rs`, `contract.rs` | `live()` against mocks of NetworkManager, BlueZ and UPower (`mocks.py`, on buses of the box's own); the contract every system keeps, now with `live` among them |
-| `atspi` | `tests/atspi.rs` | the dashboard on a private accessibility bus, read by libatspi |
-| `orca` | `tests/orca.rs` | Orca reading the dashboard, with KWin (`--virtual`) as its display |
+| `atspi` | `tests/atspi.rs` | the dashboard's own program (GPUI) on KWin (`--virtual`) and a private accessibility bus, read by libatspi |
+| `orca` | `tests/orca.rs` | Orca reading the dashboard's own program, with KWin as the display of both; keys reach the dashboard over its control socket (`NIRI_DASH_TEST_KEYS`) |
 
 Each test program is run in a box of its own, so none sees what another left.
 
@@ -34,12 +34,14 @@ Each test program is run in a box of its own, so none sees what another left.
   image has. An environment variable would prove nothing; it can be set anywhere.
 - **Inside, they have little.** The xtask runs the box with no network, every capability
   dropped, `no-new-privileges`, a read-only root and a scratch home, as a user that isn't root.
-  It mounts nothing but the test programs (read-only), and the one file the AT-SPI test reads
-  beside itself.
+  It mounts nothing but the test programs and the dashboard's own program (read-only), and the one
+  file the AT-SPI test reads beside itself.
 - **The tests that don't need it stay on the host.** The UI tests of the GPUI dashboard
-  (`cargo test --features testing`: `tests/*.rs`, `stress` and `snapshot` among them) run it on the
-  mock system in GPUI's headless test platform, in a throwaway home (`Sandbox`), and start nothing.
-  The Slint variant's tests (`cargo test` in `slint/`) do the same.
+  (`cargo test --features testing`: `tests/*.rs`, `edit`, `stress`, `a11y`, `access`, `snapshot`
+  and the widget groups') run it on the mock system in GPUI's headless test platform, in a
+  throwaway home (`Sandbox`), and start nothing. `a11y` and `access` read the accessibility tree
+  GPUI builds in the process (`docs/accessibility.md`); only `atspi` and `orca` put a real window
+  on a real bus. The Slint variant's tests (`cargo test` in `slint/`) do the same.
 
 What is left on the host: the app asks fontconfig (`fc-match`, `fc-list`) for fonts, and so does
 every test that draws. They only read. (`snapshot` also opens the GPU, to draw into a texture,
@@ -48,9 +50,11 @@ and skips itself where there is none.)
 ## How it runs
 
 The xtask builds the image (`Containerfile`: Arch, so that the test programs built on the host
-find the same glibc), builds the test programs on the host with `cargo test --no-run` (the dashboard's with
-`--features testing`), copies
-them into `target/testbox-stage`, and runs each in the image with that directory mounted. Building
+find the same glibc), builds the test programs on the host with `cargo test --no-run` (the
+dashboard's with `--features testing`; this also builds `niri-dash`, the program `atspi` and `orca`
+start), copies them into `target/testbox-stage`, and runs each in the image with that directory
+mounted. The dashboard draws with wgpu: the image has Mesa's software Vulkan (lavapipe) for the GPU
+the box doesn't have. Building
 the whole workspace in the container too would take far longer for no gain. A program is staged
 under the name cargo gave it (`orca-<hash>`): Orca won't start beside another process called
 `orca`, and a program of that name would be one.

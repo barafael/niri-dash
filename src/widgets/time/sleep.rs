@@ -23,6 +23,8 @@ use niri_dash_system::{Tell, notifications, sleep};
 use std::cell::Cell;
 use std::path::PathBuf;
 use std::time::SystemTime;
+use crate::kit::AriaCursor;
+use crate::kit::AriaState;
 
 const PLACEHOLDER: &str = "45s, 30 min, 1h30m, 23:45";
 
@@ -705,7 +707,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                     .id("sleep face")
                     .role(Role::Button)
                     .aria_label(label)
-                    .aria_selected(on)
+                    .aria_cursor(on)
                     .debug_selector(move || label.to_string())
                     .relative()
                     .flex_none()
@@ -856,8 +858,8 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                     .id("mode row")
                     .role(Role::ListItem)
                     .aria_label("Mode")
-                    .aria_value(name.clone())
-                    .aria_selected(focused)
+                    .aria_state(name.clone())
+                    .aria_cursor(focused)
                     .debug_selector(|| "Mode".to_string())
                     .flex()
                     .flex_row()
@@ -899,9 +901,9 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                             .id(("mode", i))
                             .role(Role::ListItem)
                             .aria_label(label.clone())
-                            .aria_value(if here { "selected" } else { "" })
+                            .aria_state(if here { "selected" } else { "" })
                             .aria_description(help.clone())
-                            .aria_selected(focused)
+                            .aria_cursor(focused)
                             .debug_selector({
                                 let label = label.clone();
                                 move || label.clone()
@@ -1141,7 +1143,7 @@ fn field(ctx: &Ctx, cx: &mut Context<Dash>, kfocus: bool) -> impl IntoElement {
                 .aria_label("When to sleep")
                 .aria_value(text)
                 .aria_placeholder(PLACEHOLDER)
-                .aria_selected(kfocus)
+                .aria_cursor(kfocus)
                 .h(px(2.0))
                 .rounded(px(1.0))
                 .bg(if kfocus { tk.accent() } else { gpui::transparent_black() }),
