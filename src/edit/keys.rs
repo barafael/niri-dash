@@ -53,9 +53,8 @@ fn edit_key_inner(d: &mut Dash, key: &Key, cx: &mut Context<Dash>) -> bool {
     // w a s d (and, with the keys on the widgets, h j k l and the arrows): the focus goes to the
     // next widget that way, or to the first one when none is picked. Moving and sizing are modes
     // of their own (Ctrl+M, Ctrl+R).
-    let hjkl = target != 0
-        && !d.edit.side_keys
-        && matches!(key.code, Code::Char('h' | 'j' | 'k' | 'l'));
+    let hjkl =
+        target != 0 && !d.edit.side_keys && matches!(key.code, Code::Char('h' | 'j' | 'k' | 'l'));
     let fd = if hjkl { key_dir(key) } else { focus_dir(key) };
     let letter = matches!(key.code, Code::Char('w' | 'a' | 's' | 'd'));
     if plain
@@ -164,7 +163,8 @@ impl Dash {
         if self.cfg_open() {
             let n = self.side_count() as i32;
             if n > 0 {
-                self.edit.side_cursor = (self.edit.side_cursor as i32 + d + n).rem_euclid(n) as usize;
+                self.edit.side_cursor =
+                    (self.edit.side_cursor as i32 + d + n).rem_euclid(n) as usize;
             }
             return;
         }

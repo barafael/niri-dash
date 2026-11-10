@@ -1,5 +1,5 @@
 //! The clipboard history: what the system reports, putting an entry back, and the widget
-//! (`ClipboardWidget` in `legacy/ui/widgets/tools.slint`, `legacy/src/app/clipboard.rs`).
+//! (`ClipboardWidget` in `slint/ui/widgets/tools.slint`, `slint/src/app/clipboard.rs`).
 //!
 //! The history is opt-in: it records only with a clipboard widget in the layout (a hidden one
 //! counts, so that a smaller screen doesn't wipe it), or as the standalone clipboard app. Without

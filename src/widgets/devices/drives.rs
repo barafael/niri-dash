@@ -1,7 +1,7 @@
 //! The removable-drives widget: USB sticks and SD cards from UDisks, with mount, unmount, eject
 //! and open. One row: a summary and eject; tall: each drive with its volumes. Port of
-//! `RemovableDrivesWidget` (`legacy/ui/widgets/devices.slint`) and the drives part of
-//! `legacy/src/app/devices.rs`.
+//! `RemovableDrivesWidget` (`slint/ui/widgets/devices.slint`) and the drives part of
+//! `slint/src/app/devices.rs`.
 
 use super::parts::{self, Card, Revealed, icon_button, muted, row, text_button};
 use crate::dash::{Dash, DashEvent};

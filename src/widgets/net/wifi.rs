@@ -1,6 +1,6 @@
 //! The Wi-Fi widget: networks in reach, a network's details and sharing, saved networks, joining a
 //! hidden network, and the password prompt. Port of `WifiWidget` and `WifiPasswordPrompt`
-//! (`legacy/ui/widgets/net.slint`) with what `legacy/src/app/feeds.rs` made of the system's state.
+//! (`slint/ui/widgets/net.slint`) with what `slint/src/app/feeds.rs` made of the system's state.
 //!
 //! Pages: 0 networks, 1 one network's details, 2 join a hidden network, 3 saved networks. Each has
 //! its stops, which the keyboard cursor visits (see [`L`]); the prompt, which comes over whatever
@@ -371,9 +371,7 @@ impl L {
                         0
                     }
                 }
-                Page::Detail => {
-                    (if m.detail.known { 3 } else { 0 }) + usize::from(has_act)
-                }
+                Page::Detail => (if m.detail.known { 3 } else { 0 }) + usize::from(has_act),
                 Page::Hidden => {
                     if m.enabled {
                         (k_join + 1) as usize
@@ -408,7 +406,10 @@ impl L {
     pub fn subs(&self, cursor: usize, m: &Model) -> usize {
         let c = cursor as isize;
         if self.page == Page::Networks && c >= self.k_net && c < self.k_hidden {
-            if m.nets.get((c - self.k_net) as usize).is_some_and(|n| n.active) {
+            if m.nets
+                .get((c - self.k_net) as usize)
+                .is_some_and(|n| n.active)
+            {
                 3
             } else {
                 2
@@ -649,7 +650,13 @@ pub enum Act {
     Edit(&'static str),
 }
 
-fn answer(identity: String, password: String, method: i32, domain: String, insecure: bool) -> w::Answer {
+fn answer(
+    identity: String,
+    password: String,
+    method: i32,
+    domain: String,
+    insecure: bool,
+) -> w::Answer {
     w::Answer {
         identity,
         password,
@@ -766,7 +773,13 @@ pub fn act(d: &mut Dash, id: u32, a: Act, cx: &mut Context<Dash>) -> Fx {
             if ssid.is_empty() {
                 return fx;
             }
-            let ans = answer(text("h-ident"), text("h-pass"), h.method, text("h-domain"), h.insecure);
+            let ans = answer(
+                text("h-ident"),
+                text("h-pass"),
+                h.method,
+                text("h-domain"),
+                h.insecure,
+            );
             tell(
                 d,
                 w::Command::JoinHidden {
@@ -795,7 +808,13 @@ pub fn act(d: &mut Dash, id: u32, a: Act, cx: &mut Context<Dash>) -> Fx {
             let v = view(d, id).expect("a view");
             let (f, pool) = (v.prompt, v.pool.clone());
             let text = |n: &str| pool.as_ref().map(|p| p.value(n, cx)).unwrap_or_default();
-            let ans = answer(text("ident"), text("pass"), f.method_value(), text("domain"), f.insecure);
+            let ans = answer(
+                text("ident"),
+                text("pass"),
+                f.method_value(),
+                text("domain"),
+                f.insecure,
+            );
             tell(
                 d,
                 w::Command::Answer {
@@ -1237,9 +1256,8 @@ pub fn make_pool(d: &mut Dash, id: u32, window: &mut Window, cx: &mut Context<Da
     if v.pool.is_some() {
         return;
     }
-    let on: OnEvent = std::rc::Rc::new(move |d, name, event, _, cx| {
-        field_event(d, id, name, event, cx)
-    });
+    let on: OnEvent =
+        std::rc::Rc::new(move |d, name, event, _, cx| field_event(d, id, name, event, cx));
     let specs: Vec<Spec> = PROMPT_FIELDS.iter().chain(&FORM_FIELDS).copied().collect();
     let pool = Pool::new(&specs, window, cx, on);
     view_mut(d, id).pool = Some(pool);
@@ -1333,13 +1351,21 @@ pub fn spoken(d: &Dash, id: u32) -> Option<Said> {
             } else if ci == l.k_act && l.has_act {
                 said(
                     "button",
-                    if m.detail.active { "Disconnect" } else { "Connect" },
+                    if m.detail.active {
+                        "Disconnect"
+                    } else {
+                        "Connect"
+                    },
                     "",
                 )
             } else if ci == l.k_share {
                 said(
                     "button",
-                    if m.revealed { "Hide password" } else { "Share network" },
+                    if m.revealed {
+                        "Hide password"
+                    } else {
+                        "Share network"
+                    },
                     "",
                 )
             } else {
@@ -1703,7 +1729,11 @@ fn reconcile(v: &View, m: &Model, form_up: bool, id: u32, cx: &mut Context<Dash>
     // A field with the keyboard that isn't on screen any more: the keyboard comes back.
     let prompt_up = serial.is_some();
     if let Some(name) = v.typing.get() {
-        let there = if name.starts_with("h-") { form_up } else { prompt_up };
+        let there = if name.starts_with("h-") {
+            form_up
+        } else {
+            prompt_up
+        };
         if !there {
             v.typing.set(None);
             later(cx, |d, window, cx| field::give_back(d, window, cx));
@@ -1771,13 +1801,7 @@ fn field<'a>(
 
 /// The prompt for a network's password: asked by the widget for a new network, or by
 /// NetworkManager (through the secret agent) for a saved one.
-fn prompt(
-    ctx: &Ctx,
-    v: &View,
-    p: &Prompt,
-    id: u32,
-    cx: &mut Context<Dash>,
-) -> AnyElement {
+fn prompt(ctx: &Ctx, v: &View, p: &Prompt, id: u32, cx: &mut Context<Dash>) -> AnyElement {
     let tk = ctx.tk;
     let q = P::of(&v.prompt, p);
     let on = ctx.entered;
@@ -2090,14 +2114,20 @@ fn networks(
             tk,
             {
                 let key = key.clone();
-                cx.listener(move |d, _, _, cx| run(d, id, Act::Open(key.clone(), Page::Networks), cx))
+                cx.listener(move |d, _, _, cx| {
+                    run(d, id, Act::Open(key.clone(), Page::Networks), cx)
+                })
             },
         ));
         rows.push(row.into_any_element());
     }
     if m.nets.is_empty() {
         rows.push(ui::empty_line(
-            if m.scanning { "Scanning…" } else { "No networks found" },
+            if m.scanning {
+                "Scanning…"
+            } else {
+                "No networks found"
+            },
             48.0,
             tk,
         ));
@@ -2279,7 +2309,14 @@ fn detail(
         buttons = buttons.child(ui::text_button(
             "share",
             if m.revealed { "Hide" } else { "Share" },
-            Some(if m.revealed { "Hide password" } else { "Share network" }.into()),
+            Some(
+                if m.revealed {
+                    "Hide password"
+                } else {
+                    "Share network"
+                }
+                .into(),
+            ),
             Look::default(),
             St::cursor(kf(l.k_share)),
             tk,
@@ -2503,9 +2540,7 @@ fn saved(
                 format!("{}{}", if here { "connected, " } else { "" }, s.detail),
                 St::cursor(kf(i as isize)),
                 tk,
-                cx.listener(move |d, _, _, cx| {
-                    run(d, id, Act::Open(key.clone(), Page::Saved), cx)
-                }),
+                cx.listener(move |d, _, _, cx| run(d, id, Act::Open(key.clone(), Page::Saved), cx)),
             )
             .pl(px(10.0))
             .pr(px(2.0))
@@ -2528,4 +2563,3 @@ fn saved(
     record(v, Page::Saved, on, follow);
     list
 }
-

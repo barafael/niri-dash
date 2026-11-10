@@ -78,7 +78,11 @@ impl Shape {
         let mut points: Vec<Pt> = (0..=steps)
             .map(|i| at(outer, i as f32 / steps as f32))
             .collect();
-        points.extend((0..=steps).rev().map(|i| at(inner, i as f32 / steps as f32)));
+        points.extend(
+            (0..=steps)
+                .rev()
+                .map(|i| at(inner, i as f32 / steps as f32)),
+        );
         self.solid(points);
         self.circle(on_circle(c, r, from), thickness / 2.0);
         self.circle(on_circle(c, r, to), thickness / 2.0);
@@ -132,9 +136,12 @@ fn centre(b: Bounds<Pixels>) -> (Pt, f32) {
 
 /// A canvas over its parent that draws with `paint(bounds, window)`.
 pub fn painter(paint: impl Fn(Bounds<Pixels>, &mut Window) + 'static) -> impl IntoElement {
-    canvas(|_, _, _| (), move |bounds, _, window, _| paint(bounds, window))
-        .absolute()
-        .size_full()
+    canvas(
+        |_, _, _| (),
+        move |bounds, _, window, _| paint(bounds, window),
+    )
+    .absolute()
+    .size_full()
 }
 
 /// A ring from 12 o'clock clockwise, `value` (0 to 1) of the way round. It is a gauge for screen

@@ -92,7 +92,11 @@ fn id_of(h: &Harness, kind: &str) -> u32 {
 }
 
 fn visible_ids(h: &Harness) -> BTreeSet<u32> {
-    h.tiles().iter().filter(|t| t.visible).map(|t| t.id).collect()
+    h.tiles()
+        .iter()
+        .filter(|t| t.visible)
+        .map(|t| t.id)
+        .collect()
 }
 
 /// splitmix64.
@@ -183,7 +187,11 @@ fn settings_every_widget(issues: &mut Issues) {
                             let mut wrapped = false;
                             for _ in 0..40 {
                                 let before = row(h);
-                                if !(if d > 0 { before.can_inc } else { before.can_dec }) {
+                                if !(if d > 0 {
+                                    before.can_inc
+                                } else {
+                                    before.can_dec
+                                }) {
                                     break;
                                 }
                                 step(h, d);
@@ -365,8 +373,16 @@ fn random_op(rng: &mut Rng, h: &Harness) -> Op {
         (25..=39, Some(t)) => {
             // From any side: pulling the left or top one keeps the right or bottom one in place.
             let (w, hh) = (rng.range(0, 8) as i32, rng.range(0, 7) as i32);
-            let col = if rng.below(2) == 0 { t.col } else { t.col + t.w - w };
-            let row = if rng.below(2) == 0 { t.row } else { t.row + t.h - hh };
+            let col = if rng.below(2) == 0 {
+                t.col
+            } else {
+                t.col + t.w - w
+            };
+            let row = if rng.below(2) == 0 {
+                t.row
+            } else {
+                t.row + t.h - hh
+            };
             Op::Resize(t.id, col, row, w, hh)
         }
         (40..=46, Some(t)) => Op::Shape(t.id),
@@ -377,7 +393,10 @@ fn random_op(rng: &mut Rng, h: &Harness) -> Op {
             pos(rng, rows),
         ),
         (62..=67, Some(t)) => Op::Remove(t.id),
-        (68..=72, _) => Op::Grid(rng.below(2) as usize, if rng.below(2) == 0 { -1 } else { 1 }),
+        (68..=72, _) => Op::Grid(
+            rng.below(2) as usize,
+            if rng.below(2) == 0 { -1 } else { 1 },
+        ),
         (73, _) => Op::GridAuto,
         (74, _) => Op::Reset,
         (75..=86, Some(t)) => Op::Setting(
@@ -696,8 +715,16 @@ fn pointer_resize_handles(issues: &mut Issues) {
         let want_w = if sx != 0 { min_w } else { home.w };
         let want_h = if sy != 0 { min_h } else { home.h };
         let want = (
-            if sx < 0 { home.col + home.w - want_w } else { home.col },
-            if sy < 0 { home.row + home.h - want_h } else { home.row },
+            if sx < 0 {
+                home.col + home.w - want_w
+            } else {
+                home.col
+            },
+            if sy < 0 {
+                home.row + home.h - want_h
+            } else {
+                home.row
+            },
             want_w,
             want_h,
         );
@@ -713,7 +740,10 @@ fn pointer_resize_handles(issues: &mut Issues) {
         let at = point(&h, &home, sx, sy, 0.5);
         h.drag(
             at,
-            (at.0 + sx as f32 * 40.0 * cell, at.1 + sy as f32 * 40.0 * cell),
+            (
+                at.0 + sx as f32 * 40.0 * cell,
+                at.1 + sy as f32 * 40.0 * cell,
+            ),
             7,
         );
         let t = tile(&h, notes).unwrap();
@@ -740,7 +770,10 @@ fn pointer_resize_handles(issues: &mut Issues) {
                 h.toast_text()
             ));
         }
-        issues.check(&h, &format!("pointer: pulling the {name} handle past the grid"));
+        issues.check(
+            &h,
+            &format!("pointer: pulling the {name} handle past the grid"),
+        );
         place_back(&mut h);
     }
     // A handle pressed and let go changes nothing, and neither does a pull that comes back.
@@ -1024,7 +1057,10 @@ fn pointer_drag_precision(issues: &mut Issues) {
                     fresh.toast_text()
                 ));
             }
-            issues.check(&fresh, &format!("drag onto others ({dc},{dr}) in {steps} moves"));
+            issues.check(
+                &fresh,
+                &format!("drag onto others ({dc},{dr}) in {steps} moves"),
+            );
         }
     }
     if !landed.is_empty() {
@@ -1038,14 +1074,17 @@ fn pointer_drag_precision(issues: &mut Issues) {
 /// A new widget dragged in from the palette lands where it is let go; a click on an entry adds it
 /// where there is room.
 fn pointer_palette(issues: &mut Issues) {
-    let mut h = dashboard("grid columns=16 rows=9\nlayout {\n    clock col=0 row=0 width=4 height=2\n}\n");
+    let mut h =
+        dashboard("grid columns=16 rows=9\nlayout {\n    clock col=0 row=0 width=4 height=2\n}\n");
     h.set_editing(true);
     let cell = h.cell();
     let n = h.tiles().len();
     // Drag the first entry that isn't the clock onto a free spot of the grid.
     let name = testing::title("volume");
     let from = {
-        let b = h.bounds_of_named(name).expect("the Volume entry of the palette");
+        let b = h
+            .bounds_of_named(name)
+            .expect("the Volume entry of the palette");
         let c = b.center();
         (f32::from(c.x), f32::from(c.y))
     };
@@ -1189,15 +1228,24 @@ fn keyboard_editing(issues: &mut Issues) {
     // The sidebar's tabs.
     h.key("tab");
     if h.drawer_tab() != T::Arrange {
-        issues.add(format!("keyboard: Tab from Widgets went to {:?}", h.drawer_tab()));
+        issues.add(format!(
+            "keyboard: Tab from Widgets went to {:?}",
+            h.drawer_tab()
+        ));
     }
     h.key("tab");
     if h.drawer_tab() != T::Colors {
-        issues.add(format!("keyboard: Tab from Arrange went to {:?}", h.drawer_tab()));
+        issues.add(format!(
+            "keyboard: Tab from Arrange went to {:?}",
+            h.drawer_tab()
+        ));
     }
     h.key("tab");
     if h.drawer_tab() != T::Style {
-        issues.add(format!("keyboard: Tab from Colors went to {:?}", h.drawer_tab()));
+        issues.add(format!(
+            "keyboard: Tab from Colors went to {:?}",
+            h.drawer_tab()
+        ));
     }
     h.key("tab");
     if h.drawer_tab() != T::Widgets {
@@ -1208,7 +1256,10 @@ fn keyboard_editing(issues: &mut Issues) {
     }
     h.key("backtab");
     if h.drawer_tab() != T::Style {
-        issues.add(format!("keyboard: Shift+Tab from Widgets went to {:?}", h.drawer_tab()));
+        issues.add(format!(
+            "keyboard: Shift+Tab from Widgets went to {:?}",
+            h.drawer_tab()
+        ));
     }
     h.key("tab");
 
@@ -1217,7 +1268,10 @@ fn keyboard_editing(issues: &mut Issues) {
     h.key("g"); // Tab showed the cursor; Columns is the first stop
     h.key("l");
     if h.grid().0 != c0 + 1 {
-        issues.add(format!("keyboard: l on Columns gave {:?} from {c0}", h.grid()));
+        issues.add(format!(
+            "keyboard: l on Columns gave {:?} from {c0}",
+            h.grid()
+        ));
     }
     h.key("h");
     h.key("j");
@@ -1301,16 +1355,25 @@ fn keyboard_editing(issues: &mut Issues) {
     h.key(if can_inc { "l" } else { "h" });
     let after = h.style_rows()[0].clone();
     if after.1 == before.1 {
-        issues.add(format!("keyboard: stepping style {:?} changed nothing", before.0));
+        issues.add(format!(
+            "keyboard: stepping style {:?} changed nothing",
+            before.0
+        ));
     }
     if !after.2 {
-        issues.add(format!("keyboard: style {:?} stepped but isn't marked", before.0));
+        issues.add(format!(
+            "keyboard: style {:?} stepped but isn't marked",
+            before.0
+        ));
     }
     // "Reset all" appeared above it, so the cursor is now on the row above; find the row again.
     h.key("j");
     h.key("backspace");
     if h.style_rows()[0].2 {
-        issues.add(format!("keyboard: Backspace didn't reset style {:?}", before.0));
+        issues.add(format!(
+            "keyboard: Backspace didn't reset style {:?}",
+            before.0
+        ));
     }
     issues.check(&h, "keyboard: adjusting the style");
     h.key("tab");
@@ -1563,7 +1626,11 @@ fn grid_shrink_and_grow(issues: &mut Issues) {
             h.grid_step(index, -1);
             issues.check(
                 &h,
-                &format!("grid: − on {} at {:?}", ["columns", "rows"][index], before.0),
+                &format!(
+                    "grid: − on {} at {:?}",
+                    ["columns", "rows"][index],
+                    before.0
+                ),
             );
             if h.grid() == before.0 {
                 refused[index] = true;
@@ -1590,7 +1657,10 @@ fn grid_shrink_and_grow(issues: &mut Issues) {
     }
     let now = h.tiles();
     if now.len() != start.len() {
-        issues.add(format!("grid: shrinking lost {} widget(s)", start.len() - now.len()));
+        issues.add(format!(
+            "grid: shrinking lost {} widget(s)",
+            start.len() - now.len()
+        ));
     }
     if now.iter().any(|t| !t.visible) {
         issues.add("grid: shrinking hid widgets");
@@ -1664,7 +1734,10 @@ fn sidebar_follows(issues: &mut Issues) {
 /// layout back, the settings copy as a line config.kdl reads, and the rows follow the algorithm.
 fn arrange_tab(issues: &mut Issues) {
     let rects = |h: &Harness| -> Vec<(u32, i32, i32, i32, i32)> {
-        h.tiles().iter().map(|t| (t.id, t.col, t.row, t.w, t.h)).collect()
+        h.tiles()
+            .iter()
+            .map(|t| (t.id, t.col, t.row, t.w, t.h))
+            .collect()
     };
     for (config, name) in [(MIXED, "mixed"), (PACKED, "packed")] {
         let mut h = dashboard(config);
@@ -1678,7 +1751,9 @@ fn arrange_tab(issues: &mut Issues) {
             issues.check(&h, &format!("arrange: {name}, algorithm {round}"));
             let lost = h.tiles().iter().filter(|t| !t.visible).count();
             if lost > 0 && name == "mixed" {
-                issues.add(format!("arrange: {name}, algorithm {round} lost {lost} widgets"));
+                issues.add(format!(
+                    "arrange: {name}, algorithm {round} lost {lost} widgets"
+                ));
             }
             if h.arrange_result().is_empty() {
                 issues.add("arrange: no summary under the buttons");
@@ -1687,7 +1762,9 @@ fn arrange_tab(issues: &mut Issues) {
             h.arrange_step(0, 1);
         }
         if row_counts.iter().collect::<BTreeSet<_>>().len() < 2 {
-            issues.add(format!("arrange: the rows don't follow the algorithm: {row_counts:?}"));
+            issues.add(format!(
+                "arrange: the rows don't follow the algorithm: {row_counts:?}"
+            ));
         }
         if !h.arrange_can_undo() {
             issues.add("arrange: nothing to undo after arranging");
@@ -1756,7 +1833,10 @@ fn shortcut_hints(issues: &mut Issues) {
     let clock = id_of(&h, "clock");
     // Outside edit mode they say how to begin, and what a widget has once entered.
     if !has(&h, "pick a widget") || !has(&h, "edit mode") {
-        issues.add(format!("hints: nothing picked, no edit mode: {:?}", h.tips()));
+        issues.add(format!(
+            "hints: nothing picked, no edit mode: {:?}",
+            h.tips()
+        ));
     }
     h.key("f");
     h.type_label("clock");
@@ -1844,7 +1924,8 @@ fn pinning(issues: &mut Issues) {
     }
     let layout_block = |h: &Harness| {
         let t = h.config_text();
-        t.find("\nlayout {").map_or(String::new(), |i| t[i..].to_string())
+        t.find("\nlayout {")
+            .map_or(String::new(), |i| t[i..].to_string())
     };
     if !layout_block(&h).contains("pinned=#true") {
         issues.add("pin: config.kdl doesn't say the clock is pinned");
@@ -1866,7 +1947,10 @@ fn pinning(issues: &mut Issues) {
     }
     h.move_widget(calendar, 0, 0);
     if !h.toast_text().contains("pinned") {
-        issues.add(format!("pin: dropping onto a pinned clock said {:?}", h.toast_text()));
+        issues.add(format!(
+            "pin: dropping onto a pinned clock said {:?}",
+            h.toast_text()
+        ));
     }
     if rect(&h, clock) != was {
         issues.add("pin: dropping onto the clock moved it");
@@ -1877,7 +1961,9 @@ fn pinning(issues: &mut Issues) {
     for (c, r) in [(0, 3), (1, 2), (0, 2)] {
         h.move_widget(calendar, c, r);
         if rect(&h, clock) != was {
-            issues.add(format!("pin: moving the calendar to {c},{r} shoved the clock"));
+            issues.add(format!(
+                "pin: moving the calendar to {c},{r} shoved the clock"
+            ));
         }
         issues.check(&h, "pin: moving others");
     }
@@ -1887,12 +1973,20 @@ fn pinning(issues: &mut Issues) {
     for algo in 0..3 {
         h.arrange_now();
         if rect(&h, clock) != was {
-            issues.add(format!("pin: Arrange (algorithm {algo}) moved the pinned clock"));
+            issues.add(format!(
+                "pin: Arrange (algorithm {algo}) moved the pinned clock"
+            ));
         }
         if !h.arrange_result().contains("1 pinned") {
-            issues.add(format!("pin: the result line says {:?}", h.arrange_result()));
+            issues.add(format!(
+                "pin: the result line says {:?}",
+                h.arrange_result()
+            ));
         }
-        issues.check(&h, &format!("pin: arranged around the clock, algorithm {algo}"));
+        issues.check(
+            &h,
+            &format!("pin: arranged around the clock, algorithm {algo}"),
+        );
         h.arrange_step(0, 1);
     }
 
@@ -1980,7 +2074,10 @@ fn settings_card_keys(issues: &mut Issues) {
         h.type_label(&t.kind);
         h.key("s");
         if h.editing() {
-            issues.add(format!("card: s in {} (no settings) opened edit mode", t.kind));
+            issues.add(format!(
+                "card: s in {} (no settings) opened edit mode",
+                t.kind
+            ));
         }
         if !h.toast_text().contains("no settings") {
             issues.add(format!("card: s in {} said {:?}", t.kind, h.toast_text()));
@@ -2046,10 +2143,15 @@ fn drawer_makes_room(issues: &mut Issues) {
     h.set_editing(true);
     let small = h.cell();
     if small >= big {
-        issues.add(format!("drawer: the cells didn't shrink for it ({big} to {small})"));
+        issues.add(format!(
+            "drawer: the cells didn't shrink for it ({big} to {small})"
+        ));
     }
     if h.grid() != (cols, rows, true) && (h.grid().0, h.grid().1) != (cols, rows) {
-        issues.add(format!("drawer: opening it changed the grid to {:?}", h.grid()));
+        issues.add(format!(
+            "drawer: opening it changed the grid to {:?}",
+            h.grid()
+        ));
     }
     let right = h.cell_origin(cols as f32, 0.0).0;
     let (width, _) = h.size();
@@ -2065,7 +2167,10 @@ fn drawer_makes_room(issues: &mut Issues) {
     issues.check(&h, "drawer: open");
     h.set_editing(false);
     if (h.cell() - big).abs() > 0.01 {
-        issues.add(format!("drawer: closing it left the cells at {} instead of {big}", h.cell()));
+        issues.add(format!(
+            "drawer: closing it left the cells at {} instead of {big}",
+            h.cell()
+        ));
     }
     issues.check(&h, "drawer: closed");
 }
@@ -2147,17 +2252,26 @@ fn expanding(issues: &mut Issues) {
     h.key("e");
     let big = h.bounds_of_named(&name).expect("the clock on screen");
     if big.size.width <= before.size.width || big.size.height <= before.size.height {
-        issues.add(format!("expand: the clock is {:?} blown up, {:?} before", big.size, before.size));
+        issues.add(format!(
+            "expand: the clock is {:?} blown up, {:?} before",
+            big.size, before.size
+        ));
     }
     let (w, hgt) = h.size();
     let (cx, cy) = (f32::from(big.center().x), f32::from(big.center().y));
-    if (cx - w as f32 / 2.0).abs() > w as f32 * 0.1 || (cy - hgt as f32 / 2.0).abs() > hgt as f32 * 0.15 {
-        issues.add(format!("expand: the blown-up clock is centered at {cx},{cy} in a {w}x{hgt} window"));
+    if (cx - w as f32 / 2.0).abs() > w as f32 * 0.1
+        || (cy - hgt as f32 / 2.0).abs() > hgt as f32 * 0.15
+    {
+        issues.add(format!(
+            "expand: the blown-up clock is centered at {cx},{cy} in a {w}x{hgt} window"
+        ));
     }
     h.key("esc");
     let back = h.bounds_of_named(&name).expect("the clock on screen");
     if back != before {
-        issues.add(format!("expand: Escape left the clock {back:?}, it was {before:?}"));
+        issues.add(format!(
+            "expand: Escape left the clock {back:?}, it was {before:?}"
+        ));
     }
     if h.nav_mode() != NavMode::Widget {
         issues.add("expand: Escape should only put the widget back, not leave it");
@@ -2211,14 +2325,18 @@ fn gliding(issues: &mut Issues) {
     // The slide takes a while: the cells are not yet at their smallest.
     let during = h.cell();
     if during < big * 0.5 || during > big {
-        issues.add(format!("glide: the cells are {during} at the start of the slide, {big} before"));
+        issues.add(format!(
+            "glide: the cells are {during} at the start of the slide, {big} before"
+        ));
     }
     std::thread::sleep(std::time::Duration::from_millis(700));
     h.settle();
     h.settle();
     let small = h.cell();
     if small >= big * 0.97 {
-        issues.add(format!("glide: the cells are {small} after the drawer slid in, {big} before"));
+        issues.add(format!(
+            "glide: the cells are {small} after the drawer slid in, {big} before"
+        ));
     }
     // A widget moved glides to its place: a moment later it is there.
     let clock = id_of(&h, "clock");
@@ -2228,14 +2346,20 @@ fn gliding(issues: &mut Issues) {
     h.settle();
     let t = tile(&h, clock).unwrap();
     if (t.col, t.row) != (5, 6) {
-        issues.add(format!("glide: the clock is at {},{} after moving to 5,6", t.col, t.row));
+        issues.add(format!(
+            "glide: the clock is at {},{} after moving to 5,6",
+            t.col, t.row
+        ));
     }
     h.set_editing(false);
     std::thread::sleep(std::time::Duration::from_millis(700));
     h.settle();
     h.settle();
     if (h.cell() - big).abs() > 0.5 {
-        issues.add(format!("glide: the cells are {} after the drawer slid out, {big} before", h.cell()));
+        issues.add(format!(
+            "glide: the cells are {} after the drawer slid out, {big} before",
+            h.cell()
+        ));
     }
     issues.check(&h, "glide");
 }
@@ -2249,29 +2373,54 @@ fn main() {
     // SAFETY: nothing else runs yet that could read the environment.
     unsafe { std::env::set_var("LC_ALL", "C") };
     let scenarios: &[Scenario] = &[
-        ("settings: every setting of every widget", settings_every_widget),
+        (
+            "settings: every setting of every widget",
+            settings_every_widget,
+        ),
         ("settings: text that makes no sense", settings_bad_text),
         ("cow: the cow file's complaints", cow_toasts),
-        ("edits: random on a roomy layout", |i| random_edits(i, MIXED, "mixed")),
-        ("edits: random on a packed layout", |i| random_edits(i, PACKED, "packed")),
+        ("edits: random on a roomy layout", |i| {
+            random_edits(i, MIXED, "mixed")
+        }),
+        ("edits: random on a packed layout", |i| {
+            random_edits(i, PACKED, "packed")
+        }),
         ("pointer: edit mode as a person uses it", pointer_editing),
-        ("pointer: drags land where they are let go", pointer_drag_precision),
-        ("pointer: every edge and corner resizes", pointer_resize_handles),
-        ("pointer: a long press adjusts the widget", pointer_long_press),
+        (
+            "pointer: drags land where they are let go",
+            pointer_drag_precision,
+        ),
+        (
+            "pointer: every edge and corner resizes",
+            pointer_resize_handles,
+        ),
+        (
+            "pointer: a long press adjusts the widget",
+            pointer_long_press,
+        ),
         ("pointer: the palette's entries", pointer_palette),
         ("keyboard: move and resize modes", keyboard_modes),
         ("keyboard: edit mode", keyboard_editing),
         ("hints: the quick tips along the bottom", shortcut_hints),
-        ("grid: shrink to the smallest and back", grid_shrink_and_grow),
+        (
+            "grid: shrink to the smallest and back",
+            grid_shrink_and_grow,
+        ),
         ("sidebar: follows its widget", sidebar_follows),
         ("arrange: algorithms, undo, copy", arrange_tab),
         ("pin: widgets that stay put", pinning),
         ("card: s opens it, Escape closes it", settings_card_keys),
-        ("resize: pushed widgets come back when it shrinks", resize_gives_room_back),
+        (
+            "resize: pushed widgets come back when it shrinks",
+            resize_gives_room_back,
+        ),
         ("drawer: the cells shrink to make room", drawer_makes_room),
         ("carry: a widget picked up with a double click", carrying),
         ("expand: a widget blown up in the middle", expanding),
-        ("card: it steps aside for the keys and the labels", card_steps_aside),
+        (
+            "card: it steps aside for the keys and the labels",
+            card_steps_aside,
+        ),
         ("glide: animations on", gliding),
     ];
     let only = std::env::var("NIRI_DASH_EDIT_ONLY").unwrap_or_default();

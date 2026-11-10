@@ -171,7 +171,8 @@ impl Harness {
     pub fn settle(&mut self) {
         self.answer_mock();
         while let Ok(event) = self.inbound.try_recv() {
-            self.dash.update(&mut self.cx, |d, cx| d.handle_event(event, cx));
+            self.dash
+                .update(&mut self.cx, |d, cx| d.handle_event(event, cx));
             self.answer_mock();
         }
         self.cx.run_until_parked();

@@ -4,7 +4,7 @@
 use super::DrawerTab;
 use super::settings::{RowKind, SettingRow};
 use crate::dash::Dash;
-use crate::layout::{COLUMNS, Kind, Placed, Rect, ROWS, Reflow, Shape};
+use crate::layout::{COLUMNS, Kind, Placed, ROWS, Rect, Reflow, Shape};
 use crate::nav::{self, Dir};
 
 impl Dash {
@@ -216,10 +216,7 @@ impl Dash {
         } else if self.layout.is_pinned(id) {
             self.toast("Pinned: unpin it first (p)");
         } else {
-            let round = self
-                .layout
-                .get(id)
-                .is_some_and(|p| p.shape == Shape::Round);
+            let round = self.layout.get(id).is_some_and(|p| p.shape == Shape::Round);
             self.toast(if round {
                 "No room to make this widget rectangular here"
             } else {

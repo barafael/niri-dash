@@ -1,15 +1,15 @@
 //! The about card: what this is, which version, where it lives. Port of `AboutWidget`
-//! (`legacy/ui/widgets/about.slint`), without Slint's own `AboutSlint` (which its license asked
+//! (`slint/ui/widgets/about.slint`), without Slint's own `AboutSlint` (which its license asked
 //! for next to a Slint app's version): the toolkit now is GPUI, and it is named in a line.
 
 use super::super::devices::parts::{elide, muted};
 use crate::dash::Dash;
 use crate::keys::Key;
+use crate::kit::AriaCursor;
 use crate::scope::{Scope, Stops};
 use crate::widgets::Ctx;
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, Role, div, px};
-use crate::kit::AriaCursor;
 
 /// Where the project lives.
 pub const REPOSITORY: &str = "github.com/barafael/niri-dash";

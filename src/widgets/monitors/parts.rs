@@ -1,6 +1,6 @@
 //! The pieces the monitor widgets share: a label with a value, the title row, muted text.
-//! Ports of `Stat` (`legacy/ui/widgets/monitor.slint`), `Header`, `Muted` and `Empty`
-//! (`legacy/ui/common.slint`). Each text names itself to the tests (`debug_selector`).
+//! Ports of `Stat` (`slint/ui/widgets/monitor.slint`), `Header`, `Muted` and `Empty`
+//! (`slint/ui/common.slint`). Each text names itself to the tests (`debug_selector`).
 
 use crate::kit::{self, Tk};
 use gpui::prelude::*;

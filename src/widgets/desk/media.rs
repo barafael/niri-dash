@@ -1,6 +1,6 @@
 //! The media widget: the player (MPRIS) that is playing, its cover, progress and controls. Port
-//! of `MediaWidget` in `legacy/ui/widgets/desk.slint` and `show_media` in
-//! `legacy/src/app/feeds.rs`.
+//! of `MediaWidget` in `slint/ui/widgets/desk.slint` and `show_media` in
+//! `slint/src/app/feeds.rs`.
 
 use super::parts::{self, Look};
 use super::pics::{Pic, Pics};
@@ -76,9 +76,11 @@ impl Stops for Keys<'_> {
     }
 
     fn adjust(&mut self, _: usize, delta: i32) -> bool {
-        self.0
-            .media
-            .tell(if delta > 0 { Command::Next } else { Command::Previous });
+        self.0.media.tell(if delta > 0 {
+            Command::Next
+        } else {
+            Command::Previous
+        });
         true
     }
 }
@@ -91,7 +93,11 @@ pub fn key(d: &mut Dash, key: &Key) -> bool {
 pub fn describe(d: &Dash) -> String {
     let m = &d.widgets.desk.media;
     if m.available {
-        format!("{} {:?}", if m.playing { "playing" } else { "paused" }, m.title)
+        format!(
+            "{} {:?}",
+            if m.playing { "playing" } else { "paused" },
+            m.title
+        )
     } else {
         "nothing playing".into()
     }
@@ -138,7 +144,11 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
     let (avail, playing) = (m.available, m.playing);
     let play_label = if playing { "Pause" } else { "Play" };
     let play_icon = if playing { "pause" } else { "play" };
-    let skip = |name: &'static str, icon: &'static str, size: f32, forward: bool, cx: &mut Context<Dash>| {
+    let skip = |name: &'static str,
+                icon: &'static str,
+                size: f32,
+                forward: bool,
+                cx: &mut Context<Dash>| {
         parts::icon_button(
             (name, id),
             icon,
@@ -151,8 +161,11 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
             },
             tk,
             cx.listener(move |d, _: &ClickEvent, _, _| {
-                d.tx.media
-                    .tell(if forward { Command::Next } else { Command::Previous });
+                d.tx.media.tell(if forward {
+                    Command::Next
+                } else {
+                    Command::Previous
+                });
             }),
         )
     };
@@ -217,7 +230,11 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                     .text_center()
                     .text_size(px((w * 0.06).max(9.0)))
                     .text_color(tk.dim())
-                    .child(if avail { m.title.clone() } else { "Nothing playing".into() }),
+                    .child(if avail {
+                        m.title.clone()
+                    } else {
+                        "Nothing playing".into()
+                    }),
             )
             .into_any_element();
     }
@@ -258,7 +275,11 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                     )
                     .when(avail, |c| {
                         c.child(parts::muted(
-                            if m.artist.is_empty() { m.player.clone() } else { m.artist.clone() },
+                            if m.artist.is_empty() {
+                                m.player.clone()
+                            } else {
+                                m.artist.clone()
+                            },
                             tk,
                         ))
                     }),
@@ -294,7 +315,9 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                 .flex()
                 .flex_row()
                 .gap(px(12.0))
-                .when_some(m.art.as_ref(), |row, art| row.child(art.boxed(art_w, (ctx.h - 2.0 * pad - 46.0).max(0.0), true)))
+                .when_some(m.art.as_ref(), |row, art| {
+                    row.child(art.boxed(art_w, (ctx.h - 2.0 * pad - 46.0).max(0.0), true))
+                })
                 .child(
                     div()
                         .flex_1()
@@ -314,10 +337,14 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                         )
                         .when(avail, |c| {
                             c.child(
-                                parts::muted(sub, tk)
-                                    .when(m.art.is_none(), |c| c.text_center()),
+                                parts::muted(sub, tk).when(m.art.is_none(), |c| c.text_center()),
                             )
-                            .child(progress(0x6d65_0000 + id as u64, m.progress, "Track progress", tk))
+                            .child(progress(
+                                0x6d65_0000 + id as u64,
+                                m.progress,
+                                "Track progress",
+                                tk,
+                            ))
                         }),
                 ),
         )

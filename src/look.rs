@@ -22,7 +22,8 @@ pub struct Blend {
 /// observer of the theme.
 pub fn sync_component_theme(tk: &crate::kit::Tk, cx: &mut gpui::App) {
     use gpui_kit::component::Theme;
-    let want = (tk.text(), tk.faint(), tk.accent_soft(), tk.accent());
+    // The caret is the text's colour, as in the Slint version.
+    let want = (tk.text(), tk.faint(), tk.accent_soft(), tk.text());
     let have = {
         let c = &Theme::global(cx).colors;
         (c.foreground, c.muted_foreground, c.selection, c.caret)

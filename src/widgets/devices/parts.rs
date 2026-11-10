@@ -1,8 +1,10 @@
 //! The small pieces the devices group's widgets (and the about card) are made of: buttons that
 //! can be disabled or carry the keyboard cursor, rows, a header with things at its right end, a
 //! list that scrolls and keeps the cursor in sight, a ring. Ports of the parts of
-//! `legacy/ui/common.slint` that `kit` doesn't have (yet).
+//! `slint/ui/common.slint` that `kit` doesn't have (yet).
 
+use crate::kit::AriaCursor;
+use crate::kit::AriaState;
 use crate::kit::{Tk, icon, with_alpha};
 use crate::widgets::Ctx;
 use gpui::prelude::*;
@@ -12,8 +14,6 @@ use gpui::{
 };
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
-use crate::kit::AriaCursor;
-use crate::kit::AriaState;
 
 /// How a widget's card was drawn.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -283,7 +283,9 @@ pub fn row(
             r.hover(move |s| s.bg(hover))
                 .active(move |s| s.bg(pressed))
                 .when_some(on_click, |r, f| {
-                    r.cursor_pointer().on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation()).on_click(move |e, w, c| f(e, w, c))
+                    r.cursor_pointer()
+                        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                        .on_click(move |e, w, c| f(e, w, c))
                 })
         })
 }

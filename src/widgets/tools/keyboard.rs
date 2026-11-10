@@ -1,6 +1,6 @@
 //! The keyboard layout widget: the layout in use, and a click, the wheel, h/l or Enter for the next
 //! one; with room, the list of layouts to pick from (`KeyboardLayoutWidget` in
-//! `legacy/ui/widgets/tools.slint`).
+//! `slint/ui/widgets/tools.slint`).
 
 use super::ui;
 use super::{Inst, Plain};

@@ -1,6 +1,6 @@
 //! The Wi-Fi and Bluetooth widgets against channels standing in for the system: what they send
 //! when they are used, what they show when the system reports something, and the keyboard.
-//! Port of the Wi-Fi and Bluetooth scenarios of `legacy/tests/ui.rs`.
+//! Port of the Wi-Fi and Bluetooth scenarios of `slint/tests/ui.rs`.
 //!
 //! A plain program (`harness = false`): each scenario runs in turn on a fresh dashboard.
 //! `cargo test --test net -- sub_part` runs the scenarios with that in their names.
@@ -202,7 +202,12 @@ fn wifi_state_shown() {
         assert!(s.enabled);
         assert_eq!(s.networks.len(), 3);
     });
-    for name in ["Lighthouse", "Harbour Café", "FRITZ!Box 7590 QX", "Hidden network"] {
+    for name in [
+        "Lighthouse",
+        "Harbour Café",
+        "FRITZ!Box 7590 QX",
+        "Hidden network",
+    ] {
         assert!(h.has(leak(name.into())), "no row {name:?}");
     }
 }
@@ -284,8 +289,14 @@ fn a11y_password_stays_secret() {
     shown(&mut h);
     h.type_text("hunter2");
     let says = said(&mut h);
-    assert!(!says.contains("hunter2"), "the cursor reads out the password: {says}");
-    assert!(says.contains("Password"), "the field isn't there to read: {says}");
+    assert!(
+        !says.contains("hunter2"),
+        "the cursor reads out the password: {says}"
+    );
+    assert!(
+        says.contains("Password"),
+        "the field isn't there to read: {says}"
+    );
     let (masked, value) = h.update(|d, cx| {
         let view = d.widgets.net.wifi.views.values().next().expect("a view");
         let pool = view.pool.as_ref().expect("the prompt's fields");
@@ -524,7 +535,11 @@ fn stops_in_sight_wifi_share() {
     let side = 25;
     let data: Vec<u8> = (0..side * side)
         .flat_map(|i| {
-            let v = if (i / side + i % side) % 3 == 0 { 0 } else { 255 };
+            let v = if (i / side + i % side) % 3 == 0 {
+                0
+            } else {
+                255
+            };
             [v, v, v, 255]
         })
         .collect();
@@ -819,7 +834,10 @@ fn wifi_prompt_keys() {
     assert!(said(&mut h).contains("Password"));
     h.type_text("abc");
     h.key("esc");
-    assert!(next_wifi(&mut h).is_none(), "the first Escape only leaves the field");
+    assert!(
+        next_wifi(&mut h).is_none(),
+        "the first Escape only leaves the field"
+    );
     h.key("j");
     assert_eq!(said(&mut h), "button \"Cancel\"");
     h.key("j");
@@ -842,7 +860,10 @@ fn wifi_prompt_keys() {
     ));
     h.key("esc");
     h.key("esc");
-    assert!(matches!(next_wifi(&mut h), Some(wifi::Command::CancelPrompt)));
+    assert!(matches!(
+        next_wifi(&mut h),
+        Some(wifi::Command::CancelPrompt)
+    ));
 }
 
 /// A new prompt starts with empty fields.
@@ -928,7 +949,10 @@ fn bluetooth_keys() {
         Some(bluetooth::Command::Connect(a)) if a == "F4:73:35:44:55:66"
     ));
     h.key("r");
-    assert!(matches!(next_bt(&mut h), Some(bluetooth::Command::Scan(true))));
+    assert!(matches!(
+        next_bt(&mut h),
+        Some(bluetooth::Command::Scan(true))
+    ));
     h.key("t");
     assert!(matches!(next_bt(&mut h), Some(bluetooth::Command::Toggle)));
     h.key("l");
@@ -946,7 +970,10 @@ fn bluetooth_keys() {
     h.key("G");
     assert_eq!(said(&mut h), "listitem \"Add a device\"");
     h.key("enter");
-    assert!(matches!(next_bt(&mut h), Some(bluetooth::Command::Scan(true))));
+    assert!(matches!(
+        next_bt(&mut h),
+        Some(bluetooth::Command::Scan(true))
+    ));
 }
 
 /// What a scan finds is paired from its row; a device's details have the switches, the name and
@@ -1178,7 +1205,11 @@ fn stress_net() {
                 let h = Harness::with_mock_sized(layout, size);
                 let mut h = h;
                 let monkey = h
-                    .stress(Monkey::new(seed, std::env::var_os("NIRI_DASH_STRESS_LOG").is_some()).keep_going(), ops)
+                    .stress(
+                        Monkey::new(seed, std::env::var_os("NIRI_DASH_STRESS_LOG").is_some())
+                            .keep_going(),
+                        ops,
+                    )
                     .unwrap_or_else(|f| panic!("layout {n}, seed {seed}, {size:?}:\n{f}"));
                 if let Err(f) = monkey.finish() {
                     panic!("layout {n}, seed {seed}, {size:?}:\n{f}");
@@ -1193,7 +1224,10 @@ struct Dice(u64);
 
 impl Dice {
     fn below(&mut self, n: u64) -> u64 {
-        self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        self.0 = self
+            .0
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         (self.0 >> 33) % n
     }
 
@@ -1339,8 +1373,8 @@ fn stress_net_states() {
         for size in [(1706, 1066), (1280, 800)] {
             let mut h = Harness::with_mock_sized(layout, size);
             let mut dice = Dice(seed);
-            let mut monkey = Monkey::new(seed, std::env::var_os("NIRI_DASH_STRESS_LOG").is_some())
-                .keep_going();
+            let mut monkey =
+                Monkey::new(seed, std::env::var_os("NIRI_DASH_STRESS_LOG").is_some()).keep_going();
             let round = 40;
             for r in 1..=ops.div_ceil(round) {
                 let wifi = any_wifi(&mut dice);
@@ -1390,7 +1424,10 @@ fn main() {
             "server_check_keeps_the_cursor_in_the_form",
             server_check_keeps_the_cursor_in_the_form,
         ),
-        ("cursor_follows_the_text_field", cursor_follows_the_text_field),
+        (
+            "cursor_follows_the_text_field",
+            cursor_follows_the_text_field,
+        ),
         (
             "cursor_stays_in_sight_as_a_list_grows",
             cursor_stays_in_sight_as_a_list_grows,

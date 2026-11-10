@@ -1,6 +1,6 @@
 //! The windows widget: every window, by workspace; click one to go to it, middle-click or the
-//! close button to close it. Port of `WindowsWidget` in `legacy/ui/widgets/desk.slint` and
-//! `show_windows` in `legacy/src/app/feeds.rs`.
+//! close button to close it. Port of `WindowsWidget` in `slint/ui/widgets/desk.slint` and
+//! `show_windows` in `slint/src/app/feeds.rs`.
 
 use super::list::Lists;
 use super::parts::{self, Look, RoundIcon};
@@ -8,13 +8,13 @@ use super::pics::{Pic, Pics};
 use super::shared::{self, Scopes};
 use crate::dash::Dash;
 use crate::keys::Key;
+use crate::kit::AriaState;
 use crate::scope::Stops;
 use crate::widgets::Ctx;
 use gpui::prelude::*;
 use gpui::{AnyElement, ClickEvent, Context, MouseButton, MouseUpEvent, div, px};
 use niri_dash_system::windows::{Command, State as Sys};
 use niri_dash_system::{Senders, Tell};
-use crate::kit::AriaState;
 
 /// A row of the list: a window, or the heading of a workspace.
 #[derive(Debug, Clone, PartialEq)]
@@ -196,16 +196,15 @@ pub fn check(d: &Dash, id: u32, entered: bool) -> Result<(), String> {
     let n = count(d, id);
     let s = shared::eff(w.scopes.get(id), n);
     if n > 0 && w.rows.get(s.cursor).is_some_and(|r| r.header) {
-        return Err(format!("cursor on the workspace heading at row {}", s.cursor));
+        return Err(format!(
+            "cursor on the workspace heading at row {}",
+            s.cursor
+        ));
     }
     if s.sub > 1 {
         return Err(format!("cursor on part {} of a window row", s.sub));
     }
-    if entered
-        && n > 0
-        && w.available
-        && w.lists.of(id).in_sight(s.cursor) == Some(false)
-    {
+    if entered && n > 0 && w.available && w.lists.of(id).in_sight(s.cursor) == Some(false) {
         return Err(format!("cursor is out of sight: window row {}", s.cursor));
     }
     Ok(())
@@ -304,7 +303,12 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                     .child(r.title.clone()),
             )
             .when(!narrow, |row| {
-                row.child(div().max_w(px(120.0)).flex().child(parts::muted(r.app.clone(), tk)))
+                row.child(
+                    div()
+                        .max_w(px(120.0))
+                        .flex()
+                        .child(parts::muted(r.app.clone(), tk)),
+                )
             })
             .child(parts::icon_button(
                 ("window-close", id as usize * 10_000 + i),

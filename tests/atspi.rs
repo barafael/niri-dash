@@ -141,8 +141,7 @@ fn inner() {
     }
     let slider = &found["slider"];
     let value = slider["value"].as_f64();
-    if value.is_none_or(|v| !(0.0..=100.0).contains(&v)) || slider["max"].as_f64() != Some(100.0)
-    {
+    if value.is_none_or(|v| !(0.0..=100.0).contains(&v)) || slider["max"].as_f64() != Some(100.0) {
         problems.push(format!("the brightness knob reads {slider}"));
     }
     // Asking for the focus on the knob enters its widget, and the screen reader's focus is on it.

@@ -6,6 +6,7 @@ use super::parts::{self, Face, Scopes, card};
 use super::{draw, placed_of, tasks};
 use crate::dash::Dash;
 use crate::keys::Key;
+use crate::kit::AriaCursor;
 use crate::kit::Glide;
 use crate::layout::Kind;
 use crate::pomodoro::{Phase, Plan, Pomodoro};
@@ -18,7 +19,6 @@ use gpui::{AnyElement, ClickEvent, Context, Role, div, px};
 use niri_dash_system::{Tell, host, notifications};
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
-use crate::kit::AriaCursor;
 
 #[derive(Default)]
 pub struct State {
@@ -377,9 +377,16 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
     let v = View::of(&t.pomo.pomodoro, t.now());
     let tk = ctx.tk;
     let tint = if v.on_break { tk.good() } else { tk.accent() };
-    let scope = t.pomo.scopes.fit(ctx.tile.id(), count(ctx.round, &v), |_| 1);
+    let scope = t
+        .pomo
+        .scopes
+        .fit(ctx.tile.id(), count(ctx.round, &v), |_| 1);
     let on = ctx.entered;
-    let value = if v.running || v.paused { v.fraction } else { 1.0 };
+    let value = if v.running || v.paused {
+        v.fraction
+    } else {
+        1.0
+    };
     let ring_tint = if v.paused { tk.faint() } else { tint };
     if ctx.round {
         let face = ctx.w.min(ctx.h);
@@ -440,20 +447,16 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                                     .text_color(tint),
                             )
                             .when(face >= 120.0, |col| {
-                                col.child(
-                                    div()
-                                        .h(px(14.0))
-                                        .flex()
-                                        .items_center()
-                                        .child(parts::dots(
-                                            v.rounds,
-                                            v.done,
-                                            v.on_break,
-                                            (face * 0.04).clamp(6.0, 12.0),
-                                            tint,
-                                            tk,
-                                        )),
-                                )
+                                col.child(div().h(px(14.0)).flex().items_center().child(
+                                    parts::dots(
+                                        v.rounds,
+                                        v.done,
+                                        v.on_break,
+                                        (face * 0.04).clamp(6.0, 12.0),
+                                        tint,
+                                        tk,
+                                    ),
+                                ))
                             })
                             .when(room, |col| {
                                 col.child(
@@ -527,22 +530,22 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                 ring_tint,
                 tk,
             ))
-                .child(
-                    div()
-                        .flex()
-                        .flex_row()
-                        .flex_none()
-                        .h(px(16.0))
-                        .items_center()
-                        .gap(px(12.0))
-                        .child(parts::dots(v.rounds, v.done, v.on_break, 9.0, tint, tk))
-                        .child(
-                            parts::muted(v.next.clone(), tk)
-                                .flex_1()
-                                .flex()
-                                .justify_end(),
-                        ),
-                )
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .flex_none()
+                    .h(px(16.0))
+                    .items_center()
+                    .gap(px(12.0))
+                    .child(parts::dots(v.rounds, v.done, v.on_break, 9.0, tint, tk))
+                    .child(
+                        parts::muted(v.next.clone(), tk)
+                            .flex_1()
+                            .flex()
+                            .justify_end(),
+                    ),
+            )
         })
         .into_any_element()
 }

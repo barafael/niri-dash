@@ -546,7 +546,10 @@ fn privacy_empty_line_wraps() {
         "the line is {} px wide in a card {w} px wide",
         b.size.width
     );
-    assert!(f32::from(b.size.height) >= 2.0 * 14.0, "the line is one row high, it did not wrap");
+    assert!(
+        f32::from(b.size.height) >= 2.0 * 14.0,
+        "the line is one row high, it did not wrap"
+    );
 }
 
 /// The phone's ring row is as high as its ring and sits right under the header, as in Slint,
@@ -559,9 +562,15 @@ fn phone_ring_hugs_the_header() {
         f32::from(h.bounds_of("Phone battery").expect("the ring").top()) - y
     };
     let (short, tall) = (top(2), top(3));
-    assert!((short - tall).abs() < 0.5, "the ring moved from {short} to {tall} px with the height");
+    assert!(
+        (short - tall).abs() < 0.5,
+        "the ring moved from {short} to {tall} px with the height"
+    );
     // Padding 16, the header 28, the space 10.
-    assert!((tall - 54.0).abs() < 1.5, "the ring is {tall} px under the top of the card");
+    assert!(
+        (tall - 54.0).abs() < 1.5,
+        "the ring is {tall} px under the top of the card"
+    );
 }
 
 /// A double click on a control is not a double click on the card behind it: the widget is not
@@ -575,7 +584,11 @@ fn double_click_on_controls_does_not_carry() {
             .unwrap_or_else(|| panic!("nothing called {control:?}"))
             .center();
         h.double_click(f32::from(c.x), f32::from(c.y));
-        assert_eq!(h.adjust_id(), 0, "a double click on {control:?} picked the widget up");
+        assert_eq!(
+            h.adjust_id(),
+            0,
+            "a double click on {control:?} picked the widget up"
+        );
     }
     let mut h = show("phone col=0 row=0 width=4 height=2");
     h.send(phones_state(vec![phone("pixel", Some(82), true)]));
@@ -585,7 +598,11 @@ fn double_click_on_controls_does_not_carry() {
             .unwrap_or_else(|| panic!("nothing called {control:?}"))
             .center();
         h.double_click(f32::from(c.x), f32::from(c.y));
-        assert_eq!(h.adjust_id(), 0, "a double click on {control:?} picked the widget up");
+        assert_eq!(
+            h.adjust_id(),
+            0,
+            "a double click on {control:?} picked the widget up"
+        );
     }
 }
 
@@ -597,7 +614,10 @@ fn main() {
             double_click_on_controls_does_not_carry,
         ),
         ("privacy: the empty line wraps", privacy_empty_line_wraps),
-        ("phone: the ring hugs the header", phone_ring_hugs_the_header),
+        (
+            "phone: the ring hugs the header",
+            phone_ring_hugs_the_header,
+        ),
         ("privacy: the dots say what they watch", privacy_dots),
         (
             "privacy: no share, no stops",

@@ -3,6 +3,7 @@
 
 use super::{draw, parts, placed_of};
 use crate::dash::Dash;
+use crate::kit::AriaState;
 use crate::layout::Kind;
 use crate::widget_settings::{Opt, get_int, get_str};
 use crate::widgets::Ctx;
@@ -11,7 +12,6 @@ use chrono::{Local, Timelike};
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, Role, div, px};
 use std::collections::BTreeMap;
-use crate::kit::AriaState;
 
 /// What the clock shows, as of the last tick.
 pub struct State {
@@ -187,9 +187,13 @@ pub fn render(ctx: &Ctx, _cx: &mut Context<Dash>) -> AnyElement {
                                                 )
                                             })
                                             .when(hours12, |col| {
-                                                col.child(div().text_size(px(
-                                                    small * if seconds { 0.7 } else { 1.0 },
-                                                )).child(c.ampm.clone()))
+                                                col.child(
+                                                    div()
+                                                        .text_size(px(
+                                                            small * if seconds { 0.7 } else { 1.0 }
+                                                        ))
+                                                        .child(c.ampm.clone()),
+                                                )
                                             }),
                                     )
                                 }),
@@ -268,18 +272,40 @@ fn round(ctx: &Ctx, c: &State) -> AnyElement {
                 ticks.line(a, b2, tick_width);
             }
             ticks.paint(faint, window);
-            let hand = |turns: f32, len: f32, tail: f32, width: f32, color, window: &mut gpui::Window| {
-                let centre = at(50.0, 50.0);
-                let from = draw::on_circle(centre, -tail * unit, turns);
-                let to = draw::on_circle(centre, len * unit, turns);
-                let mut s = draw::Shape::new();
-                s.line(from, to, width);
-                s.paint(color, window);
-            };
-            hand(hour / 12.0, 24.0, 8.0, (face * 0.035).max(3.0), text, window);
-            hand(minute / 60.0, 36.0, 8.0, (face * 0.022).max(2.0), text, window);
+            let hand =
+                |turns: f32, len: f32, tail: f32, width: f32, color, window: &mut gpui::Window| {
+                    let centre = at(50.0, 50.0);
+                    let from = draw::on_circle(centre, -tail * unit, turns);
+                    let to = draw::on_circle(centre, len * unit, turns);
+                    let mut s = draw::Shape::new();
+                    s.line(from, to, width);
+                    s.paint(color, window);
+                };
+            hand(
+                hour / 12.0,
+                24.0,
+                8.0,
+                (face * 0.035).max(3.0),
+                text,
+                window,
+            );
+            hand(
+                minute / 60.0,
+                36.0,
+                8.0,
+                (face * 0.022).max(2.0),
+                text,
+                window,
+            );
             if seconds {
-                hand(second / 60.0, 40.0, 12.0, (face * 0.01).max(1.0), accent, window);
+                hand(
+                    second / 60.0,
+                    40.0,
+                    12.0,
+                    (face * 0.01).max(1.0),
+                    accent,
+                    window,
+                );
             }
             let mut centre = draw::Shape::new();
             centre.circle(at(50.0, 50.0), dot / 2.0);

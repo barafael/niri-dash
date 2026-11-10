@@ -1,11 +1,12 @@
 //! The battery widget: charge, power profiles, the switch that blocks sleep, the batteries of
-//! peripherals, and what blocks sleep. Port of `BatteryWidget` (`legacy/ui/widgets/system.slint`)
-//! and `legacy/src/app/power.rs`.
+//! peripherals, and what blocks sleep. Port of `BatteryWidget` (`slint/ui/widgets/system.slint`)
+//! and `slint/src/app/power.rs`.
 
 use super::sliders::{ring, switch_view};
 use super::{Fit, NoStops, on};
 use crate::dash::Dash;
 use crate::keys::Key;
+use crate::kit::AriaCursor;
 use crate::kit::{self, Tk};
 use crate::scope::{Scope, Stops};
 use crate::widgets::Ctx;
@@ -13,7 +14,6 @@ use gpui::prelude::*;
 use gpui::{AnyElement, Context, ElementId, Hsla, Role, ScrollHandle, Toggled, div, px};
 use niri_dash_system::Tell;
 use niri_dash_system::power::{Blocker, Command, DeviceKind, Event, Profile, State as Power};
-use crate::kit::AriaCursor;
 
 #[derive(Default)]
 pub struct State {
@@ -174,7 +174,10 @@ pub fn refit(d: &mut Dash, fit: &Fit) {
 
 pub fn describe(b: &State, fit: &Fit) -> String {
     let n = Layout::of(fit, &b.power).count(fit);
-    format!("stop {} of {n}, profile {:?}", b.scope.cursor, b.power.profile)
+    format!(
+        "stop {} of {n}, profile {:?}",
+        b.scope.cursor, b.power.profile
+    )
 }
 
 fn level_color(p: &Power, tk: &Tk) -> Hsla {
@@ -354,7 +357,9 @@ fn rect(ctx: &Ctx, fit: &Fit, b: &State, lay: &Layout, cx: &mut Context<Dash>) -
                                 .child(percent_text(p)),
                         )
                         .child(muted(&p.status_text, tk))
-                        .when(!p.power_text.is_empty(), |c| c.child(muted(&p.power_text, tk))),
+                        .when(!p.power_text.is_empty(), |c| {
+                            c.child(muted(&p.power_text, tk))
+                        }),
                 ),
         );
 
@@ -374,7 +379,11 @@ fn rect(ctx: &Ctx, fit: &Fit, b: &State, lay: &Layout, cx: &mut Context<Dash>) -
                     .id(ElementId::from(("battery-profile", id * 8 + i)))
                     .role(Role::RadioButton)
                     .aria_label(name)
-                    .aria_toggled(if current { Toggled::True } else { Toggled::False })
+                    .aria_toggled(if current {
+                        Toggled::True
+                    } else {
+                        Toggled::False
+                    })
                     .aria_cursor(lit)
                     .debug_selector(move || name.to_string())
                     // Narrow, they share what there is and the names are cut short; each
@@ -394,7 +403,11 @@ fn rect(ctx: &Ctx, fit: &Fit, b: &State, lay: &Layout, cx: &mut Context<Dash>) -
                     } else {
                         accent
                     })
-                    .bg(if current { tk.accent() } else { tk.card_raised() })
+                    .bg(if current {
+                        tk.accent()
+                    } else {
+                        tk.card_raised()
+                    })
                     .when(!current, |s| s.hover(move |h| h.bg(hover)))
                     .cursor_pointer()
                     .text_size(px(tk.font_small()))
@@ -411,7 +424,11 @@ fn rect(ctx: &Ctx, fit: &Fit, b: &State, lay: &Layout, cx: &mut Context<Dash>) -
             .id(("battery-inhibit", id))
             .role(Role::Switch)
             .aria_label(label)
-            .aria_toggled(if b.inhibited { Toggled::True } else { Toggled::False })
+            .aria_toggled(if b.inhibited {
+                Toggled::True
+            } else {
+                Toggled::False
+            })
             .aria_cursor(on_inhibit)
             .debug_selector(move || label.to_string())
             .flex_none()
@@ -438,7 +455,13 @@ fn rect(ctx: &Ctx, fit: &Fit, b: &State, lay: &Layout, cx: &mut Context<Dash>) -
                     .text_color(if b.inhibited { tk.text() } else { tk.dim() })
                     .child(label),
             )
-            .child(switch_view(0x5717_0000 + id as u64, b.inhibited, true, on_inhibit, tk))
+            .child(switch_view(
+                0x5717_0000 + id as u64,
+                b.inhibited,
+                true,
+                on_inhibit,
+                tk,
+            ))
     });
 
     let named = fit.w >= 380.0;
@@ -458,10 +481,18 @@ fn rect(ctx: &Ctx, fit: &Fit, b: &State, lay: &Layout, cx: &mut Context<Dash>) -
                         (*i + 1) as f32 * if named { 150.0 } else { 70.0 } <= fit.w - 2.0 * fit.pad
                     })
                     .map(|(i, dev)| {
-                        let tint = if dev.percent <= 20 { tk.warn() } else { tk.text() };
+                        let tint = if dev.percent <= 20 {
+                            tk.warn()
+                        } else {
+                            tk.text()
+                        };
                         let spoken = format!(
                             "{}{}%",
-                            if named { String::new() } else { format!("{} ", dev.name) },
+                            if named {
+                                String::new()
+                            } else {
+                                format!("{} ", dev.name)
+                            },
                             dev.percent
                         );
                         div()
@@ -509,7 +540,12 @@ fn rect(ctx: &Ctx, fit: &Fit, b: &State, lay: &Layout, cx: &mut Context<Dash>) -
                     .flex_none()
                     .items_center()
                     .text_size(px(tk.font_small()))
-                    .child(div().flex_none().text_color(tk.text()).child(bl.who.clone()))
+                    .child(
+                        div()
+                            .flex_none()
+                            .text_color(tk.text())
+                            .child(bl.who.clone()),
+                    )
                     .child(
                         div()
                             .flex_1()
@@ -535,7 +571,12 @@ fn rect(ctx: &Ctx, fit: &Fit, b: &State, lay: &Layout, cx: &mut Context<Dash>) -
                 },
                 tk,
             ))
-            .child(super::sliders::scroll_list(("battery-blockers", id), &b.scroll, rows, tk))
+            .child(super::sliders::scroll_list(
+                ("battery-blockers", id),
+                &b.scroll,
+                rows,
+                tk,
+            ))
     });
 
     div()

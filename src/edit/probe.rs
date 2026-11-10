@@ -31,7 +31,16 @@ pub struct Tile {
 }
 
 /// A tile without its id, to compare with one read back from the file.
-type ShapeKey = (String, bool, bool, i32, i32, i32, i32, Vec<(String, String)>);
+type ShapeKey = (
+    String,
+    bool,
+    bool,
+    i32,
+    i32,
+    i32,
+    i32,
+    Vec<(String, String)>,
+);
 
 impl Tile {
     /// Where it is and what it is, without the id (which a reload hands out anew).
@@ -341,7 +350,10 @@ impl Harness {
                     ));
                 }
                 if t.col < 0 || t.row < 0 {
-                    out.push(format!("{} #{} at negative {},{}", t.kind, t.id, t.col, t.row));
+                    out.push(format!(
+                        "{} #{} at negative {},{}",
+                        t.kind, t.id, t.col, t.row
+                    ));
                 }
                 if t.visible && (t.col + t.w > cols || t.row + t.h > rows) {
                     out.push(format!(
@@ -407,7 +419,10 @@ impl Harness {
                 && d.solo.is_none()
                 && !layout.visible().iter().any(|p| p.id == d.nav.active_id)
             {
-                out.push(format!("entered widget #{} isn't on screen", d.nav.active_id));
+                out.push(format!(
+                    "entered widget #{} isn't on screen",
+                    d.nav.active_id
+                ));
             }
 
             // The sidebar's settings are the open widget's.
@@ -614,7 +629,13 @@ impl Harness {
 
     /// The color schemes of the Colors tab: (name, current).
     pub fn schemes(&self) -> Vec<(String, bool)> {
-        self.read(|d| d.edit.schemes.iter().map(|s| (s.name.clone(), s.current)).collect())
+        self.read(|d| {
+            d.edit
+                .schemes
+                .iter()
+                .map(|s| (s.name.clone(), s.current))
+                .collect()
+        })
     }
 
     /// How many presets the Style tab has.
@@ -635,7 +656,12 @@ impl Harness {
 
     /// Whether a style row can step: (can decrease, can increase).
     pub fn style_row_can(&self, i: usize) -> (bool, bool) {
-        self.read(|d| d.edit.style_rows.get(i).map_or((false, false), |r| (r.can_dec, r.can_inc)))
+        self.read(|d| {
+            d.edit
+                .style_rows
+                .get(i)
+                .map_or((false, false), |r| (r.can_dec, r.can_inc))
+        })
     }
 
     pub fn pinned(&self, id: u32) -> Option<bool> {
@@ -665,13 +691,19 @@ pub fn check(d: &Dash) -> Result<(), String> {
         ));
     }
     if e.settings_id != 0 && d.layout.get(e.settings_id).is_none() {
-        return Err(format!("settings open for #{}, which is gone", e.settings_id));
+        return Err(format!(
+            "settings open for #{}, which is gone",
+            e.settings_id
+        ));
     }
     if e.settings_id != 0 && !d.editing {
         return Err("a settings card open outside edit mode".into());
     }
     if e.adjust_id != 0 && d.tile(e.adjust_id).is_none() {
-        return Err(format!("widget #{} opened for adjusting isn't on screen", e.adjust_id));
+        return Err(format!(
+            "widget #{} opened for adjusting isn't on screen",
+            e.adjust_id
+        ));
     }
     if e.field.focused && !d.cfg_open() {
         return Err("a text field has the keyboard with no settings card open".into());
@@ -679,7 +711,10 @@ pub fn check(d: &Dash) -> Result<(), String> {
     if let Some(p) = &e.press
         && d.tile(p.id).is_none()
     {
-        return Err(format!("a press on widget #{}, which isn't on screen", p.id));
+        return Err(format!(
+            "a press on widget #{}, which isn't on screen",
+            p.id
+        ));
     }
     if e.preview.is_some() && e.press.is_none() && !e.dragging() {
         return Err("a preview is showing with nothing being dragged".into());
@@ -705,9 +740,15 @@ pub fn check(d: &Dash) -> Result<(), String> {
     }
     let rows = d.setting_rows();
     if e.settings_id != 0 {
-        let want = d.layout.get(e.settings_id).map_or(0, |p| p.kind.info().settings.len());
+        let want = d
+            .layout
+            .get(e.settings_id)
+            .map_or(0, |p| p.kind.info().settings.len());
         if rows.len() != want {
-            return Err(format!("{} setting rows for a widget with {want}", rows.len()));
+            return Err(format!(
+                "{} setting rows for a widget with {want}",
+                rows.len()
+            ));
         }
     }
     Ok(())

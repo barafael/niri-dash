@@ -1,7 +1,7 @@
 //! The phone widget: a phone through KDE Connect, with its battery, Ring and Send files. Round:
 //! its battery as a ring. One row: name and battery; two rows: Ring and Send; three rows with
-//! several paired: all of them. Port of `PhoneWidget` (`legacy/ui/widgets/devices.slint`) and the
-//! phones part of `legacy/src/app/devices.rs`.
+//! several paired: all of them. Port of `PhoneWidget` (`slint/ui/widgets/devices.slint`) and the
+//! phones part of `slint/src/app/devices.rs`.
 
 use super::parts::{self, Card, Revealed, icon_button, muted, row, text_button};
 use crate::dash::{Dash, DashEvent};

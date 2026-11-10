@@ -1,5 +1,5 @@
 //! A scrollable column that keeps the keyboard cursor in sight: the port of Slint's `ScrollList`
-//! (`legacy/ui/common.slint`).
+//! (`slint/ui/common.slint`).
 //!
 //! The rows are the direct children of one scrolling element, so a row's index is its place in
 //! the list. A widget says which row the cursor is on (`follow`) every time it draws, and the

@@ -5,6 +5,8 @@ use super::parts::{self, Face, Scopes, card};
 use super::{draw, tasks};
 use crate::dash::Dash;
 use crate::keys::Key;
+use crate::kit::AriaCursor;
+use crate::kit::AriaState;
 use crate::kit::Glide;
 use crate::scope::Stops;
 use crate::timer::{Countdown, Run, Stopwatch, format, format_left};
@@ -14,8 +16,6 @@ use gpui::{AnyElement, ClickEvent, Context, Role, ScrollEvent, div, px};
 use niri_dash_system::{Tell, host, notifications};
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
-use crate::kit::AriaCursor;
-use crate::kit::AriaState;
 
 /// How long "Done" stays on the timer after it went off.
 const DONE_FOR: Duration = Duration::from_secs(60);
@@ -125,7 +125,11 @@ impl Layout {
     }
 
     fn count(&self) -> usize {
-        if self.round { 0 } else { self.buttons + self.presets }
+        if self.round {
+            0
+        } else {
+            self.buttons + self.presets
+        }
     }
 
     /// What stop `i` is: 0 play / pause, 1 lap, 2 reset, 3 a preset.
@@ -492,13 +496,21 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>, sw: bool) -> AnyElement {
         let (value, ring_tint, label, ring_id) = if sw {
             (
                 if v.sw_started { v.sw_fraction } else { 0.0 },
-                if v.sw_running { tk.accent() } else { tk.faint() },
+                if v.sw_running {
+                    tk.accent()
+                } else {
+                    tk.faint()
+                },
                 "Current minute",
                 "minute ring",
             )
         } else {
             (
-                if v.running || v.paused { v.fraction } else { 0.0 },
+                if v.running || v.paused {
+                    v.fraction
+                } else {
+                    0.0
+                },
                 if v.paused { tk.faint() } else { tk.accent() },
                 "Time left",
                 "time left ring",
@@ -575,9 +587,11 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>, sw: bool) -> AnyElement {
                             )
                             .when(room, |col| {
                                 col.child(
-                                    div().h(px(34.0)).flex().items_center().child(buttons(
-                                        cx, ctx, &v, sw, 30.0, false, None,
-                                    )),
+                                    div()
+                                        .h(px(34.0))
+                                        .flex()
+                                        .items_center()
+                                        .child(buttons(cx, ctx, &v, sw, 30.0, false, None)),
                                 )
                             }),
                     ),

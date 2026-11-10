@@ -1,6 +1,6 @@
 //! The volume widget: the default speaker and microphone, the output to play on and a slider per
-//! app (the mixer). Port of `VolumeWidget` (`legacy/ui/widgets/system.slint`) and
-//! `legacy/src/app/audio.rs`.
+//! app (the mixer). Port of `VolumeWidget` (`slint/ui/widgets/system.slint`) and
+//! `slint/src/app/audio.rs`.
 //!
 //! A slider the user dragged keeps its value for a moment against what the sound server reports,
 //! which lags behind (`touched`, and `stream_touched` for the app sliders).
@@ -9,6 +9,8 @@ use super::sliders::{self, Knob, Row, percent, scroll_list, slider_row};
 use super::{Fit, NoStops, digit_level, on, setter};
 use crate::dash::Dash;
 use crate::keys::{Key, Named};
+use crate::kit::AriaCursor;
+use crate::kit::AriaState;
 use crate::kit::{self, Tk};
 use crate::scope::{Scope, Stops};
 use crate::widgets::Ctx;
@@ -19,8 +21,6 @@ use gpui::{
 use niri_dash_system::audio::{Command, Event, Sink};
 use niri_dash_system::{IconSrc, Tell};
 use std::sync::Arc;
-use crate::kit::AriaCursor;
-use crate::kit::AriaState;
 
 /// An app's row in the mixer.
 pub struct Stream {
@@ -100,14 +100,20 @@ fn picture(src: &IconSrc) -> Option<ImageSource> {
     match src {
         IconSrc::None => None,
         IconSrc::Path(p) => Some(ImageSource::from(p.clone())),
-        IconSrc::Rgba { width, height, data } => {
+        IconSrc::Rgba {
+            width,
+            height,
+            data,
+        } => {
             // GPUI wants its pixels as BGRA.
             let mut px = data.as_ref().clone();
             for p in px.as_chunks_mut::<4>().0 {
                 p.swap(0, 2);
             }
             let buf = image::RgbaImage::from_raw(*width, *height, px)?;
-            Some(ImageSource::from(Arc::new(RenderImage::new([image::Frame::new(buf)]))))
+            Some(ImageSource::from(Arc::new(RenderImage::new([
+                image::Frame::new(buf),
+            ]))))
         }
     }
 }
@@ -131,10 +137,20 @@ impl Layout {
         let show_apps = f.h >= 280.0;
         let picking = v.picking;
         let k_sinks = usize::from(can_pick);
-        let k_out = k_sinks + if picking && can_pick { v.sinks.len() } else { 0 };
+        let k_out = k_sinks
+            + if picking && can_pick {
+                v.sinks.len()
+            } else {
+                0
+            };
         let has_mic = f.h > 130.0;
         let k_apps = k_out + 1 + usize::from(has_mic);
-        let k_count = k_apps + if show_apps && !picking { v.streams.len() } else { 0 };
+        let k_count = k_apps
+            + if show_apps && !picking {
+                v.streams.len()
+            } else {
+                0
+            };
         Self {
             can_pick,
             show_apps,
@@ -258,7 +274,14 @@ impl Stops for Keys<'_> {
         if !self.round && i < self.lay.k_out {
             return false;
         }
-        set_level(self.d, self.lay, self.round, i, None, delta as f32 * sliders::STEP);
+        set_level(
+            self.d,
+            self.lay,
+            self.round,
+            i,
+            None,
+            delta as f32 * sliders::STEP,
+        );
         true
     }
 
@@ -311,7 +334,11 @@ pub fn key(d: &mut Dash, fit: &Fit, key: &Key) -> bool {
     let lay = Layout::of(fit, &d.widgets.controls.volume);
     scope.set_count(lay.count(fit), &NoStops);
     if !fit.round && scope.cursor >= lay.k_apps {
-        d.widgets.controls.volume.scroll.scroll_to_item(scope.cursor - lay.k_apps);
+        d.widgets
+            .controls
+            .volume
+            .scroll
+            .scroll_to_item(scope.cursor - lay.k_apps);
     }
     d.widgets.controls.volume.scope = scope;
     taken
@@ -347,7 +374,11 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                     value: v.volume,
                     tint: tk.accent(),
                     icon: if v.muted { "volume-mute" } else { "volume" },
-                    label: if v.muted { "muted".into() } else { percent(v.volume) },
+                    label: if v.muted {
+                        "muted".into()
+                    } else {
+                        percent(v.volume)
+                    },
                     dimmed: v.muted,
                     kfocus: ctx.entered,
                     side: fit.w,
@@ -371,11 +402,19 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
         div()
             .id(ElementId::from(("volume-output", id)))
             .role(Role::Button)
-            .aria_label(if lay.picking { "Close output list" } else { "Choose output" })
+            .aria_label(if lay.picking {
+                "Close output list"
+            } else {
+                "Choose output"
+            })
             .aria_state(v.sink_name.clone())
             .aria_cursor(kf)
             .debug_selector({
-                let name = if lay.picking { "Close output list" } else { "Choose output" };
+                let name = if lay.picking {
+                    "Close output list"
+                } else {
+                    "Choose output"
+                };
                 move || name.to_string()
             })
             .flex_none()
@@ -408,13 +447,19 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
             }))
             .child(muted_text(v.sink_name.clone(), tk).flex_1().min_w_0())
             .child(div().pr(px(2.0)).child(kit::icon(
-                if lay.picking { "chevron-left" } else { "chevron-right" },
+                if lay.picking {
+                    "chevron-left"
+                } else {
+                    "chevron-right"
+                },
                 14.0,
                 tk.dim(),
             )))
             .into_any_element()
     } else {
-        muted_text(v.sink_name.clone(), tk).flex_none().into_any_element()
+        muted_text(v.sink_name.clone(), tk)
+            .flex_none()
+            .into_any_element()
     };
 
     let sinks = (lay.picking && lay.can_pick).then(|| {
@@ -498,10 +543,20 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
         slider_row(
             Row {
                 id: ("volume-slider", slot(2)),
-                label: if v.mic_muted { "Microphone, muted" } else { "Microphone" }.into(),
+                label: if v.mic_muted {
+                    "Microphone, muted"
+                } else {
+                    "Microphone"
+                }
+                .into(),
                 icon: if v.mic_muted { "mic-off" } else { "mic" },
                 icon_label: Some(
-                    if v.mic_muted { "Unmute microphone" } else { "Mute microphone" }.into(),
+                    if v.mic_muted {
+                        "Unmute microphone"
+                    } else {
+                        "Mute microphone"
+                    }
+                    .into(),
                 ),
                 icon_tint: if v.mic_muted { tk.faint() } else { tk.text() },
                 icon_box: 32.0,
@@ -551,7 +606,9 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                                 r.child(img(src).size(px(16.0)).flex_none())
                             })
                             .child(
-                                muted_text(st.app.clone(), tk).min_w_0().text_color(tk.dim()),
+                                muted_text(st.app.clone(), tk)
+                                    .min_w_0()
+                                    .text_color(tk.dim()),
                             ),
                     )
                     .child(slider_row(

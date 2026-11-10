@@ -1,5 +1,5 @@
 //! Charts made with GPUI's `canvas` and `PathBuilder`: the history graph, rings, round gauges and
-//! bars. Ports of `Graph`, `Ring`, `RoundGauge` and `Bar` of `legacy/ui/common.slint`.
+//! bars. Ports of `Graph`, `Ring`, `RoundGauge` and `Bar` of `slint/ui/common.slint`.
 //!
 //! The geometry (which samples are on screen, where the line runs, what the rounded corners cut
 //! off) is plain functions on numbers, tested below; the elements only paint it.
@@ -524,7 +524,13 @@ pub fn bar(
         .rounded_full()
         .bg(tk.track())
         .overflow_hidden()
-        .child(div().h_full().w(relative(unit(shown))).rounded_full().bg(color))
+        .child(
+            div()
+                .h_full()
+                .w(relative(unit(shown)))
+                .rounded_full()
+                .bg(color),
+        )
 }
 
 /// One bar per core, each as high as the core is busy: `h` pixels high, `gap` apart.

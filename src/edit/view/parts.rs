@@ -4,6 +4,8 @@
 //! `SettingControl`, `ChoiceCard` and `Segment`.
 
 use crate::edit::settings::{RowKind, SettingRow};
+use crate::kit::AriaCursor;
+use crate::kit::AriaState;
 use crate::kit::{self, Tk};
 use crate::theme::Color;
 use gpui::prelude::*;
@@ -12,8 +14,6 @@ use gpui::{
     Stateful, Toggled, Window, div, px,
 };
 use gpui_kit::component::input::{Input, InputState};
-use crate::kit::AriaCursor;
-use crate::kit::AriaState;
 
 /// The state a button is drawn in.
 #[derive(Debug, Clone, Copy)]
@@ -121,11 +121,7 @@ pub fn text_btn(
     let (hover, pressed) = (tk.hover(), tk.pressed());
     let accent = tk.accent();
     let tint = if primary { tk.on_accent() } else { tk.text() };
-    let bg = if primary {
-        accent
-    } else {
-        tk.card_raised()
-    };
+    let bg = if primary { accent } else { tk.card_raised() };
     let b = div()
         .id(id)
         .role(Role::Button)
@@ -149,7 +145,11 @@ pub fn text_btn(
                 .border_color(if primary { tk.text() } else { accent })
         })
         .children(icon.map(|i| kit::icon(i, 16.0, tint)))
-        .child(div().truncate().child(shown.map_or(label, |s| SharedString::from(s.to_string()))));
+        .child(
+            div()
+                .truncate()
+                .child(shown.map_or(label, |s| SharedString::from(s.to_string()))),
+        );
     if look.enabled {
         b.cursor_pointer()
             .when(!primary, |b| {
@@ -229,7 +229,11 @@ pub fn setting_row(
     } else {
         tk.c(crate::theme::ColorRole::CardRaised)
     };
-    let bg = mix(base, tk.c(crate::theme::ColorRole::Bad), 1.0 - shaking * 0.45);
+    let bg = mix(
+        base,
+        tk.c(crate::theme::ColorRole::Bad),
+        1.0 - shaking * 0.45,
+    );
     let label = row.label.clone();
     let dash = cx.entity();
     let act = {
@@ -348,18 +352,18 @@ pub fn setting_row(
         .flex_col()
         .child(head)
         .when_some(field.filter(|_| text_row), |d, state| {
-            d.child(
-                div()
-                    .pr(px(8.0))
-                    .child(text_field(state, &label, live, tk)),
-            )
+            d.child(div().pr(px(8.0)).child(text_field(state, &label, live, tk)))
         });
     div()
         .id(eid(&format!("{n}-row"), pos))
         .role(Role::ListItem)
         .aria_label(label.clone())
         .aria_cursor(kfocus)
-        .aria_state(if on_toggle { String::new() } else { value_text.clone() })
+        .aria_state(if on_toggle {
+            String::new()
+        } else {
+            value_text.clone()
+        })
         .debug_selector({
             let name = format!("row {label}");
             move || name
@@ -466,7 +470,11 @@ pub fn choice_card(
         .role(Role::RadioButton)
         .aria_label(name.to_string())
         .aria_description(description.to_string())
-        .aria_toggled(if current { Toggled::True } else { Toggled::False })
+        .aria_toggled(if current {
+            Toggled::True
+        } else {
+            Toggled::False
+        })
         .aria_cursor(kfocus)
         .debug_selector(move || label)
         .h(px(height))
@@ -479,7 +487,9 @@ pub fn choice_card(
         .rounded(px(tk.radius_small()))
         .bg(bg)
         .when(kfocus, |d| d.border_2().border_color(tk.accent()))
-        .when(current && !kfocus, |d| d.border_1().border_color(tk.accent()))
+        .when(current && !kfocus, |d| {
+            d.border_1().border_color(tk.accent())
+        })
         .cursor_pointer()
         .hover(move |s| s.bg(hover))
         .on_click(on_click)
@@ -509,9 +519,7 @@ pub fn choice_card(
                     )
                 }),
         )
-        .when(current, |d| {
-            d.child(kit::icon("check", 18.0, tk.accent()))
-        })
+        .when(current, |d| d.child(kit::icon("check", 18.0, tk.accent())))
         .into_any_element()
 }
 

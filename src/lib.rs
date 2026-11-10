@@ -9,10 +9,10 @@
 //! the system ([`testing`]).
 
 mod affinity;
+mod assets;
 mod autolayout;
 #[cfg(test)]
 mod book;
-mod assets;
 mod cli;
 mod config;
 mod cowfile;
@@ -54,7 +54,9 @@ fn own_pid() -> u32 {
 
 /// A command on the control socket, and the subcommand that sends it; the lowercase name is the
 /// wire format.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumString, strum::AsRefStr, clap::Subcommand)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, strum::EnumString, strum::AsRefStr, clap::Subcommand,
+)]
 #[strum(serialize_all = "lowercase")]
 pub enum Control {
     /// Show or hide the dashboard; starts the daemon if it isn't running.

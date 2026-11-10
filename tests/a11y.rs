@@ -159,15 +159,17 @@ fn main() {
             total += 1;
             let name = format!("{kind}{suffix}");
             // GPUI panics (in a debug build) when two elements claim the cursor in one frame.
-            let (said, problems) = std::panic::catch_unwind(AssertUnwindSafe(|| audit(kind, shape)))
-                .unwrap_or_else(|e| {
-                    let msg = e
-                        .downcast_ref::<String>()
-                        .cloned()
-                        .or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string()))
-                        .unwrap_or_default();
-                    (Vec::new(), vec![format!("panicked: {msg}")])
-                });
+            let (said, problems) =
+                std::panic::catch_unwind(AssertUnwindSafe(|| audit(kind, shape))).unwrap_or_else(
+                    |e| {
+                        let msg = e
+                            .downcast_ref::<String>()
+                            .cloned()
+                            .or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string()))
+                            .unwrap_or_default();
+                        (Vec::new(), vec![format!("panicked: {msg}")])
+                    },
+                );
             println!("{name}:");
             for s in &said {
                 println!("    {s}");

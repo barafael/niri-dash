@@ -1,10 +1,11 @@
 //! The privacy widget: who uses the microphone and camera (PipeWire), who shares the screen
-//! (niri), and a way to stop a share. Port of `PrivacyWidget` (`legacy/ui/widgets/devices.slint`)
-//! and `legacy/src/app/privacy.rs`.
+//! (niri), and a way to stop a share. Port of `PrivacyWidget` (`slint/ui/widgets/devices.slint`)
+//! and `slint/src/app/privacy.rs`.
 
 use super::parts::{self, Card, Revealed, muted, text_button};
 use crate::dash::Dash;
 use crate::keys::Key;
+use crate::kit::AriaState;
 use crate::kit::{Tk, icon, with_alpha};
 use crate::scope::{Scope, Stops};
 use crate::widgets::Ctx;
@@ -12,7 +13,6 @@ use gpui::prelude::*;
 use gpui::{AnyElement, Context, Role, ScrollHandle, SharedString, div, px};
 use niri_dash_system::privacy::{Command, ScreenCast, Usage};
 use niri_dash_system::{Tell, notifications};
-use crate::kit::AriaState;
 
 /// What uses what.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

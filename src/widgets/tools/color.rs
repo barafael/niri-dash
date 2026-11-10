@@ -1,6 +1,6 @@
 //! The color picker widget: the last picked color and its values to copy, the pipette, and the
-//! recent colors (`ColorPickerWidget` and `CopyText` in `legacy/ui/widgets/tools.slint`, and
-//! `legacy/src/app/color_picker.rs`).
+//! recent colors (`ColorPickerWidget` and `CopyText` in `slint/ui/widgets/tools.slint`, and
+//! `slint/src/app/color_picker.rs`).
 //!
 //! Picking a pixel goes through the compositor, and the dashboard covers the screen: so it hides
 //! first, the pick starts once it is gone (`awake(false)`), and the color that comes back brings
@@ -11,6 +11,7 @@ use super::{Plain, clipboard};
 use crate::Control;
 use crate::dash::{Dash, DashEvent};
 use crate::keys::Key;
+use crate::kit::AriaCursor;
 use crate::kit::{self, Tk};
 use crate::layout::Kind;
 use crate::scope::Stops;
@@ -18,7 +19,6 @@ use crate::widgets::Ctx;
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, Hsla, Role, div, px};
 use niri_dash_system::{Tell, color};
-use crate::kit::AriaCursor;
 
 /// How many picked colors are kept.
 const COLORS: usize = 8;
@@ -538,7 +538,9 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                             .border(px(if focus { 2.0 } else { 1.0 }))
                             .border_color(if focus { tk.accent() } else { border })
                             .cursor_pointer()
-                            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
+                                cx.stop_propagation()
+                            })
                             .hover(move |s| s.border_2().border_color(text))
                             .on_click(cx.listener(move |d, _, _, cx| {
                                 clipboard::copy_text(d, &hex);

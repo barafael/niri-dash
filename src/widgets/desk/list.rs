@@ -98,7 +98,8 @@ impl ScrollList {
         let (thumb, top) = if scrolls {
             let content = view + f32::from(max.y.abs());
             let thumb = (view * view / content).max(24.0).min(view);
-            let done = (-f32::from(self.handle.offset().y) / f32::from(max.y.abs())).clamp(0.0, 1.0);
+            let done =
+                (-f32::from(self.handle.offset().y) / f32::from(max.y.abs())).clamp(0.0, 1.0);
             (thumb, (view - thumb) * done)
         } else {
             (0.0, 0.0)
@@ -108,7 +109,11 @@ impl ScrollList {
         // Slint puts the bar's left edge half the padding less its own width past the rows (a
         // tight padding has no room, and the bar goes inside, in a gutter of 10 px).
         let in_padding = tk.pad() >= 8.0;
-        let inset = if in_padding { (tk.pad() + 4.0) / 2.0 } else { -1.0 };
+        let inset = if in_padding {
+            (tk.pad() + 4.0) / 2.0
+        } else {
+            -1.0
+        };
         div()
             .relative()
             .flex_1()

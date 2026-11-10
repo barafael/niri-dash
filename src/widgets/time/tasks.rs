@@ -68,7 +68,10 @@ pub fn ensure(d: &Dash, cx: &mut Context<Dash>) {
         let epoch = waiting.epoch.get() + 1;
         waiting.epoch.set(epoch);
         if let Some(end) = end {
-            let left = end.duration_since(now).unwrap_or_default().max(Duration::from_millis(1));
+            let left = end
+                .duration_since(now)
+                .unwrap_or_default()
+                .max(Duration::from_millis(1));
             deadline(cx, which, epoch, left);
         }
     }

@@ -20,10 +20,13 @@ impl Dash {
 
     pub(crate) fn card_layer(&self, tk: &Tk, cx: &mut Context<Self>) -> Option<AnyElement> {
         let up = self.card_up();
-        let shift = self
-            .edit
-            .anim
-            .follow(("card", 0), if up { 1.0 } else { 0.0 }, 180.0, tk.motion(), Ease::Soft);
+        let shift = self.edit.anim.follow(
+            ("card", 0),
+            if up { 1.0 } else { 0.0 },
+            180.0,
+            tk.motion(),
+            Ease::Soft,
+        );
         if shift <= 0.001 {
             return None;
         }
@@ -45,29 +48,35 @@ impl Dash {
         let y = (height - card_h) / 2.0 + (1.0 - shift) * 18.0;
         if self.cfg_open() {
             let handle = &self.edit.scroll.card;
-            if self.edit.side_keys && self.edit.revealed.get() != Some((None, self.edit.side_cursor, true, id)) {
+            if self.edit.side_keys
+                && self.edit.revealed.get() != Some((None, self.edit.side_cursor, true, id))
+            {
                 handle.scroll_to_item(self.edit.side_cursor);
             }
             self.edit
                 .revealed
                 .set(Some((None, self.edit.side_cursor, self.edit.side_keys, id)));
         }
-        let rows: Vec<AnyElement> = rows.into_iter().enumerate().map(|(i, row)| {
-            let field = self.edit.field.state(id, row.index).cloned();
-            setting_row(
-                RowSpec {
-                    owner: RowOwner::Card,
-                    pos: i,
-                    row,
-                    kfocus: self.cfg_on(i),
-                    shake: 0.0,
-                    live: up,
-                    field,
-                },
-                tk,
-                cx,
-            )
-        }).collect();
+        let rows: Vec<AnyElement> = rows
+            .into_iter()
+            .enumerate()
+            .map(|(i, row)| {
+                let field = self.edit.field.state(id, row.index).cloned();
+                setting_row(
+                    RowSpec {
+                        owner: RowOwner::Card,
+                        pos: i,
+                        row,
+                        kfocus: self.cfg_on(i),
+                        shake: 0.0,
+                        live: up,
+                        field,
+                    },
+                    tk,
+                    cx,
+                )
+            })
+            .collect();
         let card = div()
             .id("settings-card")
             .role(Role::TabPanel)
@@ -149,7 +158,9 @@ impl Dash {
                     .truncate()
                     .text_size(px(tk.font_small()))
                     .text_color(tk.dim())
-                    .child("j k h l Enter · Backspace resets · Ctrl+h j k l next widget · Esc closes"),
+                    .child(
+                        "j k h l Enter · Backspace resets · Ctrl+h j k l next widget · Esc closes",
+                    ),
             );
         Some(
             div()
@@ -164,7 +175,10 @@ impl Dash {
                         .debug_selector(|| "settings scrim".into())
                         .absolute()
                         .size_full()
-                        .bg(tk.c(crate::theme::ColorRole::Backdrop).with_alpha(0.6).hsla())
+                        .bg(tk
+                            .c(crate::theme::ColorRole::Backdrop)
+                            .with_alpha(0.6)
+                            .hsla())
                         .occlude()
                         .on_click(cx.listener(|d, _, _, cx| {
                             d.set_settings_id(0);

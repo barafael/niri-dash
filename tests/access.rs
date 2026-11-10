@@ -95,7 +95,9 @@ fn states() {
 /// What a card only shows as text is in the tree as text, as Slint's text items were: the clock's
 /// time and date, a gauge's figures.
 fn text_is_read() {
-    let mut h = Harness::with_mock("layout {\n    clock col=0 row=0 width=4 height=3\n    memory col=4 row=0 width=4 height=4\n}\n");
+    let mut h = Harness::with_mock(
+        "layout {\n    clock col=0 row=0 width=4 height=3\n    memory col=4 row=0 width=4 height=4\n}\n",
+    );
     h.advance(3);
     let tree = h.a11y();
     let texts: Vec<&str> = tree
@@ -105,7 +107,9 @@ fn text_is_read() {
         .map(|e| e.value.as_str())
         .collect();
     assert!(
-        texts.iter().any(|t| t.contains(':') && t.chars().any(|c| c.is_ascii_digit())),
+        texts
+            .iter()
+            .any(|t| t.contains(':') && t.chars().any(|c| c.is_ascii_digit())),
         "no time among the texts {texts:?}\n{}",
         tree.dump()
     );
@@ -121,7 +125,10 @@ fn text_is_read() {
 fn ids_hold() {
     let mut h = dashboard();
     let before = h.a11y();
-    let knob = before.find(Role::Slider, "Brightness").expect("the knob").id;
+    let knob = before
+        .find(Role::Slider, "Brightness")
+        .expect("the knob")
+        .id;
     let switch = before.find(Role::Switch, "Wi-Fi").expect("the switch").id;
     h.send(brightness::Event::Level(Some(0.3)));
     h.advance(3);
@@ -155,7 +162,10 @@ fn quiet() {
 fn follows_the_keyboard() {
     let mut h = dashboard();
     let tree = h.a11y();
-    assert!(tree.focus_is_root(), "the focus is on a widget before one is entered");
+    assert!(
+        tree.focus_is_root(),
+        "the focus is on a widget before one is entered"
+    );
     enter(&mut h, 0);
     let mut moves = 0;
     let mut last = {
@@ -260,11 +270,15 @@ fn leaving_and_coming_back() {
     assert!(!h.a11y_connected(), "a tree for a screen reader that left");
     h.send(brightness::Event::Level(Some(0.2)));
     h.advance(3);
-    assert!(!h.a11y_connected(), "a tree built for a screen reader that left");
+    assert!(
+        !h.a11y_connected(),
+        "a tree built for a screen reader that left"
+    );
     let tree = h.a11y();
     assert!(tree.elements.len() > 20);
     assert_eq!(
-        tree.find(Role::Slider, "Brightness").and_then(|e| e.numeric),
+        tree.find(Role::Slider, "Brightness")
+            .and_then(|e| e.numeric),
         Some(20.0),
         "what changed while it was away"
     );

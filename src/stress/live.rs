@@ -217,18 +217,19 @@ impl Render for Panel {
                 })),
             )
             .child(div().flex_1().child(self.status.clone()))
-            .child(
-                button("pace".into(), "Pace".into()).on_click(cx.listener(
-                    |this, _: &ClickEvent, _, cx| {
-                        this.open = !this.open;
-                        cx.notify();
-                    },
-                )),
-            );
+            .child(button("pace".into(), "Pace".into()).on_click(cx.listener(
+                |this, _: &ClickEvent, _, cx| {
+                    this.open = !this.open;
+                    cx.notify();
+                },
+            )));
         let rows = self.open.then(|| {
             let texts = tuning.texts();
-            div().flex().flex_col().gap_1().children(ROWS.iter().enumerate().map(
-                |(row, label)| {
+            div()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .children(ROWS.iter().enumerate().map(|(row, label)| {
                     div()
                         .flex()
                         .items_center()
@@ -255,8 +256,7 @@ impl Render for Panel {
                                 },
                             )),
                         )
-                },
-            ))
+                }))
         });
         div()
             .size_full()
@@ -335,8 +335,7 @@ impl Rig for Live<'_> {
             log::warn!("no key called {name:?}");
             return;
         };
-        let Ok(keystroke) = Keystroke::parse_with_os(&key.to_gpui(), OperatingSystem::Linux)
-        else {
+        let Ok(keystroke) = Keystroke::parse_with_os(&key.to_gpui(), OperatingSystem::Linux) else {
             log::warn!("no keystroke for {name:?}");
             return;
         };
@@ -429,7 +428,10 @@ impl Run {
         {
             self.running += now.saturating_duration_since(last);
         }
-        let monkey = self.monkey.as_mut().expect("the monkey, until the run ends");
+        let monkey = self
+            .monkey
+            .as_mut()
+            .expect("the monkey, until the run ends");
         let done = monkey.done();
         let rate = tuning.rate_now(self.running.as_secs_f64(), done);
         self.show(rig.app, tuning, done, rate);
@@ -605,7 +607,9 @@ pub fn run(monkey: Monkey, args: &super::Args) -> Result<Monkey> {
         Some(Ok(monkey)) => Ok(monkey),
         Some(Err(failure)) => Err(Error::Stress(failure.to_string())),
         // A window was closed: the run ends where it is.
-        None => Err(Error::Ui("the window was closed before the run ended".into())),
+        None => Err(Error::Ui(
+            "the window was closed before the run ended".into(),
+        )),
     }
 }
 

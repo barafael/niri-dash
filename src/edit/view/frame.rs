@@ -213,7 +213,13 @@ impl Dash {
         let (wc, hc) = (f("fw", t_w as f32), f("fh", t_h as f32));
         let (grid_w, grid_h) = (wc * cell, hc * cell);
         let (area_w, area_h) = (g.cols as f32 * cell, g.rows as f32 * cell);
-        let e = anim.follow(("fexp", id), if expanded { 1.0 } else { 0.0 }, 240.0, m, Ease::Soft);
+        let e = anim.follow(
+            ("fexp", id),
+            if expanded { 1.0 } else { 0.0 },
+            240.0,
+            m,
+            Ease::Soft,
+        );
         // Blown up it is big, in the middle of the grid, and rectangular even if round.
         let big_w = area_w.min((t_w as f32 * cell).max(area_w * 0.55).max(8.0 * cell));
         let big_h = area_h.min((t_h as f32 * cell).max(area_h * 0.8).max(6.0 * cell));
@@ -231,7 +237,12 @@ impl Dash {
         let diameter = cw.min(ch);
         let appear = anim.entrance((pl.col + pl.row) as f32 * 5.0, 180.0, m, Ease::Soft);
         let (card_w, card_h, left, mut top) = if shows_round {
-            (diameter, diameter, (w - diameter) / 2.0, (h - diameter) / 2.0)
+            (
+                diameter,
+                diameter,
+                (w - diameter) / 2.0,
+                (h - diameter) / 2.0,
+            )
         } else {
             (cw, ch, gap, gap)
         };
@@ -275,7 +286,11 @@ impl Dash {
         // The edit controls fade in and out; the handles show on the widget in hand, as Plasma's do.
         let edit_fade = anim.follow(
             ("efade", id),
-            if editing && !moving && !sizing { 1.0 } else { 0.0 },
+            if editing && !moving && !sizing {
+                1.0
+            } else {
+                0.0
+            },
             160.0,
             m,
             Ease::Out,
@@ -331,7 +346,11 @@ impl Dash {
                     .top(px(p.target.row as f32 * cell - frame_y + gap))
                     .w(px((p.target.w as f32 * cell - 2.0 * gap).max(0.0)))
                     .h(px((p.target.h as f32 * cell - 2.0 * gap).max(0.0)))
-                    .rounded(px(if round { p.target.w as f32 * cell / 2.0 } else { tk.look.style.radius }))
+                    .rounded(px(if round {
+                        p.target.w as f32 * cell / 2.0
+                    } else {
+                        tk.look.style.radius
+                    }))
                     .border_2()
                     .border_color(color)
                     .bg(kit::with_alpha(color, 0.12)),
@@ -347,8 +366,6 @@ impl Dash {
             .h(px(card_h))
             .rounded(px(radius))
             .bg(bg.hsla())
-            .border(px(if selected || entered { bw.max(2.0) } else { bw }))
-            .border_color(border)
             .overflow_hidden()
             .opacity(appear * if in_hand { 0.85 } else { 1.0 })
             .debug_selector(move || format!("widget {title}"))
@@ -373,6 +390,18 @@ impl Dash {
                     }),
                 )
             })
+            // The border takes no room, as in Slint (a CSS border would push the widget's content
+            // in by its width): it is drawn under the content, which starts at the card's edge.
+            .child(
+                div()
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .size_full()
+                    .rounded(px(radius))
+                    .border(px(if selected || entered { bw.max(2.0) } else { bw }))
+                    .border_color(border),
+            )
             .child(widgets::render(&ctx, cx));
 
         if op != NavOp::None {
@@ -461,7 +490,11 @@ impl Dash {
                     tk.panel()
                 };
                 let hover_bg = tk.accent().opacity(0.6);
-                let dot_border = if active && blocked { tk.bad() } else { tk.accent() };
+                let dot_border = if active && blocked {
+                    tk.bad()
+                } else {
+                    tk.accent()
+                };
                 let handle: Stateful<Div> = div()
                     .id(("handle", (id as usize) * 8 + n))
                     .group(group.clone())
@@ -495,9 +528,7 @@ impl Dash {
                                 .rounded_full()
                                 .opacity(handles_fade)
                                 .bg(dot_bg)
-                                .when(!active, |d| {
-                                    d.group_hover(group, move |s| s.bg(hover_bg))
-                                })
+                                .when(!active, |d| d.group_hover(group, move |s| s.bg(hover_bg)))
                                 .border_1()
                                 .border_color(dot_border)
                                 .shadow(vec![BoxShadow {

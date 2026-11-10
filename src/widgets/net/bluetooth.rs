@@ -1,6 +1,6 @@
 //! The Bluetooth widget: paired and nearby devices, a device's details, and the pairing prompt.
-//! Port of `BluetoothWidget`, `BtRow` and `BtPairingPrompt` (`legacy/ui/widgets/net.slint`) with
-//! what `legacy/src/app/feeds.rs` made of the system's state.
+//! Port of `BluetoothWidget`, `BtRow` and `BtPairingPrompt` (`slint/ui/widgets/net.slint`) with
+//! what `slint/src/app/feeds.rs` made of the system's state.
 //!
 //! Pages: 0 devices, 1 one device's details. Stops are kept the way `wifi` keeps them (see [`L`]);
 //! the pairing prompt has its own ([`P`]).
@@ -443,12 +443,18 @@ pub fn act(d: &mut Dash, id: u32, a: Act, cx: &mut Context<Dash>) -> Fx {
         }
         Act::Trust => {
             if let Some(det) = &m.detail {
-                tell(d, bt::Command::SetTrusted(det.address.clone(), !det.trusted));
+                tell(
+                    d,
+                    bt::Command::SetTrusted(det.address.clone(), !det.trusted),
+                );
             }
         }
         Act::Block => {
             if let Some(det) = &m.detail {
-                tell(d, bt::Command::SetBlocked(det.address.clone(), !det.blocked));
+                tell(
+                    d,
+                    bt::Command::SetBlocked(det.address.clone(), !det.blocked),
+                );
             }
         }
         Act::Rename => {
@@ -856,9 +862,8 @@ pub fn make_pool(d: &mut Dash, id: u32, window: &mut Window, cx: &mut Context<Da
     if v.pool.is_some() {
         return;
     }
-    let on: OnEvent = std::rc::Rc::new(move |d, name, event, _, cx| {
-        field_event(d, id, name, event, cx)
-    });
+    let on: OnEvent =
+        std::rc::Rc::new(move |d, name, event, _, cx| field_event(d, id, name, event, cx));
     let pool = Pool::new(&FIELDS, window, cx, on);
     view_mut(d, id).pool = Some(pool);
     cx.notify();
@@ -894,7 +899,11 @@ fn row_value(d: &bt::Device) -> String {
 }
 
 fn add_label(m: &Model) -> &'static str {
-    if m.discovering { "Stop looking" } else { "Add a device" }
+    if m.discovering {
+        "Stop looking"
+    } else {
+        "Add a device"
+    }
 }
 
 /// What the stop under the cursor of widget `id` is, as a screen reader would say it.
@@ -907,7 +916,15 @@ pub fn spoken(d: &Dash, id: u32) -> Option<Said> {
         return Some(if c < q.k_no {
             said("textinput", if p.kind == 2 { "PIN" } else { "Passkey" }, "")
         } else if c == q.k_no {
-            said("button", if p.kind == 1 || p.kind == 6 { "No" } else { "Cancel" }, "")
+            said(
+                "button",
+                if p.kind == 1 || p.kind == 6 {
+                    "No"
+                } else {
+                    "Cancel"
+                },
+                "",
+            )
         } else {
             said("button", yes_label(p), "")
         });
@@ -1016,8 +1033,7 @@ pub fn check(d: &Dash) -> Result<(), String> {
                 ("rename", None) => (v.scope.cursor, 2),
                 _ => (0, 0),
             };
-            if cursor != stop && matches!((name, &m.prompt), ("code", Some(_)) | ("rename", None))
-            {
+            if cursor != stop && matches!((name, &m.prompt), ("code", Some(_)) | ("rename", None)) {
                 return Err(format!(
                     "{at}: typing in {name:?}, but the cursor is on stop {cursor}, not {stop}"
                 ));
@@ -1354,7 +1370,11 @@ fn prompt(ctx: &Ctx, v: &View, p: &Prompt, id: u32, cx: &mut Context<Dash>) -> A
         .gap(px(6.0))
         .child(ui::text_button(
             "prompt-no",
-            if p.kind == 1 || p.kind == 6 { "No" } else { "Cancel" },
+            if p.kind == 1 || p.kind == 6 {
+                "No"
+            } else {
+                "Cancel"
+            },
             None,
             Look::default(),
             St::cursor(on && cursor == q.k_no),
@@ -1418,7 +1438,11 @@ fn device_row(
             .min_w_0()
             .truncate()
             .text_size(px(tk.font_body()))
-            .text_color(if dev.connected { tk.accent() } else { tk.text() })
+            .text_color(if dev.connected {
+                tk.accent()
+            } else {
+                tk.text()
+            })
             .child(dev.name.clone()),
     );
     if !narrow {
@@ -1434,11 +1458,11 @@ fn device_row(
             String::new()
         };
         let warn = (!dev.paired && dev.connected) || dev.blocked;
-        row = row.child(
-            ui::muted(text, tk)
-                .flex_none()
-                .text_color(if warn { tk.warn() } else { tk.dim() }),
-        );
+        row = row.child(ui::muted(text, tk).flex_none().text_color(if warn {
+            tk.warn()
+        } else {
+            tk.dim()
+        }));
         if dev.bars() >= 0 {
             row = row.child(ui::signal_bars(dev.bars() * 25, tk.text(), tk));
         }
@@ -1491,7 +1515,11 @@ fn devices(
     }
     if m.discovering || !m.nearby.is_empty() {
         rows.push(ui::section_label(
-            if m.discovering { "Nearby (looking…)" } else { "Nearby" },
+            if m.discovering {
+                "Nearby (looking…)"
+            } else {
+                "Nearby"
+            },
             26.0,
             tk,
         ));
@@ -1513,7 +1541,12 @@ fn devices(
         ));
     }
     if m.discovering && m.nearby.is_empty() {
-        rows.push(ui::muted_line("Put the device into pairing mode.", 30.0, false, tk));
+        rows.push(ui::muted_line(
+            "Put the device into pairing mode.",
+            30.0,
+            false,
+            tk,
+        ));
     }
     if m.unnamed > 0 {
         rows.push(ui::muted_line(
@@ -1632,19 +1665,17 @@ fn detail(
                 .flex_row()
                 .items_start()
                 .gap(px(6.0))
-                .child(
-                    div().flex_1().min_w_0().child(field(
-                        v,
-                        id,
-                        "rename",
-                        "New name",
-                        "Rename",
-                        false,
-                        kf(2),
-                        tk,
-                        cx,
-                    )),
-                )
+                .child(div().flex_1().min_w_0().child(field(
+                    v,
+                    id,
+                    "rename",
+                    "New name",
+                    "Rename",
+                    false,
+                    kf(2),
+                    tk,
+                    cx,
+                )))
                 .child(ui::text_button(
                     "rename-button",
                     "Rename",

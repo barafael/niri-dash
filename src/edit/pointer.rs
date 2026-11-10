@@ -1,6 +1,6 @@
 //! The mouse in edit mode: dragging a widget by its card, pulling its edges and corners, carrying
 //! one picked up with a double click, dragging a new one in from the palette, and the long press
-//! that opens a widget alone for adjusting (`legacy/src/app/hold.rs`).
+//! that opens a widget alone for adjusting (`slint/src/app/hold.rs`).
 //!
 //! The frames only record where a press began; the pointer is watched at the window
 //! ([`view::pointer_layer`](super::view::pointer_layer)), so a drag goes on wherever the pointer
@@ -187,8 +187,16 @@ impl Dash {
         let (px, py) = p.pull();
         let (pulled_x, pulled_y) = (p.pos.0 - p.down.0, p.pos.1 - p.down.1);
         // A pinned widget can't be dragged away.
-        let (dx, dy) = if p.moving() && !pl.pinned { (pulled_x, pulled_y) } else { (0.0, 0.0) };
-        let (pulled_x, pulled_y) = if p.sizing() { (pulled_x, pulled_y) } else { (0.0, 0.0) };
+        let (dx, dy) = if p.moving() && !pl.pinned {
+            (pulled_x, pulled_y)
+        } else {
+            (0.0, 0.0)
+        };
+        let (pulled_x, pulled_y) = if p.sizing() {
+            (pulled_x, pulled_y)
+        } else {
+            (0.0, 0.0)
+        };
         // What the pointer asks for. A round widget stays square, whichever way it is pulled.
         let sum = px as f32 * pulled_x + py as f32 * pulled_y;
         let wanted_w = if !round {
@@ -198,11 +206,27 @@ impl Dash {
         } else {
             sum
         };
-        let wanted_h = if round { wanted_w } else { py as f32 * pulled_y };
+        let wanted_h = if round {
+            wanted_w
+        } else {
+            py as f32 * pulled_y
+        };
         // What it gets: down to the minimum size, out to the grid's edge.
         let (min_w, min_h) = pl.min_size();
-        let room_w = (if px < 0 { pl.col } else { g.cols - pl.col - pl.w }).max(0) as f32 * cell;
-        let room_h = (if py < 0 { pl.row } else { g.rows - pl.row - cells_h }).max(0) as f32 * cell;
+        let room_w = (if px < 0 {
+            pl.col
+        } else {
+            g.cols - pl.col - pl.w
+        })
+        .max(0) as f32
+            * cell;
+        let room_h = (if py < 0 {
+            pl.row
+        } else {
+            g.rows - pl.row - cells_h
+        })
+        .max(0) as f32
+            * cell;
         let hi_w = if round { room_w.min(room_h) } else { room_w };
         let lo_w = (min_w - pl.w).min(0) as f32 * cell;
         let stretch_w = wanted_w.clamp(lo_w.min(hi_w), hi_w);
@@ -222,7 +246,8 @@ impl Dash {
         let t_row = if py < 0 {
             pl.row + cells_h - t_h
         } else {
-            (((pl.row as f32 * cell + dy) / cell).round() as i32).clamp(0, (g.rows - cells_h).max(0))
+            (((pl.row as f32 * cell + dy) / cell).round() as i32)
+                .clamp(0, (g.rows - cells_h).max(0))
         };
         let blocked = wanted_w != stretch_w || wanted_h != stretch_h;
         Some((
@@ -475,8 +500,10 @@ impl Dash {
             && d.pos.0 < g.x + g.cols as f32 * g.cell
             && d.pos.1 >= g.y
             && d.pos.1 < g.y + g.rows as f32 * g.cell;
-        let col = (((d.pos.0 - d.grab.0 - g.x) / g.cell).round() as i32).clamp(0, (g.cols - d.w).max(0));
-        let row = (((d.pos.1 - d.grab.1 - g.y) / g.cell).round() as i32).clamp(0, (g.rows - d.h).max(0));
+        let col =
+            (((d.pos.0 - d.grab.0 - g.x) / g.cell).round() as i32).clamp(0, (g.cols - d.w).max(0));
+        let row =
+            (((d.pos.1 - d.grab.1 - g.y) / g.cell).round() as i32).clamp(0, (g.rows - d.h).max(0));
         (col, row, over)
     }
 
@@ -597,7 +624,8 @@ impl Dash {
     /// being adjusted all give way. False if it stays as it is: a standalone app, edit mode (every
     /// widget is open already), a drag going on, or this very widget open already.
     pub fn hold_widget(&mut self, id: u32, cx: &mut Context<Self>) -> bool {
-        if self.solo.is_some() || self.editing || self.edit.dragging() || self.edit.adjust_id == id {
+        if self.solo.is_some() || self.editing || self.edit.dragging() || self.edit.adjust_id == id
+        {
             return false;
         }
         if self.tile(id).is_none() {

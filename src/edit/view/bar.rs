@@ -10,7 +10,12 @@ use gpui::prelude::*;
 use gpui::{AnyElement, Context, FontWeight, SharedString, TextRun, Window, div, px};
 
 /// How wide `text` is at `size`, in pixels.
-pub(crate) fn text_width(window: &Window, text: &str, size: f32, weight: Option<FontWeight>) -> f32 {
+pub(crate) fn text_width(
+    window: &Window,
+    text: &str,
+    size: f32,
+    weight: Option<FontWeight>,
+) -> f32 {
     if text.is_empty() {
         return 0.0;
     }

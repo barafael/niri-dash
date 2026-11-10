@@ -3,8 +3,8 @@
 //! in the manner of `cowsay`. What they say comes from `crate::mascots` (lines sent with
 //! `niri-dash say`, a shell command, their own remarks); this is what they look like and do:
 //! blink, glance at the bubble, follow the pointer, duck for a new line, and `Next line` on a
-//! click or Enter. Port of `MascotWidget` (`legacy/ui/widgets/mascot.slint`) and
-//! `legacy/src/app/mascots.rs`.
+//! click or Enter. Port of `MascotWidget` (`slint/ui/widgets/mascot.slint`) and
+//! `slint/src/app/mascots.rs`.
 //!
 //! Animation is time computed when drawn (`motion`): a mascot at rest asks for no frames, one
 //! blinking or ducking asks for the next one, and with the look's motion at 0 nothing moves.

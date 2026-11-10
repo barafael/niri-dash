@@ -1,6 +1,6 @@
 //! The session buttons: lock, suspend, log out, restart, power off, the last two asking twice
 //! when `confirm` is on. Port of `SessionWidget` and `SessionButton`
-//! (`legacy/ui/widgets/system.slint`) and the session callbacks of `legacy/src/app/power.rs`.
+//! (`slint/ui/widgets/system.slint`) and the session callbacks of `slint/src/app/power.rs`.
 //!
 //! Locking, suspending and logging out hide the dashboard first, so that it is not what the
 //! lock screen shows or the session takes down with it.
@@ -8,6 +8,8 @@
 use super::{DISARM, Fit, NoStops, on};
 use crate::dash::{Dash, DashEvent};
 use crate::keys::Key;
+use crate::kit::AriaCursor;
+use crate::kit::AriaState;
 use crate::kit::{self, Tk, with_alpha};
 use crate::scope::{Scope, Stops};
 use crate::widgets::Ctx;
@@ -15,8 +17,6 @@ use gpui::prelude::*;
 use gpui::{AnyElement, Context, ElementId, Role, div, px};
 use niri_dash_system::Tell;
 use niri_dash_system::session::Command;
-use crate::kit::AriaCursor;
-use crate::kit::AriaState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Button {
@@ -95,7 +95,11 @@ fn press(d: &mut Dash, fit: &Fit, button: Button, cx: &mut Context<Dash>) {
     let s = &mut d.widgets.controls.session;
     if button.danger(fit) && !s.is_armed(button) {
         let since = d.widgets.controls.ticks;
-        d.widgets.controls.session.armed.push(Armed { button, since });
+        d.widgets
+            .controls
+            .session
+            .armed
+            .push(Armed { button, since });
         return;
     }
     s.armed.retain(|a| a.button != button);
@@ -116,7 +120,9 @@ fn press(d: &mut Dash, fit: &Fit, button: Button, cx: &mut Context<Dash>) {
 pub fn tick(d: &mut Dash) {
     let c = &mut d.widgets.controls;
     let now = c.ticks;
-    c.session.armed.retain(|a| now.saturating_sub(a.since) < DISARM);
+    c.session
+        .armed
+        .retain(|a| now.saturating_sub(a.since) < DISARM);
 }
 
 struct Keys<'a, 'b> {
@@ -169,7 +175,10 @@ pub fn refit(d: &mut Dash, fit: &Fit) {
 pub fn describe(s: &State, fit: &Fit) -> String {
     let list = buttons(fit);
     let on = list.get(s.scope.cursor).map_or("nothing", |b| b.label());
-    format!("on {on}{}", if s.armed.is_empty() { "" } else { ", asking" })
+    format!(
+        "on {on}{}",
+        if s.armed.is_empty() { "" } else { ", asking" }
+    )
 }
 
 /// One session button. `side` is its height, for the icon and for whether there is room for a
@@ -186,11 +195,7 @@ struct Look<'a> {
     tk: &'a Tk,
 }
 
-fn button_view(
-    look: Look,
-    cx: &mut Context<Dash>,
-    fit: &Fit,
-) -> gpui::Stateful<gpui::Div> {
+fn button_view(look: Look, cx: &mut Context<Dash>, fit: &Fit) -> gpui::Stateful<gpui::Div> {
     let Look {
         button,
         index,
@@ -223,7 +228,11 @@ fn button_view(
         .gap(px(2.0))
         .rounded(px(if circle { 1000.0 } else { tk.radius_small() }))
         .border(px(2.0))
-        .border_color(if kfocus { accent } else { gpui::transparent_black() })
+        .border_color(if kfocus {
+            accent
+        } else {
+            gpui::transparent_black()
+        })
         .bg(if armed {
             with_alpha(bad, 0.25)
         } else if kfocus {
@@ -231,7 +240,9 @@ fn button_view(
         } else {
             tk.card_raised()
         })
-        .when(!armed, |b| b.hover(move |s| s.bg(hover)).active(move |s| s.bg(pressed)))
+        .when(!armed, |b| {
+            b.hover(move |s| s.bg(hover)).active(move |s| s.bg(pressed))
+        })
         .cursor_pointer()
         .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(on(cx, move |d, cx| press(d, &fit, button, cx)))

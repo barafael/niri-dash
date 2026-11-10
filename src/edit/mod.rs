@@ -1,6 +1,6 @@
-//! Edit mode: arranging and styling the dashboard. A port of `legacy/ui/app.slint` and
-//! `legacy/ui/frame.slint` (the drawer, the settings card, the frames' handles and toolbar, the
-//! quick tips along the bottom) and of `legacy/src/app/{edit,arrange,hold,look}.rs` (what they do to
+//! Edit mode: arranging and styling the dashboard. A port of `slint/ui/app.slint` and
+//! `slint/ui/frame.slint` (the drawer, the settings card, the frames' handles and toolbar, the
+//! quick tips along the bottom) and of `slint/src/app/{edit,arrange,hold,look}.rs` (what they do to
 //! the layout).
 //!
 //! - [`Edit`] is the state of it all, the properties of the Slint window: it hangs on the

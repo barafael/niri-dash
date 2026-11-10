@@ -16,8 +16,8 @@
 
 use super::Harness;
 use crate::dash::NavMode;
-use gpui::accesskit::{self, ActionRequest, NodeId, Role, TreeId, TreeUpdate};
 use gpui::AnyWindowHandle;
+use gpui::accesskit::{self, ActionRequest, NodeId, Role, TreeId, TreeUpdate};
 use std::collections::HashMap;
 
 pub use gpui::accesskit::{Action, Toggled};
@@ -345,9 +345,7 @@ impl Tree {
             None => true,
             Some(f) => {
                 f.id == self.root
-                    || (f.role == Role::Group
-                        && f.label.is_empty()
-                        && f.parent == Some(self.root))
+                    || (f.role == Role::Group && f.label.is_empty() && f.parent == Some(self.root))
             }
         }
     }
@@ -360,7 +358,8 @@ impl Tree {
         let mut out: Vec<&Element> = self
             .elements
             .iter()
-            .filter(|e| e.selected == Some(true))
+            // A tab that is selected is the tab shown, not where the keyboard is.
+            .filter(|e| e.selected == Some(true) && e.role_name() != "tab")
             .collect();
         if let Some(f) = self.focused().filter(|_| !self.focus_is_root())
             && !out.iter().any(|e| e.id == f.id)
@@ -544,8 +543,7 @@ impl Harness {
 
     /// [`Harness::cursor`] in a tree already taken.
     pub fn cursor_in(&self, tree: &Tree) -> Result<Option<Element>, String> {
-        let (editing, side_keys, mode) =
-            self.read(|d| (d.editing, d.edit.side_keys, d.nav.mode));
+        let (editing, side_keys, mode) = self.read(|d| (d.editing, d.edit.side_keys, d.nav.mode));
         let scope: Vec<&Element> = if editing && side_keys && mode != NavMode::Hints {
             // Edit mode's sidebar has a cursor of its own; nothing else has one then.
             tree.cursors()
@@ -579,10 +577,7 @@ impl Harness {
             [one] => Ok(Some((*one).clone())),
             [] if scope.is_empty() && !(editing && side_keys) => {
                 // A widget without controls: its frame answers.
-                Ok(self
-                    .entered_frame(tree)
-                    .and_then(|f| tree.get(f))
-                    .cloned())
+                Ok(self.entered_frame(tree).and_then(|f| tree.get(f)).cloned())
             }
             [] if scope.is_empty() => Err("the sidebar's cursor is on nothing".into()),
             [] => Err(format!(

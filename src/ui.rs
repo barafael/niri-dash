@@ -61,10 +61,11 @@ impl Render for Dash {
         // ".SystemUIFont" names no installed family on Linux).
         let root = if tk.look.style.font_family.is_empty() {
             // fontconfig's sans-serif, as the Slint version drew with, so that weights work.
-            root.font_family(
-                crate::kit::system_font()
-                    .unwrap_or_else(|| gpui_kit::component::ActiveTheme::theme(&**cx).font_family.clone()),
-            )
+            root.font_family(crate::kit::system_font().unwrap_or_else(|| {
+                gpui_kit::component::ActiveTheme::theme(&**cx)
+                    .font_family
+                    .clone()
+            }))
         } else {
             root.font_family(tk.look.style.font_family.clone())
         };
@@ -73,12 +74,10 @@ impl Render for Dash {
         }
         if let Some(kind) = self.solo {
             let _ = kind;
-            return root
-                .bg(tk.card())
-                .children(self.tiles.first().map(|t| {
-                    let ctx = Ctx::new(self, &tk, t, width, height);
-                    widgets::render(&ctx, cx)
-                }));
+            return root.bg(tk.card()).children(self.tiles.first().map(|t| {
+                let ctx = Ctx::new(self, &tk, t, width, height);
+                widgets::render(&ctx, cx)
+            }));
         }
         let g = self.geometry(width, height);
         let reveal = self.edit.anim.entrance(0.0, 140.0, tk.motion(), Ease::Out);
@@ -161,7 +160,11 @@ impl Dash {
     fn hints(&self, window: &Window, g: &Geometry, tk: &Tk) -> Vec<Div> {
         let pop = self.edit.anim.follow(
             ("hints", 0),
-            if self.nav.mode == NavMode::Hints { 1.0 } else { 0.0 },
+            if self.nav.mode == NavMode::Hints {
+                1.0
+            } else {
+                0.0
+            },
             120.0,
             tk.motion(),
             Ease::Out,
@@ -176,7 +179,10 @@ impl Dash {
             .top(px(g.y))
             .w(px(g.cols as f32 * g.cell))
             .h(px(g.rows as f32 * g.cell))
-            .bg(tk.c(crate::theme::ColorRole::Backdrop).with_alpha(0.35).hsla());
+            .bg(tk
+                .c(crate::theme::ColorRole::Backdrop)
+                .with_alpha(0.35)
+                .hsla());
         // The letters are big and heavy; a label is as wide as its letters and 24px, and as tall
         // as they are and 10px (at least as wide as it is tall).
         let (size, weight) = (26.0, gpui::FontWeight(800.0));

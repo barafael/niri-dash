@@ -1,6 +1,6 @@
 //! Sticky notes: each a Markdown file in the data directory, shared by the widgets with the same
-//! note name (`NotesWidget` and `NoteEdit` in `legacy/ui/widgets/tools.slint`,
-//! `legacy/src/app/notes.rs`).
+//! note name (`NotesWidget` and `NoteEdit` in `slint/ui/widgets/tools.slint`,
+//! `slint/src/app/notes.rs`).
 //!
 //! The text lives here, by note name; each widget on show has a [`NoteView`], a small view of its
 //! own that holds the text area (GPUI makes a text area in a window, which a widget's draw

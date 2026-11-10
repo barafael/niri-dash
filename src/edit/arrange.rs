@@ -94,7 +94,12 @@ impl Dash {
     /// Lay the widgets out with the current settings.
     pub fn arrange_now(&mut self) {
         let p = self.edit.arrange.params.clone();
-        let before: Vec<(u32, Rect)> = self.layout.widgets.iter().map(|w| (w.id, w.rect())).collect();
+        let before: Vec<(u32, Rect)> = self
+            .layout
+            .widgets
+            .iter()
+            .map(|w| (w.id, w.rect()))
+            .collect();
         let result = autolayout::arrange(&mut self.layout, &p);
         // Running it again keeps the very first layout to go back to, not the last attempt:
         // shuffling through ten layouts and undoing once gets you home.

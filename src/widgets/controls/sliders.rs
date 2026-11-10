@@ -3,21 +3,21 @@
 //! row is the button), buttons that name what they do, a scrolling list with a scrollbar.
 //!
 //! Ports of `Slider`, `SliderRow`, `Ring`, `RingKnob`, `Switch`, `IconButton` and `ScrollList`
-//! of `legacy/ui/common.slint`. They are the group's first, in its own module (PORTING.md); if
+//! of `slint/ui/common.slint`. They are the group's first, in its own module (PORTING.md); if
 //! another group wants one it moves to `kit`.
 
+use crate::kit::AriaCursor;
 use crate::kit::{self, Tk};
 use gpui::prelude::*;
 use gpui::{
-    AccessibleAction, App, Bounds, BorderStyle, ClickEvent, DragMoveEvent, ElementId, Empty, Hsla,
-    MouseButton, MouseDownEvent, PathBuilder, Pixels, Render, Role, ScrollHandle, ScrollEvent,
+    AccessibleAction, App, BorderStyle, Bounds, ClickEvent, DragMoveEvent, ElementId, Empty, Hsla,
+    MouseButton, MouseDownEvent, PathBuilder, Pixels, Render, Role, ScrollEvent, ScrollHandle,
     SharedString, Stateful, Toggled, Window, canvas, div, point, px, quad, size,
 };
 use std::cell::Cell;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
-use crate::kit::AriaCursor;
 
 /// The knob's diameter, and so how far the slider's ends are from its value.
 const KNOB: f32 = 16.0;
@@ -99,17 +99,20 @@ pub fn slider(
             let width = f32::from(b.size.width);
             // It glides to a new value (a key step, a change from elsewhere), but follows the
             // pointer without lag while it drags.
-            let shown = kit::glide(key, value, if cx.has_active_drag() { 0.0 } else { ms }, window);
-            window.paint_quad(
-                quad(
-                    Bounds::new(point(b.left(), mid - px(3.0)), size(b.size.width, px(6.0))),
-                    px(3.0),
-                    track,
-                    0.0,
-                    gpui::transparent_black(),
-                    BorderStyle::default(),
-                ),
+            let shown = kit::glide(
+                key,
+                value,
+                if cx.has_active_drag() { 0.0 } else { ms },
+                window,
             );
+            window.paint_quad(quad(
+                Bounds::new(point(b.left(), mid - px(3.0)), size(b.size.width, px(6.0))),
+                px(3.0),
+                track,
+                0.0,
+                gpui::transparent_black(),
+                BorderStyle::default(),
+            ));
             let x = shown * (width - KNOB);
             window.paint_quad(quad(
                 Bounds::new(
@@ -213,7 +216,11 @@ pub fn icon_button(
         .size(px(size))
         .rounded(px(tk.radius_small().min(size / 2.0)))
         .border(px(2.0))
-        .border_color(if kfocus { ring } else { gpui::transparent_black() })
+        .border_color(if kfocus {
+            ring
+        } else {
+            gpui::transparent_black()
+        })
         .when(kfocus, |b| b.bg(hover))
         .flex()
         .items_center()
@@ -470,19 +477,16 @@ pub fn ring_knob(
             down((value - STEP).clamp(0.0, 1.0), window, cx);
         })
         .child(
-            canvas(
-                |_, _, _| {},
-                {
-                    let track = tk.track();
-                    let thickness = (side * 0.07).max(6.0);
-                    let key = key_of(id) ^ 0xA0A0;
-                    let ms = 100.0 * tk.motion();
-                    move |b, _, window, _| {
-                        let shown = kit::glide(key, value, ms, window);
-                        paint_ring(window, b, shown, thickness, tint, track)
-                    }
-                },
-            )
+            canvas(|_, _, _| {}, {
+                let track = tk.track();
+                let thickness = (side * 0.07).max(6.0);
+                let key = key_of(id) ^ 0xA0A0;
+                let ms = 100.0 * tk.motion();
+                move |b, _, window, _| {
+                    let shown = kit::glide(key, value, ms, window);
+                    paint_ring(window, b, shown, thickness, tint, track)
+                }
+            })
             .absolute()
             .size_full(),
         )
@@ -596,7 +600,9 @@ pub fn switch_button(
         .flex_none()
         .child(switch_view(key_of(id) ^ 0x5717, on, enabled, kfocus, tk));
     if enabled {
-        b.cursor_pointer().on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation()).on_click(on_click)
+        b.cursor_pointer()
+            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_click(on_click)
     } else {
         b
     }
@@ -615,7 +621,11 @@ pub fn scroll_list(
     // The bar sits in the card's padding, beside the rows (so they are as wide as the header
     // above them); a tight padding has no room for it and keeps a gutter of 10 px.
     let in_padding = tk.pad() >= 8.0;
-    let beside = if in_padding { (tk.pad() + 4.0) / 2.0 } else { -1.0 };
+    let beside = if in_padding {
+        (tk.pad() + 4.0) / 2.0
+    } else {
+        -1.0
+    };
     div()
         .relative()
         .flex_1()
@@ -654,7 +664,8 @@ pub fn scroll_list(
                         BorderStyle::default(),
                     ));
                     let thumb = (h * h / (h + content_over)).max(24.0).min(h);
-                    let at = (h - thumb) * (-f32::from(for_bar.offset().y) / content_over).clamp(0.0, 1.0);
+                    let at = (h - thumb)
+                        * (-f32::from(for_bar.offset().y) / content_over).clamp(0.0, 1.0);
                     window.paint_quad(quad(
                         Bounds::new(
                             point(b.right() - px(4.0), b.top() + px(at)),

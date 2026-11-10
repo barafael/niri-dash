@@ -114,7 +114,10 @@ fn pomodoro_buttons() {
     h.keys("j j");
     // Start, skip and, once running, reset.
     h.key("enter");
-    assert_eq!(h.read(|d| d.widgets.time.pomo.pomodoro.phase.label()), "Focus");
+    assert_eq!(
+        h.read(|d| d.widgets.time.pomo.pomodoro.phase.label()),
+        "Focus"
+    );
     h.click_on("Start");
     assert!(h.read(|d| d.widgets.time.pomo.pomodoro.running()));
     h.click_on("Skip to the next part");
@@ -151,7 +154,10 @@ fn pomodoro_goes_off() {
     assert!(!v.running, "the next part waits to be started");
     let mut summary = None;
     while let Ok(c) = h.inbox.notifications.try_recv() {
-        if let notifications::Command::AddLocal { app, summary: s, .. } = c {
+        if let notifications::Command::AddLocal {
+            app, summary: s, ..
+        } = c
+        {
             assert_eq!(app, "Pomodoro");
             summary = Some(s);
         }
@@ -187,7 +193,10 @@ fn timer_keys() {
     assert_eq!(view(&h).text, "4:00");
     h.key(" ");
     assert!(view(&h).running);
-    assert!(h.read(|d| d.state.timer_end.is_some()), "a running timer is saved");
+    assert!(
+        h.read(|d| d.state.timer_end.is_some()),
+        "a running timer is saved"
+    );
     h.key(" ");
     assert!(view(&h).paused && !view(&h).running);
     assert!(h.read(|d| d.state.timer_end.is_none()));
@@ -267,7 +276,8 @@ fn timer_survives_a_restart() {
         .as_millis() as i64;
     let state = format!("{{\"timer_secs\":600,\"timer_end\":{}}}", now_ms + 120_000);
     // SAFETY: tests run one after the other on one thread.
-    let path = std::env::temp_dir().join(format!("niri-dash-time-state-{}.json", std::process::id()));
+    let path =
+        std::env::temp_dir().join(format!("niri-dash-time-state-{}.json", std::process::id()));
     std::fs::write(&path, state).unwrap();
     unsafe { std::env::set_var("NIRI_DASH_STATE", &path) };
     let h = dashboard(TIMER);
@@ -360,7 +370,11 @@ fn sleep_timer_keys() {
         Ok(sleep::Command::KeepAwake(true))
     ));
     h.key("-");
-    assert!(headline(&h).starts_with("hibernate in 1h 29m"), "{}", headline(&h));
+    assert!(
+        headline(&h).starts_with("hibernate in 1h 29m"),
+        "{}",
+        headline(&h)
+    );
     h.key("+");
     h.key("+");
     assert!(
@@ -508,9 +522,15 @@ fn sleep_timer_field_left_behind() {
     h.key("i");
     assert!(h.read(|d| d.widgets.time.sleep.editing));
     h.key("ctrl+l");
-    assert_eq!(h.read(|d| d.tile(d.nav.active_id).unwrap().kind().name()), "pomodoro");
+    assert_eq!(
+        h.read(|d| d.tile(d.nav.active_id).unwrap().kind().name()),
+        "pomodoro"
+    );
     // Whatever is typed now is the dashboard's, not the field's.
-    assert!(!h.read(|d| d.widgets.time.sleep.editing), "still typing in a field of a widget left");
+    assert!(
+        !h.read(|d| d.widgets.time.sleep.editing),
+        "still typing in a field of a widget left"
+    );
     h.key(" ");
     assert!(h.read(|d| d.widgets.time.pomo.pomodoro.running()));
     for _ in 0..4 {
@@ -533,7 +553,10 @@ fn sleep_timer_counts_while_hidden() {
 
 fn sleep_timer_clicks() {
     let mut h = dashboard("    sleep-timer col=0 row=0 width=4 height=3");
-    h.send(sleep::Event::Modes(vec![sleep::Mode::Suspend, sleep::Mode::Hibernate]));
+    h.send(sleep::Event::Modes(vec![
+        sleep::Mode::Suspend,
+        sleep::Mode::Hibernate,
+    ]));
     h.click_on("Mode");
     assert_eq!(sleeper(&h, |c| c.selected), 1);
     h.click_on("Dry run");
@@ -567,8 +590,32 @@ fn cursor(h: &Harness) -> chrono::NaiveDate {
 fn calendar_cursor_survives_other_keys() {
     let (mut h, on) = calendar_with_a_day_picked();
     let keys = [
-        "enter", "space", "tab", "backtab", "backspace", "a", "b", "c", "d", "g", "G", "i", "m",
-        "o", "q", "r", "u", "v", "w", "x", "y", "z", "1", "ctrl+c", "ctrl+a", "alt+x",
+        "enter",
+        "space",
+        "tab",
+        "backtab",
+        "backspace",
+        "a",
+        "b",
+        "c",
+        "d",
+        "g",
+        "G",
+        "i",
+        "m",
+        "o",
+        "q",
+        "r",
+        "u",
+        "v",
+        "w",
+        "x",
+        "y",
+        "z",
+        "1",
+        "ctrl+c",
+        "ctrl+a",
+        "alt+x",
         "shift+tab",
     ];
     let lost: Vec<&str> = keys
@@ -706,14 +753,23 @@ fn weather_shows_what_comes() {
     h.send(Event::Weather(weather::Event::State(forecast())));
     assert!(h.read(|d| d.widgets.time.weather.loaded));
     assert_eq!(
-        h.read(|d| d.widgets.time.weather.forecast.as_ref().map(|f| f.temp.clone())),
+        h.read(|d| d
+            .widgets
+            .time
+            .weather
+            .forecast
+            .as_ref()
+            .map(|f| f.temp.clone())),
         Some("12°".to_string())
     );
     let mut failed = forecast();
     failed.error = "No network".into();
     h.send(Event::Weather(weather::Event::State(failed)));
     assert!(h.read(|d| d.widgets.time.weather.loaded));
-    assert_eq!(h.read(|d| d.widgets.time.weather.error.clone()), "No network");
+    assert_eq!(
+        h.read(|d| d.widgets.time.weather.error.clone()),
+        "No network"
+    );
     assert!(h.read(|d| d.widgets.time.weather.forecast.is_some()));
 }
 
@@ -724,7 +780,8 @@ fn clock_lists_zones() {
     );
     h.advance(1);
     let (first, second) = (id_of(&h, "clock"), h.read(|d| d.tiles[1].id()));
-    let zones = |h: &Harness, id: u32| h.read(|d| d.widgets.time.clock.zones.get(&id).map_or(0, Vec::len));
+    let zones =
+        |h: &Harness, id: u32| h.read(|d| d.widgets.time.clock.zones.get(&id).map_or(0, Vec::len));
     assert_eq!(zones(&h, first), 1);
     assert_eq!(zones(&h, second), 0);
     let label = h.read(|d| d.widgets.time.clock.zones[&first][0].label.clone());
@@ -750,7 +807,10 @@ fn everything_draws_and_takes_keys() {
     ]
     .join("\n");
     let mut h = dashboard(&layout);
-    h.send(sleep::Event::Modes(vec![sleep::Mode::Suspend, sleep::Mode::Hibernate]));
+    h.send(sleep::Event::Modes(vec![
+        sleep::Mode::Suspend,
+        sleep::Mode::Hibernate,
+    ]));
     h.send(Event::Weather(weather::Event::State(forecast())));
     let ids: Vec<u32> = h.read(|d| d.tiles.iter().map(|t| t.id()).collect());
     for id in ids {
@@ -818,7 +878,10 @@ fn main() {
     unsafe { std::env::set_var("LC_ALL", "C") };
     let scenarios: &[(&str, fn())] = &[
         ("pomodoro_keys", pomodoro_keys),
-        ("pomodoro_follows_its_settings", pomodoro_follows_its_settings),
+        (
+            "pomodoro_follows_its_settings",
+            pomodoro_follows_its_settings,
+        ),
         ("pomodoro_buttons", pomodoro_buttons),
         ("pomodoro_round_buttons", pomodoro_round_buttons),
         ("pomodoro_goes_off", pomodoro_goes_off),
@@ -831,29 +894,53 @@ fn main() {
         ("sleep_timer_lists_modes", sleep_timer_lists_modes),
         ("sleep_timer_fires", sleep_timer_fires),
         ("sleep_timer_field", sleep_timer_field),
-        ("sleep_timer_field_left_behind", sleep_timer_field_left_behind),
-        ("sleep_timer_counts_while_hidden", sleep_timer_counts_while_hidden),
+        (
+            "sleep_timer_field_left_behind",
+            sleep_timer_field_left_behind,
+        ),
+        (
+            "sleep_timer_counts_while_hidden",
+            sleep_timer_counts_while_hidden,
+        ),
         ("sleep_timer_clicks", sleep_timer_clicks),
-        ("calendar_cursor_survives_other_keys", calendar_cursor_survives_other_keys),
+        (
+            "calendar_cursor_survives_other_keys",
+            calendar_cursor_survives_other_keys,
+        ),
         (
             "calendar_cursor_survives_expanding_and_leaving",
             calendar_cursor_survives_expanding_and_leaving,
         ),
-        ("calendar_cursor_goes_home_on_t", calendar_cursor_goes_home_on_t),
-        ("calendar_moves_by_week_and_month", calendar_moves_by_week_and_month),
-        ("calendar_copies_the_picked_day", calendar_copies_the_picked_day),
+        (
+            "calendar_cursor_goes_home_on_t",
+            calendar_cursor_goes_home_on_t,
+        ),
+        (
+            "calendar_moves_by_week_and_month",
+            calendar_moves_by_week_and_month,
+        ),
+        (
+            "calendar_copies_the_picked_day",
+            calendar_copies_the_picked_day,
+        ),
         ("calendar_buttons", calendar_buttons),
         ("calendar_round", calendar_round),
         ("weather_shows_what_comes", weather_shows_what_comes),
         ("clock_lists_zones", clock_lists_zones),
-        ("everything_draws_and_takes_keys", everything_draws_and_takes_keys),
+        (
+            "everything_draws_and_takes_keys",
+            everything_draws_and_takes_keys,
+        ),
         ("stress_on_the_time_widgets", stress_on_the_time_widgets),
     ];
     let only = std::env::args().nth(1);
     let mut failed = 0;
     let mut ran = 0;
     for (name, scenario) in scenarios {
-        if only.as_deref().is_some_and(|o| !name.contains(o) && o != "--nocapture") {
+        if only
+            .as_deref()
+            .is_some_and(|o| !name.contains(o) && o != "--nocapture")
+        {
             continue;
         }
         ran += 1;

@@ -10,8 +10,18 @@ use strum::{AsRefStr, EnumIter, EnumString, IntoEnumIterator, IntoStaticStr};
 
 /// A widget type. Its name ([`Kind::name`]) is what config.kdl uses, and what the command line
 /// takes (`niri-dash app wifi`), so a typo there gets a "similar value" hint from clap.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, EnumString, AsRefStr, IntoStaticStr)]
-#[derive(clap::ValueEnum)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    EnumIter,
+    EnumString,
+    AsRefStr,
+    IntoStaticStr,
+    clap::ValueEnum,
+)]
 #[strum(serialize_all = "kebab-case")]
 pub enum Kind {
     Clock,

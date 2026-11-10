@@ -230,7 +230,11 @@ impl Key {
     /// For the log of a stress run, and failure messages.
     pub fn describe(&self) -> String {
         let mut s = String::new();
-        for (on, name) in [(self.ctrl, "ctrl+"), (self.alt, "alt+"), (self.meta, "meta+")] {
+        for (on, name) in [
+            (self.ctrl, "ctrl+"),
+            (self.alt, "alt+"),
+            (self.meta, "meta+"),
+        ] {
             if on {
                 s.push_str(name);
             }

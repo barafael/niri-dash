@@ -157,7 +157,10 @@ impl Scope {
                 }
                 true
             }
-            Code::Char('j') | Code::Named(Named::Down) | Code::Char('k') | Code::Named(Named::Up) => {
+            Code::Char('j')
+            | Code::Named(Named::Down)
+            | Code::Char('k')
+            | Code::Named(Named::Up) => {
                 let down = key.is('j') || key.is_named(Named::Down);
                 if self.count <= 1 {
                     stops.adjust(self.cursor, if down { -1 } else { 1 });
@@ -176,8 +179,15 @@ impl Scope {
                 self.go(self.count as isize - 1, -1, stops);
                 true
             }
-            Code::Char('h') | Code::Named(Named::Left) | Code::Char('l') | Code::Named(Named::Right) => {
-                let d: i32 = if key.is('h') || key.is_named(Named::Left) { -1 } else { 1 };
+            Code::Char('h')
+            | Code::Named(Named::Left)
+            | Code::Char('l')
+            | Code::Named(Named::Right) => {
+                let d: i32 = if key.is('h') || key.is_named(Named::Left) {
+                    -1
+                } else {
+                    1
+                };
                 if self.subs > 1 {
                     self.sub = (self.sub as i32 + d).clamp(0, self.subs as i32 - 1) as usize;
                     true

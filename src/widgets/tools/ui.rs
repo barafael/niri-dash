@@ -3,16 +3,16 @@
 //! `TextButton`, `ScrollList` and `RoundFace`.
 //!
 //! The element under the keyboard cursor says so (`aria_cursor`), so what the keyboard is on can
-//! be found and read out; see `NavScope` in `legacy/ui/common.slint`.
+//! be found and read out; see `NavScope` in `slint/ui/common.slint`.
 
+use crate::kit::AriaCursor;
+use crate::kit::AriaState;
 use crate::kit::{self, Tk};
 use gpui::prelude::*;
 use gpui::{
     AnyElement, App, ClickEvent, Div, ElementId, Hsla, Role, ScrollHandle, SharedString, Stateful,
     Window, div, px, transparent_black,
 };
-use crate::kit::AriaCursor;
-use crate::kit::AriaState;
 
 /// A line of text is as high as Slint draws it (the font's ascent and descent, about 1.36 times
 /// its size), not GPUI's 1.6.

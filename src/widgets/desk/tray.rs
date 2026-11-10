@@ -1,6 +1,6 @@
 //! The tray widget (status notifier items) and the menu of one, drawn over the whole window.
-//! Port of `TrayWidget` in `legacy/ui/widgets/desk.slint`, `TrayMenu` in `legacy/ui/app.slint` and
-//! the tray parts of `legacy/src/app/feeds.rs`.
+//! Port of `TrayWidget` in `slint/ui/widgets/desk.slint`, `TrayMenu` in `slint/ui/app.slint` and
+//! the tray parts of `slint/src/app/feeds.rs`.
 
 use super::list::ScrollList;
 use super::parts;
@@ -8,6 +8,7 @@ use super::pics::{Pic, Pics};
 use super::shared::{self, Scopes};
 use crate::dash::{Dash, DashEvent};
 use crate::keys::{Key, Named};
+use crate::kit::AriaCursor;
 use crate::kit::Tk;
 use crate::scope::Stops;
 use crate::widgets::Ctx;
@@ -15,7 +16,6 @@ use gpui::prelude::*;
 use gpui::{AnyElement, Context, MouseButton, MouseUpEvent, Role, div, point, px};
 use niri_dash_system::tray::{Command, Entry, Event as Sys, Item, Toggle};
 use niri_dash_system::{Senders, Tell};
-use crate::kit::AriaCursor;
 
 /// A tray icon.
 #[derive(Debug, Clone)]
@@ -290,7 +290,13 @@ impl Stops for Keys<'_> {
 fn grid_of(d: &Dash, id: u32) -> Option<(Grid, (f32, f32), bool)> {
     let ((x, y, w, h), round) = shared::card_of(d, id)?;
     let pad = d.look.style.padding;
-    let g = grid(w, h, round, (pad * 0.6).max(6.0), d.widgets.desk.tray.items.len());
+    let g = grid(
+        w,
+        h,
+        round,
+        (pad * 0.6).max(6.0),
+        d.widgets.desk.tray.items.len(),
+    );
     Some((g, (x, y), round))
 }
 
@@ -380,7 +386,11 @@ pub fn check(d: &Dash, id: u32) -> Result<(), String> {
     let shown = grid_of(d, id).map_or(0, |(g, _, _)| g.shown);
     let s = shared::eff(t.scopes.get(id), shown);
     if shown > 0 && s.cursor >= t.items.len() {
-        return Err(format!("cursor on tray icon {} of {}", s.cursor, t.items.len()));
+        return Err(format!(
+            "cursor on tray icon {} of {}",
+            s.cursor,
+            t.items.len()
+        ));
     }
     Ok(())
 }
@@ -396,7 +406,9 @@ pub fn check_menu(d: &Dash) -> Result<(), String> {
             if let Some(c) = m.cursor
                 && !entry_ok(m, Some(c))
             {
-                return Err(format!("tray menu cursor on entry {c}, which can't be pressed"));
+                return Err(format!(
+                    "tray menu cursor on entry {c}, which can't be pressed"
+                ));
             }
             if m.cursor.is_some() && !t.kbd_menu {
                 return Err("tray menu cursor in a menu the keyboard didn't open".into());
@@ -417,7 +429,11 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
     let g = grid(ctx.w, ctx.h, ctx.round, tk.pad_tight(), t.items.len());
     let scope = shared::eff(t.scopes.get(id), g.shown);
     let on = ctx.entered;
-    let mut root = div().id(("tray", id as usize)).size_full().relative().role(Role::Group);
+    let mut root = div()
+        .id(("tray", id as usize))
+        .size_full()
+        .relative()
+        .role(Role::Group);
     if t.items.is_empty() {
         root = root.child(
             div()
@@ -455,7 +471,11 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                 .top(px(top))
                 .size(px(g.slot))
                 .rounded(px(radius))
-                .bg(if kfocus { hover } else { gpui::transparent_black() })
+                .bg(if kfocus {
+                    hover
+                } else {
+                    gpui::transparent_black()
+                })
                 .hover(move |s| s.bg(hover))
                 .active(move |s| s.bg(pressed))
                 .cursor_pointer()
@@ -465,7 +485,13 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                 .on_mouse_up(
                     MouseButton::Left,
                     cx.listener(move |d, ev: &MouseUpEvent, _, cx| {
-                        activate(d, &address, f32::from(ev.position.x), f32::from(ev.position.y), cx);
+                        activate(
+                            d,
+                            &address,
+                            f32::from(ev.position.x),
+                            f32::from(ev.position.y),
+                            cx,
+                        );
                     }),
                 )
                 .on_mouse_up(
@@ -473,7 +499,12 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                     cx.listener(move |d, ev: &MouseUpEvent, _, _| {
                         if has_menu {
                             d.widgets.desk.tray.kbd_menu = false;
-                            open_menu(d, &address_up, f32::from(ev.position.x), f32::from(ev.position.y));
+                            open_menu(
+                                d,
+                                &address_up,
+                                f32::from(ev.position.x),
+                                f32::from(ev.position.y),
+                            );
                         }
                     }),
                 )
@@ -699,12 +730,25 @@ mod tests {
             None,
         );
         assert_eq!(entry_step(&m, 1), Some(0));
-        let m = Menu { cursor: Some(0), ..m };
-        assert_eq!(entry_step(&m, 1), Some(4), "past the separator, the greyed entry and the heading");
-        let m = Menu { cursor: Some(4), ..m };
+        let m = Menu {
+            cursor: Some(0),
+            ..m
+        };
+        assert_eq!(
+            entry_step(&m, 1),
+            Some(4),
+            "past the separator, the greyed entry and the heading"
+        );
+        let m = Menu {
+            cursor: Some(4),
+            ..m
+        };
         assert_eq!(entry_step(&m, -1), Some(0));
         assert_eq!(entry_step(&m, 1), Some(4), "stays at the end");
-        let m = Menu { cursor: Some(0), ..m };
+        let m = Menu {
+            cursor: Some(0),
+            ..m
+        };
         assert_eq!(entry_step(&m, -1), Some(0), "stays at the start");
     }
 

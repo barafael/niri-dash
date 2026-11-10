@@ -38,10 +38,7 @@ pub fn render(ctx: &Ctx, _cx: &mut Context<Dash>) -> AnyElement {
                 .child(text)
                 .into_any_element()
         };
-        return g.element(
-            ctx,
-            vec![line(down, tk.accent()), line(up, tk.warn())],
-        );
+        return g.element(ctx, vec![line(down, tk.accent()), line(up, tk.warn())]);
     }
     let capacity = ctx.opts.history;
     let tall = ctx.h > 110.0;

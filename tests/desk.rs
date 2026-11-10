@@ -1,14 +1,14 @@
 //! The desk widgets (windows, notifications, tray and its menu, media, Claude sessions) against
 //! channels standing in for the system: what they send when they are used, and what they show
-//! when the system reports something. Ports of the scenarios of `legacy/tests/ui.rs`
+//! when the system reports something. Ports of the scenarios of `slint/tests/ui.rs`
 //! (`tray_activate`, `claude_sessions_walk`, `claude_session_enter`, `cursor_stays_in_sight_*`,
 //! `stops_in_sight_other_lists`) and the widgets' own behaviour.
 //!
 //! A plain program (`harness = false`): each scenario runs in turn on a fresh dashboard.
 
 use gpui::MouseButton;
-use niri_dash::testing::{Harness, Sandbox};
 use niri_dash::Control;
+use niri_dash::testing::{Harness, Sandbox};
 use niri_dash_system::notifications::{Dnd, Notification};
 use niri_dash_system::{Demo, IconSrc, claude, media, notifications, tray, windows};
 use std::panic::AssertUnwindSafe;
@@ -167,7 +167,10 @@ fn tray_menu_by_mouse() {
     assert!(h.has("Quit"));
     h.click_on("Quit");
     let sent = commands_tray(&mut h);
-    assert!(sent.len() == 1 && sent[0].contains("MenuItem") && sent[0].contains("id: 4"), "{sent:?}");
+    assert!(
+        sent.len() == 1 && sent[0].contains("MenuItem") && sent[0].contains("id: 4"),
+        "{sent:?}"
+    );
     assert!(!h.has("Tray menu"), "chosen: closed");
     assert_eq!(h.controls(), [Control::Hide]);
 }
@@ -179,7 +182,11 @@ fn tray_menu_closes_on_a_click_outside() {
     assert!(h.has("Tray menu"));
     h.click(900.0, 900.0);
     assert!(!h.has("Tray menu"));
-    assert_eq!(h.controls(), [], "the click went to the menu's catcher, not the backdrop");
+    assert_eq!(
+        h.controls(),
+        [],
+        "the click went to the menu's catcher, not the backdrop"
+    );
     assert!(commands_tray(&mut h).is_empty());
 }
 
@@ -188,7 +195,11 @@ fn tray_empty_menu_says_so() {
     let mut h = dashboard();
     h.send(menu(Vec::new()));
     assert!(!h.has("Tray menu"));
-    assert!(h.read(|d| d.toast.as_ref().is_some_and(|t| t.text.contains("empty menu"))));
+    assert!(h.read(|d| {
+        d.toast
+            .as_ref()
+            .is_some_and(|t| t.text.contains("empty menu"))
+    }));
 }
 
 /// `m` opens the menu of the icon under the cursor; j/k skip what can't be chosen, Enter chooses,
@@ -200,14 +211,23 @@ fn tray_menu_by_keyboard() {
     h.key("l");
     h.key("m");
     let sent = commands_tray(&mut h);
-    assert!(sent.len() == 1 && sent[0].contains("OpenMenu") && sent[0].contains(":1.52"), "{sent:?}");
+    assert!(
+        sent.len() == 1 && sent[0].contains("OpenMenu") && sent[0].contains(":1.52"),
+        "{sent:?}"
+    );
     h.send(menu(menu_entries()));
     assert!(h.has("Tray menu"));
     // The entries the cursor can stop on: Open (0) and Quit (4).
     h.key("j");
-    assert_eq!(h.read(|d| d.widgets.desk.tray.menu.as_ref().and_then(|m| m.cursor)), Some(0));
+    assert_eq!(
+        h.read(|d| d.widgets.desk.tray.menu.as_ref().and_then(|m| m.cursor)),
+        Some(0)
+    );
     h.key("j");
-    assert_eq!(h.read(|d| d.widgets.desk.tray.menu.as_ref().and_then(|m| m.cursor)), Some(4));
+    assert_eq!(
+        h.read(|d| d.widgets.desk.tray.menu.as_ref().and_then(|m| m.cursor)),
+        Some(4)
+    );
     h.key("j");
     assert_eq!(
         h.read(|d| d.widgets.desk.tray.menu.as_ref().and_then(|m| m.cursor)),
@@ -215,10 +235,16 @@ fn tray_menu_by_keyboard() {
         "stays on the last entry"
     );
     h.key("k");
-    assert_eq!(h.read(|d| d.widgets.desk.tray.menu.as_ref().and_then(|m| m.cursor)), Some(0));
+    assert_eq!(
+        h.read(|d| d.widgets.desk.tray.menu.as_ref().and_then(|m| m.cursor)),
+        Some(0)
+    );
     // Other keys don't leak to the widget while the menu is up.
     h.key("l");
-    assert_eq!(h.read(|d| d.widgets.desk.tray.scopes.get(d.nav.active_id).cursor), 1);
+    assert_eq!(
+        h.read(|d| d.widgets.desk.tray.scopes.get(d.nav.active_id).cursor),
+        1
+    );
     h.key("esc");
     assert!(!h.has("Tray menu"), "Escape closes the menu");
     assert!(in_widget(&h), "still in the tray");
@@ -231,7 +257,8 @@ fn tray_menu_by_keyboard() {
     h.key("enter");
     let sent = commands_tray(&mut h);
     assert!(
-        sent.iter().any(|c| c.contains("MenuItem") && c.contains("id: 4")),
+        sent.iter()
+            .any(|c| c.contains("MenuItem") && c.contains("id: 4")),
         "{sent:?}"
     );
     assert!(!h.has("Tray menu"));
@@ -275,7 +302,8 @@ fn windows_keys() {
     let mut h = dashboard();
     h.send(windows::Event::State(Demo::new().windows));
     enter(&mut h, "Windows");
-    let cursor = |h: &Harness| h.read(|d| d.widgets.desk.windows.scopes.get(d.nav.active_id).cursor);
+    let cursor =
+        |h: &Harness| h.read(|d| d.widgets.desk.windows.scopes.get(d.nav.active_id).cursor);
     assert_eq!(cursor(&h), 1, "starts past the heading");
     h.key("j");
     assert_eq!(cursor(&h), 2);
@@ -346,7 +374,11 @@ fn session_cursor(h: &Harness) -> usize {
 fn claude_sessions_walk() {
     for with_window in [0, 1, 2] {
         let mut h = claude_sessions(with_window);
-        assert_eq!(session_cursor(&h), 0, "{with_window} with a window: starts on the first");
+        assert_eq!(
+            session_cursor(&h),
+            0,
+            "{with_window} with a window: starts on the first"
+        );
         h.key("j");
         assert_eq!(session_cursor(&h), 1, "{with_window} with a window: j");
         h.key("k");
@@ -386,7 +418,11 @@ fn walk_in_sight(h: &mut Harness, in_sight: impl Fn(&Harness) -> (usize, Option<
     for step in 0..40 {
         h.key("j");
         let (now, visible) = in_sight(h);
-        assert_eq!(visible, Some(true), "step {step}: the cursor is on {now}, out of sight");
+        assert_eq!(
+            visible,
+            Some(true),
+            "step {step}: the cursor is on {now}, out of sight"
+        );
         if now == last && step > 0 {
             return;
         }
@@ -554,7 +590,11 @@ fn notifications_commands() {
 /// disturb and hides them. z does the same from the keyboard, Escape closes them.
 fn notifications_pause_choices() {
     let mut h = alone("notifications", 5, 4);
-    h.send(notifications::Event::State(notif_state(vec![note(5, "Build done", &[])])));
+    h.send(notifications::Event::State(notif_state(vec![note(
+        5,
+        "Build done",
+        &[],
+    )])));
     assert!(h.has("Pause notifications"));
     assert!(!h.has("Pause notifications for 1 hour"));
     h.click_on("Pause notifications");
@@ -563,13 +603,28 @@ fn notifications_pause_choices() {
     assert!(!h.has("Stop pausing notifications"), "nothing to stop yet");
     h.click_on("Pause notifications for 1 hour");
     let sent = commands_notifications(&mut h);
-    assert!(sent.len() == 1 && sent[0].contains("SetDnd(Until("), "{sent:?}");
-    assert!(!h.has("Pause notifications for 1 hour"), "the choices are gone");
+    assert!(
+        sent.len() == 1 && sent[0].contains("SetDnd(Until("),
+        "{sent:?}"
+    );
+    assert!(
+        !h.has("Pause notifications for 1 hour"),
+        "the choices are gone"
+    );
     // Keyboard.
     enter(&mut h, "Notifications");
     h.key("z");
     assert!(h.has("Pause notifications for 1 hour"));
-    let cursor = |h: &Harness| h.read(|d| d.widgets.desk.notifications.inst(d.nav.active_id).scope.cursor);
+    let cursor = |h: &Harness| {
+        h.read(|d| {
+            d.widgets
+                .desk
+                .notifications
+                .inst(d.nav.active_id)
+                .scope
+                .cursor
+        })
+    };
     assert_eq!(cursor(&h), 0, "the choices come first");
     h.key("j");
     h.key("j");
@@ -579,7 +634,10 @@ fn notifications_pause_choices() {
     assert!(!h.has("Pause notifications for 1 hour"));
     h.key("z");
     h.key("esc");
-    assert!(!h.has("Pause notifications for 1 hour"), "Escape closes the choices");
+    assert!(
+        !h.has("Pause notifications for 1 hour"),
+        "Escape closes the choices"
+    );
     assert!(in_widget(&h), "Escape closed the choices, not the widget");
 }
 
@@ -591,7 +649,11 @@ fn notifications_dnd() {
     s.dnd = Dnd::Forever;
     s.missed = 3;
     h.send(notifications::Event::State(s));
-    assert_eq!(h.read(|d| d.state.dnd_until), Some(i64::MAX), "remembered for restarts");
+    assert_eq!(
+        h.read(|d| d.state.dnd_until),
+        Some(i64::MAX),
+        "remembered for restarts"
+    );
     assert!(h.read(|d| d.widgets.desk.notifications.dnd_active));
     // Off is a choice while paused.
     h.click_on("Change notification pause");
@@ -605,7 +667,10 @@ fn notifications_dnd() {
     let sent = commands_notifications(&mut h);
     assert_eq!(sent.len(), 2, "{sent:?}");
     assert_eq!(sent[0], "SetDnd(Forever)");
-    assert!(sent[1].contains("Osd") && sent[1].contains("Do not disturb"), "{sent:?}");
+    assert!(
+        sent[1].contains("Osd") && sent[1].contains("Do not disturb"),
+        "{sent:?}"
+    );
     // And back off, once the server has said it is on.
     let mut s = notif_state(Vec::new());
     s.dnd = Dnd::Forever;
@@ -648,7 +713,10 @@ fn media_controls() {
     h.key("h");
     h.key("space");
     h.key("enter");
-    assert_eq!(commands_media(&mut h), ["Next", "Previous", "PlayPause", "PlayPause"]);
+    assert_eq!(
+        commands_media(&mut h),
+        ["Next", "Previous", "PlayPause", "PlayPause"]
+    );
     // Paused it says Play; with no player the controls do nothing.
     let mut p = playing();
     p.playing = false;
@@ -656,7 +724,10 @@ fn media_controls() {
     assert!(h.has("Play"));
     h.send(media::Event::State(None));
     h.click_on("Next track");
-    assert!(commands_media(&mut h).is_empty(), "disabled without a player");
+    assert!(
+        commands_media(&mut h).is_empty(),
+        "disabled without a player"
+    );
 }
 
 /// A single cell tall shows the controls beside the title; round shows a ring.
@@ -687,12 +758,18 @@ fn media_layout_with_and_without_art() {
     let mut h = alone("media", 5, 3);
     h.send(media::Event::State(Some(playing())));
     let with = media_gap_below(&h);
-    assert!(with < 15.0, "with art the controls are {with} px from the bottom");
+    assert!(
+        with < 15.0,
+        "with art the controls are {with} px from the bottom"
+    );
     let mut plain = playing();
     plain.art = None;
     h.send(media::Event::State(Some(plain)));
     let without = media_gap_below(&h);
-    assert!(without > 30.0, "without art the controls are {without} px from the bottom");
+    assert!(
+        without > 30.0,
+        "without art the controls are {without} px from the bottom"
+    );
 }
 
 /// A double click on a control is not a double click on the card behind it: the widget is not
@@ -701,15 +778,27 @@ fn double_click_on_controls_does_not_carry() {
     let mut h = dashboard();
     h.send(windows::Event::State(Demo::new().windows));
     h.send(media::Event::State(Some(playing())));
-    for control in ["Mozilla Firefox", "Close Mozilla Firefox", "Pause", "Next track"] {
+    for control in [
+        "Mozilla Firefox",
+        "Close Mozilla Firefox",
+        "Pause",
+        "Next track",
+    ] {
         let Some(b) = h.bounds_of(control) else {
             continue;
         };
         let c = b.center();
         h.double_click(f32::from(c.x), f32::from(c.y));
-        assert_eq!(h.adjust_id(), 0, "a double click on {control:?} picked the widget up");
+        assert_eq!(
+            h.adjust_id(),
+            0,
+            "a double click on {control:?} picked the widget up"
+        );
     }
-    assert!(h.has("Pause") || h.has("Play"), "the media controls were never exercised");
+    assert!(
+        h.has("Pause") || h.has("Play"),
+        "the media controls were never exercised"
+    );
 }
 
 // ---- stress --------------------------------------------------------------------------------
@@ -740,7 +829,10 @@ layout {
     for seed in [11, 12, 13] {
         for size in [(1706, 1066), (1280, 800)] {
             let run = Harness::with_mock_sized(config, size)
-                .stress(niri_dash::testing::Monkey::new(seed, false).keep_going(), ops)
+                .stress(
+                    niri_dash::testing::Monkey::new(seed, false).keep_going(),
+                    ops,
+                )
                 .and_then(|m| m.finish());
             if let Err(failure) = run {
                 panic!("seed {seed} on {size:?}: {failure}");
@@ -762,8 +854,23 @@ fn tray_menu_fuzz() {
         state % n
     };
     let keys = [
-        "f", "j", "k", "l", "h", "m", "enter", "space", "esc", "q", "backspace", "down", "up", "g",
-        "G", "tab", "x",
+        "f",
+        "j",
+        "k",
+        "l",
+        "h",
+        "m",
+        "enter",
+        "space",
+        "esc",
+        "q",
+        "backspace",
+        "down",
+        "up",
+        "g",
+        "G",
+        "tab",
+        "x",
     ];
     enter(&mut h, "Tray");
     for step in 0..600 {
@@ -811,32 +918,50 @@ fn main() {
     let scenarios: &[(&str, fn())] = &[
         ("tray_activate", tray_activate),
         ("tray_menu_by_mouse", tray_menu_by_mouse),
-        ("tray_menu_closes_on_a_click_outside", tray_menu_closes_on_a_click_outside),
+        (
+            "tray_menu_closes_on_a_click_outside",
+            tray_menu_closes_on_a_click_outside,
+        ),
         ("tray_empty_menu_says_so", tray_empty_menu_says_so),
         ("tray_menu_by_keyboard", tray_menu_by_keyboard),
         ("windows_click_focus_close", windows_click_focus_close),
         ("windows_keys", windows_keys),
-        ("windows_cursor_leaves_a_heading", windows_cursor_leaves_a_heading),
+        (
+            "windows_cursor_leaves_a_heading",
+            windows_cursor_leaves_a_heading,
+        ),
         ("windows_unavailable", windows_unavailable),
         ("claude_sessions_walk", claude_sessions_walk),
         ("claude_session_enter", claude_session_enter),
         ("claude_session_click", claude_session_click),
         ("stops_in_sight_lists", stops_in_sight_lists),
-        ("cursor_stays_in_sight_as_a_list_grows", cursor_stays_in_sight_as_a_list_grows),
+        (
+            "cursor_stays_in_sight_as_a_list_grows",
+            cursor_stays_in_sight_as_a_list_grows,
+        ),
         ("notifications_commands", notifications_commands),
         ("notifications_pause_choices", notifications_pause_choices),
         ("notifications_dnd", notifications_dnd),
         ("media_controls", media_controls),
         ("media_shapes", media_shapes),
-        ("double_click_on_controls_does_not_carry", double_click_on_controls_does_not_carry),
-        ("media_layout_with_and_without_art", media_layout_with_and_without_art),
+        (
+            "double_click_on_controls_does_not_carry",
+            double_click_on_controls_does_not_carry,
+        ),
+        (
+            "media_layout_with_and_without_art",
+            media_layout_with_and_without_art,
+        ),
         ("tray_menu_fuzz", tray_menu_fuzz),
         ("desk_stress", desk_stress),
     ];
     let only = std::env::args().nth(1);
     let mut failed = 0;
     for (name, run) in scenarios {
-        if only.as_deref().is_some_and(|o| !name.contains(o) && !o.starts_with("--")) {
+        if only
+            .as_deref()
+            .is_some_and(|o| !name.contains(o) && !o.starts_with("--"))
+        {
             continue;
         }
         match std::panic::catch_unwind(AssertUnwindSafe(run)) {
@@ -847,7 +972,10 @@ fn main() {
             }
         }
     }
-    println!("\ntest result: {}. {failed} failed", if failed == 0 { "ok" } else { "FAILED" });
+    println!(
+        "\ntest result: {}. {failed} failed",
+        if failed == 0 { "ok" } else { "FAILED" }
+    );
     if failed > 0 {
         std::process::exit(1);
     }

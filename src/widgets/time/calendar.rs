@@ -5,6 +5,8 @@
 use super::parts::{self, Face};
 use crate::dash::Dash;
 use crate::keys::{Key, Named};
+use crate::kit::AriaCursor;
+use crate::kit::AriaState;
 use crate::scope::{Scope, Stops};
 use crate::widgets::Ctx;
 use chrono::{Datelike, Local, Months, NaiveDate};
@@ -12,8 +14,6 @@ use gpui::prelude::*;
 use gpui::{AnyElement, ClickEvent, Context, Role, div, px};
 use niri_dash_system::{Tell, clipboard};
 use std::sync::Arc;
-use crate::kit::AriaCursor;
-use crate::kit::AriaState;
 
 #[derive(Default)]
 pub struct State {
@@ -188,18 +188,27 @@ impl Stops for Keys<'_> {
         }
         let named = |n| key.is_named(n);
         if key.is('h') || named(Named::Left) || key.is('l') || named(Named::Right) {
-            self.cal
-                .move_day(if key.is('h') || named(Named::Left) { -1 } else { 1 });
+            self.cal.move_day(if key.is('h') || named(Named::Left) {
+                -1
+            } else {
+                1
+            });
             return true;
         }
         if key.is('j') || named(Named::Down) || key.is('k') || named(Named::Up) {
-            self.cal
-                .move_day(if key.is('k') || named(Named::Up) { -7 } else { 7 });
+            self.cal.move_day(if key.is('k') || named(Named::Up) {
+                -7
+            } else {
+                7
+            });
             return true;
         }
         if key.is('n') || named(Named::PageDown) || key.is('p') || named(Named::PageUp) {
-            self.cal
-                .shift(if key.is('p') || named(Named::PageUp) { -1 } else { 1 });
+            self.cal.shift(if key.is('p') || named(Named::PageUp) {
+                -1
+            } else {
+                1
+            });
             return true;
         }
         false
@@ -216,10 +225,11 @@ impl Stops for Keys<'_> {
 
 /// Put `text` on the clipboard and say so.
 pub fn copy_text(d: &mut Dash, text: &str) {
-    d.tx.clipboard.tell(clipboard::Command::Set(clipboard::Clip {
-        kind: clipboard::ClipKind::Text,
-        data: Arc::new(text.as_bytes().to_vec()),
-    }));
+    d.tx.clipboard
+        .tell(clipboard::Command::Set(clipboard::Clip {
+            kind: clipboard::ClipKind::Text,
+            data: Arc::new(text.as_bytes().to_vec()),
+        }));
     d.toast(&format!("Copied {text}"));
 }
 
@@ -293,7 +303,11 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
     let g = grid(cal, ctx.opts.sunday_first);
     let showing_current = cal.month_offset == 0;
     let on = ctx.entered;
-    let (sat, sun) = if ctx.opts.sunday_first { (6, 0) } else { (5, 6) };
+    let (sat, sun) = if ctx.opts.sunday_first {
+        (6, 0)
+    } else {
+        (5, 6)
+    };
     let pad = tk.pad();
     let (gw, gh) = (ctx.w - 2.0 * pad, ctx.h - 2.0 * pad - 28.0 - 6.0);
     // An extra narrow column on the left for week numbers.
@@ -381,7 +395,11 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                         .items_center()
                         .justify_center()
                         .text_size(px(tk.font_small()))
-                        .text_color(if i == sat || i == sun { tk.faint() } else { tk.dim() })
+                        .text_color(if i == sat || i == sun {
+                            tk.faint()
+                        } else {
+                            tk.dim()
+                        })
                         .child(name.clone())
                 }))
                 .when(ctx.opts.week_numbers, |grid| {

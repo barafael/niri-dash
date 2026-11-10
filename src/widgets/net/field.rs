@@ -1,6 +1,6 @@
 //! Text fields for the Wi-Fi and Bluetooth forms: the password prompt, the hidden-network form,
-//! the pairing code, the new name of a device. Ports of `KeyField` (`legacy/ui/widgets/net.slint`)
-//! and `SilentTextField` (`legacy/ui/common.slint`) onto `gpui_kit::component::input`.
+//! the pairing code, the new name of a device. Ports of `KeyField` (`slint/ui/widgets/net.slint`)
+//! and `SilentTextField` (`slint/ui/common.slint`) onto `gpui_kit::component::input`.
 //!
 //! A [`Pool`] holds a widget's `InputState`s. They are made in a window (that is how GPUI makes
 //! a text input), so a pool appears a moment after the form that needs it: through [`later`],
@@ -18,7 +18,9 @@
 use crate::dash::Dash;
 use crate::kit::Tk;
 use gpui::prelude::*;
-use gpui::{AnyElement, App, Context, Entity, Focusable as _, KeyDownEvent, SharedString, Window, div, px};
+use gpui::{
+    AnyElement, App, Context, Entity, Focusable as _, KeyDownEvent, SharedString, Window, div, px,
+};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::{Sizable as _, Size};
 use std::rc::Rc;
@@ -33,7 +35,8 @@ pub struct Spec {
 }
 
 /// What a field reports about itself: it got the keyboard, lost it, was accepted with Enter.
-pub type OnEvent = Rc<dyn Fn(&mut Dash, &'static str, &InputEvent, &mut Window, &mut Context<Dash>)>;
+pub type OnEvent =
+    Rc<dyn Fn(&mut Dash, &'static str, &InputEvent, &mut Window, &mut Context<Dash>)>;
 
 /// A widget's text fields, by name.
 #[derive(Clone)]
@@ -49,12 +52,18 @@ impl Pool {
             .map(|&spec| {
                 let state = cx.new(|cx| {
                     let state = InputState::new(window, cx).placeholder(spec.placeholder);
-                    if spec.masked { state.masked(true) } else { state }
+                    if spec.masked {
+                        state.masked(true)
+                    } else {
+                        state
+                    }
                 });
                 let on = on.clone();
-                cx.subscribe_in(&state, window, move |d, _, event: &InputEvent, window, cx| {
-                    on(d, spec.name, event, window, cx)
-                })
+                cx.subscribe_in(
+                    &state,
+                    window,
+                    move |d, _, event: &InputEvent, window, cx| on(d, spec.name, event, window, cx),
+                )
                 .detach();
                 (spec, state)
             })
@@ -162,7 +171,11 @@ impl Field<'_> {
             .rounded(px(tk.radius_small()))
             .bg(tk.subtle())
             .border_1()
-            .border_color(if self.typing { tk.accent() } else { tk.border() })
+            .border_color(if self.typing {
+                tk.accent()
+            } else {
+                tk.border()
+            })
             .flex()
             .items_center()
             .overflow_hidden()
@@ -170,9 +183,9 @@ impl Field<'_> {
             .text_color(tk.text())
             .debug_selector(move || selector)
             .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
-            .on_key_down(cx.listener(move |d, ev: &KeyDownEvent, window, cx| {
-                on_key(d, ev, window, cx)
-            }));
+            .on_key_down(
+                cx.listener(move |d, ev: &KeyDownEvent, window, cx| on_key(d, ev, window, cx)),
+            );
         let frame = match self.pool.and_then(|p| p.state(self.name)) {
             Some(state) => frame.child(
                 Input::new(state)
@@ -260,4 +273,3 @@ pub fn insert(pool: &Pool, name: &str, text: &str, window: &mut Window, cx: &mut
         s.update(cx, |s, cx| s.replace(text.to_string(), window, cx));
     }
 }
-

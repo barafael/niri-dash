@@ -2,6 +2,7 @@
 //! the card's size, and the per-widget keyboard scopes.
 
 use crate::dash::Dash;
+use crate::kit::AriaCursor;
 use crate::kit::{self, Tk, with_alpha};
 use crate::scope::{Scope, Stops};
 use gpui::prelude::*;
@@ -11,7 +12,6 @@ use gpui::{
 };
 use std::cell::RefCell;
 use std::collections::BTreeMap;
-use crate::kit::AriaCursor;
 
 /// The card of widget `id` in pixels, as `ui::frame` draws it, and whether it is drawn round. The
 /// keys need the size the widget is drawn at (which stops there are depends on it).
@@ -199,7 +199,11 @@ pub fn text_button(
         .justify_center()
         .text_size(px(tk.font_body()))
         .whitespace_nowrap()
-        .bg(if primary { tk.accent() } else { tk.card_raised() })
+        .bg(if primary {
+            tk.accent()
+        } else {
+            tk.card_raised()
+        })
         .text_color(if primary { tk.on_accent() } else { tk.text() })
         .when(face.kfocus, |b| {
             b.border_2()
@@ -208,9 +212,19 @@ pub fn text_button(
         .when(!face.enabled, |b| b.opacity(0.45))
         .when(face.enabled, |b| {
             b.cursor_pointer()
-                .hover(move |s| s.bg(if primary { value_scaled(accent_fill, 1.1) } else { hover }))
+                .hover(move |s| {
+                    s.bg(if primary {
+                        value_scaled(accent_fill, 1.1)
+                    } else {
+                        hover
+                    })
+                })
                 .active(move |s| {
-                    s.bg(if primary { value_scaled(accent_fill, 1.0 / 1.2) } else { pressed })
+                    s.bg(if primary {
+                        value_scaled(accent_fill, 1.0 / 1.2)
+                    } else {
+                        pressed
+                    })
                 })
                 .on_click(on_click)
         })

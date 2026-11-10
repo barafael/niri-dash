@@ -3,11 +3,11 @@
 use super::parts::{self, weather_icon};
 use crate::dash::Dash;
 use crate::kit;
+use crate::kit::AriaState;
 use crate::widgets::Ctx;
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, Role, div, px};
 use niri_dash_system::weather;
-use crate::kit::AriaState;
 
 #[derive(Default)]
 pub struct State {

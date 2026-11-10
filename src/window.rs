@@ -8,8 +8,8 @@ use crate::layout::{Kind, Layout, Loaded};
 use crate::{Control, named_socket_path, socket_path};
 use gpui::layer_shell::{Anchor, KeyboardInteractivity, Layer, LayerShellOptions};
 use gpui::{
-    AnyWindowHandle, App, AppContext as _, AsyncApp, Entity, TitlebarOptions, WindowBackgroundAppearance,
-    WindowHandle, WindowKind, WindowOptions, px, size,
+    AnyWindowHandle, App, AppContext as _, AsyncApp, Entity, TitlebarOptions,
+    WindowBackgroundAppearance, WindowHandle, WindowKind, WindowOptions, px, size,
 };
 use niri_dash_system::{self as sys, Event, Feed, Started};
 use std::cell::RefCell;
@@ -156,7 +156,13 @@ pub fn run(initial: Option<Control>) -> Result<()> {
         source,
     })?;
     log::info!("niri-dash running; control socket {}", path.display());
-    serve(Some(listener), Mode::Dashboard, None, initial, Layout::load())
+    serve(
+        Some(listener),
+        Mode::Dashboard,
+        None,
+        initial,
+        Layout::load(),
+    )
 }
 
 /// Run one widget as a standalone app in a normal window, with a control socket of its own (so a
@@ -180,7 +186,13 @@ pub fn run_app(kind: Kind) -> Result<()> {
         min_size: (px(min_w), px(min_h)),
     };
     log::info!("{} running; control socket {}", kind.name(), path.display());
-    let result = serve(Some(listener), mode, Some(kind), Some(Control::Show), config);
+    let result = serve(
+        Some(listener),
+        mode,
+        Some(kind),
+        Some(Control::Show),
+        config,
+    );
     let _ = std::fs::remove_file(&path);
     result
 }
@@ -460,7 +472,9 @@ pub fn pump_events(dash: &Entity<Dash>, events: async_channel::Receiver<Event>, 
                 }
             });
             if !events.is_empty() {
-                cx.background_executor().timer(Duration::from_millis(1)).await;
+                cx.background_executor()
+                    .timer(Duration::from_millis(1))
+                    .await;
             }
         }
     })
@@ -496,7 +510,9 @@ pub fn tick(dash: &Entity<Dash>, cx: &mut App) {
     cx.spawn(async move |cx: &mut AsyncApp| {
         loop {
             let ms = 1_005 - chrono::Local::now().timestamp_subsec_millis().min(999) as u64;
-            cx.background_executor().timer(Duration::from_millis(ms)).await;
+            cx.background_executor()
+                .timer(Duration::from_millis(ms))
+                .await;
             dash.update(cx, |d, cx| d.tick(cx));
         }
     })

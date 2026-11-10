@@ -7,6 +7,8 @@ use super::parts::{self, Face, Scopes, card};
 use super::{draw, placed_of, tasks};
 use crate::dash::Dash;
 use crate::keys::Key;
+use crate::kit::AriaCursor;
+use crate::kit::AriaState;
 use crate::kit::{self, Glide};
 use crate::layout::Kind;
 use crate::scope::{Scope, Stops};
@@ -23,8 +25,6 @@ use niri_dash_system::{Tell, notifications, sleep};
 use std::cell::Cell;
 use std::path::PathBuf;
 use std::time::SystemTime;
-use crate::kit::AriaCursor;
-use crate::kit::AriaState;
 
 const PLACEHOLDER: &str = "45s, 30 min, 1h30m, 23:45";
 
@@ -175,7 +175,10 @@ fn fire(d: &mut Dash, mode: sleep::Mode) {
         return;
     }
     d.widgets.time.sleep.ctl.pretend(mode, &script);
-    let text = format!("Sleep timer: would have run {}", sleep::describe(mode, &script));
+    let text = format!(
+        "Sleep timer: would have run {}",
+        sleep::describe(mode, &script)
+    );
     d.toast(&text);
     // On Plasma the notification pops up by itself.
     if d.caps.notifications_server {
@@ -231,7 +234,10 @@ pub fn sync_settings(d: &mut Dash) {
     if before.as_ref().is_none_or(|b| b.dry_run != now.dry_run) {
         s.ctl.dry_run = now.dry_run;
     }
-    if before.as_ref().is_none_or(|b| b.keep_awake != now.keep_awake) {
+    if before
+        .as_ref()
+        .is_none_or(|b| b.keep_awake != now.keep_awake)
+    {
         s.ctl.keep_awake = now.keep_awake;
     }
     if before.as_ref().is_none_or(|b| b.script != now.script) {
@@ -456,7 +462,11 @@ impl Stops for Keys<'_, '_> {
         if !l.round && !l.list && i == 1 && l.modes > 0 {
             let n = l.modes as i32;
             let selected = d.widgets.time.sleep.ctl.selected as i32;
-            act(d, cx, sleep::Act::Select((selected + delta).rem_euclid(n) as usize));
+            act(
+                d,
+                cx,
+                sleep::Act::Select((selected + delta).rem_euclid(n) as usize),
+            );
             return true;
         }
         if l.round && l.counting {
@@ -561,7 +571,11 @@ pub fn sync(d: &mut Dash) {
         let Some(layout) = layout_of(d, id) else {
             continue;
         };
-        d.widgets.time.sleep.scopes.fit(id, layout.count(), |c| layout.subs(c));
+        d.widgets
+            .time
+            .sleep
+            .scopes
+            .fit(id, layout.count(), |c| layout.subs(c));
         // The picked mode is where the cursor is, when it is on a mode: a list drawn after the
         // widget was blown up may have the cursor on another mode than the picked one, and the
         // cursor goes to the picked one.
@@ -593,7 +607,11 @@ pub fn describe(d: &Dash) -> Option<String> {
             scope.cursor + 1,
             layout.count(),
             scope.part() + 1,
-            if d.widgets.time.sleep.editing { ", typing" } else { "" }
+            if d.widgets.time.sleep.editing {
+                ", typing"
+            } else {
+                ""
+            }
         )
     })
 }
@@ -614,7 +632,11 @@ pub fn check(d: &Dash) -> Result<(), String> {
         return Err(format!(
             "the screen is {} held awake, but the countdown wants it {}",
             if s.awake { "" } else { "not" },
-            if s.ctl.wants_awake() { "held" } else { "let go" }
+            if s.ctl.wants_awake() {
+                "held"
+            } else {
+                "let go"
+            }
         ));
     }
     for t in &d.tiles {
@@ -661,7 +683,9 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
     let tk = ctx.tk;
     let on = ctx.entered;
     let layout = Layout::new(ctx.d, ctx.round, ctx.h);
-    let scope = s.scopes.fit(ctx.tile.id(), layout.count(), |c| layout.subs(c));
+    let scope = s
+        .scopes
+        .fit(ctx.tile.id(), layout.count(), |c| layout.subs(c));
     let status = s.ctl.timer.status();
     let counting = layout.counting;
     let paused = status == sleep::Status::Paused;
@@ -832,7 +856,11 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                             .text_size(px(tk.font_title()))
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .text_color(if paused { tk.faint() } else { tk.accent() })
-                            .child(if counting { left.clone() } else { String::new() }),
+                            .child(if counting {
+                                left.clone()
+                            } else {
+                                String::new()
+                            }),
                     ),
             )
         })
@@ -845,9 +873,17 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                 .gap(px(2.0))
                 .child(field)
                 .child(
-                    parts::elided(if problem.is_empty() { echo } else { problem.clone() })
-                        .text_size(px(tk.font_small()))
-                        .text_color(if problem.is_empty() { tk.dim() } else { tk.bad() }),
+                    parts::elided(if problem.is_empty() {
+                        echo
+                    } else {
+                        problem.clone()
+                    })
+                    .text_size(px(tk.font_small()))
+                    .text_color(if problem.is_empty() {
+                        tk.dim()
+                    } else {
+                        tk.bad()
+                    }),
                 ),
         )
         .when(!layout.list, |col| {
@@ -915,7 +951,9 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                             .items_center()
                             .rounded(px(tk.radius_small().min(14.0)))
                             .when(here, |r| r.bg(soft))
-                            .when(focused, |r| r.bg(hover).border_2().border_color(tk.accent()))
+                            .when(focused, |r| {
+                                r.bg(hover).border_2().border_color(tk.accent())
+                            })
                             .cursor_pointer()
                             .hover(move |s| s.bg(hover))
                             .on_click(cx.listener(move |d, _: &ClickEvent, _, cx| {
@@ -933,7 +971,17 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                                 if here { "› " } else { "   " }
                             )))
                     }))
-                    .child(parts::muted(if n_modes > 0 { help.clone() } else { String::new() }, tk).h(px(20.0))),
+                    .child(
+                        parts::muted(
+                            if n_modes > 0 {
+                                help.clone()
+                            } else {
+                                String::new()
+                            },
+                            tk,
+                        )
+                        .h(px(20.0)),
+                    ),
             )
         })
         .child(
@@ -1133,7 +1181,12 @@ fn field(ctx: &Ctx, cx: &mut Context<Dash>, kfocus: bool) -> impl IntoElement {
                         })
                 })
                 .when_some(s.field.as_ref(), |f, field| {
-                    f.child(Input::new(&field.state).appearance(false).bordered(false).focus_bordered(false))
+                    f.child(
+                        Input::new(&field.state)
+                            .appearance(false)
+                            .bordered(false)
+                            .focus_bordered(false),
+                    )
                 }),
         )
         .child(
@@ -1146,6 +1199,10 @@ fn field(ctx: &Ctx, cx: &mut Context<Dash>, kfocus: bool) -> impl IntoElement {
                 .aria_cursor(kfocus)
                 .h(px(2.0))
                 .rounded(px(1.0))
-                .bg(if kfocus { tk.accent() } else { gpui::transparent_black() }),
+                .bg(if kfocus {
+                    tk.accent()
+                } else {
+                    gpui::transparent_black()
+                }),
         )
 }

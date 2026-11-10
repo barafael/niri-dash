@@ -164,7 +164,12 @@ pub struct Dash {
 }
 
 impl Dash {
-    pub fn new(system: Started, config: Loaded, solo: Option<Kind>, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        system: Started,
+        config: Loaded,
+        solo: Option<Kind>,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let Started { senders, caps } = system;
         theme::install_bundled();
         let Loaded {
@@ -225,7 +230,8 @@ impl Dash {
             Some((c, r)) => (c, r),
             None => auto_grid(width, height),
         };
-        let room = crate::edit::Room::new(width, height, self.look.style.gap, self.edit.drawer_shift());
+        let room =
+            crate::edit::Room::new(width, height, self.look.style.gap, self.edit.drawer_shift());
         let cell = ((room.avail_w - 2.0 * room.side) / cols as f32)
             .min((room.bottom - room.top) / rows as f32);
         Geometry {
@@ -233,8 +239,7 @@ impl Dash {
             rows,
             cell,
             x: (room.avail_w - cols as f32 * cell) / 2.0,
-            y: room.top
-                + (1.0 - room.shift) * (room.bottom - room.top - rows as f32 * cell) / 2.0,
+            y: room.top + (1.0 - room.shift) * (room.bottom - room.top - rows as f32 * cell) / 2.0,
             width,
             height,
             avail_w: room.avail_w,
@@ -401,7 +406,11 @@ impl Dash {
         if !self.visible {
             return;
         }
-        if self.toast.as_ref().is_some_and(|t| Instant::now() >= t.until) {
+        if self
+            .toast
+            .as_ref()
+            .is_some_and(|t| Instant::now() >= t.until)
+        {
             self.toast = None;
         }
         crate::widgets::tick(self);
@@ -471,7 +480,8 @@ impl Dash {
                 if self.nav.op == NavOp::Move {
                     self.nudge_widget(id, d);
                 } else {
-                    let shrink = key.shift || matches!(key.code, Code::Char(c) if c.is_ascii_uppercase());
+                    let shrink =
+                        key.shift || matches!(key.code, Code::Char(c) if c.is_ascii_uppercase());
                     self.size_widget(id, d, !shrink);
                 }
             }
@@ -523,7 +533,8 @@ impl Dash {
                 return true;
             }
         }
-        if self.solo.is_none() && !self.editing && key.is('e') && key.ctrl && !key.alt && !key.meta {
+        if self.solo.is_none() && !self.editing && key.is('e') && key.ctrl && !key.alt && !key.meta
+        {
             // From inside a widget: that widget is the one edit mode starts on.
             let entered = (self.nav.mode == NavMode::Widget).then_some(self.nav.active_id);
             self.nav_off();

@@ -8,23 +8,20 @@ use super::parts::{
 use crate::dash::{BAR, Dash};
 use crate::edit::anim::Ease;
 use crate::edit::{DRAWER_W, DrawerTab, EDGE};
+use crate::kit::AriaCursor;
 use crate::kit::{self, Tk};
 use crate::theme::Color;
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, BoxShadow, Context, Div, FontWeight, MouseButton, MouseDownEvent, Role, ScrollHandle,
-    Stateful, div, point, px,
+    AnyElement, BoxShadow, Context, Div, FontWeight, MouseButton, MouseDownEvent, Role,
+    ScrollHandle, Stateful, div, point, px,
 };
-use crate::kit::AriaCursor;
 
 impl Dash {
     /// Where the drawer's left edge is, and how far out it is (0 to 1).
     pub fn drawer_x(&self, width: f32) -> (f32, f32) {
         let shift = self.edit.drawer_shift();
-        (
-            width + 40.0 - shift * (DRAWER_W + EDGE + 40.0),
-            shift,
-        )
+        (width + 40.0 - shift * (DRAWER_W + EDGE + 40.0), shift)
     }
 
     /// Scroll `list` to the row under the keyboard cursor when the cursor moved.
@@ -32,7 +29,12 @@ impl Dash {
         if self.cfg_open() {
             return;
         }
-        let key = (tab, self.edit.side_cursor, self.edit.side_keys, self.edit.settings_id);
+        let key = (
+            tab,
+            self.edit.side_cursor,
+            self.edit.side_keys,
+            self.edit.settings_id,
+        );
         if self.edit.side_keys && self.edit.revealed.get() != Some(key) {
             handle.scroll_to_item(child);
         }
@@ -135,7 +137,11 @@ impl Dash {
         let n = self.edit.palette.len();
         // Which child of the list holds a stop: the grid's steppers are in the first.
         let cursor = self.edit.side_cursor;
-        let child = if cursor < 2 { 0 } else { (1 + cursor - 2).min(n) };
+        let child = if cursor < 2 {
+            0
+        } else {
+            (1 + cursor - 2).min(n)
+        };
         self.reveal(Some(DrawerTab::Widgets), &self.edit.scroll.widgets, child);
         // How many cells across and down. Changing them fits the widgets in; the reset buttons go
         // back to as many cells as fit the screen.
@@ -154,7 +160,11 @@ impl Dash {
                     .child(section_label("Grid", tk).flex_1())
                     .child(
                         section_label(
-                            if self.layout.grid.is_some() { "" } else { "fits the screen" },
+                            if self.layout.grid.is_some() {
+                                ""
+                            } else {
+                                "fits the screen"
+                            },
                             tk,
                         )
                         .font_weight(FontWeight::NORMAL),
@@ -176,93 +186,99 @@ impl Dash {
                 )
             }))
             .child(section_label("Add", tk).h(px(28.0)).flex().items_end());
-        let entries: Vec<AnyElement> = self.edit.palette.iter().enumerate().map(|(i, p)| {
-            let kfocus = kf(2 + i);
-            let hover = tk.hover();
-            let title = p.title;
-            div()
-                .id(eid("palette", i))
-                .flex_none()
-                .h(px(62.0))
-                .py(px(3.0))
-                .child(
-                    div()
-                        .id(eid("palette-entry", i))
-                        .role(Role::Button)
-                        .aria_label(title)
-                        .aria_description(p.description.clone())
-                        .aria_cursor(kfocus)
-                        .debug_selector(move || title.to_string())
-                        .size_full()
-                        .p(px(10.0))
-                        .gap(px(10.0))
-                        .flex()
-                        .flex_row()
-                        .rounded(px(tk.radius_small()))
-                        .bg(if kfocus { hover } else { tk.card_raised() })
-                        .when(kfocus, |d| d.border_2().border_color(tk.accent()))
-                        .cursor_pointer()
-                        .hover(move |s| s.bg(hover))
-                        .active({
-                            let pressed = tk.pressed();
-                            move |s| s.bg(pressed)
-                        })
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(move |d, ev: &MouseDownEvent, _, _| {
-                                d.palette_press(
-                                    i,
-                                    (f32::from(ev.position.x), f32::from(ev.position.y)),
-                                );
-                            }),
-                        )
-                        .on_click(cx.listener(move |d, _, _, cx| {
-                            if !d.edit.pal_press.dragged_out
-                                && let Some(item) = d.edit.palette.get(i)
-                            {
-                                let kind = item.kind;
-                                d.add_widget(kind);
-                            }
-                            cx.notify();
-                        }))
-                        .child(
-                            div()
-                                .flex_none()
-                                .w(px(36.0))
-                                .h_full()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .rounded(px(18.0_f32.min(tk.radius_small())))
-                                .bg(tk.accent_soft())
-                                .child(kit::icon("plus", 18.0, tk.accent())),
-                        )
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
-                                .flex()
-                                .flex_col()
-                                .justify_center()
-                                .child(
-                                    div()
-                                        .truncate()
-                                        .text_size(px(tk.font_body()))
-                                        .font_weight(FontWeight::SEMIBOLD)
-                                        .text_color(tk.text())
-                                        .child(p.title),
-                                )
-                                .child(
-                                    div()
-                                        .truncate()
-                                        .text_size(px(tk.font_small()))
-                                        .text_color(tk.dim())
-                                        .child(p.description.clone()),
-                                ),
-                        ),
-                )
-                .into_any_element()
-        }).collect();
+        let entries: Vec<AnyElement> = self
+            .edit
+            .palette
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                let kfocus = kf(2 + i);
+                let hover = tk.hover();
+                let title = p.title;
+                div()
+                    .id(eid("palette", i))
+                    .flex_none()
+                    .h(px(62.0))
+                    .py(px(3.0))
+                    .child(
+                        div()
+                            .id(eid("palette-entry", i))
+                            .role(Role::Button)
+                            .aria_label(title)
+                            .aria_description(p.description.clone())
+                            .aria_cursor(kfocus)
+                            .debug_selector(move || title.to_string())
+                            .size_full()
+                            .p(px(10.0))
+                            .gap(px(10.0))
+                            .flex()
+                            .flex_row()
+                            .rounded(px(tk.radius_small()))
+                            .bg(if kfocus { hover } else { tk.card_raised() })
+                            .when(kfocus, |d| d.border_2().border_color(tk.accent()))
+                            .cursor_pointer()
+                            .hover(move |s| s.bg(hover))
+                            .active({
+                                let pressed = tk.pressed();
+                                move |s| s.bg(pressed)
+                            })
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |d, ev: &MouseDownEvent, _, _| {
+                                    d.palette_press(
+                                        i,
+                                        (f32::from(ev.position.x), f32::from(ev.position.y)),
+                                    );
+                                }),
+                            )
+                            .on_click(cx.listener(move |d, _, _, cx| {
+                                if !d.edit.pal_press.dragged_out
+                                    && let Some(item) = d.edit.palette.get(i)
+                                {
+                                    let kind = item.kind;
+                                    d.add_widget(kind);
+                                }
+                                cx.notify();
+                            }))
+                            .child(
+                                div()
+                                    .flex_none()
+                                    .w(px(36.0))
+                                    .h_full()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .rounded(px(18.0_f32.min(tk.radius_small())))
+                                    .bg(tk.accent_soft())
+                                    .child(kit::icon("plus", 18.0, tk.accent())),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .flex()
+                                    .flex_col()
+                                    .justify_center()
+                                    .child(
+                                        div()
+                                            .truncate()
+                                            .text_size(px(tk.font_body()))
+                                            .font_weight(FontWeight::SEMIBOLD)
+                                            .text_color(tk.text())
+                                            .child(p.title),
+                                    )
+                                    .child(
+                                        div()
+                                            .truncate()
+                                            .text_size(px(tk.font_small()))
+                                            .text_color(tk.dim())
+                                            .child(p.description.clone()),
+                                    ),
+                            ),
+                    )
+                    .into_any_element()
+            })
+            .collect();
         self.side_list("side-widgets", &self.edit.scroll.widgets, 0.0)
             .child(head)
             .children(entries)
@@ -383,21 +399,25 @@ impl Dash {
                 .flex_1()
                 .h(px(34.0)),
             );
-        let rows: Vec<AnyElement> = rows.into_iter().enumerate().map(|(i, row)| {
-            setting_row(
-                RowSpec {
-                    owner: RowOwner::Arrange,
-                    pos: i,
-                    row,
-                    kfocus: kf(2 + i),
-                    shake: 0.0,
-                    live: true,
-                    field: None,
-                },
-                tk,
-                cx,
-            )
-        }).collect();
+        let rows: Vec<AnyElement> = rows
+            .into_iter()
+            .enumerate()
+            .map(|(i, row)| {
+                setting_row(
+                    RowSpec {
+                        owner: RowOwner::Arrange,
+                        pos: i,
+                        row,
+                        kfocus: kf(2 + i),
+                        shake: 0.0,
+                        live: true,
+                        field: None,
+                    },
+                    tk,
+                    cx,
+                )
+            })
+            .collect();
         self.side_list("side-arrange", &self.edit.scroll.arrange, 6.0)
             .child(top)
             .child(result)
@@ -415,30 +435,42 @@ impl Dash {
             &self.edit.scroll.colors,
             self.edit.side_cursor.min(n),
         );
-        let cards: Vec<AnyElement> = self.edit.schemes.iter().enumerate().map(|(i, s)| {
-            let name = s.name.clone();
-            choice_card(
-                eid("scheme", i),
-                &s.name,
-                &s.description,
-                s.current,
-                self.side_on(DrawerTab::Colors, i),
-                56.0,
-                scheme_preview(s, tk),
-                tk,
-                cx.listener(move |d, _, _, cx| {
-                    d.choose_colorscheme(&name);
-                    cx.notify();
-                }),
-            )
-        }).collect();
+        let cards: Vec<AnyElement> = self
+            .edit
+            .schemes
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                let name = s.name.clone();
+                choice_card(
+                    eid("scheme", i),
+                    &s.name,
+                    &s.description,
+                    s.current,
+                    self.side_on(DrawerTab::Colors, i),
+                    56.0,
+                    scheme_preview(s, tk),
+                    tk,
+                    cx.listener(move |d, _, _, cx| {
+                        d.choose_colorscheme(&name);
+                        cx.notify();
+                    }),
+                )
+            })
+            .collect();
         self.side_list("side-colors", &self.edit.scroll.colors, 6.0)
             .children(cards)
             .child(self.folder_button(DrawerTab::Colors, n, tk, cx))
             .into_any_element()
     }
 
-    fn folder_button(&self, tab: DrawerTab, stop: usize, tk: &Tk, cx: &mut Context<Self>) -> AnyElement {
+    fn folder_button(
+        &self,
+        tab: DrawerTab,
+        stop: usize,
+        tk: &Tk,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         div()
             .flex_none()
             .child(
@@ -481,32 +513,38 @@ impl Dash {
         };
         self.reveal(Some(DrawerTab::Style), &self.edit.scroll.style, child);
         let customized = self.edit.style_customized;
-        let cards: Vec<AnyElement> = self.edit.styles.iter().enumerate().map(|(i, s)| {
-            let name = s.name.clone();
-            let description = if s.current && customized {
-                "adjusted below".to_string()
-            } else if !s.description.is_empty() {
-                s.description.clone()
-            } else if s.motion == 0.0 {
-                "no animations".to_string()
-            } else {
-                String::new()
-            };
-            choice_card(
-                eid("style", i),
-                &s.name,
-                &description,
-                s.current,
-                kf(i),
-                50.0,
-                style_preview(s, tk),
-                tk,
-                cx.listener(move |d, _, _, cx| {
-                    d.choose_style(&name);
-                    cx.notify();
-                }),
-            )
-        }).collect();
+        let cards: Vec<AnyElement> = self
+            .edit
+            .styles
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                let name = s.name.clone();
+                let description = if s.current && customized {
+                    "adjusted below".to_string()
+                } else if !s.description.is_empty() {
+                    s.description.clone()
+                } else if s.motion == 0.0 {
+                    "no animations".to_string()
+                } else {
+                    String::new()
+                };
+                choice_card(
+                    eid("style", i),
+                    &s.name,
+                    &description,
+                    s.current,
+                    kf(i),
+                    50.0,
+                    style_preview(s, tk),
+                    tk,
+                    cx.listener(move |d, _, _, cx| {
+                        d.choose_style(&name);
+                        cx.notify();
+                    }),
+                )
+            })
+            .collect();
         let adjust = div()
             .flex_none()
             .h(px(34.0))
@@ -532,34 +570,47 @@ impl Dash {
                     }),
                 ))
             });
-        let style_rows: Vec<AnyElement> = self.edit.style_rows.iter().cloned().enumerate().map(|(i, v)| {
-            let row = crate::edit::SettingRow {
-                index: i,
-                kind: v.kind,
-                label: v.label,
-                value: v.value,
-                on: v.on,
-                changed: v.overridden,
-                can_dec: v.can_dec,
-                can_inc: v.can_inc,
-                placeholder: String::new(),
-            };
-            setting_row(
-                RowSpec {
-                    owner: RowOwner::Style,
-                    pos: i,
-                    row,
-                    kfocus: kf(k + i),
-                    shake: 0.0,
-                    live: true,
-                    field: None,
-                },
-                tk,
-                cx,
-            )
-        }).collect();
+        let style_rows: Vec<AnyElement> = self
+            .edit
+            .style_rows
+            .iter()
+            .cloned()
+            .enumerate()
+            .map(|(i, v)| {
+                let row = crate::edit::SettingRow {
+                    index: i,
+                    kind: v.kind,
+                    label: v.label,
+                    value: v.value,
+                    on: v.on,
+                    changed: v.overridden,
+                    can_dec: v.can_dec,
+                    can_inc: v.can_inc,
+                    placeholder: String::new(),
+                };
+                setting_row(
+                    RowSpec {
+                        owner: RowOwner::Style,
+                        pos: i,
+                        row,
+                        kfocus: kf(k + i),
+                        shake: 0.0,
+                        live: true,
+                        field: None,
+                    },
+                    tk,
+                    cx,
+                )
+            })
+            .collect();
         self.side_list("side-style", &self.edit.scroll.style, 6.0)
-            .child(section_label("Preset", tk).flex_none().h(px(22.0)).flex().items_end())
+            .child(
+                section_label("Preset", tk)
+                    .flex_none()
+                    .h(px(22.0))
+                    .flex()
+                    .items_end(),
+            )
             .children(cards)
             .child(adjust)
             .children(style_rows)

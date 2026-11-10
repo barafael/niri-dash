@@ -5,12 +5,14 @@
 //! On Plasma, KWin has a night light of its own (and no gamma control for us): the widget shows
 //! KWin's, and turning it off pauses KWin's schedule for as long as the daemon runs.
 //!
-//! Port of `NightLightWidget` (`legacy/ui/widgets/system.slint`) and `legacy/src/app/night_light.rs`.
+//! Port of `NightLightWidget` (`slint/ui/widgets/system.slint`) and `slint/src/app/night_light.rs`.
 
 use super::sliders::{self, Knob, slider, switch_button};
 use super::{Fit, NoStops, on, setter};
 use crate::dash::Dash;
 use crate::keys::Key;
+use crate::kit::AriaCursor;
+use crate::kit::AriaState;
 use crate::kit::{self, Tk};
 use crate::scope::{Scope, Stops};
 use crate::widgets::Ctx;
@@ -19,8 +21,6 @@ use gpui::{AnyElement, Context, ElementId, Role, div, px};
 use niri_dash_system::Tell;
 use niri_dash_system::night_light::{self as gamma, Cmd, Command, Event, NightLightState};
 use niri_dash_system::notifications;
-use crate::kit::AriaCursor;
-use crate::kit::AriaState;
 
 /// The presets (rectangular, tall enough).
 const PRESETS: [u32; 3] = [3400, 4500, 5500];
@@ -134,7 +134,9 @@ fn forward(d: &mut Dash, cmd: Cmd) {
     if let Err(e) = std::os::unix::net::UnixStream::connect(crate::socket_path())
         .and_then(|mut s| writeln!(s, "{}", cmd.to_wire()))
     {
-        d.toast(&format!("Night light needs the niri-dash daemon running: {e}"));
+        d.toast(&format!(
+            "Night light needs the niri-dash daemon running: {e}"
+        ));
     }
 }
 
@@ -233,7 +235,11 @@ impl State {
 
     /// The presets are the parts of the stop 2.
     fn subs(&self, f: &Fit, cursor: usize) -> usize {
-        if !f.round && cursor == 2 { PRESETS.len() } else { 1 }
+        if !f.round && cursor == 2 {
+            PRESETS.len()
+        } else {
+            1
+        }
     }
 }
 
@@ -301,12 +307,7 @@ pub fn refit(d: &mut Dash, fit: &Fit) {
 }
 
 pub fn describe(n: &State, fit: &Fit) -> String {
-    format!(
-        "stop {} of {}, {}",
-        n.scope.cursor,
-        n.count(fit),
-        n.label()
-    )
+    format!("stop {} of {}, {}", n.scope.cursor, n.count(fit), n.label())
 }
 
 pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
@@ -349,7 +350,11 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
         .gap(px(8.0))
         .h(px(28.0))
         .flex_none()
-        .child(kit::icon("moon", 18.0, if n.on { tk.warn() } else { tk.dim() }))
+        .child(kit::icon(
+            "moon",
+            18.0,
+            if n.on { tk.warn() } else { tk.dim() },
+        ))
         .child(
             div()
                 .flex_1()
@@ -360,7 +365,9 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                 .text_color(tk.text())
                 .child("Night light"),
         )
-        .when(n.available && fit.w >= 260.0, |h| h.child(muted(&label, tk)))
+        .when(n.available && fit.w >= 260.0, |h| {
+            h.child(muted(&label, tk))
+        })
         .child(switch_button(
             ("night-light-switch", id),
             "Night light",
@@ -389,53 +396,51 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
     let nothing = (!n.available && n.note.is_empty())
         .then(|| muted("The compositor offers no gamma control", tk).flex_none());
 
-    let presets = has_presets.then(|| {
-        div()
-            .flex()
-            .flex_row()
-            .gap(px(6.0))
-            .flex_none()
-            .children(PRESETS.iter().enumerate().map(|(i, &k)| {
-                let current = n.on && n.kelvin == k;
-                let kf = at(2) && n.scope.part() == i;
-                let name = format!("{k} K");
-                let selector = name.clone();
-                let (hover, pressed) = (tk.hover(), tk.pressed());
-                div()
-                    .id(ElementId::from(("night-light-preset", id * 8 + i)))
-                    .role(Role::Button)
-                    .aria_label(name.clone())
-                    .aria_state(if current { "current" } else { "" })
-                    .aria_cursor(kf)
-                    .debug_selector(move || selector.clone())
-                    .flex_1()
-                    .min_w_0()
-                    .h(px(30.0))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(tk.radius_small().min(15.0)))
-                    .border(px(2.0))
-                    .border_color(if !kf {
-                        gpui::transparent_black()
-                    } else if current {
-                        tk.text()
-                    } else {
-                        tk.accent()
-                    })
-                    .cursor_pointer()
-                    .when(current, |b| b.bg(tk.accent()).text_color(tk.on_accent()))
-                    .when(!current, |b| {
-                        b.bg(tk.card_raised())
-                            .text_color(tk.text())
-                            .hover(move |s| s.bg(hover))
-                            .active(move |s| s.bg(pressed))
-                    })
-                    .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                    .on_click(on(cx, move |d, _| set_kelvin(d, k)))
-                    .child(div().truncate().child(name))
-            }))
-    });
+    let presets =
+        has_presets.then(|| {
+            div().flex().flex_row().gap(px(6.0)).flex_none().children(
+                PRESETS.iter().enumerate().map(|(i, &k)| {
+                    let current = n.on && n.kelvin == k;
+                    let kf = at(2) && n.scope.part() == i;
+                    let name = format!("{k} K");
+                    let selector = name.clone();
+                    let (hover, pressed) = (tk.hover(), tk.pressed());
+                    div()
+                        .id(ElementId::from(("night-light-preset", id * 8 + i)))
+                        .role(Role::Button)
+                        .aria_label(name.clone())
+                        .aria_state(if current { "current" } else { "" })
+                        .aria_cursor(kf)
+                        .debug_selector(move || selector.clone())
+                        .flex_1()
+                        .min_w_0()
+                        .h(px(30.0))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(tk.radius_small().min(15.0)))
+                        .border(px(2.0))
+                        .border_color(if !kf {
+                            gpui::transparent_black()
+                        } else if current {
+                            tk.text()
+                        } else {
+                            tk.accent()
+                        })
+                        .cursor_pointer()
+                        .when(current, |b| b.bg(tk.accent()).text_color(tk.on_accent()))
+                        .when(!current, |b| {
+                            b.bg(tk.card_raised())
+                                .text_color(tk.text())
+                                .hover(move |s| s.bg(hover))
+                                .active(move |s| s.bg(pressed))
+                        })
+                        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                        .on_click(on(cx, move |d, _| set_kelvin(d, k)))
+                        .child(div().truncate().child(name))
+                }),
+            )
+        });
 
     // Centered while it fits, from the top when it doesn't (as Slint's layout does): the
     // auto margins give way to the overflow.

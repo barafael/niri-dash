@@ -11,7 +11,9 @@ use crate::kit::Tk;
 use crate::layout::Kind;
 use gpui::{AnyElement, Context};
 use niri_dash_system::Event;
-use niri_dash_system::{claude as sys_claude, media as sys_media, notifications as sys_notifications};
+use niri_dash_system::{
+    claude as sys_claude, media as sys_media, notifications as sys_notifications,
+};
 use niri_dash_system::{tray as sys_tray, windows as sys_windows};
 
 mod claude;

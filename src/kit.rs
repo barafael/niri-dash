@@ -3,12 +3,12 @@
 
 use crate::theme::{Color, ColorRole, Look};
 use gpui::prelude::*;
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::time::Instant;
 use gpui::{
     AnyElement, App, ClickEvent, ElementId, Hsla, Role, SharedString, Window, div, px, svg,
 };
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::time::Instant;
 
 /// The current look, for the views that draw with it.
 #[derive(Debug, Clone)]
@@ -331,18 +331,40 @@ pub fn glide(key: u64, target: f32, ms: f32, window: &mut gpui::Window) -> f32 {
     GLIDES.with(|g| {
         let mut g = g.borrow_mut();
         let now = Instant::now();
-        let at = |s: &GlideState| eased(s.from, s.to, now.duration_since(s.since).as_secs_f32() * 1000.0, ms);
+        let at = |s: &GlideState| {
+            eased(
+                s.from,
+                s.to,
+                now.duration_since(s.since).as_secs_f32() * 1000.0,
+                ms,
+            )
+        };
         let Some(state) = g.get_mut(&key) else {
-            g.insert(key, GlideState { from: target, to: target, since: now });
+            g.insert(
+                key,
+                GlideState {
+                    from: target,
+                    to: target,
+                    since: now,
+                },
+            );
             return target;
         };
         if ms <= 0.0 {
-            *state = GlideState { from: target, to: target, since: now };
+            *state = GlideState {
+                from: target,
+                to: target,
+                since: now,
+            };
             return target;
         }
         if (state.to - target).abs() > f32::EPSILON {
             let (shown, _) = at(state);
-            *state = GlideState { from: shown, to: target, since: now };
+            *state = GlideState {
+                from: shown,
+                to: target,
+                since: now,
+            };
         }
         let (shown, done) = at(state);
         if !done {
@@ -351,7 +373,6 @@ pub fn glide(key: u64, target: f32, ms: f32, window: &mut gpui::Window) -> f32 {
         shown
     })
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -417,7 +438,11 @@ pub fn ring_radius(size: f32, thickness: f32) -> f32 {
 /// one element may say yes at a time; GPUI panics in a debug build if two do.
 pub trait AriaCursor: gpui::StatefulInteractiveElement + Sized {
     fn aria_cursor(self, on: bool) -> Self {
-        if on { self.aria_active_descendant() } else { self }
+        if on {
+            self.aria_active_descendant()
+        } else {
+            self
+        }
     }
 }
 

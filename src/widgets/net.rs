@@ -280,12 +280,26 @@ pub fn layout_changed(d: &mut Dash) {
             .collect()
     };
     let (wifi_ids, bt_ids) = (ids(Kind::Wifi), ids(Kind::Bluetooth));
-    if d.widgets.net.wifi.views.keys().any(|id| !wifi_ids.contains(id))
-        || d.widgets.net.bluetooth.views.keys().any(|id| !bt_ids.contains(id))
+    if d.widgets
+        .net
+        .wifi
+        .views
+        .keys()
+        .any(|id| !wifi_ids.contains(id))
+        || d.widgets
+            .net
+            .bluetooth
+            .views
+            .keys()
+            .any(|id| !bt_ids.contains(id))
     {
         d.widgets.net.refocus.set(true);
     }
-    d.widgets.net.wifi.views.retain(|id, _| wifi_ids.contains(id));
+    d.widgets
+        .net
+        .wifi
+        .views
+        .retain(|id, _| wifi_ids.contains(id));
     d.widgets
         .net
         .bluetooth

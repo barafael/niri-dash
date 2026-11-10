@@ -16,8 +16,8 @@ use chrono::{Datelike, Local, Timelike, Weekday};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::time::Duration;
-use strum::{AsRefStr, EnumIter, EnumString, IntoStaticStr, VariantNames};
 use std::time::Instant;
+use strum::{AsRefStr, EnumIter, EnumString, IntoStaticStr, VariantNames};
 
 /// A mascot. [`Character::VARIANTS`] lists their names.
 #[derive(
@@ -50,8 +50,8 @@ impl Character {
     AsRefStr,
     Serialize,
     Deserialize,
+    clap::ValueEnum,
 )]
-#[derive(clap::ValueEnum)]
 #[strum(serialize_all = "lowercase", ascii_case_insensitive)]
 #[serde(rename_all = "lowercase")]
 pub enum Outfit {

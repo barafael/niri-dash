@@ -1,6 +1,6 @@
 //! The brightness widget: the screen's backlight, a slider or a knob. Port of
-//! `BrightnessWidget` (`legacy/ui/widgets/system.slint`) and `show_brightness` and the `set`
-//! callback of `legacy/src/app/feeds.rs`.
+//! `BrightnessWidget` (`slint/ui/widgets/system.slint`) and `show_brightness` and the `set`
+//! callback of `slint/src/app/feeds.rs`.
 
 use super::sliders::{self, Knob, Row, percent, slider_row};
 use super::{Fit, digit_level, on, setter};
@@ -83,13 +83,23 @@ impl Stops for Keys<'_> {
 /// h/l change the brightness by 5 %, 1-9 and 0 set 10-100 %.
 pub fn key(d: &mut Dash, fit: &Fit, key: &Key) -> bool {
     let mut scope = d.widgets.controls.brightness.scope;
-    let taken = scope.press(key, &mut Keys { d, round: fit.round });
+    let taken = scope.press(
+        key,
+        &mut Keys {
+            d,
+            round: fit.round,
+        },
+    );
     d.widgets.controls.brightness.scope = scope;
     taken
 }
 
 pub fn describe(b: &State) -> String {
-    format!("{}%{}", (b.level * 100.0).round(), if b.available { "" } else { ", no backlight" })
+    format!(
+        "{}%{}",
+        (b.level * 100.0).round(),
+        if b.available { "" } else { ", no backlight" }
+    )
 }
 
 pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {

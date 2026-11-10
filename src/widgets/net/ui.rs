@@ -1,11 +1,13 @@
 //! The small pieces of the Wi-Fi and Bluetooth widgets: rows, buttons with a keyboard cursor
-//! ring, switches, signal bars, the QR code, headers. Ports of `legacy/ui/common.slint`'s
+//! ring, switches, signal bars, the QR code, headers. Ports of `slint/ui/common.slint`'s
 //! `Row`, `IconButton`, `TextButton`, `Switch`, `SignalBars`, `Header`, `RoundFace` and friends.
 //!
 //! The ones with an `st` argument can show the keyboard cursor (`kfocus`): a 2 px ring in the
 //! accent color, drawn over the element so that the cursor moving never moves anything. The
 //! element under the cursor says so to screen readers (`aria_cursor`).
 
+use crate::kit::AriaCursor;
+use crate::kit::AriaState;
 use crate::kit::{self, Tk, with_alpha};
 use gpui::prelude::*;
 use gpui::{
@@ -13,8 +15,6 @@ use gpui::{
     Toggled, Window, canvas, div, fill, point, px, size, transparent_black,
 };
 use niri_dash_system::IconSrc;
-use crate::kit::AriaCursor;
-use crate::kit::AriaState;
 
 /// A line of text is as high as Slint draws it (the font's ascent and descent, about 1.36 times
 /// its size), not GPUI's 1.6.
@@ -314,9 +314,11 @@ pub fn switch(
         .h(px(22.0))
         .rounded(px(tk.radius_small().min(11.0)))
         .bg(if on { tk.accent() } else { tk.track() })
-        .when(st.enabled, |s| s.cursor_pointer()
+        .when(st.enabled, |s| {
+            s.cursor_pointer()
                 .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                .on_click(on_click))
+                .on_click(on_click)
+        })
         .when(!st.enabled, |s| s.opacity(0.4))
         .child(
             div()
@@ -661,7 +663,11 @@ pub fn round_face(
     div()
         .size_full()
         .rounded_full()
-        .bg(if on { tk.accent_soft() } else { transparent_black() })
+        .bg(if on {
+            tk.accent_soft()
+        } else {
+            transparent_black()
+        })
         .flex()
         .flex_col()
         .items_center()

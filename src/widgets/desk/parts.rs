@@ -4,13 +4,13 @@
 //! cursor ring (`kfocus`) they have there. Used by two widgets of the group, so they live here
 //! first and move to `kit` if another group wants them.
 
+use crate::kit::AriaCursor;
 use crate::kit::{self, Tk, with_alpha};
 use gpui::prelude::*;
 use gpui::{
     AnyElement, ClickEvent, Div, ElementId, Hsla, Role, SharedString, Stateful, canvas, div, point,
     px,
 };
-use crate::kit::AriaCursor;
 
 /// `c` lighter by `k` (a fraction of its lightness).
 pub fn brighter(c: Hsla, k: f32) -> Hsla {

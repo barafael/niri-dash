@@ -1,12 +1,13 @@
 //! The Claude sessions widget: the Claude Code sessions that run, and a way to their windows.
-//! Port of `ClaudeSessionsWidget` in `legacy/ui/widgets/desk.slint` and `show_claude` in
-//! `legacy/src/app/feeds.rs`.
+//! Port of `ClaudeSessionsWidget` in `slint/ui/widgets/desk.slint` and `show_claude` in
+//! `slint/src/app/feeds.rs`.
 
 use super::list::Lists;
 use super::parts;
 use super::shared::{self, Scopes};
 use crate::dash::Dash;
 use crate::keys::Key;
+use crate::kit::AriaState;
 use crate::scope::{Scope, Stops};
 use crate::widgets::Ctx;
 use gpui::prelude::*;
@@ -15,7 +16,6 @@ use niri_dash_system::claude::{State as Sys, Status};
 use niri_dash_system::windows::Command as Windows;
 use niri_dash_system::{Senders, Tell};
 use std::collections::HashMap;
-use crate::kit::AriaState;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Session {
@@ -145,7 +145,12 @@ pub fn describe(d: &Dash, id: u32) -> String {
     let c = &d.widgets.desk.claude;
     let s: Scope = c.scopes.get(id);
     match c.sessions.get(s.cursor) {
-        Some(x) => format!("session {}/{} {:?}", s.cursor + 1, c.sessions.len(), x.title),
+        Some(x) => format!(
+            "session {}/{} {:?}",
+            s.cursor + 1,
+            c.sessions.len(),
+            x.title
+        ),
         None => "no sessions".into(),
     }
 }
@@ -250,12 +255,13 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
             .items_center()
             .gap(px(10.0))
             .when(has_window, |r| {
-                r.on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation()).on_click(cx.listener(move |d, _: &ClickEvent, _, cx| {
-                    let c = &d.widgets.desk.claude;
-                    if focus(&d.tx, &c.windows, pid) {
-                        shared::hide(d, cx);
-                    }
-                }))
+                r.on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .on_click(cx.listener(move |d, _: &ClickEvent, _, cx| {
+                        let c = &d.widgets.desk.claude;
+                        if focus(&d.tx, &c.windows, pid) {
+                            shared::hide(d, cx);
+                        }
+                    }))
             })
             .child(parts::status_dot(s.busy, tk))
             .child(
@@ -294,15 +300,17 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
             "sparkle",
             if busy > 0 { tk.accent() } else { tk.dim() },
             "Claude sessions",
-            vec![parts::muted(
-                if busy > 0 {
-                    format!("{busy} working · {count}")
-                } else {
-                    count.to_string()
-                },
-                tk,
-            )
-            .into_any_element()],
+            vec![
+                parts::muted(
+                    if busy > 0 {
+                        format!("{busy} working · {count}")
+                    } else {
+                        count.to_string()
+                    },
+                    tk,
+                )
+                .into_any_element(),
+            ],
             tk,
         ))
         .child(if c.sessions.is_empty() {

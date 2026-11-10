@@ -1,5 +1,5 @@
 //! The notifications widget and do not disturb. Port of `NotificationsWidget` in
-//! `legacy/ui/widgets/desk.slint` and `legacy/src/app/notifications.rs`.
+//! `slint/ui/widgets/desk.slint` and `slint/src/app/notifications.rs`.
 
 use super::list::Lists;
 use super::parts::{self, Look, RoundIcon};
@@ -7,6 +7,8 @@ use super::pics::Pic;
 use super::shared::{self, clock_text, when_text};
 use crate::dash::Dash;
 use crate::keys::Key;
+use crate::kit::AriaCursor;
+use crate::kit::AriaState;
 use crate::scope::{Scope, Stops};
 use crate::widgets::Ctx;
 use gpui::prelude::*;
@@ -14,8 +16,6 @@ use gpui::{AnyElement, ClickEvent, Context, div, px};
 use niri_dash_system::notifications::{Command, Dnd, State as Sys, next_hour};
 use niri_dash_system::{Senders, Tell};
 use std::collections::HashMap;
-use crate::kit::AriaCursor;
-use crate::kit::AriaState;
 
 /// "Until tomorrow" ends at this hour.
 const MORNING: u32 = 7;
@@ -205,8 +205,7 @@ fn set_dnd(tx: &Senders, choice: u8) {
 /// The dashboard is built: do not disturb survives a restart.
 pub fn init(d: &mut Dash) {
     let us = d.locale.us;
-    d.widgets.desk.notifications.morning =
-        clock_text(next_hour(chrono::Local::now(), MORNING), us);
+    d.widgets.desk.notifications.morning = clock_text(next_hour(chrono::Local::now(), MORNING), us);
     let saved = Dnd::from_saved(d.state.dnd_until);
     if saved != Dnd::Off {
         d.tx.notifications.tell(Command::SetDnd(saved));
@@ -371,10 +370,21 @@ pub fn describe(d: &Dash, id: u32) -> String {
             c - choices + 1,
             n.items.len(),
             x.summary,
-            if inst.scope.sub == 1 { ", its dismiss button" } else { "" }
+            if inst.scope.sub == 1 {
+                ", its dismiss button"
+            } else {
+                ""
+            }
         )
     } else {
-        format!("no notifications{}", if inst.choosing { ", choices showing" } else { "" })
+        format!(
+            "no notifications{}",
+            if inst.choosing {
+                ", choices showing"
+            } else {
+                ""
+            }
+        )
     }
 }
 
@@ -388,15 +398,24 @@ pub fn check(d: &Dash, id: u32, entered: bool) -> Result<(), String> {
     let c = scope.cursor;
     let parts = if c >= choices { 2 } else { 1 };
     if scope.sub >= parts {
-        return Err(format!("cursor on part {} of a stop with {parts}", scope.sub));
+        return Err(format!(
+            "cursor on part {} of a stop with {parts}",
+            scope.sub
+        ));
     }
     if inst.choosing && !n.pausable() && !round {
         return Err("the pause choices show where nothing can be paused".into());
     }
-    if entered && !round && c >= choices && c - choices < n.items.len()
+    if entered
+        && !round
+        && c >= choices
+        && c - choices < n.items.len()
         && n.lists.of(id).in_sight(c - choices) == Some(false)
     {
-        return Err(format!("cursor is out of sight: notification {}", c - choices));
+        return Err(format!(
+            "cursor is out of sight: notification {}",
+            c - choices
+        ));
     }
     Ok(())
 }
@@ -500,28 +519,29 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
         );
     }
 
-    let choose = |cx: &mut Context<Dash>, i: usize, text: String, a11y: String, primary: bool, to: u8| {
-        parts::text_button(
-            ("notif-choice", id as usize * 10 + i),
-            text,
-            a11y,
-            Look {
-                kfocus: on && scope.cursor == i,
-                primary,
-                ..Look::on()
-            },
-            tk,
-            cx.listener(move |d, _: &ClickEvent, _, cx| {
-                set_dnd(&d.tx, to);
-                let n = &mut d.widgets.desk.notifications;
-                let mut inst = n.inst(id);
-                inst.choosing = false;
-                n.insts.insert(id, inst);
-                settle(d, id);
-                cx.notify();
-            }),
-        )
-    };
+    let choose =
+        |cx: &mut Context<Dash>, i: usize, text: String, a11y: String, primary: bool, to: u8| {
+            parts::text_button(
+                ("notif-choice", id as usize * 10 + i),
+                text,
+                a11y,
+                Look {
+                    kfocus: on && scope.cursor == i,
+                    primary,
+                    ..Look::on()
+                },
+                tk,
+                cx.listener(move |d, _: &ClickEvent, _, cx| {
+                    set_dnd(&d.tx, to);
+                    let n = &mut d.widgets.desk.notifications;
+                    let mut inst = n.inst(id);
+                    inst.choosing = false;
+                    n.insts.insert(id, inst);
+                    settle(d, id);
+                    cx.notify();
+                }),
+            )
+        };
 
     let mut col = div()
         .size_full()
@@ -537,7 +557,12 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
             tk,
         ));
     if choosing {
-        let mut buttons = div().flex().flex_row().flex_none().gap(px(6.0)).justify_start();
+        let mut buttons = div()
+            .flex()
+            .flex_row()
+            .flex_none()
+            .gap(px(6.0))
+            .justify_start();
         buttons = buttons
             .child(choose(
                 cx,
@@ -643,7 +668,11 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                     .gap(px(10.0))
                     .p(px(tk.pad_tight()))
                     .rounded(px(radius))
-                    .bg(if here { parts::brighter(raised, 0.15) } else { raised })
+                    .bg(if here {
+                        parts::brighter(raised, 0.15)
+                    } else {
+                        raised
+                    })
                     .hover(move |s| s.bg(parts::brighter(raised, 0.15)))
                     .when(has_default, |c| c.cursor_pointer())
                     .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
@@ -666,7 +695,12 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                                     .flex()
                                     .flex_row()
                                     .gap(px(6.0))
-                                    .child(div().flex_1().min_w_0().child(parts::muted(x.app.clone(), tk)))
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .child(parts::muted(x.app.clone(), tk)),
+                                    )
                                     .child(parts::muted(x.time.clone(), tk)),
                             )
                             .child(
@@ -687,31 +721,37 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                                 )
                             }),
                     )
-                    .child(
-                        div().flex_none().child(parts::icon_button(
-                            ("notification-dismiss", id as usize * 10_000 + i),
-                            "close",
-                            format!(
-                                "Dismiss {}",
-                                if x.summary.is_empty() { "notification" } else { &x.summary }
-                            ),
-                            24.0,
-                            tk.faint(),
-                            Look {
-                                kfocus: here && scope.sub == 1,
-                                ..Look::on()
-                            },
-                            tk,
-                            cx.listener(move |d, _: &ClickEvent, _, _| {
-                                d.tx.notifications.tell(Command::Dismiss(nid));
-                            }),
-                        )),
-                    )
+                    .child(div().flex_none().child(parts::icon_button(
+                        ("notification-dismiss", id as usize * 10_000 + i),
+                        "close",
+                        format!(
+                            "Dismiss {}",
+                            if x.summary.is_empty() {
+                                "notification"
+                            } else {
+                                &x.summary
+                            }
+                        ),
+                        24.0,
+                        tk.faint(),
+                        Look {
+                            kfocus: here && scope.sub == 1,
+                            ..Look::on()
+                        },
+                        tk,
+                        cx.listener(move |d, _: &ClickEvent, _, _| {
+                            d.tx.notifications.tell(Command::Dismiss(nid));
+                        }),
+                    )))
                     .when(here && scope.sub == 0, |c| {
                         c.child(parts::cursor_ring(radius, tk))
                     })
                     .when(x.urgent && !(here && scope.sub == 0), |c| {
-                        c.child(parts::cursor_ring(radius, tk).border_1().border_color(tk.bad()))
+                        c.child(
+                            parts::cursor_ring(radius, tk)
+                                .border_1()
+                                .border_color(tk.bad()),
+                        )
                     });
                 div()
                     .flex_none()

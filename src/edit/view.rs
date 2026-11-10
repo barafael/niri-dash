@@ -9,15 +9,15 @@ pub mod frame;
 pub mod parts;
 
 use crate::dash::{Dash, Geometry};
-use crate::edit::anim::Ease;
 use crate::edit::DragMode;
-use parts::RowOwner;
+use crate::edit::anim::Ease;
 use crate::kit::Tk;
 use gpui::prelude::*;
 use gpui::{
     AnyElement, BorderStyle, Bounds, Context, DispatchPhase, Div, MouseButton, MouseDownEvent,
     MouseMoveEvent, MouseUpEvent, Role, Window, canvas, div, point, px, size,
 };
+use parts::RowOwner;
 
 impl Dash {
     /// What a row of the sidebar's lists does when stepped (`pos` is its position in its list).
@@ -68,15 +68,20 @@ impl Dash {
 
     /// The lines of the grid, in edit mode: a cell each, faint.
     pub(crate) fn edit_grid(&self, g: &Geometry, tk: &Tk) -> Option<AnyElement> {
-        let fade = self
-            .edit
-            .anim
-            .follow(("grid-fade", 0), if self.editing { 1.0 } else { 0.0 }, 160.0, tk.motion(), Ease::Out);
-        let fade = fade.max(if self.edit.dragging() || self.op() != crate::dash::NavOp::None {
-            1.0
-        } else {
-            0.0
-        });
+        let fade = self.edit.anim.follow(
+            ("grid-fade", 0),
+            if self.editing { 1.0 } else { 0.0 },
+            160.0,
+            tk.motion(),
+            Ease::Out,
+        );
+        let fade = fade.max(
+            if self.edit.dragging() || self.op() != crate::dash::NavOp::None {
+                1.0
+            } else {
+                0.0
+            },
+        );
         if fade <= 0.01 {
             return None;
         }
@@ -96,7 +101,10 @@ impl Dash {
                                 px(gx + c as f32 * cell + gap),
                                 px(gy + r as f32 * cell + gap),
                             ),
-                            size(px((cell - 2.0 * gap).max(0.0)), px((cell - 2.0 * gap).max(0.0))),
+                            size(
+                                px((cell - 2.0 * gap).max(0.0)),
+                                px((cell - 2.0 * gap).max(0.0)),
+                            ),
                         );
                         window.paint_quad(gpui::quad(
                             bounds,
@@ -147,7 +155,11 @@ impl Dash {
 
     /// While one widget is opened for adjusting, the others don't react: a click on them (or
     /// anywhere outside) ends adjusting instead of, say, focusing a window and closing.
-    pub(crate) fn adjust_catcher(&self, g: &Geometry, cx: &mut Context<Self>) -> Option<AnyElement> {
+    pub(crate) fn adjust_catcher(
+        &self,
+        g: &Geometry,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
         if self.edit.adjust_id == 0 || self.edit.dragging() {
             return None;
         }
@@ -172,12 +184,20 @@ impl Dash {
     }
 
     /// Behind an expanded widget the others fade back; a click anywhere puts it back.
-    pub(crate) fn expand_shade(&self, g: &Geometry, tk: &Tk, cx: &mut Context<Self>) -> Option<AnyElement> {
+    pub(crate) fn expand_shade(
+        &self,
+        g: &Geometry,
+        tk: &Tk,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
         let on = self.expand_on();
-        let fade = self
-            .edit
-            .anim
-            .follow(("shade", 0), if on { 1.0 } else { 0.0 }, 200.0, tk.motion(), Ease::Out);
+        let fade = self.edit.anim.follow(
+            ("shade", 0),
+            if on { 1.0 } else { 0.0 },
+            200.0,
+            tk.motion(),
+            Ease::Out,
+        );
         if !on && fade <= 0.001 {
             return None;
         }
@@ -193,7 +213,10 @@ impl Dash {
                 .w(px(g.cols as f32 * g.cell))
                 .h(px(g.rows as f32 * g.cell))
                 .opacity(fade)
-                .bg(tk.c(crate::theme::ColorRole::Backdrop).with_alpha(0.75).hsla())
+                .bg(tk
+                    .c(crate::theme::ColorRole::Backdrop)
+                    .with_alpha(0.75)
+                    .hsla())
                 .occlude()
                 .on_click(cx.listener(|d, _, _, cx| {
                     d.nav.expanded_id = 0;
@@ -314,7 +337,12 @@ impl Dash {
                         let pos = (f32::from(ev.position.x), f32::from(ev.position.y));
                         // A click takes the keyboard back from a text field of the card; the
                         // field's own press (coming next) gives it to the one clicked.
-                        let focus = d.read(cx).edit.field.focused.then(|| d.read(cx).focus.clone());
+                        let focus = d
+                            .read(cx)
+                            .edit
+                            .field
+                            .focused
+                            .then(|| d.read(cx).focus.clone());
                         if let Some(focus) = focus {
                             window.focus(&focus, cx);
                         }

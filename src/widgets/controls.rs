@@ -97,8 +97,10 @@ impl Fit {
         let expanded = d.nav.expanded_id == id;
         let (w, h) = if expanded {
             (
-                g.width.min((r.w as f32 * g.cell).max(g.width * 0.55).max(8.0 * g.cell)),
-                g.height.min((r.h as f32 * g.cell).max(g.height * 0.8).max(6.0 * g.cell)),
+                g.width
+                    .min((r.w as f32 * g.cell).max(g.width * 0.55).max(8.0 * g.cell)),
+                g.height
+                    .min((r.h as f32 * g.cell).max(g.height * 0.8).max(6.0 * g.cell)),
             )
         } else {
             (r.w as f32 * g.cell, r.h as f32 * g.cell)
@@ -352,14 +354,25 @@ pub fn check(d: &Dash) -> Result<(), String> {
         ("session", c.session.scope),
     ] {
         if scope.subs == 0 || scope.part() >= scope.subs {
-            return Err(format!("{name}: part {} of {} parts", scope.sub, scope.subs));
+            return Err(format!(
+                "{name}: part {} of {} parts",
+                scope.sub, scope.subs
+            ));
         }
         if scope.cursor > 64 {
             return Err(format!("{name}: cursor on stop {}", scope.cursor));
         }
     }
-    if let Some(n) = c.session.armed.iter().find(|a| c.ticks.saturating_sub(a.since) > DISARM) {
-        return Err(format!("session button {:?} armed since tick {}", n.button, n.since));
+    if let Some(n) = c
+        .session
+        .armed
+        .iter()
+        .find(|a| c.ticks.saturating_sub(a.since) > DISARM)
+    {
+        return Err(format!(
+            "session button {:?} armed since tick {}",
+            n.button, n.since
+        ));
     }
     Ok(())
 }

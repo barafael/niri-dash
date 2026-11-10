@@ -3,7 +3,7 @@
 //! system reports something. A plain program, one scenario after the other on a fresh dashboard
 //! (see `tests/stress.rs`).
 //!
-//! Ported from `legacy/tests/ui.rs`: volume_keys, brightness_drag_outlasts_stale_level,
+//! Ported from `slint/tests/ui.rs`: volume_keys, brightness_drag_outlasts_stale_level,
 //! session_lock_hides_first, battery_without_a_current_profile, a11y_brightness_knob and
 //! a11y_lock_button; and new ones for what only the mouse did there (sliders, the mixer's
 //! picker, the confirm flow, night light).
@@ -16,7 +16,9 @@ use std::panic::AssertUnwindSafe;
 
 /// A dashboard of the widgets in `layout`, up on a large screen.
 fn dashboard(layout: &str) -> Harness {
-    let mut h = Harness::new(&format!("grid columns=16 rows=9\nlayout {{\n{layout}\n}}\n"));
+    let mut h = Harness::new(&format!(
+        "grid columns=16 rows=9\nlayout {{\n{layout}\n}}\n"
+    ));
     h.control(Control::Show);
     h
 }
@@ -82,7 +84,14 @@ fn volume_keys() {
         ..Default::default()
     }));
     enter(&mut h, "volume");
-    let levels = |h: &Harness| h.read(|d| (d.widgets.controls.volume.volume, d.widgets.controls.volume.mic_volume));
+    let levels = |h: &Harness| {
+        h.read(|d| {
+            (
+                d.widgets.controls.volume.volume,
+                d.widgets.controls.volume.mic_volume,
+            )
+        })
+    };
     h.key("j");
     assert!(near(levels(&h).0, 0.45), "j: {:?}", levels(&h));
     h.key("k");
@@ -99,7 +108,10 @@ fn volume_keys() {
     assert!(near(levels(&h).1, 1.0), "0: {:?}", levels(&h));
     audio_sent(&mut h);
     h.key("m");
-    assert!(matches!(audio_sent(&mut h)[..], [audio::Command::ToggleMicMute]));
+    assert!(matches!(
+        audio_sent(&mut h)[..],
+        [audio::Command::ToggleMicMute]
+    ));
     h.key("h");
     h.key("l");
     h.key("l");
@@ -115,7 +127,10 @@ fn volume_knob() {
     }));
     assert!(h.has("Volume"), "the knob is named by what it sets");
     h.click_on("Volume");
-    assert!(matches!(audio_sent(&mut h)[..], [audio::Command::ToggleMute]));
+    assert!(matches!(
+        audio_sent(&mut h)[..],
+        [audio::Command::ToggleMute]
+    ));
     enter(&mut h, "volume");
     h.key("k");
     h.key("k");
@@ -176,7 +191,10 @@ fn volume_slider_mouse_and_hold() {
     );
     // The mute button of the row.
     h.click_on("Mute");
-    assert!(matches!(audio_sent(&mut h)[..], [audio::Command::ToggleMute]));
+    assert!(matches!(
+        audio_sent(&mut h)[..],
+        [audio::Command::ToggleMute]
+    ));
 }
 
 fn sink(id: u32, name: &str, default: bool) -> audio::Sink {
@@ -218,15 +236,26 @@ fn volume_mixer() {
     assert!(!h.has("Firefox"), "the apps give way to the outputs");
     h.key("esc");
     assert!(h.has("Choose output"), "Escape closed the list");
-    assert_eq!(h.read(|d| format!("{:?}", d.nav.mode)), "Widget", "still in the widget");
+    assert_eq!(
+        h.read(|d| format!("{:?}", d.nav.mode)),
+        "Widget",
+        "still in the widget"
+    );
     h.key("enter");
     // The cursor goes down the outputs: stop 1 is Speakers, stop 2 Headphones.
     h.key("j");
     h.key("j");
     h.key("enter");
-    assert!(matches!(audio_sent(&mut h)[..], [audio::Command::SetDefaultSink(2)]));
+    assert!(matches!(
+        audio_sent(&mut h)[..],
+        [audio::Command::SetDefaultSink(2)]
+    ));
     assert!(h.has("Choose output"), "picking closes it");
-    assert_eq!(h.read(|d| d.widgets.controls.volume.scope.cursor), 1, "back on the output slider");
+    assert_eq!(
+        h.read(|d| d.widgets.controls.volume.scope.cursor),
+        1,
+        "back on the output slider"
+    );
     // Output, microphone, then the apps: j on an app is quieter.
     h.key("tab");
     h.key("tab");
@@ -238,7 +267,10 @@ fn volume_mixer() {
     );
     h.key("tab");
     h.key("m");
-    assert!(matches!(audio_sent(&mut h)[..], [audio::Command::ToggleStreamMute(11)]));
+    assert!(matches!(
+        audio_sent(&mut h)[..],
+        [audio::Command::ToggleStreamMute(11)]
+    ));
     // An app's slider that was just set keeps its value against the lagging level.
     h.send(audio::Event::State(audio::State {
         volume: 0.5,
@@ -289,10 +321,16 @@ fn brightness_knob() {
     h.key("enter");
     // Dim at 50 %: Enter (the click) goes to full.
     let sent = brightness_sent(&mut h);
-    assert!(matches!(sent.last(), Some(brightness::Command::Set(v)) if near(*v, 1.0)), "{sent:?}");
+    assert!(
+        matches!(sent.last(), Some(brightness::Command::Set(v)) if near(*v, 1.0)),
+        "{sent:?}"
+    );
     h.click_on("Brightness");
     let sent = brightness_sent(&mut h);
-    assert!(matches!(sent[..], [brightness::Command::Set(v)] if near(v, 0.3)), "{sent:?}");
+    assert!(
+        matches!(sent[..], [brightness::Command::Set(v)] if near(v, 0.3)),
+        "{sent:?}"
+    );
     // Without a backlight the slider is off, and the keys still step.
     h.send(brightness::Event::Level(None));
     assert!(!h.read(|d| d.widgets.controls.brightness.available));
@@ -313,28 +351,46 @@ fn session_confirm() {
     h.click_on("Power off");
     assert!(session_sent(&mut h).is_empty(), "armed, not done");
     h.click_on("Power off");
-    assert!(matches!(session_sent(&mut h)[..], [session::Command::Poweroff]));
+    assert!(matches!(
+        session_sent(&mut h)[..],
+        [session::Command::Poweroff]
+    ));
     assert!(h.controls().is_empty(), "power off doesn't hide first");
     // Armed, and let go: it disarms after three seconds.
     h.click_on("Restart");
     h.advance(4);
     h.click_on("Restart");
-    assert!(session_sent(&mut h).is_empty(), "a late second press arms again");
+    assert!(
+        session_sent(&mut h).is_empty(),
+        "a late second press arms again"
+    );
     h.click_on("Restart");
-    assert!(matches!(session_sent(&mut h)[..], [session::Command::Reboot]));
+    assert!(matches!(
+        session_sent(&mut h)[..],
+        [session::Command::Reboot]
+    ));
     // Suspend and log out hide first; the keyboard walks the buttons.
     enter(&mut h, "session");
     h.key("l");
     h.key("enter");
     assert_eq!(h.controls(), [Control::Hide]);
-    assert!(matches!(session_sent(&mut h)[..], [session::Command::Suspend]));
+    assert!(matches!(
+        session_sent(&mut h)[..],
+        [session::Command::Suspend]
+    ));
     h.key("l");
     h.key("enter");
-    assert!(matches!(session_sent(&mut h)[..], [session::Command::Logout]));
+    assert!(matches!(
+        session_sent(&mut h)[..],
+        [session::Command::Logout]
+    ));
     h.key("G");
     h.key("enter");
     h.key("enter");
-    assert!(matches!(session_sent(&mut h)[..], [session::Command::Poweroff]));
+    assert!(matches!(
+        session_sent(&mut h)[..],
+        [session::Command::Poweroff]
+    ));
 }
 
 /// No current profile: the cursor still shows on the choices, and Enter picks the one lit.
@@ -370,14 +426,20 @@ fn battery_profiles_and_inhibit() {
     ));
     h.key("j");
     h.key("enter");
-    assert!(matches!(power_sent(&mut h)[..], [power::Command::ToggleInhibit]));
+    assert!(matches!(
+        power_sent(&mut h)[..],
+        [power::Command::ToggleInhibit]
+    ));
     h.click_on("Saver");
     assert!(matches!(
         power_sent(&mut h)[..],
         [power::Command::SetProfile(power::Profile::PowerSaver)]
     ));
     h.click_on("Block sleep and screen locking");
-    assert!(matches!(power_sent(&mut h)[..], [power::Command::ToggleInhibit]));
+    assert!(matches!(
+        power_sent(&mut h)[..],
+        [power::Command::ToggleInhibit]
+    ));
     // What blocks sleep is shown when there is room.
     let mut big = dashboard("    battery col=0 row=0 width=4 height=4");
     big.send(power::Event::State(Demo::new().power));
@@ -412,32 +474,56 @@ fn battery_round_cycles() {
 fn night_light_gamma() {
     let mut h = dashboard("    night-light col=0 row=0 width=4 height=2");
     // Neutral on start.
-    assert!(matches!(gamma_sent(&mut h)[..], [gamma::Command::Gamma(None)]));
+    assert!(matches!(
+        gamma_sent(&mut h)[..],
+        [gamma::Command::Gamma(None)]
+    ));
     h.click_on("Night light");
-    assert!(matches!(gamma_sent(&mut h)[..], [gamma::Command::Gamma(Some(4500))]));
+    assert!(matches!(
+        gamma_sent(&mut h)[..],
+        [gamma::Command::Gamma(Some(4500))]
+    ));
     assert!(h.read(|d| d.widgets.controls.night.on));
     h.click_on("3400 K");
-    assert!(matches!(gamma_sent(&mut h)[..], [gamma::Command::Gamma(Some(3400))]));
+    assert!(matches!(
+        gamma_sent(&mut h)[..],
+        [gamma::Command::Gamma(Some(3400))]
+    ));
     assert_eq!(h.read(|d| d.widgets.controls.night.kelvin), 3400);
     // The slider: a press at the warm end.
     let (x, y) = slider_at(&h, "Warmth", 1.0);
     h.click(x, y);
-    assert!(matches!(gamma_sent(&mut h)[..], [gamma::Command::Gamma(Some(2500))]));
+    assert!(matches!(
+        gamma_sent(&mut h)[..],
+        [gamma::Command::Gamma(Some(2500))]
+    ));
     // Keys: t toggles, h and l move the warmth on the slider by 5 % (200 K).
     enter(&mut h, "night-light");
     h.key("t");
-    assert!(matches!(gamma_sent(&mut h)[..], [gamma::Command::Gamma(None)]));
+    assert!(matches!(
+        gamma_sent(&mut h)[..],
+        [gamma::Command::Gamma(None)]
+    ));
     h.key("j");
     h.key("h");
-    assert!(matches!(gamma_sent(&mut h)[..], [gamma::Command::Gamma(Some(2700))]));
+    assert!(matches!(
+        gamma_sent(&mut h)[..],
+        [gamma::Command::Gamma(Some(2700))]
+    ));
     // The presets are parts of the last stop: l walks them, Enter sets one.
     h.key("j");
     h.key("l");
     h.key("enter");
-    assert!(matches!(gamma_sent(&mut h)[..], [gamma::Command::Gamma(Some(4500))]));
+    assert!(matches!(
+        gamma_sent(&mut h)[..],
+        [gamma::Command::Gamma(Some(4500))]
+    ));
     // `niri-dash night-light 3000` sets it and says so on screen.
     h.update(|d, cx| d.night_light_command(Cmd::Kelvin(3000), cx));
-    assert!(matches!(gamma_sent(&mut h)[..], [gamma::Command::Gamma(Some(3000))]));
+    assert!(matches!(
+        gamma_sent(&mut h)[..],
+        [gamma::Command::Gamma(Some(3000))]
+    ));
     let osd: Vec<_> = std::iter::from_fn(|| h.inbox.notifications.try_recv().ok()).collect();
     assert!(
         matches!(&osd[..], [notifications::Command::Osd { text, .. }] if text == "Night light on · 3000 K"),
@@ -453,13 +539,15 @@ fn night_light_gamma() {
 fn night_light_kwin() {
     let mut h = dashboard("    night-light col=0 row=0 width=4 height=2");
     h.update(|d, _| d.caps.night_light_native = true);
-    h.send(niri_dash_system::night_light::Event::Kwin(NightLightState {
-        available: true,
-        enabled: true,
-        inhibited: false,
-        paused_by_us: false,
-        temperature: 3600,
-    }));
+    h.send(niri_dash_system::night_light::Event::Kwin(
+        NightLightState {
+            available: true,
+            enabled: true,
+            inhibited: false,
+            paused_by_us: false,
+            temperature: 3600,
+        },
+    ));
     gamma_sent(&mut h);
     assert!(h.has("Night light"));
     assert!(!h.has("Warmth"), "KWin sets the temperature");
@@ -468,21 +556,29 @@ fn night_light_kwin() {
     h.click_on("Night light");
     assert!(matches!(
         gamma_sent(&mut h)[..],
-        [gamma::Command::Kwin { cmd: Cmd::Toggle, announce: false }]
+        [gamma::Command::Kwin {
+            cmd: Cmd::Toggle,
+            announce: false
+        }]
     ));
     // Paused by another program: shown, not ours.
-    h.send(niri_dash_system::night_light::Event::Kwin(NightLightState {
-        available: true,
-        enabled: true,
-        inhibited: true,
-        paused_by_us: false,
-        temperature: 6500,
-    }));
+    h.send(niri_dash_system::night_light::Event::Kwin(
+        NightLightState {
+            available: true,
+            enabled: true,
+            inhibited: true,
+            paused_by_us: false,
+            temperature: 6500,
+        },
+    ));
     let (status, note) = h.read(|d| {
         let n = &d.widgets.controls.night;
         (n.status.clone(), n.note.clone())
     });
-    assert_eq!((status.as_str(), note.as_str()), ("Paused", "Paused by another program"));
+    assert_eq!(
+        (status.as_str(), note.as_str()),
+        ("Paused", "Paused by another program")
+    );
 }
 
 fn top_of(h: &Harness, selector: &'static str) -> f32 {
@@ -511,7 +607,10 @@ fn battery_layout_follows_slint() {
         h.send(power::Event::State(Demo::new().power));
         top_of(&h, "Saver")
     };
-    assert!(near(saver_top(3), saver_top(4)), "the profiles moved with the height");
+    assert!(
+        near(saver_top(3), saver_top(4)),
+        "the profiles moved with the height"
+    );
     let mut h = dashboard("    battery col=0 row=0 width=4 height=3");
     h.send(power::Event::State(Demo::new().power));
     assert!(
@@ -542,7 +641,11 @@ fn night_light_overflow_starts_at_the_top() {
     // Header 28 high under the padding; the switch 22 in the middle of it. Header, slider and
     // the space between them are 60 high.
     let overflows = height - 32.0 < 60.0;
-    let expected = if overflows { 16.0 + 3.0 } else { 3.0 + (height - 60.0) / 2.0 };
+    let expected = if overflows {
+        16.0 + 3.0
+    } else {
+        3.0 + (height - 60.0) / 2.0
+    };
     assert!(
         (top - expected).abs() < 1.5,
         "the switch is {top} px under the top of a card {height} px high, not {expected}"
@@ -560,9 +663,9 @@ fn card_geometry() {
     assert!(rround && near(rw, rh));
     let (_, _, cw, ch) = h.read(|d| d.card_rect(d.tiles[0].id())).unwrap();
     assert!(near(cw, w) && near(ch, hh));
-    // The slider row fills the card's width inside its padding.
+    // The widget's content starts at the card's edge (the border takes no room) and stays in it.
     let slider = h.bounds_of("Volume").unwrap();
-    assert!(f32::from(slider.size.width) < w);
+    assert!(f32::from(slider.size.width) <= w + 0.5);
 }
 
 /// A double click on a control is not a double click on the card behind it: it must not pick
@@ -588,38 +691,74 @@ fn double_click_on_controls_does_not_carry() {
             .unwrap_or_else(|| panic!("nothing called {control:?} on screen"));
         let c = b.center();
         h.double_click(f32::from(c.x), f32::from(c.y));
-        assert_eq!(h.adjust_id(), 0, "a double click on {control:?} picked its widget up");
+        assert_eq!(
+            h.adjust_id(),
+            0,
+            "a double click on {control:?} picked its widget up"
+        );
     }
     // The sliders and the round knob too (a slider that is switched off lets the press through,
     // as Slint's disabled touch area does).
     h.send(brightness::Event::Level(Some(0.7)));
     let (x, y) = slider_at(&h, "Brightness", 0.5);
     h.double_click(x, y);
-    assert_eq!(h.adjust_id(), 0, "a double click on the brightness slider picked it up");
+    assert_eq!(
+        h.adjust_id(),
+        0,
+        "a double click on the brightness slider picked it up"
+    );
     let mut round = dashboard("    volume col=0 row=0 size=3 shape=\"round\"");
     let c = round.bounds_of("Volume").expect("the knob").center();
     round.double_click(f32::from(c.x), f32::from(c.y));
-    assert_eq!(round.adjust_id(), 0, "a double click on the round knob picked it up");
+    assert_eq!(
+        round.adjust_id(),
+        0,
+        "a double click on the round knob picked it up"
+    );
 }
 
 fn main() {
     let _sandbox = Sandbox::enter(None).expect("a temporary directory for the dashboard's files");
     let scenarios: &[(&str, fn())] = &[
-        ("double click on controls does not carry", double_click_on_controls_does_not_carry),
-        ("battery: layout follows Slint", battery_layout_follows_slint),
-        ("session: buttons follow their labels", session_buttons_follow_their_labels),
-        ("night light: overflow starts at the top", night_light_overflow_starts_at_the_top),
+        (
+            "double click on controls does not carry",
+            double_click_on_controls_does_not_carry,
+        ),
+        (
+            "battery: layout follows Slint",
+            battery_layout_follows_slint,
+        ),
+        (
+            "session: buttons follow their labels",
+            session_buttons_follow_their_labels,
+        ),
+        (
+            "night light: overflow starts at the top",
+            night_light_overflow_starts_at_the_top,
+        ),
         ("card geometry", card_geometry),
         ("volume: j and k", volume_keys),
         ("volume: the round knob", volume_knob),
-        ("volume: slider mouse and hold", volume_slider_mouse_and_hold),
+        (
+            "volume: slider mouse and hold",
+            volume_slider_mouse_and_hold,
+        ),
         ("volume: the mixer", volume_mixer),
-        ("brightness: drag outlasts stale level", brightness_drag_outlasts_stale_level),
+        (
+            "brightness: drag outlasts stale level",
+            brightness_drag_outlasts_stale_level,
+        ),
         ("brightness: the knob", brightness_knob),
         ("session: lock hides first", session_lock_hides_first),
         ("session: confirm", session_confirm),
-        ("battery: no current profile", battery_without_a_current_profile),
-        ("battery: profiles and inhibit", battery_profiles_and_inhibit),
+        (
+            "battery: no current profile",
+            battery_without_a_current_profile,
+        ),
+        (
+            "battery: profiles and inhibit",
+            battery_profiles_and_inhibit,
+        ),
         ("battery: round cycles", battery_round_cycles),
         ("night light: gamma", night_light_gamma),
         ("night light: KWin", night_light_kwin),
