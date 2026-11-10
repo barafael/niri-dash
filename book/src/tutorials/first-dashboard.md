@@ -51,8 +51,8 @@ click brings it back.)
 Click the pencil in the top right corner.
 
 The widgets get small toolbars, empty cells show behind them, and a sidebar opens on the right
-with four tabs: Widgets, Arrange, Colors and Style. A bar across the top lists the keys that work
-at the moment.
+with four tabs: Widgets, Arrange, Colors and Style. The tips along the bottom of the screen list the keys
+that work at the moment.
 
 ![Edit mode](../images/edit-mode.png)
 

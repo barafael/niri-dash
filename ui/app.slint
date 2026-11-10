@@ -1,5 +1,5 @@
 import { Theme, Icons } from "theme.slint";
-import { WidgetInst, WidgetKind, Shape, PaletteItem, Tray, MenuToggle, DrawerTab, PointerShape, Nav, NavMode } from "data.slint";
+import { WidgetInst, WidgetKind, Shape, PaletteItem, Tray, MenuToggle, DrawerTab, PointerShape, Nav, NavMode, NavOp } from "data.slint";
 import { TextField, Icon, IconButton, TextButton, Muted, Switch, SectionLabel } from "common.slint";
 import { WidgetFrame, WidgetBody } from "frame.slint";
 import { Palette } from "std-widgets.slint";
@@ -169,13 +169,13 @@ export struct SettingRow {
     placeholder: string,
 }
 
-// A keyboard shortcut for the top bar: the keys, and what they do. No keys: a plain note.
+// A keyboard shortcut for the quick tips: the keys, and what they do. No keys: a plain note.
 export struct KeyHint {
     key: string,
     does: string,
 }
 
-// One shortcut as the top bar shows it: the keys on a cap, then what they do.
+// One shortcut as the quick tips show it: the keys on a cap, then what they do.
 component KeyChip inherits Rectangle {
     in property <KeyHint> hint;
     width: cap.width + (cap.width > 0 ? 6px : 0px) + label.preferred-width;
@@ -703,14 +703,19 @@ export component Dash inherits Window {
     callback move-widget(int, int, int);
     // Widget id and where it goes: column, row, width, height.
     callback resize-widget(int, int, int, int, int);
-    // From the keyboard: move a widget one cell (0..3 = h, j, k, l), or size it: h narrower, j
-    // taller, k shorter, l wider (0..3), from the left or top side if the bool is set.
+    // From the keyboard's move and resize modes: move a widget one cell (0..3 = h, j, k, l), or
+    // pull its side that way (0..3) out one cell, or in if the bool is set.
     callback nudge-widget(int, int);
     callback size-widget(int, int, bool);
-    // What sizing made of the widget, for the status line ("Volume 3×2").
+    // What a widget is now, for the quick tips ("Volume 3×2"); sizing updates it.
+    callback widget-note(int);
     in-out property <string> size-note;
-    // The shortcuts the top bar shows in edit mode, for what the keys do just now.
-    out property <[KeyHint]> edit-hints:
+    // What the overlay on the widget in hand says.
+    out property <string> op-tip: root.size-note + "\n"
+        + (Nav.op == NavOp.move ? "h j k l or arrows: one cell\nCtrl+R resize · Esc done"
+            : "h j k l: grow that side\nShift: shrink it\nCtrl+M move · Esc done");
+    // The quick tips along the bottom: what the keys do just now, in every mode.
+    out property <[KeyHint]> tips:
         root.drag-mode == DragMode.carry ? [
             { key: "Click", does: "place it" },
             { key: "Esc", does: "cancel" },
@@ -721,7 +726,34 @@ export component Dash inherits Window {
             { key: "◯ ▢", does: "shape" },
             { key: "Esc", does: "done" },
         ]
-        : !root.editing ? []
+        : Nav.op == NavOp.move ? [
+            { key: "", does: "MOVE " + root.size-note },
+            { key: "h j k l", does: "one cell (arrows too)" },
+            { key: "Ctrl+R", does: "resize instead" },
+            { key: "Esc", does: "done" },
+        ]
+        : Nav.op == NavOp.resize ? [
+            { key: "", does: "RESIZE " + root.size-note },
+            { key: "h j k l", does: "pull that side out" },
+            { key: "Shift + h j k l", does: "pull it in" },
+            { key: "Ctrl+M", does: "move instead" },
+            { key: "Esc", does: "done" },
+        ]
+        : Nav.mode == NavMode.widget && !root.editing ? [
+            { key: "Ctrl+M", does: "move" },
+            { key: "Ctrl+R", does: "resize" },
+            { key: "Ctrl + h j k l", does: "next widget" },
+            { key: "e", does: "expand" },
+            { key: "s", does: "settings" },
+            { key: "f", does: "pick another" },
+            { key: "Ctrl+E", does: "edit mode" },
+            { key: "Esc", does: "leave" },
+        ]
+        : !root.editing && Nav.mode != NavMode.hints ? [
+            { key: "f", does: "pick a widget" },
+            { key: "Ctrl+E", does: "edit mode" },
+            { key: "Esc", does: "close" },
+        ]
         : Nav.mode == NavMode.hints ? [
             { key: "Type a label", does: "pick that widget" },
             { key: "Backspace", does: "take a letter back" },
@@ -761,10 +793,9 @@ export component Dash inherits Window {
         ]
         : root.settings-id != 0 ? [
             { key: "", does: root.size-note != "" ? root.size-note : root.settings-title },
-            { key: "h j k l", does: "size" },
-            { key: "Shift", does: "from the other side" },
-            { key: "Ctrl + h j k l", does: "move" },
-            { key: "w a s d", does: "pick another" },
+            { key: "Ctrl+M", does: "move" },
+            { key: "Ctrl+R", does: "resize" },
+            { key: "h j k l", does: "pick another" },
             { key: "o", does: "shape" },
             { key: "p", does: "pin" },
             { key: "x", does: "remove" },
@@ -803,6 +834,37 @@ export component Dash inherits Window {
     callback setting-step(int, int);
     callback setting-text(int, string);
     callback setting-reset(int);
+
+    // The widget the keyboard's move and resize modes act on: the one entered, or in edit mode the
+    // picked one (0 = none, and no mode).
+    property <int> op-target: root.solo ? 0 : root.editing ? root.settings-id : Nav.mode == NavMode.widget ? Nav.active-id : 0;
+    // Another widget, or none: the mode ends with it.
+    changed op-target => {
+        Nav.op = NavOp.none;
+    }
+    // Ctrl+M / Ctrl+R: start the mode, switch to it from the other one, or end it. The widget
+    // gives up the keyboard while it lasts, so h j k l reach the mode and not the widget.
+    function op-toggle(op: NavOp) {
+        if (root.op-target == 0) {
+            return;
+        }
+        if (Nav.op == op) {
+            root.op-end();
+        } else {
+            root.widget-note(root.op-target);
+            Nav.expanded-id = 0;
+            root.side-keys = false;
+            root.canvas-keys = true;
+            keys.focus();
+            Nav.op = op;
+        }
+    }
+    function op-end() {
+        Nav.op = NavOp.none;
+        // The entered widget takes the keyboard back.
+        Nav.tick += 1;
+        keys.focus();
+    }
 
     // Keyboard navigation (Nav in data.slint). Typing a hint label enters that widget.
     function nav-enter(id: int) {
@@ -951,21 +1013,13 @@ export component Dash inherits Window {
             root.set-editing(false);
             return true;
         }
-        // Ctrl+h j k l (or the arrows): move the widget a cell, the others make room.
-        if (target != 0 && e.modifiers.control && !e.modifiers.alt && !e.modifiers.meta) {
-            let d = root.key-dir(e);
-            if (d >= 0) {
-                root.side-keys = false;
-                root.canvas-keys = true;
-                root.nudge-widget(target, d);
-                return true;
-            }
-        }
-        // w a s d (and, with the keys on the widgets, the arrows): the focus goes to the next
-        // widget that way, or to the first one when none is picked.
-        let fd = root.focus-dir(e);
+        // w a s d (and, with the keys on the widgets, h j k l and the arrows): the focus goes to
+        // the next widget that way, or to the first one when none is picked. Moving and sizing
+        // are modes of their own (Ctrl+M, Ctrl+R).
+        let hjkl = target != 0 && !root.side-keys && (e.text == "h" || e.text == "j" || e.text == "k" || e.text == "l");
+        let fd = hjkl ? root.key-dir(e) : root.focus-dir(e);
         let letter = e.text == "w" || e.text == "a" || e.text == "s" || e.text == "d";
-        if (plain && fd >= 0 && !e.modifiers.shift && (letter || (target != 0 && !root.side-keys))) {
+        if (plain && fd >= 0 && !e.modifiers.shift && (letter || hjkl || (target != 0 && !root.side-keys))) {
             if (target == 0) {
                 if (root.widgets.length > 0) {
                     root.configure-widget(root.widgets[0].id);
@@ -980,20 +1034,11 @@ export component Dash inherits Window {
             root.canvas-keys = true;
             return true;
         }
-        // h j k l: size the widget; Shift, or a capital, from the other side.
-        if (target != 0 && plain && !root.side-keys) {
-            let t = e.text.to-lowercase();
-            if (t == "h" || t == "j" || t == "k" || t == "l") {
-                root.canvas-keys = true;
-                root.size-widget(target, root.key-dir(e), e.modifiers.shift || e.text != t);
-                return true;
-            }
-            // Enter shows the settings, with the cursor on their first row.
-            if (e.text == Key.Return) {
-                root.canvas-keys = false;
-                root.side-keys = true;
-                return true;
-            }
+        // Enter shows the settings, with the cursor on their first row.
+        if (target != 0 && plain && !root.side-keys && e.text == Key.Return) {
+            root.canvas-keys = false;
+            root.side-keys = true;
+            return true;
         }
         if (!plain) {
             return false;
@@ -1046,6 +1091,7 @@ export component Dash inherits Window {
         false
     }
     function nav-off() {
+        Nav.op = NavOp.none;
         Nav.typed = "";
         Nav.expanded-id = 0;
         Nav.mode = NavMode.off;
@@ -1101,6 +1147,8 @@ export component Dash inherits Window {
                 }
                 if (root.dragging) {
                     root.finish-drag(false);
+                } else if (Nav.op != NavOp.none) {
+                    root.op-end();
                 } else if (root.adjust-id != 0) {
                     root.adjust-id = 0;
                 } else if (Tray.menu-open) {
@@ -1116,6 +1164,28 @@ export component Dash inherits Window {
                     root.set-editing(false);
                 } else {
                     root.close-requested();
+                }
+                return accept;
+            }
+            // Ctrl+M moves the widget in hand, Ctrl+R resizes it (not while a sidebar text field
+            // has the keyboard).
+            if (!root.solo && !root.dragging && root.adjust-id == 0 && root.op-target != 0
+                && (!root.editing || keys.has-focus) && e.modifiers.control && !e.modifiers.alt
+                && !e.modifiers.meta && !e.modifiers.shift && (e.text == "m" || e.text == "r")) {
+                root.op-toggle(e.text == "m" ? NavOp.move : NavOp.resize);
+                return accept;
+            }
+            if (Nav.op != NavOp.none && !root.solo && !root.dragging
+                && !e.modifiers.control && !e.modifiers.alt && !e.modifiers.meta) {
+                // In the mode h j k l (and the arrows) act on the widget in hand, Shift pulling
+                // a side in instead of out; the rest of the keys wait for Escape.
+                let d = root.key-dir(e);
+                if (d >= 0) {
+                    if (Nav.op == NavOp.move) {
+                        root.nudge-widget(root.op-target, d);
+                    } else {
+                        root.size-widget(root.op-target, d, e.modifiers.shift || e.text != e.text.to-lowercase());
+                    }
                 }
                 return accept;
             }
@@ -1173,15 +1243,6 @@ export component Dash inherits Window {
                 return root.edit-key(e) ? accept : reject;
             }
             if (Nav.mode == NavMode.widget && !root.solo && !root.editing) {
-                // Ctrl+Shift+h/j/k/l moves the widget a cell, pushing others aside.
-                if (e.modifiers.control && e.modifiers.shift && !e.modifiers.alt && !e.modifiers.meta) {
-                    let d = root.key-dir(e);
-                    if (d >= 0) {
-                        Nav.expanded-id = 0;
-                        root.nudge-widget(Nav.active-id, d);
-                        return accept;
-                    }
-                }
                 // s opens the widget's settings, in every widget.
                 if (e.text == "s" && !e.modifiers.control && !e.modifiers.alt && !e.modifiers.meta) {
                     root.open-settings(Nav.active-id);
@@ -1251,21 +1312,8 @@ export component Dash inherits Window {
             padding-right: root.width - root.avail-w + root.grid-x + Theme.gap;
             padding-top: 6px;
             spacing: 8px;
-            // Shortcuts for what the keys do now. One that doesn't fit whole is left out.
-            strip := Rectangle {
+            Rectangle {
                 horizontal-stretch: 1;
-                min-width: 0px;
-                clip: true;
-                HorizontalLayout {
-                    width: parent.width;
-                    height: parent.height;
-                    alignment: start;
-                    spacing: 16px;
-                    for hint in root.edit-hints: KeyChip {
-                        hint: hint;
-                        visible: self.x + self.width <= strip.width;
-                    }
-                }
             }
             if root.editing && root.hidden-widgets > 0: Text {
                 text: root.hidden-widgets + " widget(s) don't fit " + (root.grid-cols > 0 ? "the grid" : "this screen");
@@ -1291,6 +1339,28 @@ export component Dash inherits Window {
             }
         }
 
+        // Quick tips along the bottom, in the margin under the grid: what the keys do just now. One
+        // that doesn't fit whole is left out.
+        tips-strip := Rectangle {
+            visible: !root.solo && root.tips.length > 0;
+            x: root.grid-x + Theme.gap;
+            y: root.height - root.margin;
+            width: root.avail-w - 2 * (root.grid-x + Theme.gap);
+            height: root.margin;
+            opacity: root.reveal;
+            clip: true;
+            HorizontalLayout {
+                width: parent.width;
+                height: parent.height;
+                alignment: start;
+                spacing: 16px;
+                for hint in root.tips: KeyChip {
+                    hint: hint;
+                    visible: self.x + self.width <= tips-strip.width;
+                }
+            }
+        }
+
         grid := Rectangle {
             visible: !root.solo;
             x: root.grid-x;
@@ -1298,8 +1368,8 @@ export component Dash inherits Window {
             width: root.cols * root.cell;
             height: root.rows * root.cell;
 
-            if root.edit-fade > 0.01 || root.dragging: Rectangle {
-                opacity: max(root.edit-fade, root.dragging ? 1 : 0);
+            if root.edit-fade > 0.01 || root.dragging || Nav.op != NavOp.none: Rectangle {
+                opacity: max(root.edit-fade, root.dragging || Nav.op != NavOp.none ? 1 : 0);
                 for i in root.cols * root.rows: Rectangle {
                     x: mod(i, root.cols) * root.cell + Theme.gap;
                     y: floor(i / root.cols) * root.cell + Theme.gap;
@@ -1355,6 +1425,8 @@ export component Dash inherits Window {
                 rows: root.rows;
                 editing: root.editing || root.adjust-id == w.id;
                 lifted: root.adjust-id == w.id;
+                op: root.op-target == w.id ? Nav.op : NavOp.none;
+                op-tip: root.op-tip;
                 shown: root.shown;
                 carried: root.drag-mode == DragMode.carry && root.drag-id == w.id;
                 carry-x: root.drag-px - root.grab-dx - root.grid-x;

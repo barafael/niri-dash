@@ -1284,6 +1284,71 @@ fn type_label(h: &mut Harness, kind: &str) {
     }
 }
 
+/// Move and resize modes (Ctrl+M, Ctrl+R) from inside a widget, without edit mode.
+fn keyboard_modes(issues: &mut Issues) {
+    let mut h = dashboard(MIXED);
+    let clock = id_of(&h, "clock");
+    let op = |h: &Harness| h.ui().global::<Nav>().get_op();
+    let mode = |h: &Harness| h.ui().global::<Nav>().get_mode();
+    h.press("f");
+    type_label(&mut h, "clock");
+    if mode(&h) != NavMode::Widget {
+        issues.add("modes: the clock's label didn't enter it");
+    }
+    let c0 = tile(&h, clock).unwrap();
+    h.press("ctrl+m");
+    if op(&h) != niri_dash::NavOp::Move {
+        issues.add("modes: Ctrl+M inside a widget didn't start move mode");
+    }
+    // The widget has handed the keyboard over: a letter does nothing, an arrow moves.
+    h.press("m");
+    h.press("j");
+    let c1 = tile(&h, clock).unwrap();
+    if (c1.col, c1.row) == (c0.col, c0.row) {
+        issues.add(format!(
+            "modes: j in move mode left the clock at {},{} ({})",
+            c0.col,
+            c0.row,
+            toast(&h)
+        ));
+    }
+    issues.check(&h, "modes: moving");
+    h.press("ctrl+r");
+    h.press("l");
+    let c2 = tile(&h, clock).unwrap();
+    if c2.w != c1.w + 1 {
+        issues.add(format!(
+            "modes: l left the clock {}x{} from {}x{}",
+            c2.w, c2.h, c1.w, c1.h
+        ));
+    }
+    h.press("L");
+    if tile(&h, clock).unwrap().w != c1.w {
+        issues.add("modes: Shift+l didn't pull the right side in again");
+    }
+    issues.check(&h, "modes: resizing");
+    // Escape ends the mode only; the widget is still entered, and then Escape leaves it.
+    h.press("esc");
+    if op(&h) != niri_dash::NavOp::None || mode(&h) != NavMode::Widget {
+        issues.add("modes: Escape didn't just end the mode");
+    }
+    h.press("ctrl+r");
+    h.press("ctrl+r");
+    if op(&h) != niri_dash::NavOp::None {
+        issues.add("modes: Ctrl+R twice didn't end resize mode");
+    }
+    h.press("esc");
+    if mode(&h) != NavMode::Off {
+        issues.add("modes: Escape after the mode didn't leave the widget");
+    }
+    // Nothing in hand, nothing to do.
+    h.press("ctrl+m");
+    if op(&h) != niri_dash::NavOp::None {
+        issues.add("modes: Ctrl+M on the bare dashboard started a mode");
+    }
+    issues.check(&h, "modes: after");
+}
+
 /// Edit mode with the keyboard alone, start to end: everything the pointer can do there.
 fn keyboard_editing(issues: &mut Issues) {
     fn mode(h: &Harness) -> NavMode {
@@ -1544,14 +1609,18 @@ fn keyboard_editing(issues: &mut Issues) {
         issues.add("keyboard: after a text field's Enter, the sidebar's keys don't work");
     }
 
-    // Moving it (Ctrl+l) pushes others aside, and puts the keys on the widgets: h j k l size it
-    // (Shift from the other side), w a s d go to the next widget.
+    // Move mode (Ctrl+M): h j k l move the widget a cell, pushing others aside, until Escape.
+    let op = |h: &Harness| h.ui().global::<niri_dash::Nav>().get_op();
     let c0 = tile(&h, clock).unwrap();
-    h.press("ctrl+l");
+    h.press("ctrl+m");
+    if op(&h) != niri_dash::NavOp::Move {
+        issues.add("keyboard: Ctrl+M didn't start move mode");
+    }
+    h.press("l");
     let c1 = tile(&h, clock).unwrap();
     if (c1.col, c1.row) != (c0.col + 1, c0.row) {
         issues.add(format!(
-            "keyboard: Ctrl+l moved the clock from {},{} to {},{} ({})",
+            "keyboard: l in move mode moved the clock from {},{} to {},{} ({})",
             c0.col,
             c0.row,
             c1.col,
@@ -1560,6 +1629,11 @@ fn keyboard_editing(issues: &mut Issues) {
         ));
     }
     issues.check(&h, "keyboard: moving the clock");
+    // Resize mode (Ctrl+R): a key pulls its own side out, Shift pulls it in.
+    h.press("ctrl+r");
+    if op(&h) != niri_dash::NavOp::Resize {
+        issues.add("keyboard: Ctrl+R didn't switch to resize mode");
+    }
     h.press("l");
     let c2 = tile(&h, clock).unwrap();
     if c2.w != c1.w + 1 || c2.col != c1.col {
@@ -1568,23 +1642,23 @@ fn keyboard_editing(issues: &mut Issues) {
             c2.w, c2.h, c2.col, c1.w, c1.h, c1.col
         ));
     }
-    h.press("h");
-    if tile(&h, clock).unwrap().w != c1.w {
-        issues.add("keyboard: h didn't narrow it again");
-    }
-    // Shift sizes from the left side: the right edge stays.
-    let right = c1.col + c1.w;
     h.press("L");
+    if tile(&h, clock).unwrap().w != c1.w {
+        issues.add("keyboard: Shift+l didn't pull the right side in again");
+    }
+    // h pulls the left side out: the right edge stays.
+    let right = c1.col + c1.w;
+    h.press("h");
     let c3 = tile(&h, clock).unwrap();
     if c3.w != c1.w + 1 || c3.col + c3.w != right {
         issues.add(format!(
-            "keyboard: L made the clock {}x{} at {} (right edge was {right})",
+            "keyboard: h made the clock {}x{} at {} (right edge was {right})",
             c3.w, c3.h, c3.col
         ));
     }
     h.press("H");
     if tile(&h, clock).unwrap().w != c1.w {
-        issues.add("keyboard: H didn't narrow it from the left");
+        issues.add("keyboard: Shift+h didn't pull the left side in again");
     }
     h.press("j");
     let c4 = tile(&h, clock).unwrap();
@@ -1594,17 +1668,31 @@ fn keyboard_editing(issues: &mut Issues) {
             c4.h, c1.h
         ));
     }
-    h.press("k");
+    h.press("J");
     if tile(&h, clock).unwrap().h != c1.h {
-        issues.add("keyboard: k didn't make it shorter again");
+        issues.add("keyboard: Shift+j didn't pull the bottom in again");
+    }
+    // Other keys do nothing in the mode; the arrows work like h j k l.
+    h.press("x");
+    if tile(&h, clock).is_none() {
+        issues.add("keyboard: x removed the widget in resize mode");
+    }
+    h.press("right");
+    if tile(&h, clock).unwrap().w != c1.w + 1 {
+        issues.add("keyboard: the right arrow didn't widen the clock");
+    }
+    h.press("shift+right");
+    if tile(&h, clock).unwrap().w != c1.w {
+        issues.add("keyboard: Shift+right didn't narrow the clock");
     }
     if !h.ui().get_size_note().contains('×') {
         issues.add("keyboard: sizing didn't say how big the widget is");
     }
     issues.check(&h, "keyboard: sizing the clock");
-    // There is no sizing mode: it is the same keys a moment later.
-    if h.ui().get_settings_id() != clock as i32 {
-        issues.add("keyboard: sizing let go of the clock");
+    // Escape ends the mode and keeps the widget picked.
+    h.press("esc");
+    if op(&h) != niri_dash::NavOp::None || h.ui().get_settings_id() != clock as i32 {
+        issues.add("keyboard: Escape in resize mode didn't just end the mode");
     }
     h.press("s");
     let next = h.ui().get_settings_id();
@@ -1916,11 +2004,11 @@ fn arrange_tab(issues: &mut Issues) {
 // ------------------------------------------------------------------------------------------
 // Pinning.
 
-/// The shortcuts in the top bar follow what the keys do just now.
+/// The quick tips along the bottom follow what the keys do just now.
 fn shortcut_hints(issues: &mut Issues) {
     let hints = |h: &Harness| -> Vec<String> {
         h.ui()
-            .get_edit_hints()
+            .get_tips()
             .iter()
             .map(|k| format!("{} {}", k.key, k.does))
             .collect()
@@ -1929,9 +2017,33 @@ fn shortcut_hints(issues: &mut Issues) {
     let mut h = dashboard(MIXED);
     h.settle(300);
     let clock = id_of(&h, "clock");
-    if !hints(&h).is_empty() {
-        issues.add(format!("hints: shown outside edit mode: {:?}", hints(&h)));
+    // Outside edit mode they say how to begin, and what a widget has once entered.
+    if !has(&h, "pick a widget") || !has(&h, "edit mode") {
+        issues.add(format!(
+            "hints: nothing picked, no edit mode: {:?}",
+            hints(&h)
+        ));
     }
+    h.press("f");
+    type_label(&mut h, "clock");
+    for want in ["Ctrl+M move", "Ctrl+R resize", "e expand"] {
+        if !has(&h, want) {
+            issues.add(format!("hints: in the clock, no {want:?}: {:?}", hints(&h)));
+        }
+    }
+    h.press("ctrl+m");
+    if !has(&h, "MOVE") || !has(&h, "Ctrl+R resize instead") {
+        issues.add(format!("hints: move mode: {:?}", hints(&h)));
+    }
+    h.press("ctrl+r");
+    if !has(&h, "RESIZE") || !has(&h, "Shift + h j k l pull it in") {
+        issues.add(format!("hints: resize mode: {:?}", hints(&h)));
+    }
+    h.press("esc");
+    if !has(&h, "Ctrl+M move") {
+        issues.add(format!("hints: after the mode: {:?}", hints(&h)));
+    }
+    h.press("esc");
     h.press("ctrl+e");
     if !has(&h, "pick a widget") || has(&h, "h j k l size") {
         issues.add(format!("hints: nothing picked: {:?}", hints(&h)));
@@ -1943,11 +2055,11 @@ fn shortcut_hints(issues: &mut Issues) {
     h.press("f");
     // A widget picked: the keys are on it.
     h.ui().invoke_configure_widget(clock as i32);
-    h.press("l");
+    h.pump();
     for want in [
-        "h j k l size",
-        "Ctrl + h j k l move",
-        "w a s d pick another",
+        "Ctrl+M move",
+        "Ctrl+R resize",
+        "h j k l pick another",
         "pin",
     ] {
         if !has(&h, want) {
@@ -1959,25 +2071,25 @@ fn shortcut_hints(issues: &mut Issues) {
     }
     // Pinned: it can't be sized or moved, and says how to unpin.
     h.press("p");
-    if !has(&h, "p unpin") || has(&h, "h j k l size") || has(&h, "Ctrl + h j k l move") {
+    if !has(&h, "p unpin") || has(&h, "Ctrl+M") {
         issues.add(format!("hints: clock pinned: {:?}", hints(&h)));
     }
     h.press("p");
-    if !has(&h, "h j k l size") {
+    if !has(&h, "Ctrl+M move") {
         issues.add(format!("hints: clock unpinned again: {:?}", hints(&h)));
     }
     // Tab goes to the settings: the keys of the rows, and the way back.
     h.press("tab");
-    if !has(&h, "w a s d") || has(&h, "h j k l size") {
+    if !has(&h, "w a s d") || has(&h, "Ctrl+M") {
         issues.add(format!("hints: in the sidebar: {:?}", hints(&h)));
     }
     h.press("d");
-    if !has(&h, "h j k l size") {
+    if !has(&h, "Ctrl+M move") {
         issues.add(format!("hints: back on the widgets: {:?}", hints(&h)));
     }
     h.press("ctrl+e");
-    if !hints(&h).is_empty() {
-        issues.add("hints: still shown after leaving edit mode");
+    if has(&h, "pick another") || !has(&h, "pick a widget") {
+        issues.add(format!("hints: after leaving edit mode: {:?}", hints(&h)));
     }
     issues.check(&h, "hints: the top bar's shortcuts");
 }
@@ -2265,8 +2377,9 @@ fn main() {
             "pointer: a long press adjusts the widget",
             pointer_long_press,
         ),
+        ("keyboard: move and resize modes", keyboard_modes),
         ("keyboard: edit mode", keyboard_editing),
-        ("hints: the shortcuts in the top bar", shortcut_hints),
+        ("hints: the quick tips along the bottom", shortcut_hints),
         (
             "grid: shrink to the smallest and back",
             grid_shrink_and_grow,
