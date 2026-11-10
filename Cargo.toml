@@ -172,6 +172,8 @@ name = "orca"
 harness = false
 required-features = ["testing"]
 
+# GPUI (taffy, the text system) is far too slow unoptimised for the headless tests and the stress
+# run, so the dependencies are optimised even in a dev build.
 [profile.dev]
 opt-level = 1
 [profile.dev.package."*"]
