@@ -78,7 +78,7 @@ impl Fields {
     }
 
     /// The keyboard goes back to the dashboard, whatever had it (a widget's text field too).
-    pub fn to_dash(&mut self) {
+    pub fn give_to_dash(&mut self) {
         self.want = Some(Want::Dash);
     }
 

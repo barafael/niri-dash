@@ -16,10 +16,6 @@ use gpui::{
 };
 use niri_dash_system::IconSrc;
 
-/// A line of text is as high as Slint draws it (the font's ascent and descent, about 1.36 times
-/// its size), not GPUI's 1.6.
-pub const LINE: f32 = kit::LINE;
-
 /// `inner` with that line height for all the text in it.
 pub fn lined(inner: AnyElement) -> AnyElement {
     kit::slint_lines(inner)

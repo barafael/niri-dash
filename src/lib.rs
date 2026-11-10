@@ -8,6 +8,9 @@
 //! so the tests (`tests/`) can drive the dashboard headlessly against channels standing in for
 //! the system ([`testing`]).
 
+// What only the harness and the probes (`testing`) call is dead in the program itself.
+#![cfg_attr(not(feature = "testing"), allow(dead_code))]
+
 mod affinity;
 mod assets;
 mod autolayout;

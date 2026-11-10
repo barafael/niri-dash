@@ -657,7 +657,7 @@ impl Dash {
             self.nav.expanded_id = 0;
             self.edit.side_keys = false;
             self.edit.canvas_keys = true;
-            self.edit.field.to_dash();
+            self.edit.field.give_to_dash();
             self.nav.op = op;
             self.nav.op_for = id;
         }
@@ -667,7 +667,7 @@ impl Dash {
     pub fn op_end(&mut self) {
         self.nav.op = NavOp::None;
         self.nav.op_for = 0;
-        self.edit.field.to_dash();
+        self.edit.field.give_to_dash();
     }
 
     /// The hints go down, nothing entered.

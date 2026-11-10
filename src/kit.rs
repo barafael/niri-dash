@@ -114,8 +114,12 @@ pub fn icon(name: &str, size: f32, color: Hsla) -> gpui::Svg {
         .text_color(color)
 }
 
+// The next five are the shared versions of what each widget group built for itself while the
+// port ran in parallel (they have the same press handling); the groups can move to them.
+
 /// A square button with an icon, which says what it does to screen readers (and the tests, which
 /// find it by that name).
+#[allow(dead_code)]
 pub fn icon_button(
     id: impl Into<ElementId>,
     name: &str,
@@ -148,6 +152,7 @@ pub fn icon_button(
 }
 
 /// A button with a label, `height` px high; `primary` fills it with the accent.
+#[allow(dead_code)]
 pub fn text_button(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
@@ -185,6 +190,7 @@ pub fn text_button(
 }
 
 /// An on/off switch.
+#[allow(dead_code)]
 pub fn switch(
     id: impl Into<ElementId>,
     on: bool,
@@ -220,6 +226,7 @@ pub fn switch(
 }
 
 /// A horizontal bar `frac` (0 to 1) full.
+#[allow(dead_code)]
 pub fn bar(frac: f32, color: Hsla, tk: &Tk) -> impl IntoElement {
     div()
         .w_full()
@@ -237,6 +244,7 @@ pub fn bar(frac: f32, color: Hsla, tk: &Tk) -> impl IntoElement {
 }
 
 /// A widget's header: an icon and a title.
+#[allow(dead_code)]
 pub fn header(icon_name: &str, title: impl Into<SharedString>, tk: &Tk) -> impl IntoElement {
     div()
         .flex()
