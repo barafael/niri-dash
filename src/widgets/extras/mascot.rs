@@ -407,6 +407,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
         .relative()
         .overflow_hidden()
         .cursor_pointer()
+        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(cx.listener(move |d, _, _, cx| {
             next(d, id);
             cx.notify();

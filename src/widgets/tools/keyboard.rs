@@ -274,6 +274,7 @@ fn single(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
         .justify_center()
         .gap(px(2.0))
         .cursor_pointer()
+        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(cx.listener(|d, _, _, cx| {
             switch(d, Switch::Next);
             cx.notify();

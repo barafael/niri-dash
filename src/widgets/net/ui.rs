@@ -121,6 +121,7 @@ pub fn row(
         })
         .when(st.enabled, |r| {
             r.cursor_pointer()
+                .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .when(!st.active && !st.kfocus, |r| r.hover(move |s| s.bg(hover)))
                 // A selected row stays as it is (Slint: `selected` comes before `pressed`).
                 .when(!st.active, |r| r.active(move |s| s.bg(pressed)))
@@ -168,6 +169,7 @@ pub fn icon_button(
         })
         .when(st.enabled, |b| {
             b.cursor_pointer()
+                .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .hover(move |s| s.bg(hover))
                 .active(move |s| s.bg(pressed))
                 .on_click(move |ev, window, cx| {
@@ -253,6 +255,7 @@ pub fn text_button(
         .text_size(px(tk.font_body()))
         .when(st.enabled, |b| {
             b.cursor_pointer()
+                .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .hover(move |s| {
                     s.bg(if look.danger {
                         with_alpha(bad, 0.33)
@@ -313,7 +316,9 @@ pub fn switch(
         .h(px(22.0))
         .rounded(px(tk.radius_small().min(11.0)))
         .bg(if on { tk.accent() } else { tk.track() })
-        .when(st.enabled, |s| s.cursor_pointer().on_click(on_click))
+        .when(st.enabled, |s| s.cursor_pointer()
+                .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_click(on_click))
         .when(!st.enabled, |s| s.opacity(0.4))
         .child(
             div()

@@ -169,6 +169,7 @@ impl Field<'_> {
             .text_size(px(tk.font_body()))
             .text_color(tk.text())
             .debug_selector(move || selector)
+            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_key_down(cx.listener(move |d, ev: &KeyDownEvent, window, cx| {
                 on_key(d, ev, window, cx)
             }));

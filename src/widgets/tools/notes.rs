@@ -340,6 +340,8 @@ impl Render for NoteView {
             // does in Slint's `NoteEdit`.
             .px(px((tk.pad_tight() - 10.0).max(0.0)))
             .py(px((tk.pad_tight() - 2.0).max(0.0)))
+            // Typing and selecting in the note is not a press on the card behind it.
+            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .debug_selector({
                 let label = label.clone();
                 move || label.clone()

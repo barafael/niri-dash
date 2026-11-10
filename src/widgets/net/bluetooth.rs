@@ -1166,6 +1166,7 @@ fn round(m: &Model, ctx: &Ctx, id: u32, cx: &mut Context<Dash>) -> AnyElement {
         .debug_selector(|| "Bluetooth".into())
         .size_full()
         .cursor_pointer()
+        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(cx.listener(move |d, _, _, cx| run(d, id, Act::Toggle, cx)))
         .child(ui::round_face(
             "bluetooth",

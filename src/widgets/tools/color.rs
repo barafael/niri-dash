@@ -344,6 +344,7 @@ fn copy_text(
         .rounded(px(radius))
         .when(kfocus, |d| d.bg(hover).child(ui::ring(tk, radius)))
         .cursor_pointer()
+        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .hover(move |s| s.bg(hover))
         .active(move |s| s.bg(pressed))
         .on_click(cx.listener(move |d, _, _, cx| {
@@ -397,6 +398,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
             .size_full()
             .relative()
             .cursor_pointer()
+            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(|d, _, _, cx| {
                 start_pick(d, cx);
                 cx.notify();
@@ -535,6 +537,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                             .border(px(if focus { 2.0 } else { 1.0 }))
                             .border_color(if focus { tk.accent() } else { border })
                             .cursor_pointer()
+                            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
                             .hover(move |s| s.border_2().border_color(text))
                             .on_click(cx.listener(move |d, _, _, cx| {
                                 clipboard::copy_text(d, &hex);

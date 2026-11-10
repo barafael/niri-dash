@@ -770,6 +770,45 @@ fn pairing_code_is_one_spaced_line() {
     assert!(f32::from(wide.size.width) > 100.0);
 }
 
+/// A double click on a control is the control's: it doesn't pick the widget up (outside edit
+/// mode a double click on the widget's blank part does).
+fn double_click_on_a_control_does_not_carry() {
+    let carrying = |h: &Harness| h.read(|d| d.edit.dragging());
+    for control in ["Rescan", "Wi-Fi", "Hidden network", "Details of Lighthouse"] {
+        let mut h = tall_wifi();
+        send_wifi(&mut h, &Demo::new().wifi);
+        shown(&mut h);
+        let c = h
+            .bounds_of(control)
+            .unwrap_or_else(|| panic!("no {control:?} on screen"))
+            .center();
+        h.double_click(f32::from(c.x), f32::from(c.y));
+        assert!(
+            !carrying(&h),
+            "a double click on {control:?} picked the widget up"
+        );
+    }
+    let mut h = tall_bt();
+    send_bt(&mut h, &Demo::new().bluetooth);
+    shown(&mut h);
+    let c = h.bounds_of("Fairbuds").expect("a device").center();
+    h.double_click(f32::from(c.x), f32::from(c.y));
+    assert!(
+        !carrying(&h),
+        "a double click on a device picked the widget up"
+    );
+    // The blank part of the card still carries it.
+    let mut h = tall_wifi();
+    send_wifi(&mut h, &Demo::new().wifi);
+    shown(&mut h);
+    let list = h.bounds_of("net-list").expect("the list");
+    h.double_click(f32::from(list.center().x), f32::from(list.bottom()) - 20.0);
+    assert!(
+        carrying(&h),
+        "a double click on the blank part should carry the widget"
+    );
+}
+
 /// The prompt's keys: Escape out of the field first, then the buttons; Escape cancels it.
 fn wifi_prompt_keys() {
     let mut h = dashboard();
@@ -1378,6 +1417,10 @@ fn main() {
         (
             "pairing_code_is_one_spaced_line",
             pairing_code_is_one_spaced_line,
+        ),
+        (
+            "double_click_on_a_control_does_not_carry",
+            double_click_on_a_control_does_not_carry,
         ),
         ("wifi_prompt_keys", wifi_prompt_keys),
         ("wifi_prompt_starts_empty", wifi_prompt_starts_empty),

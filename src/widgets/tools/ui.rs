@@ -104,6 +104,7 @@ pub fn row(
         .bg(bg)
         .when(kfocus, |d| d.child(ring(tk, radius)))
         .cursor_pointer()
+        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .when(!selected && !kfocus, |d| d.hover(move |s| s.bg(hover)))
         // A selected row stays as it is (Slint: `selected` comes before `pressed`).
         .when(!selected, |d| d.active(move |s| s.bg(pressed)))
@@ -140,6 +141,7 @@ pub fn icon_button(
         .items_center()
         .justify_center()
         .cursor_pointer()
+        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .hover(move |s| s.bg(hover))
         .active(move |s| s.bg(pressed))
         .on_click(on_click)
@@ -176,6 +178,7 @@ pub fn text_button(
         .text_size(px(tk.font_body()))
         .text_color(tk.text())
         .cursor_pointer()
+        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .hover(move |s| s.bg(hover))
         .active(move |s| s.bg(pressed))
         .on_click(on_click)
