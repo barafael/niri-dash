@@ -8,7 +8,7 @@
 //! window: when the dashboard comes up in a new one, they make their text area again.
 
 use crate::dash::{Dash, NavMode};
-use crate::kit::{self, Tk};
+use crate::kit::Tk;
 use crate::layout::Kind;
 use crate::widgets::Ctx;
 use gpui::prelude::*;
@@ -236,7 +236,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
         .pb(px(tk.pad()))
         .pt(px(if tall { tk.pad() } else { tk.pad_tight() }))
         .when(tall, |col| {
-            col.child(kit::header("note", n.title_of(id), tk))
+            col.child(super::ui::header("note", n.title_of(id), tk))
         })
         .child(div().flex_1().min_h_0().w_full().child(view))
         .into_any_element()
@@ -312,15 +312,16 @@ impl Render for NoteView {
         // reaches the text area; what is typed here has come the other way already.
         let handle = state.read(cx).focus_handle(cx);
         if state.read(cx).value() != text.as_str() {
+            // A note at rest shows its beginning, as in Slint.
             state.update(cx, |s, cx| s.set_value(text, window, cx));
-            // The cursor goes to the end, where typing goes on.
+        }
+        if entered && (!self.entered || requested) && !handle.is_focused(window) {
+            state.update(cx, |s, cx| s.focus(window, cx));
+            // Entered with the keyboard, the cursor goes to the end, where typing goes on.
             let at = handle.clone();
             window.defer(cx, move |window, cx| {
                 at.dispatch_action(&MoveToEnd, window, cx)
             });
-        }
-        if entered && (!self.entered || requested) && !handle.is_focused(window) {
-            state.update(cx, |s, cx| s.focus(window, cx));
         } else if !entered && self.entered && handle.is_focused(window) {
             // Left with Escape: the dashboard has the keys again.
             window.focus(&dash_focus, cx);
@@ -334,7 +335,13 @@ impl Render for NoteView {
             .bg(tk.subtle())
             .border(px(1.0))
             .border_color(if focused { tk.accent() } else { tk.border() })
-            .p(px(tk.pad_tight()))
+            // The text area has 10 px (sideways) and about 1 px (up and down) inside already,
+            // and the border is inside the box: the text sits `pad_tight` from the edge, as it
+            // does in Slint's `NoteEdit`.
+            .px(px((tk.pad_tight() - 10.0).max(0.0)))
+            .py(px((tk.pad_tight() - 2.0).max(0.0)))
+            // Typing and selecting in the note is not a press on the card behind it.
+            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .debug_selector({
                 let label = label.clone();
                 move || label.clone()

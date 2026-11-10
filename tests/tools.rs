@@ -505,6 +505,25 @@ fn stress_tools() {
     }
 }
 
+/// A double click on a control is the control's: it doesn't pick the widget up.
+fn double_click_on_a_control_does_not_carry() {
+    let mut h = dashboard(
+        "layout {\n    keyboard-layout col=0 row=0 width=2 height=1\n    color-picker col=2 row=0 width=3 height=2\n    notes col=5 row=0 width=3 height=3\n}\n",
+    );
+    h.send(layouts());
+    for control in ["Next keyboard layout", "Pick a color", "Notes"] {
+        let c = h
+            .bounds_of(control)
+            .unwrap_or_else(|| panic!("no {control:?} on screen"))
+            .center();
+        h.double_click(f32::from(c.x), f32::from(c.y));
+        assert!(
+            !h.read(|d| d.edit.dragging()),
+            "a double click on {control:?} picked the widget up"
+        );
+    }
+}
+
 fn main() {
     let _sandbox = Sandbox::enter(None).expect("a temporary directory for the dashboard's files");
     // SAFETY: nothing else runs yet that could read the environment.
@@ -535,6 +554,10 @@ fn main() {
         ("notes: type and save", notes_type_and_save),
         ("notes: survive hiding", notes_survive_hiding),
         ("notes: shared by name", notes_are_shared_by_name),
+        (
+            "double click on a control does not carry",
+            double_click_on_a_control_does_not_carry,
+        ),
         ("stress: every tools widget", stress_tools),
     ];
     let mut failed = Vec::new();

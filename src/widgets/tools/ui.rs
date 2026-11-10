@@ -14,6 +14,53 @@ use gpui::{
 use crate::kit::AriaCursor;
 use crate::kit::AriaState;
 
+/// A line of text is as high as Slint draws it (the font's ascent and descent, about 1.36 times
+/// its size), not GPUI's 1.6.
+pub const LINE: f32 = kit::LINE;
+
+/// `inner` with that line height for all the text in it.
+pub fn lined(inner: AnyElement) -> AnyElement {
+    kit::slint_lines(inner)
+}
+
+/// The keyboard cursor: a 2 px ring in the accent color over an element of this corner radius,
+/// drawn over it (Slint's `border-width`, which takes no room), so that the cursor moving never
+/// moves anything inside.
+pub fn ring(tk: &Tk, radius: f32) -> Div {
+    div()
+        .absolute()
+        .top_0()
+        .left_0()
+        .right_0()
+        .bottom_0()
+        .rounded(px(radius))
+        .border_2()
+        .border_color(tk.accent())
+}
+
+/// A widget's header: an icon and a title, 28 px high (`Header` in `common.slint`; `kit::header`
+/// is 26).
+pub fn header(icon_name: &str, title: impl Into<SharedString>, tk: &Tk) -> Div {
+    div()
+        .flex_none()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(8.0))
+        .h(px(28.0))
+        .child(kit::icon(icon_name, 18.0, tk.dim()))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .text_size(px(tk.font_title()))
+                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .text_color(tk.text())
+                .child(title.into()),
+        )
+}
+
 /// A row of a list: `label` and `value` are what a screen reader says (the tests find it by
 /// `label`); `selected` is the look of the current entry, `kfocus` the keyboard cursor. The caller
 /// adds the click and the contents.
@@ -36,6 +83,7 @@ pub fn row(
     } else {
         transparent_black()
     };
+    let radius = (height / 2.0).min(tk.radius_small());
     div()
         .id(id)
         .role(Role::ListItem)
@@ -43,23 +91,21 @@ pub fn row(
         .aria_cursor(kfocus)
         .when_some(value, |d, v| d.aria_state(v))
         .debug_selector(move || name)
+        .relative()
         .w_full()
         .h(px(height))
         .flex_none()
         .flex()
         .flex_row()
         .items_center()
-        .rounded(px((height / 2.0).min(tk.radius_small())))
+        .rounded(px(radius))
         .bg(bg)
-        .border(px(2.0))
-        .border_color(if kfocus {
-            tk.accent()
-        } else {
-            transparent_black()
-        })
+        .when(kfocus, |d| d.child(ring(tk, radius)))
         .cursor_pointer()
+        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .when(!selected && !kfocus, |d| d.hover(move |s| s.bg(hover)))
-        .active(move |s| s.bg(pressed))
+        // A selected row stays as it is (Slint: `selected` comes before `pressed`).
+        .when(!selected, |d| d.active(move |s| s.bg(pressed)))
 }
 
 /// A square button with an icon; `fill` is its resting background.
@@ -76,31 +122,29 @@ pub fn icon_button(
     on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> Stateful<Div> {
     let (hover, pressed) = (tk.hover(), tk.pressed());
+    let radius = (size / 2.0).min(tk.radius_small());
     div()
         .id(id)
         .role(Role::Button)
         .aria_label(label)
         .aria_cursor(kfocus)
         .debug_selector(move || label.to_string())
+        .relative()
         .flex_none()
         .size(px(size))
-        .rounded(px((size / 2.0).min(tk.radius_small())))
+        .rounded(px(radius))
         .when_some(fill, |d, f| d.bg(f))
         .when(kfocus, |d| d.bg(hover))
-        .border(px(2.0))
-        .border_color(if kfocus {
-            tk.accent()
-        } else {
-            transparent_black()
-        })
         .flex()
         .items_center()
         .justify_center()
         .cursor_pointer()
+        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .hover(move |s| s.bg(hover))
         .active(move |s| s.bg(pressed))
         .on_click(on_click)
         .child(kit::icon(name, size * 0.55, tint))
+        .when(kfocus, |d| d.child(ring(tk, radius)))
 }
 
 /// A button with a label, 30 px high.
@@ -113,43 +157,45 @@ pub fn text_button(
     on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> Stateful<Div> {
     let (hover, pressed) = (tk.hover(), tk.pressed());
+    let radius = 15.0_f32.min(tk.radius_small());
     div()
         .id(id)
         .role(Role::Button)
         .aria_label(label)
         .aria_cursor(kfocus)
         .debug_selector(move || label.to_string())
+        .relative()
         .flex_none()
         .h(px(30.0))
         .px(px(12.0))
-        .rounded(px(15.0_f32.min(tk.radius_small())))
+        .rounded(px(radius))
         .bg(tk.card_raised())
-        .border(px(2.0))
-        .border_color(if kfocus {
-            tk.accent()
-        } else {
-            transparent_black()
-        })
         .flex()
         .items_center()
         .justify_center()
         .text_size(px(tk.font_body()))
         .text_color(tk.text())
         .cursor_pointer()
+        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .hover(move |s| s.bg(hover))
         .active(move |s| s.bg(pressed))
         .on_click(on_click)
         .child(text)
+        .when(kfocus, |d| d.child(ring(tk, radius)))
 }
 
 /// A scrollable column with a slim scrollbar that only shows when there is something to scroll.
-/// Children are direct (`handle.scroll_to_item(i)` brings the i-th into view).
+/// Children are direct (`handle.scroll_to_item(i)` brings the i-th into view). Port of Slint's
+/// `ScrollList`: lists sit in a card's padding, and the scrollbar goes there too, so rows are as
+/// wide as the header above them; only a tight padding needs a gutter of its own.
 pub fn scroll_list(
     id: impl Into<ElementId>,
     handle: &ScrollHandle,
     rows: Vec<AnyElement>,
     tk: &Tk,
 ) -> Div {
+    let in_padding = tk.pad() >= 8.0;
+    let gutter = if in_padding { 0.0 } else { 10.0 };
     let max = f32::from(handle.max_offset().y);
     let view = f32::from(handle.bounds().size.height);
     let top = -f32::from(handle.offset().y);
@@ -157,9 +203,14 @@ pub fn scroll_list(
         let content = view + max;
         let thumb = (view * view / content).max(24.0).min(view);
         let at = (view - thumb) * (top / max).clamp(0.0, 1.0);
+        let right = if in_padding {
+            -(tk.pad() + 4.0) / 2.0
+        } else {
+            1.0
+        };
         div()
             .absolute()
-            .right(px(1.0))
+            .right(px(right))
             .top_0()
             .w(px(4.0))
             .h_full()
@@ -183,7 +234,11 @@ pub fn scroll_list(
         .child(
             div()
                 .id(id)
-                .size_full()
+                .absolute()
+                .top_0()
+                .left_0()
+                .bottom_0()
+                .right(px(gutter))
                 .flex()
                 .flex_col()
                 .overflow_y_scroll()

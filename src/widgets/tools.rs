@@ -127,13 +127,14 @@ pub fn handles(kind: Kind) -> bool {
 
 /// What the widget of `ctx.tile` draws, in a card of `ctx.w` by `ctx.h` pixels.
 pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
-    match ctx.kind() {
+    let inner = match ctx.kind() {
         Kind::KeyboardLayout => keyboard::render(ctx, cx),
         Kind::ColorPicker => color::render(ctx, cx),
         Kind::Notes => notes::render(ctx, cx),
         Kind::Clipboard => clipboard::render(ctx, cx),
-        kind => super::placeholder(ctx, kind),
-    }
+        kind => return super::placeholder(ctx, kind),
+    };
+    ui::lined(inner)
 }
 
 /// What the system reports. `None`: not this group's; `Some(control)`: taken, and the event asks

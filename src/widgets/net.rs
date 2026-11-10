@@ -186,11 +186,12 @@ pub fn handles(kind: Kind) -> bool {
 /// What the widget of `ctx.tile` draws, in a card of `ctx.w` by `ctx.h` pixels.
 pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
     refocus(ctx.d, cx);
-    match ctx.kind() {
+    let inner = match ctx.kind() {
         Kind::Wifi => wifi::render(ctx, cx),
         Kind::Bluetooth => bluetooth::render(ctx, cx),
-        kind => placeholder(ctx, kind),
-    }
+        kind => return placeholder(ctx, kind),
+    };
+    ui::lined(inner)
 }
 
 /// What the system reports. `None`: not this group's; `Some(control)`: taken, and the event asks

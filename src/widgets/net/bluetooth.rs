@@ -1166,6 +1166,7 @@ fn round(m: &Model, ctx: &Ctx, id: u32, cx: &mut Context<Dash>) -> AnyElement {
         .debug_selector(|| "Bluetooth".into())
         .size_full()
         .cursor_pointer()
+        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(cx.listener(move |d, _, _, cx| run(d, id, Act::Toggle, cx)))
         .child(ui::round_face(
             "bluetooth",
@@ -1299,14 +1300,24 @@ fn prompt(ctx: &Ctx, v: &View, p: &Prompt, id: u32, cx: &mut Context<Dash>) -> A
         // The address too: the name is whatever the device says it is.
         .child(ui::muted(p.address.clone(), tk));
     if p.kind == 1 || q.shows_code {
+        // Letter spacing 3 px, as in Slint: GPUI has none, so each digit is its own box (which
+        // also leaves 3 px after the last, as Slint does).
+        let code = p.code.clone();
         col = col.child(
             div()
                 .w_full()
-                .text_center()
+                .flex()
+                .flex_row()
+                .justify_center()
+                .gap(px(3.0))
                 .text_size(px(tk.font_title() * 1.6))
                 .font_weight(gpui::FontWeight::SEMIBOLD)
                 .text_color(tk.accent())
-                .child(p.code.clone()),
+                .id("pairing-code")
+                .debug_selector(|| "pairing code".into())
+                .role(gpui::Role::Label)
+                .aria_label(code.clone())
+                .children(code.chars().map(|c| div().child(c.to_string()))),
         );
     }
     if p.kind == 1 {

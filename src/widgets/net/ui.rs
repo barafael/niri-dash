@@ -16,6 +16,15 @@ use niri_dash_system::IconSrc;
 use crate::kit::AriaCursor;
 use crate::kit::AriaState;
 
+/// A line of text is as high as Slint draws it (the font's ascent and descent, about 1.36 times
+/// its size), not GPUI's 1.6.
+pub const LINE: f32 = kit::LINE;
+
+/// `inner` with that line height for all the text in it.
+pub fn lined(inner: AnyElement) -> AnyElement {
+    kit::slint_lines(inner)
+}
+
 /// How a button, row or switch stands.
 #[derive(Debug, Clone, Copy)]
 pub struct St {
@@ -110,8 +119,10 @@ pub fn row(
         })
         .when(st.enabled, |r| {
             r.cursor_pointer()
+                .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .when(!st.active && !st.kfocus, |r| r.hover(move |s| s.bg(hover)))
-                .active(move |s| s.bg(pressed))
+                // A selected row stays as it is (Slint: `selected` comes before `pressed`).
+                .when(!st.active, |r| r.active(move |s| s.bg(pressed)))
                 .on_click(on_click)
         })
         .when(!st.enabled, |r| r.opacity(0.4))
@@ -156,6 +167,7 @@ pub fn icon_button(
         })
         .when(st.enabled, |b| {
             b.cursor_pointer()
+                .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .hover(move |s| s.bg(hover))
                 .active(move |s| s.bg(pressed))
                 .on_click(move |ev, window, cx| {
@@ -227,7 +239,8 @@ pub fn text_button(
         .debug_selector(move || selector)
         .relative()
         .h(px(30.0))
-        .when(look.compact, |b| b.flex_1().min_w_0())
+        // Slint's stretch: each takes its text's width, and the room left over is shared equally.
+        .when(look.compact, |b| b.flex_auto().min_w_0())
         .when(!look.compact, |b| b.flex_none())
         .px(px(pad))
         .rounded(px(radius))
@@ -240,6 +253,7 @@ pub fn text_button(
         .text_size(px(tk.font_body()))
         .when(st.enabled, |b| {
             b.cursor_pointer()
+                .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .hover(move |s| {
                     s.bg(if look.danger {
                         with_alpha(bad, 0.33)
@@ -250,8 +264,14 @@ pub fn text_button(
                     })
                 })
                 .active(move |s| {
-                    s.bg(if look.danger || look.primary {
+                    s.bg(if look.danger {
                         bg
+                    } else if look.primary {
+                        // Slint: `Theme.accent.darker(0.2)`.
+                        Hsla {
+                            l: accent.l / 1.2,
+                            ..accent
+                        }
                     } else {
                         pressed
                     })
@@ -294,7 +314,9 @@ pub fn switch(
         .h(px(22.0))
         .rounded(px(tk.radius_small().min(11.0)))
         .bg(if on { tk.accent() } else { tk.track() })
-        .when(st.enabled, |s| s.cursor_pointer().on_click(on_click))
+        .when(st.enabled, |s| s.cursor_pointer()
+                .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_click(on_click))
         .when(!st.enabled, |s| s.opacity(0.4))
         .child(
             div()
@@ -565,8 +587,9 @@ pub fn choice(
         .into_any_element()
 }
 
-/// A saved network's QR code, drawn as one square per module: `side` px at most, whole pixels
-/// per module so that it stays sharp. Without an image: an empty white square.
+/// A saved network's QR code, drawn as one square per module, `side` px (as Slint's pixelated
+/// image is: modules a pixel wider or narrower here and there, edges on whole pixels, so that it
+/// stays sharp). Without an image: an empty white square.
 pub fn qr(image: &IconSrc, side: f32) -> AnyElement {
     let frame = |side: f32| {
         div()
@@ -578,6 +601,7 @@ pub fn qr(image: &IconSrc, side: f32) -> AnyElement {
             .size(px(side))
             .bg(gpui::white())
     };
+    let side = side.floor();
     let IconSrc::Rgba {
         width,
         height,
@@ -590,14 +614,14 @@ pub fn qr(image: &IconSrc, side: f32) -> AnyElement {
     if w == 0 || h == 0 || data.len() < w * h * 4 {
         return frame(side).into_any_element();
     }
-    let cell = (side / w.max(h) as f32).floor().max(1.0);
-    let (total_w, total_h) = (cell * w as f32, cell * h as f32);
+    let cell = side / w.max(h) as f32;
     let data = data.clone();
-    frame(total_w.max(total_h))
+    frame(side)
         .child(
             canvas(
                 |_, _, _| (),
                 move |bounds, _, window, _| {
+                    let edge = |i: usize| (i as f32 * cell).round();
                     for y in 0..h {
                         let mut x = 0;
                         while x < w {
@@ -610,8 +634,8 @@ pub fn qr(image: &IconSrc, side: f32) -> AnyElement {
                                 x += 1;
                             }
                             let run = Bounds::new(
-                                bounds.origin + point(px(start as f32 * cell), px(y as f32 * cell)),
-                                size(px((x - start) as f32 * cell), px(cell)),
+                                bounds.origin + point(px(edge(start)), px(edge(y))),
+                                size(px(edge(x) - edge(start)), px(edge(y + 1) - edge(y))),
                             );
                             window.paint_quad(fill(run, gpui::black()));
                         }

@@ -407,6 +407,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
         .relative()
         .overflow_hidden()
         .cursor_pointer()
+        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(cx.listener(move |d, _, _, cx| {
             next(d, id);
             cx.notify();
@@ -584,8 +585,8 @@ fn figure(ctx: &Ctx, id: u32, line: &View, cx: &mut Context<Dash>) -> AnyElement
         line.text.clone().into()
     };
     let (title_size, body_size) = ((tk.font_small() * 0.85).max(9.0), tk.font_body());
-    // Slint's Text is as high as its font is (about 1.36 em for Noto Sans).
-    let (title_line, body_line) = (title_size * 1.36, body_size * 1.36);
+    // A line is as high as Slint draws it: the font's ascent and descent.
+    let (title_line, body_line) = (title_size * 1.362, body_size * 1.362);
     let inner_w = (bw - 22.0).max(1.0);
     let body_h = text_height(st, cx, tk, &text, body_size, body_line, inner_w, false);
     let bh = (17.0 + title_line + 2.0 + body_h).min((h - 2.0 * edge).max(0.0));

@@ -6,7 +6,6 @@ use super::ui;
 use super::{Inst, Plain};
 use crate::dash::Dash;
 use crate::keys::Key;
-use crate::kit;
 use crate::scope::{Scope, Stops};
 use crate::widgets::Ctx;
 use gpui::prelude::*;
@@ -233,7 +232,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
         .flex_col()
         .p(px(tk.pad()))
         .gap(px(6.0))
-        .child(kit::header("keyboard", "Keyboard layout", tk))
+        .child(ui::header("keyboard", "Keyboard layout", tk))
         .child(ui::scroll_list(
             ("keyboard-layout-list", id),
             &k.list,
@@ -274,8 +273,8 @@ fn single(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
         .items_center()
         .justify_center()
         .gap(px(2.0))
-        .px(px(tk.pad()))
         .cursor_pointer()
+        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(cx.listener(|d, _, _, cx| {
             switch(d, Switch::Next);
             cx.notify();

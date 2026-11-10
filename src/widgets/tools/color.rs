@@ -16,7 +16,7 @@ use crate::layout::Kind;
 use crate::scope::Stops;
 use crate::widgets::Ctx;
 use gpui::prelude::*;
-use gpui::{AnyElement, Context, Hsla, Role, div, px, transparent_black};
+use gpui::{AnyElement, Context, Hsla, Role, div, px};
 use niri_dash_system::{Tell, color};
 use crate::kit::AriaCursor;
 
@@ -328,27 +328,24 @@ fn copy_text(
     let label = format!("Copy {text}");
     let name = label.clone();
     let copied = text.clone();
+    let radius = 6.0_f32.min(tk.radius_small());
     div()
         .id(id)
         .role(Role::Button)
         .aria_label(label)
         .aria_cursor(kfocus)
         .debug_selector(move || name)
+        .relative()
         .w_full()
         .h(px(24.0))
         .flex_none()
         .px(px(6.0))
         .flex()
         .items_center()
-        .rounded(px(6.0_f32.min(tk.radius_small())))
-        .when(kfocus, |d| d.bg(hover))
-        .border(px(2.0))
-        .border_color(if kfocus {
-            tk.accent()
-        } else {
-            transparent_black()
-        })
+        .rounded(px(radius))
+        .when(kfocus, |d| d.bg(hover).child(ui::ring(tk, radius)))
         .cursor_pointer()
+        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .hover(move |s| s.bg(hover))
         .active(move |s| s.bg(pressed))
         .on_click(cx.listener(move |d, _, _, cx| {
@@ -402,6 +399,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
             .size_full()
             .relative()
             .cursor_pointer()
+            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(|d, _, _, cx| {
                 start_pick(d, cx);
                 cx.notify();
@@ -426,7 +424,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                     .absolute()
                     .left_0()
                     .w_full()
-                    .top(px(ctx.h * 0.8 - tk.font_small() * 0.6))
+                    .top(px(ctx.h * 0.8 - tk.font_small() * ui::LINE / 2.0))
                     .flex()
                     .justify_center()
                     .text_size(px(tk.font_small()))
@@ -540,6 +538,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                             .border(px(if focus { 2.0 } else { 1.0 }))
                             .border_color(if focus { tk.accent() } else { border })
                             .cursor_pointer()
+                            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
                             .hover(move |s| s.border_2().border_color(text))
                             .on_click(cx.listener(move |d, _, _, cx| {
                                 clipboard::copy_text(d, &hex);

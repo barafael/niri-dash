@@ -186,6 +186,17 @@ fn the_pointer_is_followed() {
     h.click(1.0, 1.0);
 }
 
+/// A double click on the mascot is two clicks on it: it doesn't pick the widget up.
+fn a_double_click_does_not_carry() {
+    let mut h = show(ONE);
+    let c = h
+        .bounds_of("Next line")
+        .expect("the mascot on screen")
+        .center();
+    h.double_click(f32::from(c.x), f32::from(c.y));
+    assert!(!h.read(|d| d.edit.dragging()));
+}
+
 /// Hiding the dashboard and showing it again: the mascots come up with something new.
 fn it_comes_up_with_something_new() {
     let mut h = show(ONE);
@@ -228,6 +239,10 @@ fn main() {
             everything_draws,
         ),
         ("mascot: the pointer is followed", the_pointer_is_followed),
+        (
+            "mascot: a double click does not carry",
+            a_double_click_does_not_carry,
+        ),
         (
             "mascot: it comes up with something new",
             it_comes_up_with_something_new,
