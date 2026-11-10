@@ -1,7 +1,7 @@
 //! GPU: load and video memory. Says so when there is no GPU whose load can be read.
 //! Round: load over video memory as two rings.
 
-use super::charts::{Gauge, Graph, bar, percent};
+use super::charts::{Gauge, Glide, Graph, bar, percent};
 use super::parts::{empty, head, label, muted, page, stat};
 use crate::dash::Dash;
 use crate::widgets::Ctx;
@@ -18,7 +18,7 @@ pub fn render(ctx: &Ctx, _cx: &mut Context<Dash>) -> AnyElement {
         gauge.inner = Some(("Video memory", g.vram, tk.warn()));
         gauge.big = percent(g.busy);
         gauge.caption = "GPU · VRAM".into();
-        return gauge.element(ctx.w, tk, Vec::new());
+        return gauge.element(ctx, Vec::new());
     }
     let heat = if g.power_text.is_empty() {
         g.temp_text.clone()
@@ -54,6 +54,14 @@ pub fn render(ctx: &Ctx, _cx: &mut Context<Dash>) -> AnyElement {
             )
         })
         .child(stat("Video memory", g.vram_text.clone(), tk.text(), tk))
-        .child(bar("gpu-vram", "Video memory", g.vram, tk.warn(), true, tk))
+        .child(bar(
+            "gpu-vram",
+            "Video memory",
+            g.vram,
+            Glide::new(ctx).to("bar", 0, g.vram.clamp(0.0, 1.0), 300.0),
+            tk.warn(),
+            true,
+            tk,
+        ))
         .into_any_element()
 }

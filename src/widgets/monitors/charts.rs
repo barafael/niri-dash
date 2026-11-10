@@ -14,6 +14,10 @@ use gpui::{
 
 type P = (f32, f32);
 
+/// How thick a graph's line is drawn. Slint's own is a 1.6 px band per segment, but the segments
+/// overlap and the antialiasing adds to them: on screen it is about 2.4 px.
+const LINE_WIDTH: f32 = 2.4;
+
 fn pt(p: P) -> Point<Pixels> {
     point(px(p.0), px(p.1))
 }
@@ -21,6 +25,8 @@ fn pt(p: P) -> Point<Pixels> {
 fn finite(v: f32) -> f32 {
     if v.is_finite() { v } else { 0.0 }
 }
+
+pub use crate::kit::{Glide, ring_radius};
 
 /// A reading as a fraction: 0 to 1, whatever the source said.
 pub fn unit(v: f32) -> f32 {
@@ -281,7 +287,7 @@ impl<'a> Graph<'a> {
                     None => vec![points],
                 };
                 for line in lines {
-                    let mut b = PathBuilder::stroke(px(1.6));
+                    let mut b = PathBuilder::stroke(px(LINE_WIDTH));
                     b.move_to(at(&line[0]));
                     for p in &line[1..] {
                         b.line_to(at(p));
@@ -327,22 +333,19 @@ pub fn arc_end(cx: f32, cy: f32, r: f32, v: f32) -> P {
     (cx + r * a.sin(), cy - r * a.cos())
 }
 
-/// The radius of a ring's middle line in a `size` square, for a stroke `thickness` thick.
-pub fn ring_radius(size: f32, thickness: f32) -> f32 {
-    size / 2.0 - thickness / 2.0 - size * 0.005
-}
-
-/// An arc from 12 o'clock clockwise, `value` in 0 to 1, over a track; `size_full`.
+/// An arc from 12 o'clock clockwise, `value` in 0 to 1, over a track; `size_full`. `shown` is how
+/// far the arc has got (it glides).
 pub fn ring(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
     value: f32,
+    shown: f32,
     thickness: f32,
     tint: Hsla,
     tk: &Tk,
 ) -> Stateful<Div> {
     let track = tk.track();
-    let v = unit(value).min(0.9999);
+    let v = unit(shown).min(0.9999);
     let plot = canvas(
         |_, _, _| (),
         move |bounds, _, window, _| {
@@ -415,7 +418,9 @@ impl Gauge {
     }
 
     /// A gauge in a card of `width` pixels (and as high), with `children` under the figures.
-    pub fn element(self, width: f32, tk: &Tk, children: Vec<AnyElement>) -> AnyElement {
+    pub fn element(self, ctx: &crate::widgets::Ctx, children: Vec<AnyElement>) -> AnyElement {
+        let (width, tk) = (ctx.w, ctx.tk);
+        let glide = Glide::new(ctx);
         let outer_tint = if self.high_is_bad && self.value > 0.9 {
             tk.bad()
         } else {
@@ -428,6 +433,7 @@ impl Gauge {
                 ("ring", 0usize),
                 self.label,
                 self.value,
+                glide.to("ring", 0, unit(self.value), 400.0),
                 (width * 0.06).max(6.0),
                 outer_tint,
                 tk,
@@ -444,6 +450,7 @@ impl Gauge {
                         ("ring", 1usize),
                         label,
                         value,
+                        glide.to("ring", 1, unit(value), 400.0),
                         (width * 0.05).max(5.0),
                         tint,
                         tk,
@@ -494,10 +501,12 @@ impl Gauge {
 }
 
 /// A thin progress bar, `value` in 0 to 1: nearly full shows in the bad color if `high_is_bad`.
+/// `shown` is how far the fill has got to (it glides to a new reading, as Slint's does).
 pub fn bar(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
     value: f32,
+    shown: f32,
     tint: Hsla,
     high_is_bad: bool,
     tk: &Tk,
@@ -515,7 +524,7 @@ pub fn bar(
         .rounded_full()
         .bg(tk.track())
         .overflow_hidden()
-        .child(div().h_full().w(relative(v)).rounded_full().bg(color))
+        .child(div().h_full().w(relative(unit(shown))).rounded_full().bg(color))
 }
 
 /// One bar per core, each as high as the core is busy: `h` pixels high, `gap` apart.
@@ -662,8 +671,11 @@ mod tests {
         assert!(close(x, 90.0) && close(y, 50.0));
         let (x, y) = arc_end(50.0, 50.0, 40.0, 0.5);
         assert!(close(x, 50.0) && close(y, 90.0));
-        // The middle line sits inside the outer edge by half the stroke (and a hair).
-        assert!(close(ring_radius(100.0, 6.0), 46.5));
+        // The middle line sits inside the outer edge by half the stroke (and a hair), and the
+        // whole ring is fitted inside its box like Slint's stroked paths are.
+        assert!(close(ring_radius(100.0, 6.0), 46.5 * 0.94));
+        let outer = ring_radius(100.0, 6.0) + 3.0;
+        assert!(outer < 50.0 - 2.0 && outer > 50.0 - 4.0);
     }
 
     #[test]

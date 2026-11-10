@@ -1,6 +1,6 @@
 //! Disks: what each is filled to, and the read and write activity. Round: the root disk's ring.
 
-use super::charts::{Gauge, Graph, bar, percent};
+use super::charts::{Gauge, Glide, Graph, bar, percent};
 use super::parts::{head, muted, page, stat};
 use crate::dash::Dash;
 use crate::widgets::Ctx;
@@ -14,9 +14,10 @@ pub fn render(ctx: &Ctx, _cx: &mut Context<Dash>) -> AnyElement {
         let mut g = Gauge::new("Root disk used", s.root_used, tk.accent());
         g.big = percent(s.root_used);
         g.caption = "/ used".into();
-        return g.element(ctx.w, tk, Vec::new());
+        return g.element(ctx, Vec::new());
     }
     let hide_system = ctx.opts.hide_system;
+    let glide = Glide::new(ctx);
     let tall = ctx.h > 180.0;
     page(tk)
         .child(head(
@@ -51,6 +52,7 @@ pub fn render(ctx: &Ctx, _cx: &mut Context<Dash>) -> AnyElement {
                             ("disk", i),
                             SharedString::from(format!("{} used", d.mount)),
                             d.used,
+                            glide.to("bar", i as u32, d.used.clamp(0.0, 1.0), 300.0),
                             tk.accent(),
                             true,
                             tk,

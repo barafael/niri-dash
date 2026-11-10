@@ -15,7 +15,7 @@ pub fn render(ctx: &Ctx, _cx: &mut Context<Dash>) -> AnyElement {
         g.inner = Some(("Swap", s.swap, tk.warn()));
         g.big = percent(s.mem);
         g.caption = "RAM · swap".into();
-        return g.element(ctx.w, tk, Vec::new());
+        return g.element(ctx, Vec::new());
     }
     let used = if s.mem > 0.9 { tk.bad() } else { tk.good() };
     let top_apps = ctx.opts.top_apps.max(0) as usize;

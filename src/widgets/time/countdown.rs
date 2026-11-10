@@ -5,6 +5,7 @@ use super::parts::{self, Face, Scopes, card};
 use super::{draw, tasks};
 use crate::dash::Dash;
 use crate::keys::Key;
+use crate::kit::Glide;
 use crate::scope::Stops;
 use crate::timer::{Countdown, Run, Stopwatch, format, format_left};
 use crate::widgets::Ctx;
@@ -615,6 +616,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>, sw: bool) -> AnyElement {
                 "time left bar",
                 "Time left",
                 v.fraction,
+                Glide::new(ctx).to("bar", 0, v.fraction.clamp(0.0, 1.0), 300.0),
                 if v.paused { tk.faint() } else { tk.accent() },
                 tk,
             ))
@@ -637,20 +639,23 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>, sw: bool) -> AnyElement {
                         tk,
                         cx.listener(|d, _: &ClickEvent, _, cx| adjust(d, cx, -1)),
                     ))
-                    .children(PRESETS.iter().enumerate().filter_map(|(i, m)| {
+                    .children(PRESETS.iter().enumerate().map(|(i, m)| {
                         let fits = 72.0 + (i as f32 + 1.0) * 74.0 <= w - 2.0 * pad;
                         let m = *m;
-                        fits.then(|| {
-                            parts::text_button(
-                                ("preset", i),
-                                format!("{m} min"),
-                                Some(format!("Set timer to {m} min")),
-                                false,
-                                Face::default().kfocus(on && scope.cursor == b + i),
-                                tk,
-                                cx.listener(move |d, _: &ClickEvent, _, cx| preset(d, cx, m)),
-                            )
-                        })
+                        // A preset that doesn't fit is no wider than nothing, but (as in Slint's
+                        // row) the gap beside it stays.
+                        if !fits {
+                            return div().flex_none().w(px(0.0)).into_any_element();
+                        }
+                        parts::text_button(
+                            ("preset", i),
+                            format!("{m} min"),
+                            Some(format!("Set timer to {m} min")),
+                            false,
+                            Face::default().kfocus(on && scope.cursor == b + i),
+                            tk,
+                            cx.listener(move |d, _: &ClickEvent, _, cx| preset(d, cx, m)),
+                        )
                     }))
                     .child(parts::icon_button(
                         "plus",
