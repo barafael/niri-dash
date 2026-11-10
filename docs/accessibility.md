@@ -17,7 +17,8 @@ and bridge (`slint/src/app/a11y/`) to write.
   rest of `StatefulInteractiveElement`'s `aria_*`, and hands the whole `TreeUpdate` to the
   platform window. Node ids are a hash of the element's path of ids, so they hold from frame to
   frame while the element keeps its place in the view. Elements without a role are not in the
-  tree; plain text (`.child("...")`) is not either, only `text!(..)` is (a `Label` with its value).
+  tree; plain text (`.child("...")`) is not either, only `text!(..)` is (a `Label` with its value)
+  (`patches/gpui-pre` adds the plain texts, see below).
   Nothing is built while nobody asks: `Window::is_a11y_active`.
 - **Actions.** `.on_click(..)` also answers an AccessKit `Click`; `.on_a11y_action(Action, ..)`
   answers any other (`Increment`, `Decrement`, `SetValue`, `Focus`, ...). A click with no listener
@@ -100,6 +101,50 @@ The tests:
 The last two need the test box (see `testbox/README.md`); outside it they print that they are
 skipping and pass, as the Slint ones did.
 
+## Looking at the real thing
+
+```sh
+scripts/atspi-dump.sh target/debug/niri-dash niri-dash                    # what libatspi reads
+KIND=battery KEYS="f ba j" scripts/atspi-dump.sh target/debug/niri-dash niri-dash   # keys first
+scripts/atspi-dump.sh slint/target/debug/niri-dash-slint niri-dash        # the Slint version, to compare
+```
+
+It starts the program on the mock system on a private virtual KWin and a private session bus
+with its own accessibility bus (never the desktop's). `KEYS` go over the control socket, which
+takes `key NAME` lines only when `NIRI_DASH_TEST_KEYS` is set (the script and the tests set it; the
+daemon never does).
+
+By hand with a real screen reader, once: `orca &`, `niri-dash daemon`, toggle the dashboard,
+`f` and a letter, then `j` and `k`. Things to listen for: the dashboard is announced when it
+appears; each stop is read as the cursor lands on it; sliders say their value; a toast is read.
+
+## Differences from the Slint version
+
+- **Static text** is in the tree because the patched GPUI puts each plain text drawn in a node
+  under it as a `Label` leaf with the text as its value (a `text!` is one already), as Slint's
+  text items were. Their ids are the parent's and the text's place among its texts, so they hold
+  while the text changes. Two differences: a text GPUI draws as a styled run is not there, and
+  what the Slint version labelled `accessible-role: none` is not left out.
+- **No list around a widget's rows.** Slint wrapped each widget's stops in a `list box` named as
+  the widget, which Orca announced ("Wi-Fi List with 4 items"). Here the widget is a group.
+- **No `NIRI_DASH_ATSPI=0`.** Nothing is built while no screen reader has turned accessibility on
+  (`Window::is_a11y_active`), which was what the switch was for.
+- **The hidden dashboard isn't there.** GPUI closes the window when the dashboard is hidden, so the
+  application leaves the accessibility bus and comes back when it is shown; Slint kept a hidden
+  window up.
+- **Actions.** Click, Increment and Decrement go to the element's own handlers; `Focus` on any
+  part of a widget enters the widget (GPUI hands an unanswered `Focus` to the nearest ancestor that
+  answers it; part of `patches/gpui-pre`).
+
 ## Not done
 
-See the end of this file for the list that was kept up to date with the code.
+- **Text fields** expose what GPUI's input gives them; their labels and the caret are not checked.
+- **The list around a widget's rows** (Slint's `list box`, which made Orca say "Wi-Fi List with 4
+  items"); Orca says the widget's name and then the row.
+- **Announcements** other than the toast (a timer that rings, a notification that arrives).
+- **The audit does not enter dialogs** (a Wi-Fi password, Bluetooth pairing) or edit mode's cards;
+  `Harness::cursor` handles edit mode's sidebar and the tray menu, but no scenario walks them.
+- **The stress run** does not check the cursor through the tree (see the report that came with this
+  change: a three-line hook in `Monkey::step`).
+- **Real-bus tests** run in the test box only; their output on the author's machine is the
+  `scripts/atspi-dump.sh` check above.

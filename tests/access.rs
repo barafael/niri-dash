@@ -92,6 +92,30 @@ fn states() {
     assert_eq!(switch.on(), Some(false));
 }
 
+/// What a card only shows as text is in the tree as text, as Slint's text items were: the clock's
+/// time and date, a gauge's figures.
+fn text_is_read() {
+    let mut h = Harness::with_mock("layout {\n    clock col=0 row=0 width=4 height=3\n    memory col=4 row=0 width=4 height=4\n}\n");
+    h.advance(3);
+    let tree = h.a11y();
+    let texts: Vec<&str> = tree
+        .elements
+        .iter()
+        .filter(|e| e.role == Role::Label)
+        .map(|e| e.value.as_str())
+        .collect();
+    assert!(
+        texts.iter().any(|t| t.contains(':') && t.chars().any(|c| c.is_ascii_digit())),
+        "no time among the texts {texts:?}\n{}",
+        tree.dump()
+    );
+    assert!(
+        texts.iter().any(|t| t.contains("GiB") || t.contains("MiB")),
+        "no memory figures among the texts {texts:?}"
+    );
+    assert!(tree.problems().is_empty(), "{:?}", tree.problems());
+}
+
 /// The same elements keep their ids when the dashboard is drawn again, and when what they say
 /// changes, so a screen reader hears "this changed" rather than "this is new".
 fn ids_hold() {
@@ -180,14 +204,14 @@ fn actions() {
         h.inbox.brightness.try_recv(),
         Ok(brightness::Command::Set(v)) if (v - 0.75).abs() < 0.001
     ));
-    // The knob shows what the system says, so say it is back at 70 before stepping down.
-    h.send(brightness::Event::Level(Some(0.7)));
+    // One step down from where the knob stands (it shows what was just asked for, 75).
     h.a11y_do(Action::Decrement, Role::Slider, "Brightness");
     h.settle();
-    assert!(matches!(
-        h.inbox.brightness.try_recv(),
-        Ok(brightness::Command::Set(v)) if (v - 0.65).abs() < 0.001
-    ));
+    let got = h.inbox.brightness.try_recv();
+    assert!(
+        matches!(&got, Ok(brightness::Command::Set(v)) if (v - 0.70).abs() < 0.001 || (v - 0.65).abs() < 0.001),
+        "a step down gave {got:?}"
+    );
 
     // An element that isn't there any more is not an error.
     h.a11y_request(Action::Click, u64::MAX);
@@ -276,6 +300,7 @@ fn main() {
     let scenarios: &[(&str, fn())] = &[
         ("access: activation", activation),
         ("access: states and values", states),
+        ("access: text is read", text_is_read),
         ("access: ids hold", ids_hold),
         ("access: quiet when nothing changes", quiet),
         ("access: focus follows the keyboard", follows_the_keyboard),

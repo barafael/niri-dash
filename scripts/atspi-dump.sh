@@ -32,7 +32,7 @@ export XDG_DATA_HOME=$H/data XDG_CACHE_HOME=$H/cache HOME=$H
 export ATSPI_DBUS_IMPLEMENTATION=dbus-daemon GSETTINGS_BACKEND=memory LC_ALL=C
 unset WAYLAND_DISPLAY DISPLAY NIRI_SOCKET AT_SPI_BUS_ADDRESS
 export DUMP_BIN=$BIN DUMP_PREFIX=$PREFIX DUMP_HOME=$H DUMP_WAIT=${WAIT:-40}
-export DUMP_SIZE=${SIZE:-1600x900} DUMP_PY=$HERE/atspi_dump.py DUMP_APPLY=${APPLY:-} DUMP_KEYS=${KEYS:-}
+export DUMP_SIZE=${SIZE:-1600x900} DUMP_PY=$HERE/atspi_dump.py DUMP_KEY=$HERE/atspi_key.py DUMP_APPLY=${APPLY:-} DUMP_KEYS=${KEYS:-}
 
 dbus-run-session -- bash -c '
   W=${DUMP_SIZE%x*}; Hh=${DUMP_SIZE#*x}
@@ -53,8 +53,7 @@ dbus-run-session -- bash -c '
   fi
   # Keys, as the control socket takes them (the GPUI binary only: `f w` enters the Wi-Fi widget).
   for k in $DUMP_KEYS; do
-    python3 -c "import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect(sys.argv[1]); s.sendall(('key '+sys.argv[2]+chr(10)).encode())" \
-      "$XDG_RUNTIME_DIR/niri-dash-$WAYLAND_DISPLAY.sock" "$k"
+    python3 "$DUMP_KEY" "$XDG_RUNTIME_DIR/niri-dash-$WAYLAND_DISPLAY.sock" "$k"
     sleep 0.4
   done
   python3 "$DUMP_PY" "$DUMP_PREFIX" "$DUMP_WAIT"

@@ -7279,6 +7279,14 @@ impl Window {
         self.a11y.debug_tree_json()
     }
 
+    /// Make plain text part of the accessibility tree (niri-dash patch): a `Label` leaf under the
+    /// node the text is drawn in, as Slint's text items are. Nothing for text that is already a
+    /// node of its own (a `text!`), or blank, or while no screen reader is connected.
+    pub(crate) fn a11y_push_text(&mut self, text: &str, bounds: Bounds<Pixels>) {
+        let scale = self.scale_factor();
+        self.a11y.push_text(text, bounds, scale);
+    }
+
     /// Register a listener for an accessibility action on a specific node.
     /// The listener will be called when a screen reader requests the given
     /// action on the node identified by `node_id`.

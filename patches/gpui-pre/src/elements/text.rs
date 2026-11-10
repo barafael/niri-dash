@@ -281,9 +281,10 @@ impl Element for &'static str {
         _inspector_id: Option<&InspectorElementId>,
         bounds: Bounds<Pixels>,
         text_layout: &mut Self::RequestLayoutState,
-        _window: &mut Window,
+        window: &mut Window,
         _cx: &mut App,
     ) {
+        window.a11y_push_text(self, bounds);
         text_layout.prepaint(bounds, self)
     }
 
@@ -355,9 +356,10 @@ impl Element for SharedString {
         _inspector_id: Option<&InspectorElementId>,
         bounds: Bounds<Pixels>,
         text_layout: &mut Self::RequestLayoutState,
-        _window: &mut Window,
+        window: &mut Window,
         _cx: &mut App,
     ) {
+        window.a11y_push_text(self.as_ref(), bounds);
         text_layout.prepaint(bounds, self.as_ref())
     }
 

@@ -17,7 +17,7 @@
 use super::Harness;
 use crate::dash::NavMode;
 use gpui::accesskit::{self, ActionRequest, NodeId, Role, TreeId, TreeUpdate};
-use gpui::{AnyWindowHandle, Bounds, Pixels};
+use gpui::AnyWindowHandle;
 use std::collections::HashMap;
 
 pub use gpui::accesskit::{Action, Toggled};
@@ -41,7 +41,7 @@ pub struct Element {
     pub disabled: bool,
     pub hidden: bool,
     pub actions: Vec<Action>,
-    /// (left, top, right, bottom) in window pixels.
+    /// (left, top, right, bottom) in device pixels (the window's scale factor times logical ones).
     pub bounds: Option<(f32, f32, f32, f32)>,
     pub children: Vec<u64>,
     pub parent: Option<u64>,
@@ -631,15 +631,5 @@ impl Harness {
             .map(|e| format!("{} {}", e.role_name(), e.name()))
             .collect::<Vec<_>>()
             .join(" | ")
-    }
-
-    /// The bounds the tree gives an element, for a test that clicks it.
-    pub fn a11y_bounds(&mut self, id: u64) -> Option<Bounds<Pixels>> {
-        let e = self.a11y().get(id)?.clone();
-        let (l, t, r, b) = e.bounds?;
-        Some(Bounds::from_corners(
-            gpui::point(gpui::px(l), gpui::px(t)),
-            gpui::point(gpui::px(r), gpui::px(b)),
-        ))
     }
 }

@@ -149,6 +149,8 @@ pub(crate) struct A11y {
     pub(crate) focus_ids: FxHashMap<NodeId, FocusId>,
     pub(crate) node_bounds: FxHashMap<NodeId, Bounds<Pixels>>,
     pub(crate) action_listeners: FxHashMap<NodeId, Vec<(Action, A11yActionListener)>>,
+    /// How many plain texts each node has had this frame (niri-dash patch).
+    text_counts: FxHashMap<NodeId, u32>,
     /// The window's title, used to label the root node so assistive
     /// technology can tell windows apart.
     window_title: Option<SharedString>,
@@ -177,6 +179,7 @@ impl A11y {
             focus_ids: FxHashMap::default(),
             node_bounds: FxHashMap::default(),
             action_listeners: FxHashMap::default(),
+            text_counts: FxHashMap::default(),
             window_title,
             last_focus_without_node: None,
             debug: debug::A11yDebug::default(),
@@ -276,6 +279,7 @@ impl A11y {
         self.focus_ids.clear();
         self.node_bounds.clear();
         self.action_listeners.clear();
+        self.text_counts.clear();
         self.nodes.begin_frame(self.window_title.as_ref());
     }
 
@@ -292,6 +296,36 @@ impl A11y {
         #[cfg(debug_assertions)]
         self.debug.capture_node_info(&self.nodes.node_info);
         update
+    }
+
+    /// A `Label` leaf with `text` under the node being built (niri-dash patch); its id is the
+    /// parent's and the text's place among the parent's texts, so it holds while the text changes.
+    pub(crate) fn push_text(&mut self, text: &str, bounds: Bounds<Pixels>, scale: f32) {
+        if !self.active_this_frame || text.trim().is_empty() {
+            return;
+        }
+        let Some((parent, role)) = self.nodes.top() else {
+            return;
+        };
+        if role == accesskit::Role::Label {
+            return;
+        }
+        let n = self.text_counts.entry(parent).or_insert(0);
+        let key = *n;
+        *n += 1;
+        let mut hasher = std::hash::DefaultHasher::default();
+        parent.0.hash(&mut hasher);
+        "text".hash(&mut hasher);
+        key.hash(&mut hasher);
+        let mut node = accesskit::Node::new(accesskit::Role::Label);
+        node.set_value(text.to_string());
+        node.set_bounds(accesskit::Rect {
+            x0: (bounds.origin.x.0 * scale) as f64,
+            y0: (bounds.origin.y.0 * scale) as f64,
+            x1: ((bounds.origin.x.0 + bounds.size.width.0) * scale) as f64,
+            y1: ((bounds.origin.y.0 + bounds.size.height.0) * scale) as f64,
+        });
+        self.nodes.push_leaf(NodeId(hasher.finish()), node);
     }
 
     /// The node that lists `node` among its children in the last tree sent (niri-dash patch).
@@ -464,6 +498,11 @@ impl A11yNodeBuilder {
         }
         self.all_nodes.push((id, node));
         true
+    }
+
+    /// The id and role of the node being built.
+    pub(crate) fn top(&self) -> Option<(NodeId, accesskit::Role)> {
+        Some((*self.ids_stack.last()?, self.nodes_stack.last()?.role()))
     }
 
     pub(crate) fn current_node_mut(&mut self) -> Option<&mut accesskit::Node> {

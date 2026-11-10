@@ -208,8 +208,10 @@ fn inner() {
             problems.push(format!("Orca never read out {detail:?}"));
         }
     }
-    if !all.iter().any(|s| s.starts_with("Wi-Fi List with 4 items")) {
-        problems.push("Orca didn't announce the Wi-Fi list and its length".into());
+    // The widget is announced as the cursor enters it. (The Slint version put a list around the
+    // rows and Orca said "Wi-Fi List with 4 items"; here the widget is a group: docs/accessibility.md.)
+    if !all.iter().any(|s| s == "Wi-Fi") {
+        problems.push("Orca didn't announce the Wi-Fi widget".into());
     }
     if !all.iter().any(|s| s.contains("Brightness slider")) {
         problems.push("Orca didn't read the brightness slider as one".into());

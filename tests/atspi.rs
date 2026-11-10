@@ -114,7 +114,7 @@ fn inner() {
     }
     // libatspi's names: a switch is a "toggle button".
     let roles = found["roles"].as_array().cloned().unwrap_or_default();
-    for role in ["toggle button", "slider", "frame", "push button"] {
+    for role in ["toggle button", "slider", "frame", "button", "list item"] {
         if !roles.iter().any(|r| r == role) {
             problems.push(format!("no {role} among the roles {roles:?}"));
         }
@@ -145,9 +145,18 @@ fn inner() {
     {
         problems.push(format!("the brightness knob reads {slider}"));
     }
-    // What a stop says is what a screen reader reads out: the focus follows the keyboard.
-    if let Some(wrong) = found["focus_problem"].as_str() {
-        problems.push(wrong.to_string());
+    // Asking for the focus on the knob enters its widget, and the screen reader's focus is on it.
+    if found["grabbed_focus"] != true {
+        problems.push(format!("grab_focus: {}", found["grabbed_focus"]));
+    }
+    if !found["slider_states_after_grab"]
+        .as_array()
+        .is_some_and(|s| s.iter().any(|v| v == "focused"))
+    {
+        problems.push(format!(
+            "the knob isn't focused after grab_focus: {}",
+            found["slider_states_after_grab"]
+        ));
     }
     let _ = std::fs::remove_dir_all(&dir);
     if problems.is_empty() {
