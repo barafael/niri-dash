@@ -4,7 +4,7 @@
 //!
 //! The ones with an `st` argument can show the keyboard cursor (`kfocus`): a 2 px ring in the
 //! accent color, drawn over the element so that the cursor moving never moves anything. The
-//! element under the cursor says so to screen readers (`aria_selected`).
+//! element under the cursor says so to screen readers (`aria_cursor`).
 
 use crate::kit::{self, Tk, with_alpha};
 use gpui::prelude::*;
@@ -13,6 +13,8 @@ use gpui::{
     Toggled, Window, canvas, div, fill, point, px, size, transparent_black,
 };
 use niri_dash_system::IconSrc;
+use crate::kit::AriaCursor;
+use crate::kit::AriaState;
 
 /// How a button, row or switch stands.
 #[derive(Debug, Clone, Copy)]
@@ -88,8 +90,8 @@ pub fn row(
         .id(id)
         .role(Role::ListItem)
         .aria_label(label)
-        .aria_value(value)
-        .aria_selected(st.kfocus)
+        .aria_state(value)
+        .aria_cursor(st.kfocus)
         .debug_selector(move || name)
         .relative()
         .flex_none()
@@ -136,7 +138,7 @@ pub fn icon_button(
         .id(id)
         .role(Role::Button)
         .aria_label(label)
-        .aria_selected(st.kfocus)
+        .aria_cursor(st.kfocus)
         .debug_selector(move || name)
         .relative()
         .flex_none()
@@ -221,7 +223,7 @@ pub fn text_button(
         .id(id)
         .role(Role::Button)
         .aria_label(name)
-        .aria_selected(st.kfocus)
+        .aria_cursor(st.kfocus)
         .debug_selector(move || selector)
         .relative()
         .h(px(30.0))
@@ -284,7 +286,7 @@ pub fn switch(
         .role(Role::Switch)
         .aria_label(label)
         .aria_toggled(if on { Toggled::True } else { Toggled::False })
-        .aria_selected(st.kfocus)
+        .aria_cursor(st.kfocus)
         .debug_selector(move || name)
         .relative()
         .flex_none()

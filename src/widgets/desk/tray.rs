@@ -15,6 +15,7 @@ use gpui::prelude::*;
 use gpui::{AnyElement, Context, MouseButton, MouseUpEvent, Role, div, point, px};
 use niri_dash_system::tray::{Command, Entry, Event as Sys, Item, Toggle};
 use niri_dash_system::{Senders, Tell};
+use crate::kit::AriaCursor;
 
 /// A tray icon.
 #[derive(Debug, Clone)]
@@ -447,7 +448,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                 .id(("tray-item", id as usize * 1000 + i))
                 .role(Role::Button)
                 .aria_label(label.clone())
-                .aria_selected(kfocus)
+                .aria_cursor(kfocus)
                 .debug_selector(move || label)
                 .absolute()
                 .left(px(left))
@@ -529,7 +530,7 @@ pub fn overlay(d: &Dash, tk: &Tk, cx: &mut Context<Dash>) -> Option<AnyElement> 
                 .id(("tray-menu-entry", i))
                 .role(Role::ListItem)
                 .aria_label(e.label.clone())
-                .aria_selected(here)
+                .aria_cursor(here)
                 .relative()
                 .flex_none()
                 .w_full()

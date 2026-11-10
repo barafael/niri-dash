@@ -12,6 +12,7 @@ use gpui::prelude::*;
 use gpui::{AnyElement, Context, Role, ScrollHandle, SharedString, div, px};
 use niri_dash_system::privacy::{Command, ScreenCast, Usage};
 use niri_dash_system::{Tell, notifications};
+use crate::kit::AriaState;
 
 /// What uses what.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -247,7 +248,7 @@ fn dot(name: &'static str, icon_name: &str, on: bool, size: f32, tk: &Tk) -> Any
         .id(name)
         .role(Role::Image)
         .aria_label(name)
-        .aria_value(if on { "in use" } else { "not in use" })
+        .aria_state(if on { "in use" } else { "not in use" })
         .debug_selector(move || name.to_string())
         .flex_none()
         .size(px(size))
@@ -362,7 +363,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                     .id(("privacy-item", i))
                     .role(Role::ListItem)
                     .aria_label(it.app.clone())
-                    .aria_value(it.says())
+                    .aria_state(it.says())
                     .flex_none()
                     .w_full()
                     .h(px(36.0))

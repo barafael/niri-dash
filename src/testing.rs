@@ -24,6 +24,11 @@ pub use crate::edit::probe::{Tile, can_be_round, kind_names, min_size, setting_l
 pub use crate::edit::{DrawerTab, RowKind, SettingRow};
 pub use crate::stress::{Failure, Monkey, Sandbox};
 
+mod access;
+/// The accessibility tree of the dashboard, and `Harness::a11y*`, `cursor`, `spoken`.
+pub use access::{Action, Element, Toggled, Tree, request as a11y_request_for};
+pub use gpui::accesskit::Role;
+
 /// The window of a harness, unless it is told another size: a large screen.
 pub const SIZE: (u32, u32) = (1706, 1066);
 

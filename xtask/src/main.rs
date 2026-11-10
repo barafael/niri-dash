@@ -51,12 +51,14 @@ enum Phase {
     Orca,
 }
 
-/// A test program: the package it is in, its name, the arguments it is run with, and the files
-/// of the source tree it reads beside itself.
+/// A test program: the package it is in, its name, the arguments it is run with, the programs of
+/// the package it starts (the dashboard itself, for the screen reader tests, which read what the
+/// real window publishes) and the files of the source tree it reads beside itself.
 struct Test {
     package: &'static str,
     name: &'static str,
     args: &'static [&'static str],
+    bins: &'static [&'static str],
     files: &'static [&'static str],
 }
 
@@ -68,6 +70,7 @@ impl Phase {
                     package: "niri-dash-system",
                     name: "live",
                     args: &[],
+                    bins: &[],
                     files: &[],
                 },
                 // One at a time: each starts the live system, and two share one bus.
@@ -75,6 +78,7 @@ impl Phase {
                     package: "niri-dash-system",
                     name: "contract",
                     args: &["--test-threads=1"],
+                    bins: &[],
                     files: &[],
                 },
             ],
@@ -82,12 +86,14 @@ impl Phase {
                 package: "niri-dash",
                 name: "atspi",
                 args: &[],
+                bins: &["niri-dash"],
                 files: &["tests/atspi_client.py"],
             }],
             Self::Orca => &[Test {
                 package: "niri-dash",
                 name: "orca",
                 args: &[],
+                bins: &["niri-dash"],
                 files: &[],
             }],
         }
@@ -144,8 +150,15 @@ fn build_image(engine: &str, root: &Path) -> Result<()> {
         .ok_or_else(|| format!("building the image: {status}"))
 }
 
-/// Builds `package`'s test targets `names`, and where each program is.
-fn build_tests(root: &Path, package: &str, names: &[&str]) -> Result<Vec<(String, PathBuf)>> {
+/// What `build_tests` built: the test programs, and the package's own programs they start.
+struct Built {
+    tests: Vec<(String, PathBuf)>,
+    bins: Vec<(String, PathBuf)>,
+}
+
+/// Builds `package`'s test targets `names`, and where each program is. Cargo builds the package's
+/// own programs for its integration tests; `bins` are the ones to hand back.
+fn build_tests(root: &Path, package: &str, names: &[&str], bins: &[&str]) -> Result<Built> {
     let mut cargo = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()));
     cargo.current_dir(root).args([
         "test",
@@ -166,6 +179,7 @@ fn build_tests(root: &Path, package: &str, names: &[&str]) -> Result<Vec<(String
         return Err(format!("building {package}'s tests: {}", output.status));
     }
     let mut found = Vec::new();
+    let mut programs = Vec::new();
     for line in String::from_utf8_lossy(&output.stdout).lines() {
         let Ok(message) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
@@ -176,11 +190,15 @@ fn build_tests(root: &Path, package: &str, names: &[&str]) -> Result<Vec<(String
         ) else {
             continue;
         };
-        let is_test = message["target"]["kind"]
-            .as_array()
-            .is_some_and(|k| k.iter().any(|k| k == "test"));
-        if is_test && names.contains(&name) {
+        let kind = |what: &str| {
+            message["target"]["kind"]
+                .as_array()
+                .is_some_and(|k| k.iter().any(|k| k == what))
+        };
+        if kind("test") && names.contains(&name) {
             found.push((name.to_string(), PathBuf::from(path)));
+        } else if kind("bin") && bins.contains(&name) {
+            programs.push((name.to_string(), PathBuf::from(path)));
         }
     }
     for name in names {
@@ -188,7 +206,15 @@ fn build_tests(root: &Path, package: &str, names: &[&str]) -> Result<Vec<(String
             return Err(format!("cargo didn't build the {name} test"));
         }
     }
-    Ok(found)
+    for name in bins {
+        if !programs.iter().any(|(n, _)| n == name) {
+            return Err(format!("cargo didn't build the {name} program"));
+        }
+    }
+    Ok(Built {
+        tests: found,
+        bins: programs,
+    })
 }
 
 /// The directory the box mounts: the test programs, and the files they read beside themselves.
@@ -249,7 +275,16 @@ fn stage_tests(root: &Path, phases: &[Phase]) -> Result<Stage> {
             continue;
         }
         let names: Vec<&str> = mine.iter().map(|t| t.name).collect();
-        for (name, path) in build_tests(root, package, &names)? {
+        let bins: Vec<&str> = mine.iter().flat_map(|t| t.bins).copied().collect();
+        let built = build_tests(root, package, &names, &bins)?;
+        // The programs the tests start, beside them under their own names: the screen reader
+        // tests read what the real dashboard window publishes.
+        for (name, path) in built.bins {
+            let to = stage.dir.join(&name);
+            std::fs::copy(&path, &to).map_err(|e| format!("{}: {e}", path.display()))?;
+            set_mode(&to, 0o755)?;
+        }
+        for (name, path) in built.tests {
             // Under the name cargo gave it (`orca-<hash>`), not the test's own: Orca won't start
             // beside another process called `orca` (`pgrep -x orca`), and this would be one.
             let staged = path

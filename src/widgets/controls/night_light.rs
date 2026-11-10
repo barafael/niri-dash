@@ -19,6 +19,8 @@ use gpui::{AnyElement, Context, ElementId, Role, div, px};
 use niri_dash_system::Tell;
 use niri_dash_system::night_light::{self as gamma, Cmd, Command, Event, NightLightState};
 use niri_dash_system::notifications;
+use crate::kit::AriaCursor;
+use crate::kit::AriaState;
 
 /// The presets (rectangular, tall enough).
 const PRESETS: [u32; 3] = [3400, 4500, 5500];
@@ -403,8 +405,8 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                     .id(ElementId::from(("night-light-preset", id * 8 + i)))
                     .role(Role::Button)
                     .aria_label(name.clone())
-                    .aria_value(if current { "current" } else { "" })
-                    .aria_selected(kf)
+                    .aria_state(if current { "current" } else { "" })
+                    .aria_cursor(kf)
                     .debug_selector(move || selector.clone())
                     .flex_1()
                     .min_w_0()

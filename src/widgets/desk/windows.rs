@@ -14,6 +14,7 @@ use gpui::prelude::*;
 use gpui::{AnyElement, ClickEvent, Context, MouseButton, MouseUpEvent, div, px};
 use niri_dash_system::windows::{Command, State as Sys};
 use niri_dash_system::{Senders, Tell};
+use crate::kit::AriaState;
 
 /// A row of the list: a window, or the heading of a workspace.
 #[derive(Debug, Clone, PartialEq)]
@@ -260,7 +261,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                 tk,
             )
             .aria_label(name.clone())
-            .aria_value(if r.focused {
+            .aria_state(if r.focused {
                 "focused"
             } else if r.urgent {
                 "urgent"

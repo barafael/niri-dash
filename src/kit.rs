@@ -263,3 +263,31 @@ pub fn empty(text: impl Into<SharedString>, tk: &Tk) -> AnyElement {
 pub fn p(v: f32) -> Pixels {
     px(v)
 }
+
+/// The keyboard cursor, for a screen reader: the element under it is the active descendant of the
+/// dashboard's root, so the reader's focus follows the cursor (and Orca reads each stop as the
+/// cursor moves onto it). Not `selected`: a reader would say "selected" at every stop. At most
+/// one element may say yes at a time; GPUI panics in a debug build if two do.
+pub trait AriaCursor: gpui::StatefulInteractiveElement + Sized {
+    fn aria_cursor(self, on: bool) -> Self {
+        if on { self.aria_active_descendant() } else { self }
+    }
+}
+
+impl<E: gpui::StatefulInteractiveElement> AriaCursor for E {}
+
+/// How an element stands, as text ("connected, signal 78%", "default"): its value and, because
+/// AT-SPI has no string value for anything but a text field, its description too, which is what a
+/// screen reader reads after the name. Nothing, if there is nothing to say.
+pub trait AriaState: gpui::StatefulInteractiveElement + Sized {
+    fn aria_state(self, text: impl Into<SharedString>) -> Self {
+        let text: SharedString = text.into();
+        if text.is_empty() {
+            self
+        } else {
+            self.aria_value(text.clone()).aria_description(text)
+        }
+    }
+}
+
+impl<E: gpui::StatefulInteractiveElement> AriaState for E {}

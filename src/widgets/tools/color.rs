@@ -18,6 +18,7 @@ use crate::widgets::Ctx;
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, Hsla, Role, div, px, transparent_black};
 use niri_dash_system::{Tell, color};
+use crate::kit::AriaCursor;
 
 /// How many picked colors are kept.
 const COLORS: usize = 8;
@@ -331,7 +332,7 @@ fn copy_text(
         .id(id)
         .role(Role::Button)
         .aria_label(label)
-        .aria_selected(kfocus)
+        .aria_cursor(kfocus)
         .debug_selector(move || name)
         .w_full()
         .h(px(24.0))
@@ -530,7 +531,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>) -> AnyElement {
                             .id(("swatch", i))
                             .role(Role::Button)
                             .aria_label(label)
-                            .aria_selected(focus)
+                            .aria_cursor(focus)
                             .debug_selector(move || name)
                             .flex_none()
                             .size(px(28.0))

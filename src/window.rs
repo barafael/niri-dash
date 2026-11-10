@@ -66,6 +66,9 @@ pub enum Input {
     NightLight(sys::night_light::Cmd),
     /// A line for the mascots, from `niri-dash say`.
     MascotSay(crate::mascots::Say),
+    /// A key to press, from a test's control socket line `key ctrl+h` (only with
+    /// `NIRI_DASH_TEST_KEYS` set: the screen reader tests have no keyboard to type on).
+    Key(String),
 }
 
 /// The sources a standalone app of `kind` has to run. Clock and calendar tick on their own, the
@@ -187,6 +190,12 @@ fn control_server(listener: UnixListener, tx: sys::Sink<Input>) {
                 if BufReader::new(&stream).read_line(&mut line).is_err() {
                     continue;
                 }
+                if let Some(name) = line.trim().strip_prefix("key ")
+                    && std::env::var_os("NIRI_DASH_TEST_KEYS").is_some()
+                {
+                    let _ = tx.send(Input::Key(name.trim().to_string()));
+                    continue;
+                }
                 if let Some(cmd) = sys::night_light::Cmd::parse_wire(line.trim()) {
                     let _ = tx.send(Input::NightLight(cmd));
                     continue;
@@ -300,6 +309,9 @@ impl Host {
             move |window, cx| {
                 let focus = dash.read(cx).focus.clone();
                 window.focus(&focus, cx);
+                // What a screen reader calls the window (a layer surface has no title bar to
+                // take it from).
+                window.set_window_title("niri-dash");
                 dash.clone()
             }
         });
@@ -313,6 +325,23 @@ impl Host {
                 });
             }
         }
+    }
+
+    /// Press a key (`"j"`, `"ctrl+h"`) in the window, through GPUI's own dispatch as a keyboard
+    /// would. For tests that drive the real window from outside (`tests/orca.rs`).
+    fn press(&self, name: &str, cx: &mut App) {
+        let (Some(key), Some(handle)) = (crate::keys::Key::parse(name), *self.window.borrow())
+        else {
+            log::warn!("no key {name:?}, or no window to press it in");
+            return;
+        };
+        let Ok(keystroke) =
+            gpui::Keystroke::parse_with_os(&key.to_gpui(), gpui::OperatingSystem::Linux)
+        else {
+            log::warn!("no keystroke for {name:?}");
+            return;
+        };
+        let _ = handle.update(cx, |_, window, cx| window.dispatch_keystroke(keystroke, cx));
     }
 
     /// Take the dashboard off the screen; the state stays.
@@ -436,6 +465,7 @@ fn pump_inputs(host: &Host, inputs: async_channel::Receiver<Input>, cx: &mut App
                 Input::MascotSay(say) => {
                     host.dash.update(cx, |d, cx| d.mascot_say(say, cx));
                 }
+                Input::Key(name) => host.press(&name, cx),
             });
         }
     })

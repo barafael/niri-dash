@@ -10,6 +10,7 @@ use gpui::{
     AnyElement, ClickEvent, Div, ElementId, Hsla, Role, SharedString, Stateful, canvas, div, point,
     px,
 };
+use crate::kit::AriaCursor;
 
 /// `c` lighter by `k` (a fraction of its lightness).
 pub fn brighter(c: Hsla, k: f32) -> Hsla {
@@ -154,7 +155,7 @@ pub fn icon_button(
         .id(id)
         .role(Role::Button)
         .aria_label(label)
-        .aria_selected(look.kfocus)
+        .aria_cursor(look.kfocus)
         .debug_selector(move || name)
         .relative()
         .flex_none()
@@ -199,7 +200,7 @@ pub fn text_button(
         .id(id)
         .role(Role::Button)
         .aria_label(a11y)
-        .aria_selected(look.kfocus)
+        .aria_cursor(look.kfocus)
         .debug_selector(move || name)
         .relative()
         .flex_none()
@@ -253,7 +254,7 @@ pub fn row(
     div()
         .id(id)
         .role(Role::ListItem)
-        .aria_selected(kfocus)
+        .aria_cursor(kfocus)
         .relative()
         .flex_none()
         .w_full()

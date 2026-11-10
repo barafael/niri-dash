@@ -13,6 +13,8 @@ use gpui::{AnyElement, ClickEvent, Context, Role, ScrollEvent, div, px};
 use niri_dash_system::{Tell, host, notifications};
 use std::time::Duration;
 use web_time::{SystemTime, UNIX_EPOCH};
+use crate::kit::AriaCursor;
+use crate::kit::AriaState;
 
 /// How long "Done" stays on the timer after it went off.
 const DONE_FOR: Duration = Duration::from_secs(60);
@@ -512,7 +514,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>, sw: bool) -> AnyElement {
                     .id(if sw { "stopwatch face" } else { "timer face" })
                     .role(Role::Button)
                     .aria_label(if running { "Pause" } else { "Start" })
-                    .aria_selected(on)
+                    .aria_cursor(on)
                     .debug_selector(move || (if running { "Pause" } else { "Start" }).to_string())
                     .relative()
                     .flex_none()
@@ -678,7 +680,7 @@ pub fn render(ctx: &Ctx, cx: &mut Context<Dash>, sw: bool) -> AnyElement {
                             .id(("lap", i))
                             .role(Role::ListItem)
                             .aria_label(format!("Lap {}", n - i))
-                            .aria_value(l.clone())
+                            .aria_state(l.clone())
                             .flex()
                             .flex_row()
                             .h(px(24.0))

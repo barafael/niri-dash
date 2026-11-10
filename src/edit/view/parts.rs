@@ -12,6 +12,8 @@ use gpui::{
     Stateful, Toggled, Window, div, px,
 };
 use gpui_kit::component::input::{Input, InputState};
+use crate::kit::AriaCursor;
+use crate::kit::AriaState;
 
 /// The state a button is drawn in.
 #[derive(Debug, Clone, Copy)]
@@ -77,7 +79,7 @@ pub fn icon_btn(
         .id(id)
         .role(Role::Button)
         .aria_label(label)
-        .aria_selected(look.kfocus)
+        .aria_cursor(look.kfocus)
         .debug_selector(move || name)
         .flex_none()
         .size(px(size))
@@ -128,7 +130,7 @@ pub fn text_btn(
         .id(id)
         .role(Role::Button)
         .aria_label(label.clone())
-        .aria_selected(look.kfocus)
+        .aria_cursor(look.kfocus)
         .debug_selector(move || name)
         .h(px(30.0))
         .min_w_0()
@@ -356,8 +358,8 @@ pub fn setting_row(
         .id(eid(&format!("{n}-row"), pos))
         .role(Role::ListItem)
         .aria_label(label.clone())
-        .aria_selected(kfocus)
-        .aria_value(if on_toggle { String::new() } else { value_text.clone() })
+        .aria_cursor(kfocus)
+        .aria_state(if on_toggle { String::new() } else { value_text.clone() })
         .debug_selector({
             let name = format!("row {label}");
             move || name
@@ -465,7 +467,7 @@ pub fn choice_card(
         .aria_label(name.to_string())
         .aria_description(description.to_string())
         .aria_toggled(if current { Toggled::True } else { Toggled::False })
-        .aria_selected(kfocus)
+        .aria_cursor(kfocus)
         .debug_selector(move || label)
         .h(px(height))
         .flex_none()
