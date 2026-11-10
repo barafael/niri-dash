@@ -307,7 +307,7 @@ pub fn slint_lines(content: AnyElement) -> AnyElement {
 }
 
 /// A value on its way to a new one, for what glides (Slint's `animate`).
-struct Glide {
+struct GlideState {
     from: f32,
     to: f32,
     since: Instant,
@@ -315,7 +315,7 @@ struct Glide {
 
 thread_local! {
     /// What each slider, knob and gauge shows right now, by a key of its own.
-    static GLIDES: RefCell<HashMap<u64, Glide>> = RefCell::new(HashMap::new());
+    static GLIDES: RefCell<HashMap<u64, GlideState>> = RefCell::new(HashMap::new());
 }
 
 /// Where a value is `elapsed` ms into gliding from `from` to `to` over `ms` (ease-out), and
@@ -331,18 +331,18 @@ pub fn glide(key: u64, target: f32, ms: f32, window: &mut gpui::Window) -> f32 {
     GLIDES.with(|g| {
         let mut g = g.borrow_mut();
         let now = Instant::now();
-        let at = |s: &Glide| eased(s.from, s.to, now.duration_since(s.since).as_secs_f32() * 1000.0, ms);
+        let at = |s: &GlideState| eased(s.from, s.to, now.duration_since(s.since).as_secs_f32() * 1000.0, ms);
         let Some(state) = g.get_mut(&key) else {
-            g.insert(key, Glide { from: target, to: target, since: now });
+            g.insert(key, GlideState { from: target, to: target, since: now });
             return target;
         };
         if ms <= 0.0 {
-            *state = Glide { from: target, to: target, since: now };
+            *state = GlideState { from: target, to: target, since: now };
             return target;
         }
         if (state.to - target).abs() > f32::EPSILON {
             let (shown, _) = at(state);
-            *state = Glide { from: shown, to: target, since: now };
+            *state = GlideState { from: shown, to: target, since: now };
         }
         let (shown, done) = at(state);
         if !done {
