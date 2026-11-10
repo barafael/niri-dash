@@ -283,7 +283,7 @@ mod tests {
 
     #[test]
     fn an_extra_directory_comes_first() {
-        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../ui/icons");
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/icons");
         let Some(name) = std::fs::read_dir(dir).ok().and_then(|mut d| {
             d.find_map(|e| {
                 let p = e.ok()?.path();
