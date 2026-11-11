@@ -1,0 +1,128 @@
+[package]
+# The GPUI version of the dashboard, a member of the workspace whose root is the Slint version. The
+# program is `niri-dash-gpui`; build and test it with `cargo gbuild` / `cargo gtest` (see
+# README.md).
+name = "niri-dash-gpui"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+description = "A fullscreen widget dashboard for niri: clock, calendar, windows, wifi, bluetooth, power, tray and more, with a Plasma-style edit mode (GPUI version)"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/barafael/niri-dash"
+readme = "README.md"
+keywords = ["niri", "wayland", "dashboard", "widgets", "gpui"]
+categories = ["gui"]
+publish = false
+
+[dependencies]
+# What the dashboard runs on: it sends this crate's commands and gets its events, nothing else.
+niri-dash-system = { path = "../crates/system", version = "0.1.0" }
+log.workspace = true
+thiserror.workspace = true
+dirs.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+kdl = "6"
+strum.workspace = true
+chrono.workspace = true
+chrono-tz = "0.10"
+png.workspace = true
+clap = { version = "4", features = ["derive"] }
+env_logger = "0.11"
+notify.workspace = true
+async-channel = "2"
+# The images icons, album art and notification pictures come in.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "ico"] }
+# The icons and mascot drawings, embedded.
+rust-embed = { version = "8", features = ["debug-embed"] }
+
+# GPUI, its component library (text inputs) and icons, as one dependency: GPUI itself is published
+# as a family of `gpui-pre-*` snapshots of Zed that move together, and this names the matching set.
+gpui-kit = "0.9"
+# The `gpui` that `gpui-kit` re-exports, named directly: the dashboard's own types are built on it.
+gpui = { package = "gpui-pre", version = "=0.3.11" }
+# GPUI's renderer and text system, for the snapshot command's headless window (`testing` only).
+gpui-wgpu = { package = "gpui-pre-wgpu", version = "=0.3.11", features = ["test-support"], optional = true }
+
+[features]
+# The headless harness (`src/testing.rs`) the tests and the stress run drive the dashboard with,
+# and `niri-dash snapshot` (`src/snapshot.rs`), which draws it into a PNG with GPUI's wgpu renderer
+# on a texture. Both are development tools: the shipped binary doesn't have them.
+testing = ["gpui/test-support", "dep:gpui-wgpu"]
+
+[dev-dependencies]
+# The tests use the harness: this turns the feature on for them.
+niri-dash-gpui = { path = ".", features = ["testing"] }
+# GPUI's headless test platform, for the dashboard's own tests (`src/testing.rs`, `tests/`): the
+# views are drawn and given input without a compositor or a GPU. This is the `gpui` that
+# `gpui-kit` re-exports, with its test support on.
+gpui = { package = "gpui-pre", version = "=0.3.11", features = ["test-support"] }
+
+# The test programs are plain programs, not libtest's: the stress run reports its own way.
+[[test]]
+name = "stress"
+harness = false
+required-features = ["testing"]
+
+# `niri-dash snapshot`: the dashboard drawn headlessly into a PNG (skips where there is no GPU).
+[[test]]
+name = "snapshot"
+harness = false
+required-features = ["testing"]
+
+[[test]]
+name = "monitors"
+harness = false
+required-features = ["testing"]
+
+[[test]]
+name = "controls"
+harness = false
+required-features = ["testing"]
+
+[[test]]
+name = "devices"
+harness = false
+required-features = ["testing"]
+
+[[test]]
+name = "extras"
+harness = false
+required-features = ["testing"]
+
+[[test]]
+name = "tools"
+harness = false
+required-features = ["testing"]
+
+[[test]]
+name = "time"
+harness = false
+required-features = ["testing"]
+
+[[test]]
+name = "desk"
+harness = false
+required-features = ["testing"]
+
+# Wi-Fi and Bluetooth: what they send, what they show, and the tricky parts of their keyboard.
+[[test]]
+name = "net"
+harness = false
+required-features = ["testing"]
+
+[[test]]
+name = "edit"
+harness = false
+required-features = ["testing"]
+
+# The real accessibility bus (needs the test box: a private bus, KWin and libatspi, or Orca).
+[[test]]
+name = "atspi"
+harness = false
+required-features = ["testing"]
+
+[[test]]
+name = "orca"
+harness = false
+required-features = ["testing"]

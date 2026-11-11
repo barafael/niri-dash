@@ -151,7 +151,7 @@
 | Title | Bluetooth |
 | Shows | Devices, connect, adapter on/off |
 | Group | Devices |
-| Size in cells | 3×3 by default, 2×3 at least, 4×5 at most |
+| Size in cells | 3×3 by default, 2×2 at least, 4×5 at most |
 | Shapes | rectangular, round |
 | Settings | none |
 

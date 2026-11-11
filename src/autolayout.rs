@@ -27,8 +27,8 @@
 
 use crate::layout::{Group, Kind, Layout, ROUND_MAX, ROUND_SIZE, Rect};
 use kdl::{KdlNode, KdlValue};
-use std::time::Instant;
 use strum::{AsRefStr, EnumIter, EnumString, IntoEnumIterator};
+use web_time::Instant;
 
 mod anneal;
 

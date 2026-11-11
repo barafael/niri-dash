@@ -1,7 +1,7 @@
 //! The command line: parsing it, and handing what it asks for to a running dashboard over its
 //! control socket, or becoming the dashboard if there is none.
 
-use crate::{Control, desktop, layout, mascots, window};
+use crate::{Control, app, desktop, layout, mascots};
 use clap::{Parser, Subcommand};
 use std::io::Write;
 use std::os::unix::net::UnixStream;
@@ -25,7 +25,7 @@ enum Error {
     #[error("night-light takes toggle, on, off or a temperature in kelvin, not {0:?}")]
     BadNightLight(String),
     #[error(transparent)]
-    App(#[from] window::Error),
+    App(#[from] app::Error),
     #[error(transparent)]
     Desktop(#[from] desktop::Error),
 }
@@ -127,15 +127,13 @@ enum Command {
         #[arg(long)]
         remove: bool,
     },
-    /// Render the dashboard offscreen to a PNG (for development; the manual's pictures).
-    #[cfg(feature = "testing")]
+    /// Render the dashboard offscreen to a PNG (for development).
     #[command(hide = true)]
-    Snapshot(crate::snapshot::Args),
+    Snapshot(app::snapshot::Args),
     /// Press random keys at the dashboard, on made-up data, and check what they do (for
     /// development). Changes nothing on the system: its files go to a temporary directory.
-    #[cfg(feature = "testing")]
     #[command(hide = true)]
-    Stress(crate::stress::Args),
+    Stress(app::stress::Args),
 }
 
 pub fn socket_path() -> PathBuf {
@@ -173,7 +171,7 @@ fn app_client(kind: layout::Kind, toggle: bool, quit: bool) -> Result<()> {
     };
     match send(&named_socket_path(kind.name()), control.as_ref()) {
         Err(Error::NotRunning(_)) if quit => Ok(()),
-        Err(Error::NotRunning(_)) => Ok(window::run_app(kind)?),
+        Err(Error::NotRunning(_)) => Ok(app::run_app(kind)?),
         sent => sent,
     }
 }
@@ -190,7 +188,7 @@ fn client(control: Control) -> Result<()> {
             } else {
                 control
             };
-            Ok(window::run(Some(first))?)
+            Ok(app::run(Some(first))?)
         }
         Err(Error::NotRunning(_)) if matches!(control, Control::Hide | Control::Quit) => Ok(()),
         sent => sent,
@@ -253,7 +251,7 @@ fn run() -> Result<()> {
     .init();
     let cli = Cli::parse();
     match cli.command.unwrap_or(Command::Daemon { show: false }) {
-        Command::Daemon { show } => Ok(window::run(show.then_some(Control::Show))?),
+        Command::Daemon { show } => Ok(app::run(show.then_some(Control::Show))?),
         Command::App {
             widget,
             toggle,
@@ -268,10 +266,8 @@ fn run() -> Result<()> {
         } => say(text, to, outfit, secs, show),
         Command::DesktopEntries { remove } => Ok(desktop::entries(remove)?),
         Command::WindowRules { output } => Ok(desktop::window_rules(output.as_deref())?),
-        #[cfg(feature = "testing")]
-        Command::Snapshot(args) => Ok(crate::snapshot::run(&args)?),
-        #[cfg(feature = "testing")]
-        Command::Stress(args) => Ok(crate::stress::run(&args)?),
+        Command::Snapshot(args) => Ok(app::snapshot::run(&args, args.app)?),
+        Command::Stress(args) => Ok(app::stress::run(&args)?),
         Command::NightLight { value } => {
             let cmd = niri_dash_system::night_light::Cmd::parse(&value)
                 .ok_or(Error::BadNightLight(value))?;

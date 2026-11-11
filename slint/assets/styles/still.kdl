@@ -1,5 +1,0 @@
-// niri-dash style: "still". Default look without animations.
-
-style {
-    motion 0
-}

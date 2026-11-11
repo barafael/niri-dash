@@ -2,8 +2,7 @@
 
 In this tutorial you take the default layout and change it: you remove a widget, add another,
 move it, resize it and pin it. It all happens in the web version, on a simulated machine, with the
-mouse. (The web version is built from the [Slint variant](../explanation/two-variants.md); the
-dashboard you install has the same edit mode.)
+mouse.
 
 It assumes you have done [Your first dashboard](first-dashboard.md), or at least know how to open
 edit mode.

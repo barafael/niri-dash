@@ -5,7 +5,7 @@
 #
 # usage: scripts/vshot.sh BIN OUTDIR STEP...
 #
-#   BIN     target/debug/niri-dash (GPUI) or slint/target/debug/niri-dash-slint (Slint)
+#   BIN     target/gpui/debug/niri-dash-gpui (GPUI) or target/debug/niri-dash (Slint)
 #   OUTDIR  where the pictures (NAME.png) and the logs go; made if missing
 #   STEP    done in order:
 #             shot=NAME      a screenshot of the whole virtual screen, OUTDIR/NAME.png

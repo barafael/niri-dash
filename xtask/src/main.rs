@@ -45,10 +45,14 @@ enum Phase {
     /// The real system against mocks of NetworkManager, BlueZ and UPower, and the contract every
     /// system keeps (crates/system/tests).
     System,
-    /// The dashboard on a private accessibility bus, read by libatspi.
+    /// The (Slint) dashboard on a private accessibility bus, read by libatspi.
     Atspi,
-    /// Orca reading the dashboard, with KWin as its display.
+    /// Orca reading the (Slint) dashboard, with KWin as its display.
     Orca,
+    /// The GPUI dashboard on a private accessibility bus, read by libatspi.
+    GpuiAtspi,
+    /// Orca reading the GPUI dashboard, with KWin as its display.
+    GpuiOrca,
 }
 
 /// A test program: the package it is in, its name, the arguments it is run with, the programs of
@@ -86,14 +90,28 @@ impl Phase {
                 package: "niri-dash",
                 name: "atspi",
                 args: &[],
-                bins: &["niri-dash"],
+                bins: &[],
                 files: &["tests/atspi_client.py"],
             }],
             Self::Orca => &[Test {
                 package: "niri-dash",
                 name: "orca",
                 args: &[],
-                bins: &["niri-dash"],
+                bins: &[],
+                files: &[],
+            }],
+            Self::GpuiAtspi => &[Test {
+                package: "niri-dash-gpui",
+                name: "atspi",
+                args: &[],
+                bins: &["niri-dash-gpui"],
+                files: &["gpui/tests/gpui_atspi_client.py"],
+            }],
+            Self::GpuiOrca => &[Test {
+                package: "niri-dash-gpui",
+                name: "orca",
+                args: &[],
+                bins: &["niri-dash-gpui"],
                 files: &[],
             }],
         }
@@ -168,9 +186,10 @@ fn build_tests(root: &Path, package: &str, names: &[&str], bins: &[&str]) -> Res
         "-p",
         package,
     ]);
-    // The dashboard's test programs are built on its headless harness, behind this feature.
-    if package == "niri-dash" {
-        cargo.args(["--features", "testing"]);
+    // The GPUI dashboard's test programs are built on its headless harness, behind this feature,
+    // and with the profile that optimises its dependencies.
+    if package == "niri-dash-gpui" {
+        cargo.args(["--features", "testing", "--profile", "gpui"]);
     }
     for name in names {
         cargo.args(["--test", name]);

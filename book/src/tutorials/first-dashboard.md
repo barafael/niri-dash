@@ -2,9 +2,7 @@
 
 In this tutorial you use the dashboard from the keyboard, then open edit mode and change what it
 looks like. It all happens in the web version, on a simulated machine, so nothing on your own
-system is read or changed. (The web version is built from the Slint variant, the only one that
-runs in a browser: see [Two variants](../explanation/two-variants.md). The keys and the edit mode
-are the same in the dashboard you install.)
+system is read or changed.
 
 ## 1. Open the web version
 
@@ -53,8 +51,8 @@ click brings it back.)
 Click the pencil in the top right corner.
 
 The widgets get small toolbars, empty cells show behind them, and a sidebar opens on the right
-with four tabs: Widgets, Arrange, Colors and Style. The tips along the bottom of the screen list the keys
-that work at the moment.
+with four tabs: Widgets, Arrange, Colors and Style. A bar across the top lists the keys that work
+at the moment.
 
 ![Edit mode](../images/edit-mode.png)
 

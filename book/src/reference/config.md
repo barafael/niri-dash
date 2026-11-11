@@ -12,7 +12,7 @@ The shipped file (`assets/config.kdl`), shortened:
 ```kdl
 theme colorscheme="default" style="default"
 
-// Read, and ignored: GPUI always draws with its GPU renderer (the Slint variant used it).
+// "auto" draws with the GPU (OpenGL ES) when it can, "software" always on the CPU. Read at start.
 // renderer "auto"
 
 // weather location="Hamburg"
@@ -34,7 +34,7 @@ layout {
 | [`theme`](#theme) | `colorscheme`, `style` | Which color scheme and style to use. |
 | [`grid`](#grid) | `columns`, `rows` | A fixed grid size. |
 | [`weather`](#weather) | `location`, `latitude`, `longitude`, `units` | Where the weather is for. |
-| [`renderer`](#renderer) | one argument | Accepted for old files; GPUI ignores it. |
+| [`renderer`](#renderer) | one argument | GPU or software drawing. |
 | [`autolayout`](#autolayout) | `algo`, `order`, `placement`, `seed`, `restarts`, and numeric knobs | Starting point for Arrange. |
 | [`layout`](#layout) | children: one node per widget | The widgets and where they are. |
 
@@ -85,10 +85,14 @@ weather latitude=53.55 longitude=9.99 units="fahrenheit"
 renderer "software"
 ```
 
-The dashboard draws with GPUI's renderer, which is always the GPU's (through wgpu, on Vulkan or
-OpenGL); there is nothing to choose. The line is still read, so that a `config.kdl` written for
-the Slint variant, which chose between `"auto"`, `"gpu"` and `"software"` here, loads without a
-warning. Any other value is warned about. See [Renderers](../explanation/renderers.md).
+| Argument | Meaning |
+|---|---|
+| `"auto"` | The GPU (OpenGL ES) when it can, software otherwise. The default. |
+| `"gpu"` | Always the GPU. |
+| `"software"` | Always the CPU. |
+
+Read at start. Any other value is warned about and treated as `"auto"`. The environment variable
+`NIRI_DASH_RENDERER` overrides it.
 
 ## autolayout
 

@@ -4,20 +4,22 @@
 //!
 //! Like `atspi.rs` it runs on a private session bus with its own accessibility bus (see
 //! `bus/mod.rs`), with Orca's settings in memory and its files in a temporary directory, so
-//! neither the session's Orca nor the user's settings are involved. It starts Orca, KWin and the
-//! dashboard's own program (GPUI publishes its tree itself), so it runs in the test box only
-//! (`cargo testbox test orca`); anywhere else it says so and passes.
+//! neither the session's Orca nor the user's settings are involved. It starts Orca and KWin, so it
+//! runs in the test box only (`cargo testbox test orca`); anywhere else it says so and passes.
 //!
-//! The dashboard's keyboard is driven from here over its control socket (`NIRI_DASH_TEST_KEYS`:
-//! a compositor with no keyboard has nothing to type on); Orca hears about the cursor moving only
-//! over the bus, as it would from the real thing. The transcript is printed.
+//! The dashboard's keyboard is driven from here (the harness has no compositor to type into); Orca
+//! hears about it only over the bus, as it would from the real thing. The transcript is printed.
 //!
-//! A plain program (`harness = false`).
+//! Slint wants one thread and one platform per process, so this is a plain program
+//! (`harness = false`).
 
 mod bus;
 #[path = "../testbox/inside.rs"]
 mod inside;
 
+use niri_dash::testing::{Harness, Sandbox};
+use niri_dash_system::{Demo, brightness, wifi};
+use slint::Model;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -29,11 +31,6 @@ layout {
     session       col=0 row=3 width=4 height=1
 }
 "#;
-
-/// The hint labels of the two widgets we walk into: the shortest start of each one's name that
-/// no other widget's name starts with (`nav::assign_hints`).
-const WIFI: &str = "w";
-const BRIGHTNESS: &str = "b";
 
 fn main() {
     if !inside::inside() {
@@ -92,26 +89,71 @@ fn tail(log: &Path) -> String {
     lines[lines.len().saturating_sub(40)..].join("\n")
 }
 
+/// Let the dashboard run (the harness's loop) for `ms`.
+fn wait(h: &mut Harness, ms: u64) {
+    h.settle(ms);
+}
+
 fn stop(orca: &mut Child) {
     let _ = orca.kill();
     let _ = orca.wait();
 }
 
-fn wait(ms: u64) {
-    std::thread::sleep(Duration::from_millis(ms));
+/// A process that is stopped whatever happens to the test.
+struct Running(Child);
+
+impl Drop for Running {
+    fn drop(&mut self) {
+        stop(&mut self.0);
+    }
+}
+
+/// The Wayland socket of the compositor Orca's toolkit needs to find a display on.
+const DISPLAY: &str = "niri-dash-test";
+
+/// KDE's own compositor, without a screen: Orca needs a display of some kind to set up its
+/// keyboard handling (it dies without one), and on KDE it is the real thing it would meet.
+fn compositor(dir: &Path) -> Running {
+    let runtime = std::env::var("XDG_RUNTIME_DIR").expect("a runtime directory");
+    let kwin = Command::new("kwin_wayland")
+        .args([
+            "--virtual",
+            "--no-lockscreen",
+            "--no-global-shortcuts",
+            "--no-kactivities",
+            "--socket",
+            DISPLAY,
+        ])
+        .env("KWIN_COMPOSE", "Q")
+        .stdout(Stdio::null())
+        .stderr(std::fs::File::create(dir.join("kwin.log")).expect("a file for KWin's log"))
+        .spawn()
+        .expect("starting KWin");
+    let mut kwin = Running(kwin);
+    let socket = Path::new(&runtime).join(DISPLAY);
+    let start = Instant::now();
+    while !socket.exists() {
+        assert!(
+            start.elapsed() < Duration::from_secs(30) && kwin.0.try_wait().ok().flatten().is_none(),
+            "KWin didn't come up: {}",
+            std::fs::read_to_string(dir.join("kwin.log")).unwrap_or_default()
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    kwin
 }
 
 fn inner() {
-    let dir = std::env::temp_dir().join(format!("niri-dash-orca-files-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("a directory for the files");
-    let log = dir.join("orca.log");
-    let errors = dir.join("orca.err");
+    let _sandbox = Sandbox::enter(None).expect("a temporary directory for the files");
+    let log = std::env::temp_dir().join(format!("niri-dash-orca-{}.log", std::process::id()));
+    let _ = std::fs::remove_file(&log);
 
-    let _kwin = bus::compositor(&dir);
+    let errors = log.with_extension("err");
+    let _kwin = compositor(&std::env::temp_dir());
     let mut orca = Command::new("orca")
         .arg("--debug-file")
         .arg(&log)
-        .env("WAYLAND_DISPLAY", bus::DISPLAY)
+        .env("WAYLAND_DISPLAY", DISPLAY)
         .env("GDK_BACKEND", "wayland")
         .env("XDG_SESSION_TYPE", "wayland")
         .env("XDG_CURRENT_DESKTOP", "KDE")
@@ -128,49 +170,75 @@ fn inner() {
             let e = std::fs::read_to_string(&errors).unwrap_or_default();
             panic!("Orca didn't come up (exit {status:?}). It said:\n{e}\nIts log ends:\n{t}");
         }
-        wait(200);
+        std::thread::sleep(Duration::from_millis(200));
     }
     bus::accessibility_on();
-    let mut dash = bus::dashboard(&dir, LAYOUT);
+
+    let mut h = Harness::new(LAYOUT);
+    h.send(wifi::Event::State(Box::new(Demo::new().wifi)));
+    h.send(brightness::Event::Level(Some(0.7)));
+    h.settle(20);
+    h.access_connect_unix();
 
     // Orca has to notice the dashboard before it can read it: it says so in its log.
+    let exe = std::env::current_exe().expect("this program's path");
+    let name = exe
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
     let start = Instant::now();
-    while !std::fs::read_to_string(&log).is_ok_and(|t| t.contains("niri-dash")) {
-        if start.elapsed() > Duration::from_secs(60) || dash.exited().is_some() {
+    while !std::fs::read_to_string(&log).is_ok_and(|t| t.contains(&name)) {
+        if start.elapsed() > Duration::from_secs(40) {
             let t = tail(&log);
             stop(&mut orca);
-            panic!(
-                "Orca never noticed the dashboard. Its log ends:\n{t}\nThe dashboard's log ends:\n{}",
-                bus::dashboard_log(&dir)
-            );
+            panic!("Orca never noticed the dashboard ({name}). Its log ends:\n{t}");
         }
-        wait(200);
+        wait(&mut h, 200);
     }
-    wait(3000);
+    wait(&mut h, 1500);
 
     // Walk the keyboard: into the Wi-Fi widget and down its stops, then out and into brightness.
-    let mut transcript: Vec<(String, Vec<String>)> = Vec::new();
-    let mut step = |what: &str, keys: &[&str]| {
+    let hints: Vec<String> = h
+        .ui()
+        .get_widgets()
+        .iter()
+        .map(|w| w.hint.to_string())
+        .collect();
+    let mut transcript: Vec<(String, String, Vec<String>)> = Vec::new();
+    let mut step = |h: &mut Harness, what: &str, keys: &[&str]| {
         let before = spoken(&log).len();
         for k in keys {
-            bus::press(k);
-            wait(250);
+            h.press(k);
+            wait(h, 150);
         }
-        wait(1500);
+        wait(h, 1200);
+        let ours = h
+            .spoken()
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| "(nothing entered)".into());
         let said: Vec<String> = spoken(&log)[before..].to_vec();
-        transcript.push((what.to_string(), said));
+        transcript.push((what.to_string(), ours, said));
     };
-    step("enter Wi-Fi", &["f", WIFI]);
-    step("j", &["j"]);
-    step("j", &["j"]);
-    step("k", &["k"]);
-    step("leave", &["esc"]);
-    step("enter brightness", &["f", BRIGHTNESS]);
+    let wifi_keys: Vec<String> = std::iter::once("f".to_string())
+        .chain(hints[0].chars().map(|c| c.to_string()))
+        .collect();
+    let wifi_keys: Vec<&str> = wifi_keys.iter().map(String::as_str).collect();
+    step(&mut h, "enter Wi-Fi", &wifi_keys);
+    step(&mut h, "j", &["j"]);
+    step(&mut h, "j", &["j"]);
+    step(&mut h, "k", &["k"]);
+    step(&mut h, "leave", &["esc"]);
+    let knob_keys: Vec<String> = std::iter::once("f".to_string())
+        .chain(hints[1].chars().map(|c| c.to_string()))
+        .collect();
+    let knob_keys: Vec<&str> = knob_keys.iter().map(String::as_str).collect();
+    step(&mut h, "enter brightness", &knob_keys);
     stop(&mut orca);
 
     println!("what Orca said (it has no speaker; this is its log of what it spoke):");
-    for (what, said) in &transcript {
-        println!("  {what}:");
+    for (what, ours, said) in &transcript {
+        println!("  {what}: the keyboard is on {ours}");
         for s in said {
             println!("      Orca: {s:?}");
         }
@@ -189,14 +257,16 @@ fn inner() {
             problems.push(format!("Orca never said {word:?}"));
         }
     }
-    // Each stop the keyboard moved to is read out, by its name: moving the cursor moves the
-    // screen reader's focus.
-    for (what, said) in &transcript {
+    // Each stop the keyboard moved to is read out, by its name, and a row's details after it.
+    for (what, ours, said) in &transcript {
         if what == "leave" {
             continue;
         }
-        if said.is_empty() {
-            problems.push(format!("after {what}, Orca said nothing"));
+        let label = ours.split('"').nth(1).unwrap_or_default();
+        if !said.iter().any(|s| s.contains(label)) {
+            problems.push(format!(
+                "after {what}, on {ours}, Orca never said {label:?}: {said:?}"
+            ));
         }
     }
     for detail in [
@@ -208,16 +278,15 @@ fn inner() {
             problems.push(format!("Orca never read out {detail:?}"));
         }
     }
-    // The widget is announced as the cursor enters it. (The Slint version put a list around the
-    // rows and Orca said "Wi-Fi List with 4 items"; here the widget is a group: docs/accessibility.md.)
-    if !all.iter().any(|s| s == "Wi-Fi") {
-        problems.push("Orca didn't announce the Wi-Fi widget".into());
+    if !all.iter().any(|s| s.starts_with("Wi-Fi List with 4 items")) {
+        problems.push("Orca didn't announce the Wi-Fi list and its length".into());
     }
     if !all.iter().any(|s| s.contains("Brightness slider")) {
         problems.push("Orca didn't read the brightness slider as one".into());
     }
     if problems.is_empty() {
-        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_file(&log);
+        let _ = std::fs::remove_file(&errors);
         println!("test orca: Orca reads the dashboard ... ok");
         println!("\ntest result: ok. 1 passed; 0 failed");
     } else {
@@ -228,7 +297,6 @@ fn inner() {
         for p in &problems {
             println!("  - {p}");
         }
-        println!("The dashboard's log ends:\n{}", bus::dashboard_log(&dir));
         println!("\ntest result: FAILED. 0 passed; 1 failed");
         std::process::exit(1);
     }

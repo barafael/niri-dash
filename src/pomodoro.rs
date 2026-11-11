@@ -3,7 +3,7 @@
 
 use crate::timer::Run;
 use std::time::Duration;
-use std::time::SystemTime;
+use web_time::SystemTime;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {

@@ -5,7 +5,7 @@ niri-dash has three systems to run on, and the dashboard can't tell which it has
 | System | What it is | Used by |
 |---|---|---|
 | Live | The real machine: D-Bus services, the compositor, files and sockets. | The daemon and the apps. |
-| Simulated | A made-up machine that keeps moving. | The web version (the Slint variant), and the desktop with `NIRI_DASH_SIM=1`. |
+| Simulated | A made-up machine that keeps moving. | The web version, and the desktop with `NIRI_DASH_SIM=1`. |
 | Mock | A made-up machine that sits still. | The UI tests, `niri-dash snapshot --mock`, `niri-dash stress` and the manual's screenshots. |
 
 ## One boundary
@@ -20,7 +20,7 @@ the whole mechanism, and the simulated and mock systems are two such sets.
 
 ```mermaid
 flowchart LR
-    D["Dashboard<br/>(the GPUI UI)"] <-->|"commands and events"| S
+    D["Dashboard<br/>(the Slint UI)"] <-->|"commands and events"| S
     subgraph S["crates/system: one of these"]
         direction TB
         L["live<br/>the real machine"]
@@ -42,8 +42,8 @@ own. What you change through the dashboard (a slider, a pairing, a password) wor
 as it would on a real machine.
 
 The web version keeps the layout and settings in the browser's localStorage, and `?reset` starts
-over. On the desktop, `NIRI_DASH_SIM=1` runs either variant on the same simulation, which is a way
-to try niri-dash without anything on your machine being read or changed.
+over. On the desktop, `NIRI_DASH_SIM=1` runs on the same simulation, which is a way to try niri-dash
+without anything on your machine being read or changed.
 
 ## Why the mock sits still
 
@@ -60,7 +60,7 @@ the time they show every time they are made.
 |---|---|
 | The simulated system on the desktop | Set `NIRI_DASH_SIM`. |
 | The mock system | Set `NIRI_DASH_MOCK`, or pass `--mock` to `niri-dash snapshot`. |
-| A UI test | Drive the dashboard through channels that stand in for the system (`src/testing.rs`: GPUI's test platform, no compositor and no GPU). |
+| A UI test | Drive the dashboard through channels that stand in for the system (`src/app/testing.rs`). |
 
 Reference: [Environment variables](../reference/environment.md),
 [Command line](../reference/command-line.md).

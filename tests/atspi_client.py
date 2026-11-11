@@ -110,14 +110,6 @@ def main():
         result["did_action"] = bool(Atspi.Action.do_action(switch, 0))
     except Exception as e:
         result["did_action"] = f"error: {e}"
-    # The dashboard answers on its own time: look again until the switch has changed, or give up.
-    after = sorted(states(switch))
-    deadline = time.time() + 10
-    while "pressed" in after and time.time() < deadline:
-        time.sleep(0.3)
-        switch = find(app, "toggle button", "Wi-Fi") or switch
-        after = sorted(states(switch))
-    result["switch_states_after"] = after
 
     knob = find(app, "slider", "Brightness")
     if knob is not None:

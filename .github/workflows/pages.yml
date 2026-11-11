@@ -1,6 +1,5 @@
-# Builds the web version (the Slint variant of the dashboard in slint/, on a simulated system: GPUI
-# has no browser build) and the manual, and puts them on GitHub Pages.
-name: Web version and manual
+# Builds the web version (the dashboard on a simulated system) and puts it on GitHub Pages.
+name: Web version
 
 on:
   push:
@@ -29,14 +28,11 @@ jobs:
       - name: Install fontconfig
         run: sudo apt-get update && sudo apt-get install --yes libfontconfig1-dev
 
-      # slint/rust-toolchain.toml picks the toolchain; the browser target comes on top.
+      # rust-toolchain.toml picks the toolchain; the browser target comes on top.
       - name: Add the browser target
         run: rustup target add wasm32-unknown-unknown
-        working-directory: slint
 
       - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: slint
 
       - name: Install Trunk
         run: |
@@ -44,10 +40,8 @@ jobs:
             "https://github.com/trunk-rs/trunk/releases/download/v${TRUNK_VERSION}/trunk-x86_64-unknown-linux-gnu.tar.gz" \
             | tar -xz -C "$HOME/.cargo/bin"
 
-      # slint/Trunk.toml: the page is slint/web/index.html, the result goes to slint/dist.
-      - name: Build the web version
+      - name: Build
         run: trunk build --release --cargo-profile web --locked
-        working-directory: slint
 
       # The manual goes next to the web version, at <site>/manual/. Trunk empties dist/ when it
       # builds, so this comes after it.
@@ -62,12 +56,12 @@ jobs:
       # spelled out, and a missing page fails the build.
       - name: Build the manual
         run: |
-          mdbook build book --dest-dir "$GITHUB_WORKSPACE/slint/dist/manual"
-          test -f slint/dist/manual/index.html
+          mdbook build book --dest-dir "$GITHUB_WORKSPACE/dist/manual"
+          test -f dist/manual/index.html
 
       - uses: actions/upload-pages-artifact@v5
         with:
-          path: slint/dist
+          path: dist
 
   deploy:
     needs: build

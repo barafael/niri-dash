@@ -6,15 +6,17 @@ working to keep it current.
 
 ## The surface exists only while the dashboard is up
 
-On niri and on Plasma the dashboard is a fullscreen layer-shell window on the overlay layer. It
-is opened when the dashboard comes up and closed when it goes away (GPUI can't hide a window, only
-close it). The window goes at once: there is no exit animation.
+On niri and on Plasma the dashboard is a fullscreen layer-shell surface on the overlay layer. It
+is created when the dashboard comes up and destroyed when it goes away. Hiding is not instant: the
+exit animation plays first (a fraction of a second, scaled by the style's `motion`), and the
+surface goes once its last frame is drawn.
 
-What outlives the window is the dashboard's state, which is a GPUI entity of its own: the layout,
-the look, the widgets and their histories. That is why a widget's state is still there the next
-time the dashboard comes up, and why coming up doesn't start from nothing.
+What outlives the surface is the interface itself. The Slint component stays alive, and with the
+GPU renderer the EGL context outlives the surface too, so the GPU resources survive. That is why a
+widget's state and history are still there the next time the dashboard comes up, and why coming up
+doesn't start from nothing.
 
-While there is no window, nothing is drawn.
+While there is no surface, nothing is drawn.
 
 ## The sources work only while it is up
 
@@ -23,9 +25,9 @@ listens for changes. Sources only watch and poll while the dashboard is up, and 
 subscriptions are made only then. Coming up refreshes every source at once, so the first frame
 shows current values and not the ones from the last time.
 
-The interface follows the same rule: the once-a-second tick that keeps the clock and the other
-widgets current only does anything while the dashboard is up, since nothing reads them then, and
-coming up ticks right away.
+The interface follows the same rule: the clock's timer re-arms itself while the dashboard is up
+and lapses when it is hidden, since nothing reads the clock then, and coming up ticks it right
+away.
 
 The reason is cost. A dashboard that is shown for a few seconds at a time and hidden for hours
 would otherwise spend those hours updating a screen nobody sees.
@@ -56,8 +58,8 @@ is for. `niri-dash app clipboard --quit` stops it.
 
 ## In the browser
 
-The web version (the [Slint variant](two-variants.md)) keeps the same shape. The canvas covers the
-page and the page behind it plays the desktop. Going away (Escape, say) uncovers the page, and any
-key or click brings the dashboard back, as the hotkey would.
+The web version keeps the same shape. The canvas covers the page and the page behind it plays the
+desktop. Going away (Escape, say) uncovers the page, and any key or click brings the dashboard
+back, as the hotkey would.
 
 Reference: [Command line](../reference/command-line.md), [Time widgets](../reference/widgets/time.md).

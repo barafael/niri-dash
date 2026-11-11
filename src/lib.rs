@@ -4,62 +4,59 @@
 //! shows or hides it and starts the daemon if needed. `niri-dash app <widget>` runs one widget as
 //! a standalone app in its own window.
 //!
-//! The window is drawn by [GPUI](https://gpui.rs). The binary is `main` here; the library exists
-//! so the tests (`tests/`) can drive the dashboard headlessly against channels standing in for
-//! the system ([`testing`]).
+//! The binary is `main` here; the library exists so the UI tests (`tests/ui.rs`) can drive the
+//! dashboard headlessly against channels standing in for the system ([`testing`]).
+//!
+//! In a browser the same dashboard runs on a canvas, against a simulated system ([`web`]).
 
-// What only the harness and the probes (`testing`) call is dead in the program itself.
-#![cfg_attr(not(feature = "testing"), allow(dead_code))]
+// Much of the dashboard only comes to use on the desktop (standalone apps, the command line).
+#![cfg_attr(target_arch = "wasm32", allow(dead_code))]
+
+slint::include_modules!();
 
 mod affinity;
-mod assets;
+mod app;
 mod autolayout;
 #[cfg(test)]
 mod book;
+#[cfg(not(target_arch = "wasm32"))]
 mod cli;
-mod config;
 mod cowfile;
-mod dash;
+#[cfg(not(target_arch = "wasm32"))]
+pub use app::testing;
+#[cfg(target_arch = "wasm32")]
+pub use app::web;
+#[cfg(not(target_arch = "wasm32"))]
+pub use cli::{main, named_socket_path, socket_path};
+#[cfg(not(target_arch = "wasm32"))]
 mod desktop;
-mod edit;
 mod files;
-mod keys;
-mod kit;
+#[cfg(not(target_arch = "wasm32"))]
+mod gpu;
 mod layout;
-mod look;
 mod mascots;
 mod nav;
 mod pomodoro;
-mod scope;
+#[cfg(not(target_arch = "wasm32"))]
+mod shell;
 mod state;
 mod theme;
 mod timer;
-mod ui;
 mod widget_settings;
-mod widgets;
-mod window;
 mod zones;
 
-#[cfg(feature = "testing")]
-pub mod snapshot;
-#[cfg(feature = "testing")]
-pub mod stress;
-#[doc(hidden)]
-#[cfg(feature = "testing")]
-pub mod testing;
-
-pub use cli::{main, named_socket_path, socket_path};
-
-/// This process's id.
+/// This process's id, which a browser doesn't have.
 fn own_pid() -> u32 {
-    std::process::id()
+    #[cfg(not(target_arch = "wasm32"))]
+    return std::process::id();
+    #[cfg(target_arch = "wasm32")]
+    return 0;
 }
 
 /// A command on the control socket, and the subcommand that sends it; the lowercase name is the
 /// wire format.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, strum::EnumString, strum::AsRefStr, clap::Subcommand,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumString, strum::AsRefStr)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(clap::Subcommand))]
 #[strum(serialize_all = "lowercase")]
 pub enum Control {
     /// Show or hide the dashboard; starts the daemon if it isn't running.

@@ -4,20 +4,21 @@ A fullscreen widget dashboard for the [niri](https://github.com/YaLTeR/niri) Way
 and for KDE Plasma 6. One key brings it up over everything; another press, Escape or a click on the
 background puts it away.
 
+[![Made with Slint](https://raw.githubusercontent.com/slint-ui/slint/master/logo/MadeWithSlint-logo-whitebg.png)](https://slint.dev)
+
 ![The dashboard with its default layout, on made-up data](book/src/images/dashboard.png)
 
 **[Try it in your browser](https://barafael.github.io/niri-dash/)** · **[Read the manual](https://barafael.github.io/niri-dash/manual/)**
 
 The browser version is the same dashboard, keyboard and all, on a simulated system whose machine,
-network and notifications keep changing. (It is the [Slint variant](#the-slint-variant) of the
-dashboard, the only one that builds for a browser.) The manual has a tutorial, how-to guides, and a
-reference for every widget, key, setting and command.
+network and notifications keep changing. The manual has a tutorial, how-to guides, and a reference
+for every widget, key, setting and command.
 
 ## What it is
 
 - **One overlay, on demand.** A single daemon draws a layer-shell overlay with
-  [GPUI](https://gpui.rs) (Zed's UI framework), on the GPU through Vulkan or OpenGL. While it is
-  hidden its window is closed, nothing renders and its data sources go quiet.
+  [Slint](https://slint.dev), on the GPU through EGL or in software. While it is hidden it renders
+  nothing and its data sources go quiet.
 - **Widgets for the whole desktop:** time, windows, notifications, Wi-Fi, Bluetooth, volume, media,
   battery, system load, and more. Most come in a rectangular and a round shape, and any one can run
   on its own as a small app window: `niri-dash app clock`.
@@ -70,9 +71,7 @@ Every widget, with its sizes and settings, is in the [widget reference](https://
 
 `f` labels every widget with the start of its name, and typing a label goes into that widget;
 `j`/`k`/`h`/`l` move inside it, `e` blows it up, `s` opens its settings, and Escape steps back.
-Ctrl+M moves the widget and Ctrl+R resizes it (`h`/`j`/`k`/`l` act on it until Escape; in resize
-mode Shift pulls a side in). Ctrl+E opens edit mode. The tips along the bottom of the screen
-always list the keys that work just now. Lists have letters of their own: `d` closes a window or dismisses a
+Ctrl+E opens edit mode. Lists have letters of their own: `d` closes a window or dismisses a
 notification, `r` rescans Wi-Fi, `t` turns it on and off, `m` mutes, `1`–`0` set a slider to
 10–100 %, `x` ejects a drive, and so on. The calendar has a day cursor: `h`/`l` a day, `j`/`k` a
 week, `n`/`p` a month, `t` back to today, `Ctrl+C` copies the day as `YYYY-MM-DD`.
@@ -91,13 +90,11 @@ spacing, fonts, animation speed, frosted glass. Its Arrange tab lays the widgets
 | niri | 26.04 | Built against `niri-ipc` 26.4. Other releases may work; the IPC is only versioned with niri itself. |
 | KDE Plasma | 6.8 | Plasma 6 only. [Some widgets don't work there.](#on-kde-plasma) |
 | Rust | stable | 1.95 or newer (the `kdl` crate needs it). CI builds with the latest stable and with 1.95. |
-| GPU | Vulkan or OpenGL | What GPUI's renderer (wgpu) draws with; a software Vulkan driver such as lavapipe works too. |
-| Browser | any with WebGL 2 | For the web version (the Slint variant) only. |
+| Browser | any with WebGL 2 | For the web version only. |
 
 ## Where to get it
 
-Needs a Rust toolchain, the development files of Wayland, xkbcommon, fontconfig and FreeType, and a
-Vulkan (or OpenGL) driver at run time.
+Needs a Rust toolchain, and the usual Wayland, EGL, fontconfig and xkbcommon libraries.
 
 ```sh
 cargo install --path . --locked
@@ -146,79 +143,38 @@ Konsole gets its tab brought up too. Noticing screen sharing needs niri. The man
 
 ## Developing
 
-The dashboard is the root crate; [`PORTING.md`](PORTING.md) is its architecture (how the state, the
-views, the widgets and the keyboard fit together, and the rules new code follows).
+The web version builds for the browser against a simulated system instead of the real one
+(`crates/system/src/sim`). On the desktop, `NIRI_DASH_SIM=1` runs on the same simulation.
 
 ```sh
-cargo run                                   # the daemon, on the real system
-NIRI_DASH_MOCK=1 cargo run                  # ... on made-up data (never on the session you work in)
-cargo check --all-targets --features testing
-cargo test --features testing               # everything that needs no real system
-cargo clippy --all-targets --features testing
-cargo fmt --all
+rustup target add wasm32-unknown-unknown
+cargo install trunk --locked
+trunk serve
 ```
-
-The `testing` feature is the headless harness (`src/testing.rs`): the dashboard in a window of
-GPUI's test platform, driven with keys and clicks and checked against the mock system, with no
-compositor and no GPU. The tests in `tests/` are plain programs on it, and `niri-dash stress`
-(built with the feature) presses random keys at it. The tests that run system code, the screen reader
-ones among them, only run in the [test box](testbox/README.md) (`cargo testbox test`).
-
-Pictures, for the manual and for looking at changes:
-
-```sh
-cargo build --features testing
-target/debug/niri-dash snapshot --mock --edit out.png   # the dashboard drawn headlessly to a PNG
-book/screenshots.sh target/debug/niri-dash              # all of the manual's pictures
-scripts/vshot.sh target/debug/niri-dash out show        # the real binary on a private virtual KWin
-```
-
-`snapshot` draws with GPUI's own renderer onto a texture: it needs a GPU (or lavapipe), not a
-display. `scripts/vshot.sh` runs a binary in its own virtual compositor and takes screenshots of
-the screen, which is the closest to what you see; it never touches your session.
 
 The manual is an [mdBook](https://rust-lang.github.io/mdBook/) in `book/`: `mdbook serve book`. Its
-widget tables are written from the source by a test (`cargo test --features testing --lib book`; see
-`src/book.rs`), and its screenshots by `book/screenshots.sh`.
+widget tables are written from the source by a test (`cargo test --lib book`; see `src/book.rs`),
+and its screenshots by `book/screenshots.sh`.
 
-A push to `main` runs the tests of both variants (`.github/workflows/`) and puts the manual and
-the web version (built from `slint/`) on GitHub Pages.
+A push to `main` runs the tests, and builds the web version and the manual and puts them on GitHub
+Pages (`.github/workflows/`).
 
-### The Slint variant
+### The GPUI version
 
-`slint/` holds the dashboard as it was written on [Slint](https://slint.dev), before the GPUI
-rewrite: the same widgets, the same system crate (`crates/system`), another toolkit. It is kept for
-comparison (and because only it builds for a browser). It is a workspace of its own, so build it
-from its directory (the first build takes a while: it has its own `target/`):
-
-```sh
-cd slint
-cargo run                                   # niri-dash-slint, the daemon
-NIRI_DASH_MOCK=1 cargo run -- daemon --show
-cargo test                                  # its tests
-trunk serve                                 # the web version (rustup target add wasm32-unknown-unknown; cargo install trunk)
-```
-
-Both programs read the same `config.kdl`, so point one at a scratch copy to compare them
-(`NIRI_DASH_HOME=/tmp/h`, with `config/niri-dash/config.kdl` below it), and run each on a virtual
-screen with `scripts/vshot.sh` to put the pictures side by side. `slint/` shares nothing but
-`crates/system` and the manual's text with the GPUI crate: `PORTING.md` lists what differs.
+[`gpui/`](gpui/README.md) is the same dashboard written on [GPUI](https://gpui.rs), a member of
+this workspace (`-p niri-dash-gpui`; `cargo build` and `cargo test` here are the Slint version). It
+shares the system crate, the config, the manual and the test box; there is no web build of it.
 
 ## License
 
 MIT or Apache-2.0, at your option.
 
-The dashboard is built on [GPUI](https://gpui.rs) and its component library, which are
-Apache-2.0 (and a few of their dependencies carry other permissive licenses).
+niri-dash is built with [Slint](https://slint.dev), used under its [Royalty-free Desktop, Mobile,
+and Web Applications License](https://github.com/slint-ui/slint/blob/master/LICENSES/LicenseRef-Slint-Royalty-free-2.0.md).
+That license asks for attribution, which is the "Made with Slint" badge at the top of this page and on
+the [web version](https://barafael.github.io/niri-dash/). If you redistribute niri-dash or a fork,
+keep a badge on a public page where it can be found, or add Slint's `AboutSlint` widget to an About
+screen; or use Slint under the GPL-3.0 instead.
 
-The Slint variant in `slint/` is built with [Slint](https://slint.dev), used under its
-[Royalty-free Desktop, Mobile, and Web Applications
-License](https://github.com/slint-ui/slint/blob/master/LICENSES/LicenseRef-Slint-Royalty-free-2.0.md).
-That license asks for attribution, which is the "Made with Slint" badge on the [web
-version](https://barafael.github.io/niri-dash/) and the About widget of that variant. If you
-redistribute the Slint variant or a fork of it, keep a badge on a public page where it can be found,
-or add Slint's `AboutSlint` widget to an About screen; or use Slint under the GPL-3.0 instead. The GPUI
-crate has none of this: it contains no Slint code.
-
-`slint/patches/i-slint-renderer-software` is a lightly patched copy of Slint's software renderer
-(see its README) and keeps Slint's own licenses, in its `LICENSES` directory.
+`patches/i-slint-renderer-software` is a lightly patched copy of Slint's software renderer (see
+its README) and keeps Slint's own licenses, in its `LICENSES` directory.

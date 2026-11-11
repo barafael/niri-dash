@@ -49,7 +49,6 @@
   - [How the dashboard shows and hides](explanation/show-and-hide.md)
   - [The keyboard model](explanation/keyboard-model.md)
   - [What clipboard history records](explanation/clipboard.md)
-  - [Renderers](explanation/renderers.md)
+  - [Renderers: GPU and software](explanation/renderers.md)
   - [How Arrange chooses a layout](explanation/arrange.md)
   - [The simulated system](explanation/simulated-system.md)
-  - [Two variants: GPUI and Slint](explanation/two-variants.md)

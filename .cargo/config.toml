@@ -1,3 +1,7 @@
 [alias]
 # The test box's commands, as an xtask: nothing to install beyond cargo.
 testbox = "run --quiet -p xtask --"
+# The GPUI dashboard (the `gpui` member): its own profile, see the root Cargo.toml.
+gbuild = "build -p niri-dash-gpui --profile gpui"
+gtest = "test -p niri-dash-gpui --profile gpui --features testing"
+gcheck = "check -p niri-dash-gpui --profile gpui --all-targets --features testing"

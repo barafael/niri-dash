@@ -6,7 +6,7 @@
 #
 # usage: scripts/atspi-dump.sh BIN APP_PREFIX [CONFIG.kdl]
 #
-#   BIN         target/debug/niri-dash, or slint/target/debug/niri-dash-slint
+#   BIN         target/gpui/debug/niri-dash-gpui (GPUI), or target/debug/niri-dash (Slint)
 #   APP_PREFIX  how the application is called on the bus (start of its name): "niri-dash"
 #   CONFIG      the config.kdl to show (default: one widget, KIND=wifi, 8x7 cells)
 #

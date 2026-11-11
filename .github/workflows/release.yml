@@ -1,6 +1,5 @@
-# A tag like v1.0.0-beta.1 or v1.0.0 makes a GitHub release with a Linux binary of the dashboard
-# (the GPUI one; the Slint variant in slint/ isn't released). A tag with a `-` in it is a
-# pre-release. The tag has to be the version in Cargo.toml, with a `v` in front.
+# A tag like v1.0.0-beta.1 or v1.0.0 makes a GitHub release with a Linux binary. A tag with a `-`
+# in it is a pre-release. The tag has to be the version in Cargo.toml, with a `v` in front.
 name: Release
 
 on:
@@ -33,7 +32,7 @@ jobs:
           fi
 
       - name: Install system libraries
-        run: sudo apt-get update && sudo apt-get install --yes pkg-config libfontconfig1-dev libfreetype-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libx11-xcb-dev libxcb1-dev
+        run: sudo apt-get update && sudo apt-get install --yes pkg-config libfontconfig1-dev libxkbcommon-dev libwayland-dev
 
       - uses: Swatinem/rust-cache@v2
 

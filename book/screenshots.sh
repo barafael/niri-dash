@@ -1,28 +1,17 @@
 #!/bin/sh
 # Regenerates the manual's screenshots in book/src/images/.
 #
-#   book/screenshots.sh [BIN [OUTDIR]]
-#
-#   BIN     the program to draw them with, default target/release/niri-dash. It has to be built
-#           with the `testing` feature (`cargo build --release --features testing`), which is what
-#           has the `snapshot` command; the Slint variant's binary
-#           (slint/target/release/niri-dash-slint, built from slint/) has it always, and takes the
-#           same options, so
-#               book/screenshots.sh slint/target/release/niri-dash-slint /tmp/slint-pictures
-#           makes the same set from the Slint one, for comparison.
-#   OUTDIR  where the pictures go, default book/src/images/.
+#   book/screenshots.sh [path/to/niri-dash]
 #
 # Every picture is rendered offscreen by `niri-dash snapshot --mock`: made-up data, the shipped
 # default layout (assets/config.kdl) and a US English locale, in a throwaway home directory, so
-# the result doesn't depend on whose machine it runs on and your own config isn't touched. The
-# GPUI binary draws with its own renderer onto a texture: that needs a GPU (or a software Vulkan
-# such as lavapipe), but no display.
+# the result doesn't depend on whose machine it runs on and your own config isn't touched.
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(dirname "$here")
 bin=${1:-$root/target/release/niri-dash}
-out=${2:-$here/src/images}
+out=$here/src/images
 
 home=$(mktemp -d)
 trap 'rm -rf "$home"' EXIT
