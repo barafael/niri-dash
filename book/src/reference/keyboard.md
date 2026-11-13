@@ -140,6 +140,10 @@ In a text field: Enter saves, Escape discards, and Tab leaves the field.
 
 When you carry a new widget in from the Widgets tab: a click places it, and Escape cancels.
 
+On the Widgets tab, the row of categories under **Add** is one stop: `h` `l` move between the
+categories, and Enter or Space picks or unpicks the one under the cursor. `j` `k` skip the
+widgets of unpicked categories.
+
 ## Adjusting a widget without edit mode
 
 Press and hold a widget, without moving, and it opens on its own for adjusting, whatever else the

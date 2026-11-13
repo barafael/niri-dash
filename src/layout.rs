@@ -542,6 +542,30 @@ pub enum Group {
     Controls,
 }
 
+impl Group {
+    /// Every group, in the order [`crate::autolayout`] lays them out.
+    pub const ALL: [Group; 6] = [
+        Group::Time,
+        Group::Activity,
+        Group::Media,
+        Group::System,
+        Group::Devices,
+        Group::Controls,
+    ];
+
+    /// Its name in the manual, the widget picker's filter and the state file.
+    pub fn name(self) -> &'static str {
+        match self {
+            Group::Time => "Time",
+            Group::Activity => "Activity",
+            Group::Media => "Media",
+            Group::System => "System",
+            Group::Devices => "Devices",
+            Group::Controls => "Controls",
+        }
+    }
+}
+
 impl KindInfo {
     /// The shape a new instance (or one in config.kdl without a `shape`) has.
     pub fn new_shape(&self) -> Shape {

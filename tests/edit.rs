@@ -2231,6 +2231,105 @@ fn resize_gives_room_back(issues: &mut Issues) {
 
 type Scenario = (&'static str, fn(&mut Issues));
 
+/// The widget picker's categories: unpicking one takes its widgets out of the list (and out of
+/// the keyboard's way), picking it brings them back, and the choice is kept for next time.
+fn palette_filter(issues: &mut Issues) {
+    use niri_dash::{PaletteGroup, PaletteItem};
+    let groups =
+        |h: &Harness| -> Vec<PaletteGroup> { h.ui().get_palette_groups().iter().collect() };
+    let palette = |h: &Harness| -> Vec<PaletteItem> { h.ui().get_palette().iter().collect() };
+    let slots = |h: &Harness| -> Vec<i32> { h.ui().get_palette_slots().iter().collect() };
+    let mut h = dashboard(MIXED);
+    h.press("ctrl+e");
+
+    let all = palette(&h);
+    let gs = groups(&h);
+    if gs.len() != 6 || !gs.iter().all(|g| g.on) {
+        issues.add(format!("filter: not six categories, all picked: {gs:?}"));
+    }
+    if gs.iter().map(|g| g.count as usize).sum::<usize>() != all.len() {
+        issues.add("filter: the categories' counts don't add up to the widgets");
+    }
+    if slots(&h).len() != all.len() {
+        issues.add("filter: not every widget is in the list to start with");
+    }
+
+    // The keyboard: past the grid's two steppers to the categories, Enter unpicks Time.
+    h.press("g");
+    h.press("j");
+    h.press("j");
+    h.press("enter");
+    let time = all.iter().filter(|p| p.group == 0).count();
+    if groups(&h)[0].on {
+        issues.add("filter: Enter on the categories didn't unpick Time");
+    }
+    let now = palette(&h);
+    if now.iter().any(|p| p.group == 0 && p.shown) || slots(&h).len() != all.len() - time {
+        issues.add(format!(
+            "filter: Time unpicked, but {} of {} widgets still listed",
+            slots(&h).len(),
+            all.len()
+        ));
+    }
+    issues.check(&h, "filter: unpicking a category");
+
+    // The next stop is the first widget still listed, and Enter adds it.
+    let n = h.tiles().len();
+    h.press("j");
+    h.press("enter");
+    let first = &now[slots(&h)[0] as usize];
+    if first.group == 0 {
+        issues.add("filter: the first listed widget is one that was filtered out");
+    }
+    if h.tiles().len() != n + 1 {
+        issues.add(format!(
+            "filter: Enter on the first listed widget: {n} widgets became {}",
+            h.tiles().len()
+        ));
+    }
+    issues.check(&h, "filter: adding from a filtered list");
+
+    // h/l pick the category; Enter on another one unpicks it too.
+    h.press("k");
+    h.press("l");
+    h.press("enter");
+    if groups(&h)[1].on {
+        issues.add("filter: l then Enter didn't unpick the second category");
+    }
+
+    // Everything unpicked: nothing listed, Reset right after the categories.
+    for i in 0..6 {
+        if groups(&h)[i].on {
+            h.ui().invoke_toggle_palette_group(i as i32);
+        }
+    }
+    h.pump();
+    if !slots(&h).is_empty() || palette(&h).iter().any(|p| p.shown) {
+        issues.add("filter: every category unpicked, and widgets still listed");
+    }
+
+    // Kept for next time.
+    h.ui().invoke_toggle_palette_group(2);
+    drop(h);
+    let mut h = dashboard(MIXED);
+    h.press("ctrl+e");
+    let kept: Vec<bool> = groups(&h).iter().map(|g| g.on).collect();
+    if kept != [false, false, true, false, false, false] {
+        issues.add(format!("filter: not kept across restarts: {kept:?}"));
+    }
+    // Back to all picked, for whatever runs after.
+    for i in 0..6 {
+        if !groups(&h)[i].on {
+            h.ui().invoke_toggle_palette_group(i as i32);
+        }
+    }
+    h.pump();
+    if slots(&h).len() != all.len() {
+        issues.add("filter: picking every category again didn't bring every widget back");
+    }
+    issues.check(&h, "filter: all picked again");
+}
+
 fn main() {
     let _sandbox = Sandbox::enter(None).expect("a temporary directory for the dashboard's files");
     // SAFETY: nothing else runs yet that could read the environment.
@@ -2279,6 +2378,7 @@ fn main() {
             "resize: pushed widgets come back when it shrinks",
             resize_gives_room_back,
         ),
+        ("filter: the widget picker's categories", palette_filter),
     ];
     let only = std::env::var("NIRI_DASH_EDIT_ONLY").unwrap_or_default();
     let scenarios: Vec<_> = scenarios
