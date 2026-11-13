@@ -230,6 +230,11 @@ impl Actor for Host {
                     log::warn!("{e}");
                 }
             }
+            OpenUrl(url) => {
+                if let Err(e) = sources::spawn_detached("xdg-open", &[&url]) {
+                    log::warn!("{e}");
+                }
+            }
             PlaySound(sound) => {
                 let path = match sound {
                     host::Sound::Alarm => {

@@ -618,6 +618,7 @@ fn run() -> Result<(), String> {
     let has_clipboard = system.caps.clipboard;
     let app = build(&ui, system, None, Layout::load(), false);
     ui.global::<UiClipboard>().set_available(has_clipboard);
+    super::info::show(&ui, "WebGL");
 
     let dashboard = Rc::new(Dashboard {
         page: RefCell::new(Page {

@@ -694,6 +694,14 @@ pub enum Backend {
 }
 
 impl Backend {
+    /// What draws the dashboard, as the niri-dash info widget says it.
+    pub fn renderer_name(&self) -> &'static str {
+        match self {
+            Backend::Software(_) => "software",
+            Backend::Gpu(..) => "OpenGL ES",
+        }
+    }
+
     pub fn adapter(&self) -> Rc<dyn WindowAdapter> {
         match self {
             Backend::Software(w) => w.clone(),

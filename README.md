@@ -49,7 +49,7 @@ Color schemes and styles are separate, and mix freely:
 | | |
 |---|---|
 | **Time** | Clock, calendar, weather (Open-Meteo, no API key), timer, stopwatch, pomodoro, sleep timer |
-| **Activity** | Windows by workspace, notifications, clipboard history, sticky notes, Claude Code sessions and usage, a mascot that comments on your day, an About card |
+| **Activity** | Windows by workspace, notifications, clipboard history, sticky notes, Claude Code sessions and usage, a mascot that comments on your day, an About card and the build it is |
 | **Media** | Now playing (MPRIS) |
 | **System** | CPU, memory, disks, network and GPU, battery and power profiles (with a switch that blocks sleep and screen locking), privacy (who uses the microphone, camera or screen) |
 | **Devices** | Wi-Fi, Bluetooth, removable drives, phone (KDE Connect) |

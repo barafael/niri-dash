@@ -28,6 +28,7 @@ mod edit;
 mod enums;
 mod feeds;
 mod hold;
+mod info;
 mod nav;
 #[cfg(not(target_arch = "wasm32"))]
 mod probe;
@@ -544,6 +545,7 @@ fn wire(app: &Rc<App>, ui: &Dash) {
     privacy::wire(app, ui);
     night_light::wire(app, ui);
     devices::wire(app, ui);
+    info::wire(app, ui);
     mascots::wire(app, ui);
     sleeper::wire(app, ui);
 }
@@ -560,8 +562,8 @@ fn build(
     let Started { senders, caps } = system;
     theme::install_bundled();
     ui.set_solo(solo.is_some());
-    ui.global::<crate::Build>()
-        .set_version(env!("CARGO_PKG_VERSION").into());
+    // Software until the surface says otherwise (`Backend`), as in snapshots and tests.
+    info::show(ui, "software");
     let desktop = ui.global::<crate::Desktop>();
     desktop.set_screencast(caps.screencast);
     desktop.set_niri(caps.compositor == sys::Compositor::Niri);
