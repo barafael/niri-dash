@@ -42,6 +42,9 @@ export global Theme {
     // Multipliers for the backdrop's and widgets' opacity (0..1).
     in-out property <float> backdrop-opacity: 1;
     in-out property <float> card-opacity: 1;
+    // Rust is blending from one look to another (a frame at a time): sizes and colors are on
+    // the move, so caching what is drawn with them is wasted work.
+    in-out property <bool> blending;
 }
 
 export global Icons {

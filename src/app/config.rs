@@ -14,8 +14,11 @@ impl App {
             self.toast("config.kdl has errors, so edits aren't saved. Fix the file first.");
             return;
         }
-        if let Some(text) = self.layout.borrow_mut().save() {
-            *self.last_written.borrow_mut() = text;
+        let text = self.layout.borrow_mut().save();
+        let mut written = self.written.borrow_mut();
+        written.push_back(text);
+        if written.len() > 32 {
+            written.pop_front();
         }
     }
 
@@ -32,7 +35,16 @@ impl App {
         let Ok(text) = crate::files::read(&path) else {
             return;
         };
-        if text == *self.last_written.borrow() {
+        let ours = {
+            let mut written = self.written.borrow_mut();
+            let at = written.iter().position(|w| *w == text);
+            // The ones before it have landed already.
+            if let Some(at) = at {
+                written.drain(..at);
+            }
+            at.is_some()
+        };
+        if ours {
             // Our own write; only a color scheme or style file may have changed.
             self.apply_look(self.visible.get());
             return;
@@ -41,7 +53,7 @@ impl App {
             Ok((fresh, warnings)) => {
                 self.config_broken.set(false);
                 let refit = self.layout.borrow_mut().replace(fresh);
-                *self.last_written.borrow_mut() = text;
+                *self.written.borrow_mut() = [text].into();
                 self.apply_settings();
                 self.sync_widgets();
                 self.refresh_settings();

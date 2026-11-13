@@ -1,11 +1,11 @@
 //! The theme: applying the configured look, and the Colors and Style tabs.
 
 use super::enums::{style_var_from_ui, style_var_to_ui};
-use super::{App, model};
+use super::{App, model, set_if_changed};
 use crate::layout::Layout;
 use crate::{Dash, theme};
 use niri_dash_system::{Tell, host};
-use slint::TimerMode;
+use slint::{ComponentHandle, Model, VecModel};
 use std::rc::Rc;
 use std::time::Duration;
 use web_time::Instant;
@@ -60,9 +60,60 @@ impl App {
             })
             .collect();
         let ui = self.ui();
-        ui.set_colorschemes(model(schemes));
-        ui.set_styles(model(styles));
+        // Row by row into the lists already shown: replacing them would make Slint build every
+        // preview again.
+        let same = |a: &crate::SchemeItem, b: &crate::SchemeItem| a == b;
+        match ui
+            .get_colorschemes()
+            .as_any()
+            .downcast_ref::<VecModel<crate::SchemeItem>>()
+        {
+            Some(m) => set_if_changed(m, schemes, same),
+            None => ui.set_colorschemes(model(schemes)),
+        }
+        let same = |a: &crate::StyleItem, b: &crate::StyleItem| a == b;
+        match ui
+            .get_styles()
+            .as_any()
+            .downcast_ref::<VecModel<crate::StyleItem>>()
+        {
+            Some(m) => set_if_changed(m, styles, same),
+            None => ui.set_styles(model(styles)),
+        }
         self.refresh_style_vars();
+    }
+
+    /// After choosing a color scheme or style: mark the one in use, without reading every file
+    /// again as [`App::refresh_looks`] does.
+    fn mark_current_looks(&self) {
+        let (cur_c, cur_s) = {
+            let l = self.layout.borrow();
+            (l.colorscheme.clone(), l.style.clone())
+        };
+        let ui = self.ui();
+        let schemes = ui.get_colorschemes();
+        let styles = ui.get_styles();
+        let known = schemes.iter().any(|s| s.name == cur_c.as_str())
+            && styles.iter().any(|s| s.name == cur_s.as_str());
+        if !known {
+            // Not in the lists (a path in config.kdl): they get a row for it.
+            self.refresh_looks();
+            return;
+        }
+        for (i, mut s) in schemes.iter().enumerate() {
+            let current = s.name == cur_c.as_str();
+            if s.current != current {
+                s.current = current;
+                schemes.set_row_data(i, s);
+            }
+        }
+        for (i, mut s) in styles.iter().enumerate() {
+            let current = s.name == cur_s.as_str();
+            if s.current != current {
+                s.current = current;
+                styles.set_row_data(i, s);
+            }
+        }
     }
 
     fn fonts(&self) -> Vec<String> {
@@ -228,33 +279,61 @@ impl App {
         let from = theme::current(&ui);
         let duration = Duration::from_millis((350.0 * target.style.motion) as u64);
         if !animate || duration.is_zero() || from == target {
-            self.look_timer.stop();
+            *self.look_blend.borrow_mut() = None;
             theme::set(&ui, &target);
+            ui.global::<crate::Theme>().set_blending(false);
             return;
         }
-        // Blend: colors and sizes move together; Slint redraws as the Theme global changes.
-        let start = Instant::now();
-        let weak = self.ui.clone();
-        let timer = Rc::downgrade(&self.look_timer);
-        self.look_timer
-            .start(TimerMode::Repeated, Duration::from_millis(12), move || {
-                let Some(ui) = weak.upgrade() else { return };
-                let t = (start.elapsed().as_secs_f32() / duration.as_secs_f32()).min(1.0);
-                if t >= 1.0 {
-                    theme::set(&ui, &target);
-                    if let Some(timer) = timer.upgrade() {
-                        timer.stop();
-                    }
-                    return;
-                }
-                let eased = if t < 0.5 {
-                    4.0 * t * t * t
-                } else {
-                    1.0 - (-2.0 * t + 2.0).powi(3) / 2.0
-                };
-                theme::set(&ui, &theme::mix(&from, &target, eased));
-            });
+        ui.global::<crate::Theme>().set_blending(true);
+        // Blend: colors and sizes move together, stepped once per frame (`step_look`), so every
+        // frame shown is a step further and none is skipped or doubled.
+        // The new font and spacing take the first frame (a new layout of everything); the
+        // colors start moving after it, so no frame of the glide is late.
+        let delay = Duration::from_millis((40.0 * target.style.motion) as u64);
+        *self.look_blend.borrow_mut() = Some(Blend {
+            from,
+            to: target,
+            start: Instant::now() + delay,
+            duration,
+        });
+        self.step_look();
     }
+
+    /// Whether a blend between two looks is under way: frames come as fast as the display
+    /// takes them until it ends.
+    pub(super) fn blending(&self) -> bool {
+        self.look_blend.borrow().is_some()
+    }
+
+    /// Move a blend between two looks to where it is now. Called once per turn of the loop,
+    /// right before a frame is drawn.
+    pub(super) fn step_look(&self) {
+        let mut blend = self.look_blend.borrow_mut();
+        let Some(b) = blend.as_ref() else { return };
+        let ui = self.ui();
+        let since = Instant::now().saturating_duration_since(b.start);
+        let t = (since.as_secs_f32() / b.duration.as_secs_f32()).min(1.0);
+        if t >= 1.0 {
+            theme::set(&ui, &b.to);
+            ui.global::<crate::Theme>().set_blending(false);
+            *blend = None;
+            return;
+        }
+        let eased = if t < 0.5 {
+            4.0 * t * t * t
+        } else {
+            1.0 - (-2.0 * t + 2.0).powi(3) / 2.0
+        };
+        theme::set(&ui, &theme::mix(&b.from, &b.to, eased));
+    }
+}
+
+/// A blend from one look to another.
+pub(super) struct Blend {
+    from: theme::Look,
+    to: theme::Look,
+    start: Instant,
+    duration: Duration,
 }
 
 pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
@@ -263,7 +342,7 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
         a.layout.borrow_mut().colorscheme = name.to_string();
         a.save_layout();
         a.apply_look(true);
-        a.refresh_looks();
+        a.mark_current_looks();
     });
     let a = app.clone();
     ui.on_choose_style(move |name| {
@@ -287,7 +366,8 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
         }
         a.save_layout();
         a.apply_look(true);
-        a.refresh_looks();
+        a.mark_current_looks();
+        a.refresh_style_vars();
     });
     let a = app.clone();
     ui.on_style_step(move |key, delta| a.style_step(style_var_from_ui(key), delta));

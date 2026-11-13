@@ -179,6 +179,7 @@ impl Harness {
 
     /// The text config.kdl has now.
     pub fn config_text(&self) -> String {
+        crate::files::flush();
         std::fs::read_to_string(Layout::path()).unwrap_or_default()
     }
 

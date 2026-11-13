@@ -456,9 +456,12 @@ impl Harness {
             .event_loop
             .dispatch(Some(Duration::ZERO), &mut self.controls);
         slint::platform::update_timers_and_animations();
+        self.app.step_look();
         self.answer_mock();
         self.app.keep_keyboard();
         self.app.access_sync(false);
+        // What the dashboard saved is on disk, for checks that read the files.
+        crate::files::flush();
     }
 
     /// The mock system takes the commands that wait for it.

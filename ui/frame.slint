@@ -62,6 +62,9 @@ export component WidgetBody inherits Rectangle {
 export component WidgetFrame inherits Rectangle {
     in property <WidgetInst> inst;
     in property <length> cell;
+    // The grid is on the move (see app.slint): the widget follows it exactly, with no glide of
+    // its own that would restart on every frame and trail behind.
+    in property <bool> grid-moving;
     in property <int> cols;
     in property <int> rows;
     in property <bool> editing;
@@ -204,8 +207,12 @@ export component WidgetFrame inherits Rectangle {
 
     x: expanded ? (area-w - big-w) / 2 : carried ? carry-x : inst.col * cell + dx - (pull-x < 0 ? (t-w - inst.w) * cell : 0);
     y: expanded ? (area-h - big-h) / 2 : carried ? carry-y : inst.row * cell + dy - (pull-y < 0 ? (t-h - cells-h) * cell : 0);
-    width: expanded ? big-w : grid-w;
-    height: expanded ? big-h : grid-h;
+    property <length> target-w: expanded ? big-w : grid-w;
+    property <length> target-h: expanded ? big-h : grid-h;
+    width: target-w;
+    height: target-h;
+    // Its size has arrived (no glide or resize under way).
+    property <bool> size-settled: self.width == self.target-w && self.height == self.target-h;
     // Above the shade (140) while expanded, and while it shrinks back into place.
     z: expanded || self.settling ? 150 : moving || sizing || carried || lifted ? 100 : 0;
     property <bool> settling;
@@ -221,7 +228,7 @@ export component WidgetFrame inherits Rectangle {
     // Dragging follows the pointer directly; resizing steps from cell to cell, quickly; after a
     // drop (or a layout change) widgets glide.
     animate x, y, width, height {
-        duration: root.moving || root.carried ? 0ms : (root.sizing ? 90ms : 240ms) * Theme.motion;
+        duration: root.moving || root.carried || root.grid-moving ? 0ms : (root.sizing ? 90ms : 240ms) * Theme.motion;
         easing: cubic-bezier(0.2, 0.9, 0.3, 1.0);
     }
 
@@ -246,13 +253,17 @@ export component WidgetFrame inherits Rectangle {
         // Expanded it stands over the others: solid, so they don't show through.
         background: root.expanded ? Theme.card.with-alpha(1) : Theme.card.transparentize(1 - Theme.card-opacity);
         border-width: root.selected || root.entered ? max(2px, Theme.border-width * 1px) : Theme.border-width * 1px;
-        border-color: root.sizing && !root.t-ok ? Theme.bad : root.selected || root.entered ? Theme.accent : root.editing ? Theme.accent.with-alpha(root.moving || root.sizing ? 0.9 : 0.35) : Theme.border;
+        property <color> border-target: root.sizing && !root.t-ok ? Theme.bad : root.selected || root.entered ? Theme.accent : root.editing ? Theme.accent.with-alpha(root.moving || root.sizing ? 0.9 : 0.35) : Theme.border;
+        border-color: self.border-target;
         animate border-color { duration: 160ms * Theme.motion; }
         clip: true;
         // The GPU renderer redraws the whole dashboard every frame; with each card drawn into
         // its own cached texture, a change (a volume scroll, a ticking graph) re-renders only
         // that card and the rest is one textured quad each. The software renderer ignores this.
-        cache-rendering-hint: true;
+        // Not while its size, its border or the theme changes: the cache would be thrown away and a new
+        // texture made every frame, which costs more than drawing the card directly. (While the
+        // drawer slides it stays: the grid is scaled, the card itself doesn't change.)
+        cache-rendering-hint: root.size-settled && self.border-color == self.border-target && !Theme.blending;
         opacity: root.appear * (root.moving || root.sizing || root.carried ? 0.85 : 1);
         drop-shadow-blur: root.moving || root.sizing || root.carried || root.expanded ? 24px : 0;
         drop-shadow-color: Theme.shadow;
