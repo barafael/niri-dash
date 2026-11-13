@@ -1,6 +1,7 @@
 //! Runtime state the daemon keeps across restarts: do not disturb, the timer, the picked
-//! colors and night light. It lives in `~/.local/state/niri-dash/state.json`; config.kdl stays the
-//! user's hand-written file and isn't touched for these.
+//! colors, night light and the widget picker's filter. It lives in
+//! `~/.local/state/niri-dash/state.json`; config.kdl stays the user's hand-written file and isn't
+//! touched for these.
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -18,6 +19,8 @@ pub struct State {
     pub colors: Vec<String>,
     pub night_light: NightLight,
     pub pomodoro: Pomodoro,
+    /// The widget picker's categories that are filtered out, by name ("Media").
+    pub palette_hidden: Vec<String>,
 }
 
 /// Where the pomodoro stood: its part (0 focus, 1 short break, 2 long break), how many focus

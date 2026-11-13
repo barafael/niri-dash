@@ -70,6 +70,18 @@ export struct PaletteItem {
     // Default size in cells.
     w: int,
     h: int,
+    // Its category (an index into the picker's categories), whether that is picked so it is in
+    // the list, and then its place among the entries shown (-1 when hidden).
+    group: int,
+    shown: bool,
+    slot: int,
+}
+
+// A category of widgets in the picker's filter: its name, whether it is picked, how many widgets.
+export struct PaletteGroup {
+    label: string,
+    on: bool,
+    count: int,
 }
 
 // A hint label, letter by letter (so the part typed can be drawn dimmed).

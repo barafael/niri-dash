@@ -20,17 +20,10 @@ use std::path::PathBuf;
 use strum::IntoEnumIterator;
 
 /// The groups in the order the manual lists them (the order [`crate::autolayout`] lays them out).
-const GROUPS: [Group; 6] = [
-    Group::Time,
-    Group::Activity,
-    Group::Media,
-    Group::System,
-    Group::Devices,
-    Group::Controls,
-];
+const GROUPS: [Group; 6] = Group::ALL;
 
 fn group_name(group: Group) -> String {
-    format!("{group:?}")
+    group.name().to_string()
 }
 
 fn group_page(group: Group) -> String {

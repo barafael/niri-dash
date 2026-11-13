@@ -1,5 +1,5 @@
 import { Theme, Icons } from "theme.slint";
-import { WidgetInst, WidgetKind, Shape, PaletteItem, Tray, MenuToggle, DrawerTab, PointerShape, Nav, NavMode } from "data.slint";
+import { WidgetInst, WidgetKind, Shape, PaletteItem, PaletteGroup, Tray, MenuToggle, DrawerTab, PointerShape, Nav, NavMode } from "data.slint";
 import { TextField, Icon, IconButton, TextButton, Muted, Switch, SectionLabel } from "common.slint";
 import { WidgetFrame, WidgetBody } from "frame.slint";
 import { Palette } from "std-widgets.slint";
@@ -236,6 +236,74 @@ component Segment inherits Rectangle {
         overflow: elide;
     }
     tt := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// A category in the widget picker's filter. Picked, its widgets are in the list; the chip fills
+// with the accent and a check grows in, and back out when it is unpicked.
+component FilterChip inherits Rectangle {
+    in property <string> label;
+    in property <int> count;
+    in property <bool> on;
+    in property <bool> kfocus;
+    // Theme.motion, or 0 while it can't be seen.
+    in property <float> motion: Theme.motion;
+    callback clicked();
+    accessible-role: checkbox;
+    accessible-label: root.label;
+    accessible-checkable: true;
+    accessible-checked: root.on;
+    accessible-value: root.count + " widgets";
+    accessible-item-selected: root.kfocus;
+    accessible-action-default => { root.clicked(); }
+    // 0 unpicked .. 1 picked, eased, for what moves with it (the check, the spacing).
+    property <float> fill: root.on ? 1 : 0;
+    animate fill { duration: 220ms * root.motion; easing: cubic-bezier(0.2, 0.9, 0.3, 1.0); }
+    border-radius: self.height / 2;
+    background: root.on ? (touch.has-hover ? Theme.accent : Theme.accent-soft)
+        : touch.pressed ? Theme.pressed : touch.has-hover ? Theme.hover : transparent;
+    animate background { duration: 180ms * root.motion; }
+    border-width: root.kfocus ? 2px : 1px;
+    border-color: root.kfocus ? Theme.accent : root.on ? transparent : Theme.border;
+    animate border-color { duration: 180ms * root.motion; }
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        spacing: 4px * root.fill;
+        alignment: center;
+        Rectangle {
+            width: 14px * root.fill;
+            clip: true;
+            Icon {
+                x: 0;
+                source: Icons.check;
+                size: 14px;
+                tint: root.on && touch.has-hover ? Theme.on-accent : Theme.accent;
+                opacity: root.fill;
+            }
+        }
+        HorizontalLayout {
+            spacing: 4px;
+            Text {
+                text: root.label;
+                font-size: Theme.font-small;
+                font-weight: 600;
+                color: root.on ? (touch.has-hover ? Theme.on-accent : Theme.accent) : Theme.dim;
+                animate color { duration: 180ms * root.motion; }
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            Text {
+                text: root.count;
+                font-size: Theme.font-small;
+                color: root.on && touch.has-hover ? Theme.on-accent : Theme.faint;
+                animate color { duration: 180ms * root.motion; }
+                vertical-alignment: center;
+            }
+        }
+    }
+    touch := TouchArea {
         clicked => { root.clicked(); }
     }
 }
@@ -495,6 +563,10 @@ export component Dash inherits Window {
     in property <bool> solo;
     in property <WidgetInst> solo-inst;
     in property <[PaletteItem]> palette;
+    // The widget picker's categories; unpicking one folds its widgets out of the list.
+    in property <[PaletteGroup]> palette-groups;
+    // The entries shown, in order, as indices into `palette`: what the keyboard steps over.
+    in property <[int]> palette-slots;
     in property <[SchemeItem]> colorschemes;
     in property <[StyleItem]> styles;
     in property <[StyleRow]> style-rows;
@@ -584,6 +656,10 @@ export component Dash inherits Window {
     property <length> drawer-w: 340px;
     // The sidebar is open whenever the settings (edit mode) are.
     property <bool> drawer-shown: self.editing;
+    // The widget picker animates only while it can be seen: what changes while the drawer is
+    // closed (the list filled in at start, a filter restored) is just there, with no animation
+    // running unseen (and repainting, and sending screen readers trees).
+    property <float> picker-motion: self.drawer-shown ? Theme.motion : 0;
     // Only opening/closing the drawer animates the squeeze; screen size changes apply at once.
     property <float> drawer-shift: self.drawer-shown ? 1 : 0;
     animate drawer-shift { duration: 240ms * Theme.motion; easing: cubic-bezier(0.2, 0.9, 0.3, 1.0); }
@@ -689,6 +765,7 @@ export component Dash inherits Window {
     callback add-widget(WidgetKind);
     callback add-widget-at(WidgetKind, int, int);
     callback reset-layout();
+    callback toggle-palette-group(int);
     // Step the grid's columns (index 0) or rows (1) by +1/-1; back to the automatic grid.
     callback grid-step(int, int);
     callback grid-auto();
@@ -822,20 +899,22 @@ export component Dash inherits Window {
     // settings card keeps out of the way.
     property <bool> canvas-keys;
     // Stops: with the settings card open, its rows. Otherwise Widgets: the grid's columns and rows,
-    // the palette, "Reset" (the layout). Colors: the schemes, the folder button. Style: the presets,
+    // the categories (one stop, h/l between them), the palette entries shown, "Reset" (the layout). Colors: the schemes, the folder button. Style: the presets,
     // "Reset all" (when adjusted), the adjustments, the folder button.
     property <int> k-adjust: root.styles.length + (root.style-customized ? 1 : 0);
     // The settings card is open: the widget being worked on has settings to show.
     property <bool> cfg-open: root.editing && root.settings-id != 0 && root.setting-rows.length > 0;
     // Arrange: "Arrange" and "Shuffle", the settings, "Copy" and "Undo".
     property <int> side-count: root.cfg-open ? root.setting-rows.length
-        : root.drawer-tab == DrawerTab.widgets ? 3 + root.palette.length
+        : root.drawer-tab == DrawerTab.widgets ? 4 + root.palette-slots.length
         : root.drawer-tab == DrawerTab.arrange ? root.arrange-rows.length + 4
         : root.drawer-tab == DrawerTab.colors ? root.colorschemes.length + 1
         : root.k-adjust + root.style-rows.length + 1;
     function side-on(tab: DrawerTab, i: int) -> bool {
         root.editing && root.side-keys && !root.cfg-open && root.drawer-tab == tab && root.side-cursor == i
     }
+    // The category under the keyboard cursor, on the categories' stop.
+    in-out property <int> filter-cursor;
     function cfg-on(i: int) -> bool {
         root.cfg-open && root.side-keys && root.side-cursor == i
     }
@@ -875,6 +954,8 @@ export component Dash inherits Window {
             }
         } else if (root.drawer-tab == DrawerTab.widgets && i < 2) {
             root.grid-step(i, d);
+        } else if (root.drawer-tab == DrawerTab.widgets && i == 2) {
+            root.filter-cursor = clamp(root.filter-cursor + d, 0, max(0, root.palette-groups.length - 1));
         } else if (root.drawer-tab == DrawerTab.arrange && i >= 2 && i - 2 < root.arrange-rows.length) {
             root.arrange-step(root.arrange-rows[i - 2].index, d);
         } else if (root.drawer-tab == DrawerTab.style && i >= root.k-adjust && i - root.k-adjust < root.style-rows.length) {
@@ -892,9 +973,11 @@ export component Dash inherits Window {
                 }
             }
         } else if (root.drawer-tab == DrawerTab.widgets) {
-            if (i >= 2 && i - 2 < root.palette.length) {
-                root.add-widget(root.palette[i - 2].kind);
-            } else if (i == 2 + root.palette.length) {
+            if (i == 2) {
+                root.toggle-palette-group(root.filter-cursor);
+            } else if (i >= 3 && i - 3 < root.palette-slots.length) {
+                root.add-widget(root.palette[root.palette-slots[i - 3]].kind);
+            } else if (i == 3 + root.palette-slots.length) {
                 root.reset-layout();
             }
         } else if (root.drawer-tab == DrawerTab.arrange) {
@@ -1451,7 +1534,7 @@ export component Dash inherits Window {
                 accessible-label: "Reset layout";
                 icon: Icons.reset;
                 has-icon: true;
-                kfocus: root.side-on(DrawerTab.widgets, 2 + root.palette.length);
+                kfocus: root.side-on(DrawerTab.widgets, 3 + root.palette-slots.length);
                 clicked => { root.reset-layout(); }
             }
             Rectangle { horizontal-stretch: 1; }
@@ -1543,19 +1626,70 @@ export component Dash inherits Window {
                                 text: "Add";
                                 height: 28px;
                             }
+                            // The categories, three to a row.
+                            filter := Rectangle {
+                                property <int> per-row: 3;
+                                property <length> chip-h: 30px;
+                                property <length> gap: 6px;
+                                property <bool> kfocus: root.side-on(DrawerTab.widgets, 2);
+                                changed kfocus => {
+                                    if (self.kfocus) {
+                                        widgets-side.reveal(self.absolute-position.y, self.height);
+                                    }
+                                }
+                                accessible-role: list;
+                                accessible-label: "Categories";
+                                height: ceil(root.palette-groups.length / self.per-row) * (self.chip-h + self.gap) - self.gap;
+                                for g[i] in root.palette-groups: FilterChip {
+                                    x: mod(i, filter.per-row) * (self.width + filter.gap);
+                                    y: floor(i / filter.per-row) * (filter.chip-h + filter.gap);
+                                    width: (filter.width - (filter.per-row - 1) * filter.gap) / filter.per-row;
+                                    height: filter.chip-h;
+                                    label: g.label;
+                                    count: g.count;
+                                    on: g.on;
+                                    kfocus: filter.kfocus && root.filter-cursor == i;
+                                    motion: root.picker-motion;
+                                    clicked => {
+                                        root.filter-cursor = i;
+                                        root.toggle-palette-group(i);
+                                    }
+                                }
+                            }
+                            // Every category unpicked: say how to get the widgets back.
+                            Rectangle {
+                                height: root.palette-slots.length == 0 ? 40px : 0px;
+                                animate height { duration: 220ms * root.picker-motion; easing: cubic-bezier(0.2, 0.9, 0.3, 1.0); }
+                                opacity: root.palette-slots.length == 0 ? 1 : 0;
+                                animate opacity { duration: 180ms * root.picker-motion; }
+                                visible: self.height > 0.5px;
+                                clip: true;
+                                Muted {
+                                    text: "Pick a category to see its widgets";
+                                    horizontal-alignment: center;
+                                }
+                            }
                         }
+                        // An entry whose category is unpicked folds away: it shrinks to nothing and
+                        // fades, and the ones below slide up; picked again, it unfolds.
                         for p[i] in root.palette: entry := Rectangle {
-                            height: 62px;
+                            height: p.shown ? 62px : 0px;
+                            animate height { duration: 260ms * root.picker-motion; easing: cubic-bezier(0.2, 0.9, 0.3, 1.0); }
+                            opacity: p.shown ? 1 : 0;
+                            animate opacity { duration: 200ms * root.picker-motion; }
+                            clip: true;
+                            visible: self.height > 0.5px;
                             property <bool> dragged-out;
-                            property <bool> kfocus: root.side-on(DrawerTab.widgets, 2 + i);
+                            property <bool> kfocus: p.shown && root.side-on(DrawerTab.widgets, 3 + p.slot);
                             changed kfocus => {
                                 if (self.kfocus) {
                                     widgets-side.reveal(self.absolute-position.y, self.height);
                                 }
                             }
                             Rectangle {
-                                y: 3px;
-                                height: parent.height - 6px;
+                                // Fixed size, centered: folding clips it from both edges.
+                                y: (parent.height - self.height) / 2;
+                                height: 56px;
                                 accessible-role: button;
                                 accessible-label: p.title;
                                 accessible-description: p.description;

@@ -2,9 +2,9 @@
 
 use super::enums::{character_to_ui, kind_from_ui, kind_to_ui, shape_to_ui};
 use super::{App, model, set_if_changed};
-use crate::layout::{Kind, Placed};
+use crate::layout::{Group, Kind, Placed};
 use crate::nav::Dir;
-use crate::{Dash, PaletteItem, WidgetInst};
+use crate::{Dash, PaletteGroup, PaletteItem, WidgetInst};
 use niri_dash_system::{Capabilities, Compositor, Tell, weather};
 use slint::{ComponentHandle, Model};
 use std::rc::Rc;
@@ -762,10 +762,79 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
                     description: caveat.unwrap_or_else(|| info.description.into()).into(),
                     w: info.new_size().0,
                     h: info.new_size().1,
+                    group: group_index(info.group),
+                    shown: true,
+                    slot: -1,
                 }
             })
             .collect(),
     ));
+    ui.set_palette_groups(model(Vec::new()));
+    app.filter_palette();
+    let a = app.clone();
+    ui.on_toggle_palette_group(move |i| {
+        let Some(group) = Group::ALL.get(i as usize) else {
+            return;
+        };
+        a.update_state(|s| {
+            let name = group.name().to_string();
+            if let Some(at) = s.palette_hidden.iter().position(|n| *n == name) {
+                s.palette_hidden.remove(at);
+            } else {
+                s.palette_hidden.push(name);
+            }
+        });
+        a.filter_palette();
+    });
+}
+
+fn group_index(group: Group) -> i32 {
+    Group::ALL.iter().position(|&g| g == group).unwrap_or(0) as i32
+}
+
+impl App {
+    /// Show the widget picker's entries whose category is picked, and the categories with how
+    /// many widgets each has. Entries stay in the list, hidden, so they can fold away and back.
+    fn filter_palette(&self) {
+        let Some(ui) = self.ui.upgrade() else {
+            return;
+        };
+        let hidden = self.state.borrow().palette_hidden.clone();
+        let on = |g: Group| !hidden.iter().any(|n| n == g.name());
+        let palette = ui.get_palette();
+        // The keyboard steps over the entries shown: the n-th of them is entry slots[n].
+        let mut slots = Vec::new();
+        for (i, mut p) in palette.iter().enumerate() {
+            let want = on(Group::ALL[p.group as usize]);
+            let slot = if want { slots.len() as i32 } else { -1 };
+            if want {
+                slots.push(i as i32);
+            }
+            if p.shown != want || p.slot != slot {
+                p.shown = want;
+                p.slot = slot;
+                palette.set_row_data(i, p);
+            }
+        }
+        let groups: Vec<PaletteGroup> = Group::ALL
+            .iter()
+            .enumerate()
+            .map(|(i, &g)| PaletteGroup {
+                label: g.name().into(),
+                on: on(g),
+                count: palette.iter().filter(|p| p.group == i as i32).count() as i32,
+            })
+            .collect();
+        let model = ui.get_palette_groups();
+        match model
+            .as_any()
+            .downcast_ref::<slint::VecModel<PaletteGroup>>()
+        {
+            Some(m) => set_if_changed(m, groups, |a, b| a == b),
+            None => ui.set_palette_groups(super::model(groups)),
+        }
+        ui.set_palette_slots(super::model(slots));
+    }
 }
 
 #[cfg(test)]
