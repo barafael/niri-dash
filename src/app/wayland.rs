@@ -453,6 +453,7 @@ fn serve(
             let ui = app.ui();
             shell.set_glass(ui.global::<crate::Theme>().get_glass());
             shell.set_cursor(cursor_from_ui(ui.get_cursor()));
+            shell.set_animating(app.blending());
             if bench {
                 window.window().request_redraw();
             }

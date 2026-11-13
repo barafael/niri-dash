@@ -1099,17 +1099,13 @@ impl Layout {
         text
     }
 
-    /// Write the config; returns what was written.
-    pub fn save(&mut self) -> Option<String> {
+    /// Write the config (on the file writer's thread, see [`crate::files::write_later`]);
+    /// returns what is written.
+    pub fn save(&mut self) -> String {
         let path = Self::path();
         let text = self.render();
-        match crate::files::write_atomic(&path, &text) {
-            Ok(()) => Some(text),
-            Err(e) => {
-                log::warn!("saving {}: {e}", path.display());
-                None
-            }
-        }
+        crate::files::write_later(path, text.clone().into_bytes());
+        text
     }
 
     /// Replace the widgets with the ones from a freshly parsed file, keeping ids stable for

@@ -234,8 +234,8 @@ struct App {
     tray_items: RefCell<Vec<sys::tray::Item>>,
     menu_address: RefCell<String>,
     toast_timer: Timer,
-    /// Drives the blend between two themes.
-    look_timer: Rc<Timer>,
+    /// The blend between two themes under way, stepped once per frame.
+    look_blend: RefCell<Option<look::Blend>>,
     /// Installed font families for the Style tab (looked up on first use).
     fonts: RefCell<Option<Vec<String>>>,
     /// The surface is up but the entrance animation hasn't started yet.
@@ -250,8 +250,10 @@ struct App {
     hints: RefCell<Vec<String>>,
     /// The window of each Claude session, by pid (niri only).
     claude_windows: RefCell<HashMap<i32, u64>>,
-    /// config.kdl as we last wrote it, to ignore our own writes when watching the file.
-    last_written: RefCell<String>,
+    /// config.kdl as we wrote it, oldest first: our own writes when watching the file. Writes
+    /// land a moment later, on the file writer's thread, so the watcher may see one that was
+    /// overtaken by the next save already: any of these is ours, not an edit to load.
+    written: RefCell<std::collections::VecDeque<String>>,
     /// config.kdl doesn't parse, so edits aren't saved over it.
     config_broken: Cell<bool>,
     /// Files the watcher checks for changes (config.kdl and the active theme).
@@ -362,6 +364,7 @@ impl App {
             self.set_awake(false);
         }
         self.tick_pick(shell);
+        self.step_look();
     }
 
     /// Tell the system whether the dashboard is up: sources only watch and poll while it is.
@@ -609,7 +612,7 @@ fn build(
         tray_items: Default::default(),
         menu_address: Default::default(),
         toast_timer: Timer::default(),
-        look_timer: Default::default(),
+        look_blend: Default::default(),
         fonts: Default::default(),
         reveal_pending: Cell::new(false),
         hide_at: Cell::new(None),
@@ -617,7 +620,7 @@ fn build(
         hold: Default::default(),
         hints: Default::default(),
         claude_windows: Default::default(),
-        last_written: RefCell::new(text),
+        written: RefCell::new([text].into()),
         config_broken: Cell::new(broken),
         watched,
         mixer: Default::default(),

@@ -247,26 +247,21 @@ impl Style {
 
     fn mix(&self, b: &Style, t: f32) -> Style {
         let l = |x: f32, y: f32| x + (y - x) * t;
-        let early = t < 0.5;
+        // What changes the layout is the new look's from the start: the font (text in between
+        // sizes would be laid out and its glyphs drawn anew for every frame) and the spacing
+        // (every widget laid out again for every frame). The one costly frame that takes comes
+        // before anything moves; colors, corners and borders then glide.
         Style {
             radius: l(self.radius, b.radius),
             radius_small: l(self.radius_small, b.radius_small),
-            gap: l(self.gap, b.gap),
-            padding: l(self.padding, b.padding),
+            gap: b.gap,
+            padding: b.padding,
             border_width: l(self.border_width, b.border_width),
-            font_family: if early {
-                self.font_family.clone()
-            } else {
-                b.font_family.clone()
-            },
-            font_small: l(self.font_small, b.font_small),
-            font_body: l(self.font_body, b.font_body),
-            font_title: l(self.font_title, b.font_title),
-            font_weight_display: if early {
-                self.font_weight_display
-            } else {
-                b.font_weight_display
-            },
+            font_family: b.font_family.clone(),
+            font_small: b.font_small,
+            font_body: b.font_body,
+            font_title: b.font_title,
+            font_weight_display: b.font_weight_display,
             motion: b.motion,
             glass: b.glass,
             backdrop_opacity: l(self.backdrop_opacity, b.backdrop_opacity),
@@ -379,8 +374,8 @@ pub fn set(ui: &Dash, look: &Look) {
     t.set_card_opacity(s.card_opacity);
 }
 
-/// Blend two looks: colors and sizes in between; font family and weight switch halfway, and
-/// motion and glass are the new look's from the start.
+/// Blend two looks: colors, corners and borders in between; the font, the spacing, motion and
+/// glass are the new look's from the start.
 pub fn mix(a: &Look, b: &Look, t: f32) -> Look {
     let channel = |x: u8, y: u8| {
         (x as f32 + (y as f32 - x as f32) * t)
@@ -466,8 +461,14 @@ fn style_of(doc: &KdlDocument, look: &mut Look, warnings: &mut Vec<String>) {
 }
 
 /// The built-in defaults: the bundled default color scheme and style, which set every color
-/// and every variable.
+/// and every variable. Parsed once: every look starts from them, and the Colors and Style tabs
+/// resolve a look per file.
 fn base() -> Look {
+    static BASE: std::sync::OnceLock<Look> = std::sync::OnceLock::new();
+    BASE.get_or_init(parse_base).clone()
+}
+
+fn parse_base() -> Look {
     let mut look = Look {
         colors: [Color::default(); ColorRole::COUNT],
         style: Style::default(),
@@ -502,6 +503,28 @@ pub fn preset_changes(style: &str) -> Vec<StyleVar> {
         .collect()
 }
 
+/// A color scheme or style file, parsed once per text. A look is resolved for every file the
+/// Colors and Style tabs list, and again for the one in use on every change; an edited file is
+/// new text, so it is parsed anew.
+fn parsed(text: &str) -> std::rc::Rc<Result<KdlDocument, String>> {
+    type Cache = std::collections::HashMap<String, std::rc::Rc<Result<KdlDocument, String>>>;
+    thread_local! {
+        static PARSED: std::cell::RefCell<Cache> = Default::default();
+    }
+    PARSED.with_borrow_mut(|cache| {
+        if let Some(doc) = cache.get(text) {
+            return doc.clone();
+        }
+        // The bundled files and a few of the user's own: old versions of edited files go.
+        if cache.len() >= 128 {
+            cache.clear();
+        }
+        let doc = std::rc::Rc::new(parse_doc(text));
+        cache.insert(text.to_string(), doc.clone());
+        doc
+    })
+}
+
 /// Like `resolve`, with per-variable adjustments on top of the style (from config.kdl).
 pub fn resolve_with(
     colorscheme: &str,
@@ -510,12 +533,12 @@ pub fn resolve_with(
 ) -> (Look, Vec<String>) {
     let mut look = base();
     let mut warnings = Vec::new();
-    match parse_doc(colorscheme) {
-        Ok(doc) => colors_of(&doc, &mut look, &mut warnings),
+    match &*parsed(colorscheme) {
+        Ok(doc) => colors_of(doc, &mut look, &mut warnings),
         Err(e) => warnings.push(format!("color scheme: {e}")),
     }
-    match parse_doc(style) {
-        Ok(doc) => style_of(&doc, &mut look, &mut warnings),
+    match &*parsed(style) {
+        Ok(doc) => style_of(doc, &mut look, &mut warnings),
         Err(e) => warnings.push(format!("style: {e}")),
     }
     let mut w = Vec::new();
@@ -1012,6 +1035,14 @@ mod tests {
         );
         assert_eq!(m.style.radius, 30.0);
         assert_eq!(mix(&a2, &b, 1.0), b);
+        // What changes the layout is the new look's from the start, so only one frame lays
+        // everything out anew.
+        let mut c = a.clone();
+        c.style.gap = 3.0;
+        c.style.font_body = 18.0;
+        let start = mix(&a, &c, 0.0);
+        assert_eq!((start.style.gap, start.style.font_body), (3.0, 18.0));
+        assert_eq!(start.colors, a.colors);
     }
 
     #[test]

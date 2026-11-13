@@ -661,24 +661,63 @@ export component Dash inherits Window {
     // running unseen (and repainting, and sending screen readers trees).
     property <float> picker-motion: self.drawer-shown ? Theme.motion : 0;
     // Only opening/closing the drawer animates the squeeze; screen size changes apply at once.
-    property <float> drawer-shift: self.drawer-shown ? 1 : 0;
-    animate drawer-shift { duration: 240ms * Theme.motion; easing: cubic-bezier(0.2, 0.9, 0.3, 1.0); }
+    property <float> drawer-target: self.drawer-shown ? 1 : 0;
+    property <float> drawer-shift: self.drawer-target;
+    // The delay is the first frame's: the widgets are laid out anew for their new cells then (the
+    // costly frame), and the slide starts once that is done, so none of its frames is late.
+    animate drawer-shift {
+        delay: 40ms * Theme.motion;
+        duration: 240ms * Theme.motion;
+        easing: cubic-bezier(0.2, 0.9, 0.3, 1.0);
+    }
+    // The drawer is sliding. The widgets are laid out once, for where it ends up, and the grid is
+    // scaled and moved to where it is now: a transform a frame, not a new layout of every widget.
+    property <bool> squeezing: self.drawer-shift != self.drawer-target;
+    // The grid itself is on the move (the drawer squeezing it, a theme blend changing the gap):
+    // widgets go with it, with no glide of their own.
+    property <bool> grid-moving: self.squeezing || Theme.blending;
     // The drawer keeps this distance to the screen edges; while it is open the cards keep the
     // same distance to the screen edge and to the drawer, and start level with its top.
     property <length> edge: 16px;
     property <length> drawer-y: self.bar + 8px;
-    property <length> avail-w: self.width - self.drawer-shift * (self.drawer-w + self.edge);
+    property <length> avail-w: self.avail-w-at(self.drawer-shift);
+    // The grid's geometry with the drawer `s` of the way open (0 closed, 1 open).
+    pure function avail-w-at(s: float) -> length {
+        self.width - s * (self.drawer-w + self.edge)
+    }
+    pure function grid-side-at(s: float) -> length {
+        self.margin + s * (self.edge - Theme.gap - self.margin)
+    }
+    pure function grid-top-at(s: float) -> length {
+        self.bar + s * (self.drawer-y - Theme.gap - self.bar)
+    }
+    pure function grid-bottom-at(s: float) -> length {
+        self.height - self.margin + s * (self.margin - self.edge + Theme.gap)
+    }
+    pure function cell-at(s: float) -> length {
+        min((self.avail-w-at(s) - 2 * self.grid-side-at(s)) / self.cols,
+            (self.grid-bottom-at(s) - self.grid-top-at(s)) / self.rows)
+    }
+    pure function grid-x-at(s: float) -> length {
+        (self.avail-w-at(s) - self.cols * self.cell-at(s)) / 2
+    }
+    // Centered vertically; top-aligned with the drawer while it is open.
+    pure function grid-y-at(s: float) -> length {
+        self.grid-top-at(s) + (1 - s) * (self.grid-bottom-at(s) - self.grid-top-at(s) - self.rows * self.cell-at(s)) / 2
+    }
     out property <int> cols: self.grid-cols > 0 ? self.grid-cols : max(4, floor((self.width - 2 * self.margin) / self.auto-cell));
     out property <int> rows: self.grid-rows > 0 ? self.grid-rows : max(3, floor((self.height - self.bar - self.margin) / self.auto-cell));
     // The space the grid may take. Cells reach `Theme.gap` past their cards, so with the drawer
-    // open the grid's bounds are the cards' bounds widened by a gap.
-    property <length> grid-side: self.margin + self.drawer-shift * (self.edge - Theme.gap - self.margin);
-    property <length> grid-top: self.bar + self.drawer-shift * (self.drawer-y - Theme.gap - self.bar);
-    property <length> grid-bottom: self.height - self.margin + self.drawer-shift * (self.margin - self.edge + Theme.gap);
-    out property <length> cell: min((self.avail-w - 2 * self.grid-side) / self.cols, (self.grid-bottom - self.grid-top) / self.rows);
-    out property <length> grid-x: (self.avail-w - self.cols * self.cell) / 2;
-    // Centered vertically; top-aligned with the drawer while it is open.
-    out property <length> grid-y: self.grid-top + (1 - self.drawer-shift) * (self.grid-bottom - self.grid-top - self.rows * self.cell) / 2;
+    // open the grid's bounds are the cards' bounds widened by a gap. The cells and the grid's
+    // place are where the drawer is going: what widgets are laid out for, and what Rust and the
+    // pointer go by.
+    out property <length> cell: self.cell-at(self.drawer-target);
+    out property <length> grid-x: self.grid-x-at(self.drawer-target);
+    out property <length> grid-y: self.grid-y-at(self.drawer-target);
+    // Where the grid shows while the drawer slides.
+    property <length> shown-cell: self.cell-at(self.drawer-shift);
+    property <length> shown-x: self.grid-x-at(self.drawer-shift);
+    property <length> shown-y: self.grid-y-at(self.drawer-shift);
 
     // Dragging a new widget from the drawer (add) or a picked-up widget (carry).
     in-out property <DragMode> drag-mode: DragMode.none;
@@ -1330,8 +1369,8 @@ export component Dash inherits Window {
             y: (1 - root.reveal) * -12px;
             opacity: root.reveal;
             height: root.bar;
-            padding-left: root.grid-x + Theme.gap;
-            padding-right: root.width - root.avail-w + root.grid-x + Theme.gap;
+            padding-left: root.shown-x + Theme.gap;
+            padding-right: root.width - root.avail-w + root.shown-x + Theme.gap;
             padding-top: 6px;
             spacing: 8px;
             // Shortcuts for what the keys do now. One that doesn't fit whole is left out.
@@ -1376,10 +1415,12 @@ export component Dash inherits Window {
 
         grid := Rectangle {
             visible: !root.solo;
-            x: root.grid-x;
-            y: root.grid-y;
+            x: root.shown-x;
+            y: root.shown-y;
             width: root.cols * root.cell;
             height: root.rows * root.cell;
+            transform-origin: { x: 0px, y: 0px };
+            transform-scale: root.shown-cell / root.cell;
 
             if root.edit-fade > 0.01 || root.dragging: Rectangle {
                 opacity: max(root.edit-fade, root.dragging ? 1 : 0);
@@ -1431,6 +1472,7 @@ export component Dash inherits Window {
             for w in root.widgets: WidgetFrame {
                 inst: w;
                 cell: root.cell;
+                grid-moving: root.grid-moving;
                 area-w: root.cols * root.cell;
                 area-h: root.rows * root.cell;
                 expanded: root.expand-on && Nav.expanded-id == w.id;

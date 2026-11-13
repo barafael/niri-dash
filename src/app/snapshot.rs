@@ -66,7 +66,12 @@ pub struct Args {
     /// Keep the incrementally rendered frame instead of rendering a fresh, full one at the end.
     #[arg(long, requires = "incremental")]
     keep: bool,
-    /// Time the frames of the open animation and print the figures.
+    /// Time frames and print the figures: the open animation, a still frame, showing the
+    /// dashboard again and again, edit mode in and out, and style presets one after another.
+    /// `NIRI_DASH_RENDERER=gpu` draws into an offscreen buffer as on screen, without reading it
+    /// back. `NIRI_DASH_BENCH_ONLY=open|show|edit|styles` runs one part;
+    /// `NIRI_DASH_BENCH_TURNS=1` says when the late turns of edit mode and the presets came.
+    /// Choosing presets saves config.kdl: point XDG_CONFIG_HOME at a copy.
     #[arg(long)]
     bench: bool,
     /// Show the mock system's made-up data instead of the live system's.
@@ -126,6 +131,22 @@ pub fn run(args: &Args, solo: Option<Kind>) -> Result<()> {
         Some(())
     };
     let ui = new_ui()?;
+    // What a frame costs on screen: drawn into a pbuffer, waited for, never read back.
+    let bench_frame = |full: bool| -> Option<()> {
+        match &gpu {
+            Some((g, gl)) => {
+                if full {
+                    g.window().request_redraw();
+                }
+                if !g.draw_if_needed() {
+                    return None;
+                }
+                gl.finish();
+                Some(())
+            }
+            None => None,
+        }
+    };
     let (pw, ph) = (
         (args.width as f32 * args.scale).round() as u32,
         (args.height as f32 * args.scale).round() as u32,
@@ -134,16 +155,33 @@ pub fn run(args: &Args, solo: Option<Kind>) -> Result<()> {
         scale_factor: args.scale,
     });
     window.set_size(slint::PhysicalSize::new(pw, ph));
+    if args.bench
+        && let Some((_, gl)) = &gpu
+    {
+        gl.attach_pbuffer(pw, ph)?;
+    }
     let mut event_loop: EventLoop<'static, ()> = EventLoop::try_new()?;
     // Only the config watcher sends inputs: there is no control socket.
     let (input_tx, inputs) = super::loop_channel::<Input>();
     let app = build(&ui, system, input_tx, solo, Layout::load(), true);
     let a = app.clone();
+    // With --bench: how long each system event took to handle, and what it was.
+    let slow_events: Rc<std::cell::RefCell<Vec<(f64, String)>>> = Default::default();
+    let slow = slow_events.clone();
+    let bench = args.bench;
     event_loop
         .handle()
         .insert_source(events, move |ev, _, _| {
             if let channel::Event::Msg(e) = ev {
+                if !bench {
+                    let _ = a.handle_event(e);
+                    return;
+                }
+                let label: String = format!("{e:?}").chars().take(60).collect();
+                let t = Instant::now();
                 let _ = a.handle_event(e);
+                slow.borrow_mut()
+                    .push((t.elapsed().as_secs_f64() * 1000.0, label));
             }
         })
         .map_err(|e| Error::Ui(e.to_string()))?;
@@ -188,6 +226,7 @@ pub fn run(args: &Args, solo: Option<Kind>) -> Result<()> {
     while Instant::now() < end {
         event_loop.dispatch(Some(Duration::from_millis(50)), &mut ())?;
         slint::platform::update_timers_and_animations();
+        app.step_look();
         if first {
             // Let layouts settle once before the grid size is read.
             first = false;
@@ -215,6 +254,7 @@ pub fn run(args: &Args, solo: Option<Kind>) -> Result<()> {
                     log::warn!("event loop: {e}");
                 }
                 slint::platform::update_timers_and_animations();
+                app.step_look();
                 render_into(pixels, pw as usize, false);
                 std::thread::sleep(Duration::from_millis(8));
             }
@@ -255,31 +295,225 @@ pub fn run(args: &Args, solo: Option<Kind>) -> Result<()> {
         pump(400, &mut pixels);
     }
     if args.bench {
-        ui.set_shown(false);
-        let t = Instant::now();
-        while t.elapsed() < Duration::from_millis(300) {
-            slint::platform::update_timers_and_animations();
-            render_into(&mut pixels, pw as usize, false);
-        }
-        ui.set_shown(true);
-        let start = Instant::now();
-        let mut times = Vec::new();
-        while start.elapsed() < Duration::from_millis(900) {
-            slint::platform::update_timers_and_animations();
-            let f = Instant::now();
-            if render_into(&mut pixels, pw as usize, false).is_some() {
-                times.push(f.elapsed().as_secs_f64() * 1000.0);
+        // The GPU's frames as the daemon draws them; the software renderer's into the buffer.
+        let frame = |full: bool, pixels: &mut Vec<PremultipliedRgbaColor>| {
+            if gpu.is_some() {
+                bench_frame(full)
+            } else {
+                render_into(pixels, pw as usize, full)
             }
+        };
+        // NIRI_DASH_BENCH_ONLY=open, show or styles: only that part.
+        let only = std::env::var("NIRI_DASH_BENCH_ONLY").unwrap_or_default();
+        let part = |name: &str| only.is_empty() || only == name;
+        const PERIOD: Duration = Duration::from_micros(6060);
+        let report = |label: &str, mut times: Vec<f64>| {
+            times.sort_by(|a, b| a.total_cmp(b));
+            let n = times.len().max(1);
+            println!(
+                "{label}: frames {} median {:.1} ms p90 {:.1} ms max {:.1} ms",
+                times.len(),
+                times.get(n / 2).unwrap_or(&0.0),
+                times.get(n * 9 / 10).unwrap_or(&0.0),
+                times.get(n - 1).unwrap_or(&0.0)
+            );
+        };
+        if part("open") {
+            ui.set_shown(false);
+            let t = Instant::now();
+            while t.elapsed() < Duration::from_millis(300) {
+                slint::platform::update_timers_and_animations();
+                app.step_look();
+                frame(false, &mut pixels);
+            }
+            ui.set_shown(true);
+            let start = Instant::now();
+            let mut times = Vec::new();
+            while start.elapsed() < Duration::from_millis(900) {
+                slint::platform::update_timers_and_animations();
+                app.step_look();
+                let f = Instant::now();
+                if frame(false, &mut pixels).is_some() {
+                    times.push(f.elapsed().as_secs_f64() * 1000.0);
+                }
+            }
+            report("open animation", times);
+            // The same frame again with nothing moving: what any frame costs, so what the animation
+            // adds is the difference.
+            let t = Instant::now();
+            while t.elapsed() < Duration::from_millis(500) {
+                slint::platform::update_timers_and_animations();
+                app.step_look();
+                frame(false, &mut pixels);
+            }
+            let mut still = Vec::new();
+            for _ in 0..20 {
+                let f = Instant::now();
+                frame(true, &mut pixels);
+                still.push(f.elapsed().as_secs_f64() * 1000.0);
+            }
+            report("still, full frame", still);
         }
-        times.sort_by(|a, b| a.total_cmp(b));
-        let n = times.len().max(1);
-        println!(
-            "frames {} median {:.1} ms p90 {:.1} ms max {:.1} ms",
-            times.len(),
-            times[n / 2],
-            times[n * 9 / 10],
-            times[n - 1]
-        );
+        if part("show") {
+            // As the daemon runs: shown and hidden again and again (each show refreshes every
+            // source), events handled between frames, one frame per refresh at 165 Hz. A turn of
+            // the loop that takes longer than a refresh is a frame shown late.
+            let (mut turns, mut late) = (0, 0);
+            let (mut handling, mut drawing) = (Vec::new(), Vec::new());
+            slow_events.borrow_mut().clear();
+            for _ in 0..6 {
+                ui.set_shown(false);
+                app.tx.host.tell(host::Command::Visible(false));
+                let t = Instant::now();
+                while t.elapsed() < Duration::from_millis(700) {
+                    let _ = event_loop.dispatch(Some(Duration::from_millis(5)), &mut ());
+                    slint::platform::update_timers_and_animations();
+                    app.step_look();
+                    frame(false, &mut pixels);
+                }
+                app.come_up();
+                ui.set_shown(true);
+                app.tx.host.tell(host::Command::Visible(true));
+                let t = Instant::now();
+                while t.elapsed() < Duration::from_millis(1200) {
+                    let turn = Instant::now();
+                    let _ = event_loop.dispatch(Some(Duration::ZERO), &mut ());
+                    let handled = turn.elapsed();
+                    slint::platform::update_timers_and_animations();
+                    app.step_look();
+                    let f = Instant::now();
+                    frame(false, &mut pixels);
+                    let drawn = f.elapsed();
+                    let took = turn.elapsed();
+                    turns += 1;
+                    if took > PERIOD {
+                        late += 1;
+                    }
+                    handling.push(handled.as_secs_f64() * 1000.0);
+                    drawing.push(drawn.as_secs_f64() * 1000.0);
+                    std::thread::sleep(PERIOD.saturating_sub(took));
+                }
+            }
+            println!("shown 6 times: {late} of {turns} turns of the loop over a 165 Hz refresh");
+            report("  handling events, per turn", handling);
+            report("  update + frame, per turn", drawing);
+        }
+        if part("edit") {
+            // Into edit mode and out again: the drawer slides in and the grid makes room.
+            let mut turns_all = Vec::new();
+            let mut late = 0;
+            for i in 0..12 {
+                app.set_editing(i % 2 == 0);
+                let first = turns_all.len();
+                let started = Instant::now();
+                let mut moved_late = Vec::new();
+                let t = Instant::now();
+                while t.elapsed() < Duration::from_millis(500) {
+                    let turn = Instant::now();
+                    let _ = event_loop.dispatch(Some(Duration::ZERO), &mut ());
+                    slint::platform::update_timers_and_animations();
+                    app.step_look();
+                    frame(false, &mut pixels);
+                    let took = turn.elapsed();
+                    if took > PERIOD {
+                        late += 1;
+                        moved_late.push((
+                            started.elapsed().as_millis() as u64,
+                            (took.as_secs_f64() * 10000.0).round() / 10.0,
+                        ));
+                    }
+                    turns_all.push(took.as_secs_f64() * 1000.0);
+                    std::thread::sleep(PERIOD.saturating_sub(took));
+                }
+                let _ = first;
+                if std::env::var_os("NIRI_DASH_BENCH_TURNS").is_some() {
+                    // When (ms after the switch) the late turns came, and how long they took.
+                    println!(
+                        "  {}: late turns {moved_late:?}",
+                        if i % 2 == 0 { "in " } else { "out" }
+                    );
+                }
+            }
+            println!(
+                "edit mode in and out 6 times: {late} of {} turns over a 165 Hz refresh",
+                turns_all.len()
+            );
+            let mut d = turns_all.clone();
+            d.sort_by(|a, b| b.total_cmp(a));
+            println!(
+                "  slowest turns: {:?}",
+                d.iter()
+                    .take(14)
+                    .map(|x| (x * 10.0).round() / 10.0)
+                    .collect::<Vec<_>>()
+            );
+            report("  turn of the loop", turns_all);
+        }
+        if part("styles") {
+            // Switching style presets back and forth, as in the Style tab.
+            app.refresh_looks();
+            let styles: Vec<String> = slint::Model::iter(&ui.get_styles())
+                .map(|s| s.name.to_string())
+                .collect();
+            let (mut turns, mut late) = (0, 0);
+            let mut drawing = Vec::new();
+            let mut frames = 0;
+            let mut choosing = Vec::new();
+            for i in 0..12 {
+                let c = Instant::now();
+                ui.invoke_choose_style(styles[i % styles.len()].as_str().into());
+                choosing.push(c.elapsed().as_secs_f64() * 1000.0);
+                let t = Instant::now();
+                let mut late_at = Vec::new();
+                while t.elapsed() < Duration::from_millis(600) {
+                    let turn = Instant::now();
+                    let _ = event_loop.dispatch(Some(Duration::ZERO), &mut ());
+                    slint::platform::update_timers_and_animations();
+                    app.step_look();
+                    if frame(false, &mut pixels).is_some() {
+                        frames += 1;
+                    }
+                    let took = turn.elapsed();
+                    turns += 1;
+                    if took > PERIOD {
+                        late += 1;
+                        late_at.push((
+                            t.elapsed().as_millis() as u64,
+                            (took.as_secs_f64() * 10.0 * 1000.0).round() / 10.0,
+                        ));
+                    }
+                    drawing.push(took.as_secs_f64() * 1000.0);
+                    std::thread::sleep(PERIOD.saturating_sub(took));
+                }
+                if std::env::var_os("NIRI_DASH_BENCH_TURNS").is_some() {
+                    // When (ms after the click) the late turns came, and how long they took.
+                    println!("  {}: late turns {late_at:?}", styles[i % styles.len()]);
+                }
+            }
+            println!(
+                "style presets {styles:?} switched 12 times: {late} of {turns} turns over a 165 Hz \
+                 refresh, {frames} frames drawn"
+            );
+            report("  choosing a preset (the click)", choosing);
+            {
+                let mut d = drawing.clone();
+                d.sort_by(|a, b| b.total_cmp(a));
+                println!(
+                    "  slowest turns: {:?}",
+                    d.iter()
+                        .take(14)
+                        .map(|x| (x * 10.0).round() / 10.0)
+                        .collect::<Vec<_>>()
+                );
+            }
+            report("  turn of the loop", drawing);
+        }
+        let mut slow = slow_events.borrow().clone();
+        slow.sort_by(|a, b| b.0.total_cmp(&a.0));
+        println!("  slowest events:");
+        for (ms, label) in slow.iter().take(12) {
+            println!("    {ms:>7.2} ms  {label}");
+        }
     }
     if !args.keep {
         // Like hiding and showing again: a fresh buffer, then a full frame.

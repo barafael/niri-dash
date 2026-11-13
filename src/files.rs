@@ -67,6 +67,62 @@ mod disk {
             .map(|rd| rd.flatten().map(|e| e.path()).collect())
             .unwrap_or_default()
     }
+
+    /// Write `path` as [`write_atomic`] does, on a thread of its own: the UI doesn't wait for the
+    /// disk, which now and then takes tens of milliseconds, right as an animation starts (a drop,
+    /// a theme picked). Writes happen in the order asked; [`flush`] waits for them. A write that
+    /// fails is logged.
+    pub fn write_later(path: PathBuf, contents: Vec<u8>) {
+        if writer()
+            .send(Job::Write(path.clone(), contents.clone()))
+            .is_err()
+        {
+            // The writer is gone (it never is, short of a panic): write here instead.
+            if let Err(e) = write_atomic(&path, contents) {
+                log::warn!("writing {}: {e}", path.display());
+            }
+        }
+    }
+
+    /// Wait until everything [`write_later`] was given is on disk.
+    pub fn flush() {
+        let (done, wait) = std::sync::mpsc::channel();
+        if writer().send(Job::Flush(done)).is_ok() {
+            let _ = wait.recv();
+        }
+    }
+
+    enum Job {
+        Write(PathBuf, Vec<u8>),
+        Flush(std::sync::mpsc::Sender<()>),
+    }
+
+    /// The writer: a thread that owns the writing, fed through a channel.
+    fn writer() -> &'static std::sync::mpsc::Sender<Job> {
+        static WRITER: std::sync::OnceLock<std::sync::mpsc::Sender<Job>> =
+            std::sync::OnceLock::new();
+        WRITER.get_or_init(|| {
+            let (tx, rx) = std::sync::mpsc::channel::<Job>();
+            std::thread::Builder::new()
+                .name("niri-dash-files".into())
+                .spawn(move || {
+                    for job in rx {
+                        match job {
+                            Job::Write(path, contents) => {
+                                if let Err(e) = write_atomic(&path, contents) {
+                                    log::warn!("writing {}: {e}", path.display());
+                                }
+                            }
+                            Job::Flush(done) => {
+                                let _ = done.send(());
+                            }
+                        }
+                    }
+                })
+                .expect("starting the file writer");
+            tx
+        })
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -101,6 +157,15 @@ mod page {
     }
 
     /// A write to localStorage is whole or doesn't happen.
+    /// As on disk; localStorage is fast, so it is written right away.
+    pub fn write_later(path: PathBuf, contents: Vec<u8>) {
+        if let Err(e) = write_atomic(&path, contents) {
+            log::warn!("writing {}: {e}", path.display());
+        }
+    }
+
+    pub fn flush() {}
+
     pub fn write_atomic(path: &Path, contents: impl AsRef<[u8]>) -> std::io::Result<()> {
         let text = std::str::from_utf8(contents.as_ref())
             .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;

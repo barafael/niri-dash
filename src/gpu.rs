@@ -47,8 +47,8 @@ pub struct Gl {
 }
 
 struct Target {
-    // Dropped after `surface` is destroyed (see `detach`).
-    native: WlEglSurface,
+    // Dropped after `surface` is destroyed (see `detach`). None for a pbuffer.
+    native: Option<WlEglSurface>,
     surface: egl::Surface,
 }
 
@@ -63,7 +63,16 @@ impl Gl {
     /// A context without any display server, for offscreen rendering (`snapshot`).
     pub fn offscreen() -> Result<Rc<Self>> {
         // SAFETY: the surfaceless platform takes no native display.
-        unsafe { Self::with_platform(EGL_PLATFORM_SURFACELESS_MESA, std::ptr::null_mut(), 0) }
+        unsafe {
+            Self::with_platform(
+                EGL_PLATFORM_SURFACELESS_MESA,
+                std::ptr::null_mut(),
+                egl::PBUFFER_BIT,
+            )
+        }
+        .or_else(|_| unsafe {
+            Self::with_platform(EGL_PLATFORM_SURFACELESS_MESA, std::ptr::null_mut(), 0)
+        })
     }
 
     /// # Safety
@@ -169,8 +178,52 @@ impl Gl {
             .map_err(|e| GpuError::Egl("eglMakeCurrent", e))?;
         // Frame pacing is done with our own frame callbacks; never block in eglSwapBuffers.
         let _ = self.egl.swap_interval(self.display, 0);
-        *self.target.borrow_mut() = Some(Target { native, surface });
+        *self.target.borrow_mut() = Some(Target {
+            native: Some(native),
+            surface,
+        });
         Ok(())
+    }
+
+    /// Render into an offscreen pbuffer of `width`×`height` from now on: frames are drawn as on
+    /// screen, without being read back (`snapshot --bench`).
+    pub fn attach_pbuffer(&self, width: u32, height: u32) -> Result<()> {
+        self.detach();
+        let surface = self
+            .egl
+            .create_pbuffer_surface(
+                self.display,
+                self.config,
+                &[
+                    egl::WIDTH,
+                    width as egl::Int,
+                    egl::HEIGHT,
+                    height as egl::Int,
+                    egl::NONE,
+                ],
+            )
+            .map_err(|e| GpuError::Egl("eglCreatePbufferSurface", e))?;
+        self.egl
+            .make_current(
+                self.display,
+                Some(surface),
+                Some(surface),
+                Some(self.context),
+            )
+            .map_err(|e| GpuError::Egl("eglMakeCurrent (pbuffer)", e))?;
+        *self.target.borrow_mut() = Some(Target {
+            native: None,
+            surface,
+        });
+        Ok(())
+    }
+
+    /// Wait until the GPU has done what it was told (`glFinish`), to time a frame.
+    pub fn finish(&self) {
+        if let Some(f) = self.egl.get_proc_address("glFinish") {
+            // glFinish takes no arguments; the context is current on this thread.
+            f();
+        }
     }
 
     /// Stop rendering into the surface, before it is destroyed.
@@ -223,9 +276,14 @@ unsafe impl OpenGLInterface for GlHandle {
     }
 
     fn resize(&self, width: NonZeroU32, height: NonZeroU32) -> Result<(), Error> {
-        if let Some(t) = self.0.target.borrow().as_ref() {
-            t.native
-                .resize(width.get() as i32, height.get() as i32, 0, 0);
+        if let Some(native) = self
+            .0
+            .target
+            .borrow()
+            .as_ref()
+            .and_then(|t| t.native.as_ref())
+        {
+            native.resize(width.get() as i32, height.get() as i32, 0, 0);
         }
         Ok(())
     }

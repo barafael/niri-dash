@@ -72,9 +72,7 @@ pub fn load() -> State {
 pub fn save(state: &State) {
     let path = path();
     let json = serde_json::to_vec_pretty(state).expect("the state serializes");
-    if let Err(e) = crate::files::write_atomic(&path, json) {
-        log::warn!("saving {}: {e}", path.display());
-    }
+    crate::files::write_later(path, json);
 }
 
 #[cfg(test)]

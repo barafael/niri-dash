@@ -214,6 +214,8 @@ pub struct Shell {
     frame_size: (u32, u32),
     /// When the last GPU frame was drawn, for `MIN_FRAME_GAP`.
     last_frame: Option<std::time::Instant>,
+    /// See [`Shell::set_animating`].
+    animating: bool,
     /// Frames presented since the surface was created.
     pub presented: u32,
     /// Set when the compositor closed our surface (output went away etc).
@@ -309,6 +311,7 @@ impl Shell {
             frame_size: (0, 0),
             presented: 0,
             last_frame: None,
+            animating: false,
             closed_by_compositor: false,
         })
     }
@@ -514,9 +517,15 @@ impl Shell {
         }
     }
 
+    /// Something the dashboard animates itself (a theme blend) is under way: its frames come as
+    /// fast as the display takes them, as Slint's own animations' do.
+    pub fn set_animating(&mut self, on: bool) {
+        self.animating = on;
+    }
+
     /// What is left of `MIN_FRAME_GAP` since the last GPU frame, unless something animates.
     fn frame_gap(&self) -> Option<std::time::Duration> {
-        if self.window.window().has_active_animations() {
+        if self.animating || self.window.window().has_active_animations() {
             return None;
         }
         let since = self.last_frame?.elapsed();
