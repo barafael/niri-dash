@@ -420,6 +420,9 @@ impl Sim {
             R::Host(host::Command::Open(path)) => {
                 self.toast(format!("Would open {}", path.display()));
             }
+            R::Host(host::Command::OpenUrl(url)) => {
+                self.toast(format!("Would open {url}"));
+            }
             R::Host(host::Command::PlaySound(_)) => {}
             R::Windows(c) => self.windows.handle(c, t),
             R::Keyboard(keyboard::Command::Switch(to)) => {

@@ -68,6 +68,7 @@ const TABLE: &[(&[Kind], f32)] = &[
     (&[Clipboard, ColorPicker], 0.4),
     (&[Notes, ClaudeSessions], 0.3),
     (&[Notes, Timer], 0.2),
+    (&[About, NiriDashInfo], 0.8),
     // The tray and its neighbours.
     (&[Tray, KeyboardLayout], 0.5),
     (&[Tray, Session], 0.3),
@@ -82,7 +83,7 @@ const TABLE: &[(&[Kind], f32)] = &[
 type Matrix = [[f32; KINDS]; KINDS];
 
 /// How many kinds there are.
-const KINDS: usize = 34;
+const KINDS: usize = 35;
 
 fn index(k: Kind) -> usize {
     Kind::iter().position(|o| o == k).unwrap_or(0)

@@ -54,6 +54,7 @@ fn feeds(kind: Kind) -> &'static [Feed] {
         // Its notices are local ones, like the timer's.
         Kind::Pomodoro => &[Feed::Notifications],
         Kind::About => &[],
+        Kind::NiriDashInfo => &[],
     }
 }
 /// The pointer the UI asks for, as a cursor shape.
@@ -333,6 +334,7 @@ fn serve(
     let (globals, queue) = registry_queue_init::<Shell>(&conn)?;
     let mut event_loop: EventLoop<'static, Shell> = EventLoop::try_new()?;
     let backend = choose_backend(&conn, config.layout.renderer);
+    let renderer = backend.renderer_name();
     let window = backend.adapter();
     set_platform(window.clone())?;
     let mut shell = Shell::new(
@@ -352,6 +354,7 @@ fn serve(
     let has_clipboard = system.caps.clipboard;
     let app = build(&ui, system, input_tx.clone(), solo, config, false);
     ui.global::<UiClipboard>().set_available(has_clipboard);
+    super::info::show(&ui, renderer);
     // A screen reader finds the dashboard on the accessibility bus. Never in a stress run, which
     // is a test: tests keep off the session's bus.
     if stress.is_none() && std::env::var_os("NIRI_DASH_ATSPI").is_none_or(|v| v != "0") {

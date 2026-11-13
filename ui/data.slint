@@ -1,7 +1,7 @@
 // Data the Rust side pushes into the UI, one global per source, plus the callbacks widgets use to
 // act on it. Several widget instances of the same kind share one global.
 
-export enum WidgetKind { clock, calendar, system-monitor, windows, claude-sessions, wifi, bluetooth, battery, volume, brightness, notifications, tray, media, session, clipboard, weather, memory, disks, network, gpu, claude-usage, mascot, keyboard-layout, color-picker, timer, stopwatch, notes, privacy, night-light, removable-drives, phone, sleep-timer, pomodoro, about }
+export enum WidgetKind { clock, calendar, system-monitor, windows, claude-sessions, wifi, bluetooth, battery, volume, brightness, notifications, tray, media, session, clipboard, weather, memory, disks, network, gpu, claude-usage, mascot, keyboard-layout, color-picker, timer, stopwatch, notes, privacy, night-light, removable-drives, phone, sleep-timer, pomodoro, about, niri-dash-info }
 export enum Shape { rect, round }
 
 // The sidebar's sections.
@@ -105,9 +105,26 @@ export global Shell {
     callback hide();
 }
 
+// One line of what a build is made of: "Commit", "2806398, 2026-11-12". Clicking it opens `url`
+// (a web page) or `dir` (a folder) if it has one, or else copies the value.
+export struct BuildFact {
+    label: string,
+    value: string,
+    url: string,
+    dir: string,
+}
+
 // Which build this is.
 export global Build {
     in property <string> version;
+    // "Slint 1.18.1"
+    in property <string> toolkit;
+    // What draws the dashboard: "OpenGL ES", "software".
+    in property <string> renderer;
+    in property <[BuildFact]> facts;
+    callback open-url(string);
+    callback open-dir(string);
+    callback copy(string);
 }
 
 // What the desktop offers, and which compositor it is. Widgets that need something it doesn't

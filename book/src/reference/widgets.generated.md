@@ -18,6 +18,7 @@
 | [`mascot`](activity.md#mascot) | Activity | Schraubi, Zolli or Verschnitti; says what you tell it | 4×2 | rectangular |
 | [`notes`](activity.md#notes) | Activity | A note that keeps what you type; name it to have several | 3×3 | rectangular |
 | [`about`](activity.md#about) | Activity | Which version this is, its license, and what it is made with | 2×2 | rectangular |
+| [`niri-dash-info`](activity.md#niri-dash-info) | Activity | Version, source, commit and build: what this niri-dash is made of | 4×4 | rectangular |
 | [`media`](media.md#media) | Media | Now playing (MPRIS) | 5×2 | rectangular |
 | [`system-monitor`](system.md#system-monitor) | System | CPU, memory, network, temperature | 4×3 | rectangular, round |
 | [`battery`](system.md#battery) | System | Charge, power profile; device batteries and sleep blockers when bigger | 3×2 | rectangular, round |
@@ -610,4 +611,19 @@
 
 </div>
 <!-- ANCHOR_END: about -->
+
+<!-- ANCHOR: niri-dash-info -->
+<div class="widget-facts">
+
+| Name in `config.kdl` | `niri-dash-info` |
+|---|---|
+| Title | niri-dash info |
+| Shows | Version, source, commit and build: what this niri-dash is made of |
+| Group | Activity |
+| Size in cells | 4×4 by default, 3×3 at least, 6×6 at most |
+| Shapes | rectangular |
+| Settings | none |
+
+</div>
+<!-- ANCHOR_END: niri-dash-info -->
 

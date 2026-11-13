@@ -19,6 +19,8 @@ pub enum Command {
     Refresh,
     /// Open a file or folder with the desktop's default app.
     Open(PathBuf),
+    /// Open a web page in the desktop's browser.
+    OpenUrl(String),
     /// Play one of the sounds the dashboard makes, if the system has one to play.
     PlaySound(Sound),
     /// The logical size and scale of the output the dashboard is about to appear on, if the

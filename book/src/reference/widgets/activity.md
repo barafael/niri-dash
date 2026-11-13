@@ -57,3 +57,13 @@ A note keeps what you type. Two notes with the same name show the same note.
 {{#include ../widgets.generated.md:about}}
 
 The version, the license and the "Made with Slint" credit: [Slint](https://slint.dev) asks for it wherever its widgets are used. It has no settings and no keys.
+
+## niri-dash info {#niri-dash-info}
+
+{{#include ../widgets.generated.md:niri-dash-info}}
+
+What this niri-dash is made of: its version, the UI toolkit (Slint, and its version) and what draws it (OpenGL ES or software), the repository, the crates.io page when it was installed from there, the commit and branch it was built from (and whether there were uncommitted changes), the build profile, target and compiler, and the checkout, build directory and binary.
+
+Click a link (the repository, the commit, a folder) to open it; click anything else to copy it. With the keyboard, `j`/`k` move over the lines, `Enter` opens or copies one and `Ctrl+C` copies it.
+
+The commit, branch and "with changes" are found when the build runs its build script: after a commit, a checkout or `git add`, not after every edit.

@@ -42,6 +42,7 @@ pub(super) fn kind_to_ui(k: Kind) -> WidgetKind {
         Kind::SleepTimer => WidgetKind::SleepTimer,
         Kind::Pomodoro => WidgetKind::Pomodoro,
         Kind::About => WidgetKind::About,
+        Kind::NiriDashInfo => WidgetKind::NiriDashInfo,
     }
 }
 

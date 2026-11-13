@@ -48,6 +48,7 @@ pub enum Kind {
     SleepTimer,
     Pomodoro,
     About,
+    NiriDashInfo,
 }
 
 impl Kind {
@@ -467,6 +468,18 @@ impl Kind {
                 default_size: (2, 2),
                 min_size: (2, 2),
                 max_size: (4, 4),
+                group: Group::Activity,
+                can_be_round: false,
+                starts_round: false,
+                settings: &[],
+                icon: "help-about",
+            },
+            Kind::NiriDashInfo => &KindInfo {
+                title: "niri-dash info",
+                description: "Version, source, commit and build: what this niri-dash is made of",
+                default_size: (4, 4),
+                min_size: (3, 3),
+                max_size: (6, 6),
                 group: Group::Activity,
                 can_be_round: false,
                 starts_round: false,
@@ -2803,6 +2816,7 @@ mod tests {
                 "sleep-timer",
                 "pomodoro",
                 "about",
+                "niri-dash-info",
             ]
         );
         assert_eq!(Kind::from_str_opt("perf"), None);

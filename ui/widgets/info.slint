@@ -1,0 +1,71 @@
+import { Theme } from "../theme.slint";
+import { Build } from "../data.slint";
+import { Muted, Row, ScrollList, NavScope } from "../common.slint";
+
+// What this build of niri-dash is: its version, what it draws with, where its source is, and
+// how and where it was built. A fact with a link (the repository, a commit, a folder) opens it
+// when clicked; any other is copied.
+export component NiriDashInfoWidget inherits Rectangle {
+    in property <bool> nav;
+    function act(i: int) {
+        let f = Build.facts[i];
+        if (f.url != "") {
+            Build.open-url(f.url);
+        } else if (f.dir != "") {
+            Build.open-dir(f.dir);
+        } else {
+            Build.copy(f.value);
+        }
+    }
+    VerticalLayout {
+        padding: Theme.pad;
+        spacing: 4px;
+        Text {
+            text: "niri-dash " + Build.version;
+            font-size: Theme.font-title;
+            font-weight: 600;
+            color: Theme.text;
+            overflow: elide;
+        }
+        list := ScrollList {
+            vertical-stretch: 1;
+            for f[i] in Build.facts: Row {
+                height: 28px;
+                kfocus: keys.on && keys.cursor == i;
+                accessible-label: f.label;
+                accessible-value: f.value;
+                revealed(y, h) => { list.reveal(y, h); }
+                clicked => { root.act(i); }
+                HorizontalLayout {
+                    padding-left: 6px;
+                    padding-right: 6px;
+                    spacing: 8px;
+                    Muted {
+                        width: min(80px, parent.width * 0.35);
+                        text: f.label;
+                        color: Theme.faint;
+                    }
+                    Text {
+                        horizontal-stretch: 1;
+                        text: f.value;
+                        font-size: Theme.font-small;
+                        color: f.url != "" || f.dir != "" ? Theme.accent : Theme.text;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                }
+            }
+        }
+    }
+    // j/k over the facts, Enter opens or copies one, Ctrl+C copies it.
+    keys := NavScope {
+        accessible-label: "niri-dash info";
+        active: root.nav;
+        count: Build.facts.length;
+        activate(i) => { root.act(i); }
+        copy(i) => {
+            Build.copy(Build.facts[i].value);
+            true
+        }
+    }
+}
