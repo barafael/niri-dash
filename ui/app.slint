@@ -1465,9 +1465,10 @@ export component Dash inherits Window {
         // that doesn't fit whole is left out.
         tips-strip := Rectangle {
             visible: !root.solo && root.tips.length > 0;
-            x: root.grid-x + Theme.gap;
+            // Where the grid shows while the drawer slides, as the top bar.
+            x: root.shown-x + Theme.gap;
             y: root.height - root.margin;
-            width: root.avail-w - 2 * (root.grid-x + Theme.gap);
+            width: root.avail-w - 2 * (root.shown-x + Theme.gap);
             height: root.margin;
             opacity: root.reveal;
             clip: true;
