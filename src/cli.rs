@@ -235,6 +235,7 @@ fn say(
 
 /// The command line: parse it, run the command, and report how it went.
 pub fn main() -> std::process::ExitCode {
+    crate::started();
     let result = run();
     // What the dashboard saved last is written before the process goes.
     crate::files::flush();

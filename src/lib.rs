@@ -46,6 +46,13 @@ mod timer;
 mod widget_settings;
 mod zones;
 
+/// When this process started (as far as it knows: the first call, which `main` makes).
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn started() -> std::time::Instant {
+    static STARTED: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    *STARTED.get_or_init(std::time::Instant::now)
+}
+
 /// This process's id, which a browser doesn't have.
 fn own_pid() -> u32 {
     #[cfg(not(target_arch = "wasm32"))]
