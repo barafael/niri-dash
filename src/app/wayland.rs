@@ -109,7 +109,8 @@ impl Platform for LayerPlatform {
 /// What reaches the dashboard from outside the system: the control socket and the config
 /// watcher.
 pub(super) enum Input {
-    Control(Control),
+    /// A command from the control socket, and when it was read there.
+    Control(Control, std::time::Instant),
     /// config.kdl or the theme file changed on disk.
     ConfigChanged,
     /// `niri-dash night-light …`, or a standalone night-light app's change.
@@ -124,7 +125,7 @@ impl App {
     /// What the control socket or the config watcher asked for.
     pub(super) fn handle_input(&self, input: Input) -> Option<Control> {
         match input {
-            Input::Control(c) => return Some(c),
+            Input::Control(c, _) => return Some(c),
             Input::ConfigChanged => self.reload_config(),
             Input::NightLight(cmd) => self.night_light(cmd, true),
             Input::MascotSay(say) => self.mascot_say(say),
@@ -173,7 +174,7 @@ fn control_server(listener: UnixListener, tx: sys::Sink<Input>) {
                     log::warn!("unknown control command {:?}", line.trim());
                     continue;
                 };
-                let _ = tx.send(Input::Control(c));
+                let _ = tx.send(Input::Control(c, std::time::Instant::now()));
             }
         })
         .expect("spawning control thread");
@@ -388,9 +389,11 @@ fn serve(
     event_loop
         .handle()
         .insert_source(inputs, move |ev, _, shell| {
-            if let channel::Event::Msg(i) = ev
-                && let Some(c) = a.handle_input(i)
-            {
+            let channel::Event::Msg(i) = ev else { return };
+            if let Input::Control(_, at) = &i {
+                shell.set_asked(*at);
+            }
+            if let Some(c) = a.handle_input(i) {
                 route(&a, shell, c);
             }
         })
@@ -404,6 +407,8 @@ fn serve(
         app.prepare_for_output(&mut shell);
     }
     if let Some(c) = initial {
+        // A cold start: the request is as old as the process.
+        shell.set_asked(crate::started());
         app.control(&mut shell, c);
     }
     let exit_when_closed = solo.is_some_and(|k| !resident(k));

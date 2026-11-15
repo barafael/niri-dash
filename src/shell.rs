@@ -216,6 +216,11 @@ pub struct Shell {
     last_frame: Option<std::time::Instant>,
     /// See [`Shell::set_animating`].
     animating: bool,
+    /// When what is being shown now was asked for (the control socket read it, or the process
+    /// started), for [`ShowTimes`].
+    asked: Option<std::time::Instant>,
+    /// How the show under way is going, logged once its first frame is on screen.
+    show_times: Option<ShowTimes>,
     /// Frames presented since the surface was created.
     pub presented: u32,
     /// Set when the compositor closed our surface (output went away etc).
@@ -312,6 +317,8 @@ impl Shell {
             presented: 0,
             last_frame: None,
             animating: false,
+            asked: None,
+            show_times: None,
             closed_by_compositor: false,
         })
     }
@@ -371,6 +378,9 @@ impl Shell {
             s.height = height;
             s.configured = true;
             s.frame_pending = false;
+            if let Some(t) = &mut self.show_times {
+                t.configured.get_or_insert_with(std::time::Instant::now);
+            }
             // The size may have changed: the blur region has to follow.
             s.blurred = false;
             self.window.window().request_redraw();
@@ -387,10 +397,22 @@ impl Shell {
         self.surface.is_some()
     }
 
+    /// When the show that comes next was asked for (see [`ShowTimes`]).
+    pub fn set_asked(&mut self, at: std::time::Instant) {
+        self.asked = Some(at);
+    }
+
     pub fn show(&mut self) {
         if self.surface.is_some() {
             return;
         }
+        let now = std::time::Instant::now();
+        self.show_times = Some(ShowTimes {
+            asked: self.asked.take().unwrap_or(now),
+            shown: now,
+            configured: None,
+            drawn: None,
+        });
         let wl_surface = self.compositor.create_surface(&self.qh);
         let fractional = self
             .fractional_manager
@@ -550,6 +572,7 @@ impl Shell {
         if pw == 0 || ph == 0 {
             return;
         }
+        let start = std::time::Instant::now();
         let committed = match self.output {
             Output::Shm(_) => self.render_software(pw, ph, scale),
             Output::Egl(..) => self.render_gpu(pw, ph, scale),
@@ -557,6 +580,11 @@ impl Shell {
         if committed && let Some(s) = &mut self.surface {
             s.frame_pending = true;
             self.presented += 1;
+            if let Some(t) = &mut self.show_times
+                && t.drawn.is_none()
+            {
+                t.drawn = Some((start, start.elapsed()));
+            }
         }
     }
 
@@ -689,6 +717,48 @@ impl Shell {
             self.window.window().has_active_animations()
         );
         true
+    }
+}
+
+/// How a show went, from the request to the first frame on screen. Logged at info level when it
+/// took long enough to notice, at debug level otherwise.
+struct ShowTimes {
+    /// The request was read from the control socket (or the process started).
+    asked: std::time::Instant,
+    /// The surface was made.
+    shown: std::time::Instant,
+    /// The compositor gave it a size.
+    configured: Option<std::time::Instant>,
+    /// The first frame: when drawing started, and how long it took.
+    drawn: Option<(std::time::Instant, std::time::Duration)>,
+}
+
+impl ShowTimes {
+    /// When a show is slow enough to be worth a line in the log.
+    const NOTABLE: std::time::Duration = std::time::Duration::from_millis(150);
+
+    fn log(&self) {
+        let ms = |d: std::time::Duration| d.as_secs_f64() * 1000.0;
+        let now = std::time::Instant::now();
+        let configured = self.configured.unwrap_or(self.shown);
+        let (drawn, draw) = self.drawn.unwrap_or((configured, Default::default()));
+        let total = now - self.asked;
+        let line = format!(
+            "shown in {:.0} ms: {:.0} ms until the event loop took the request, {:.0} ms for the \
+             compositor to size the surface, first frame after {:.0} ms more, drawn in {:.0} ms, \
+             on screen {:.0} ms later",
+            ms(total),
+            ms(self.shown - self.asked),
+            ms(configured - self.shown),
+            ms(drawn.saturating_duration_since(configured)),
+            ms(draw),
+            ms(now.saturating_duration_since(drawn + draw)),
+        );
+        if total >= Self::NOTABLE {
+            log::info!("{line}");
+        } else {
+            log::debug!("{line}");
+        }
     }
 }
 
@@ -843,6 +913,9 @@ impl CompositorHandler for Shell {
     fn frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: u32) {
         if let Some(s) = self.surface.as_mut() {
             s.frame_pending = false;
+        }
+        if let Some(t) = self.show_times.take_if(|t| t.drawn.is_some()) {
+            t.log();
         }
     }
     fn surface_enter(
