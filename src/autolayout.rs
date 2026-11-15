@@ -1869,7 +1869,14 @@ mod tests {
             .collect();
         let a = solve(&items, &[], 48, 32, &Params::default());
         check(&items, &a, 48, 32, "40 widgets on 48x32");
-        assert!(a.millis < 5000, "{} ms", a.millis);
+        // The exact search stops at its work budget (not at a time, which a busy machine would
+        // stretch) and the treemap takes over.
+        assert_eq!(
+            a.note.as_deref(),
+            Some("too many widgets for exact cuts; used treemap"),
+            "{} ms",
+            a.millis
+        );
     }
 
     #[test]
