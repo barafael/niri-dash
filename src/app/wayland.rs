@@ -321,7 +321,15 @@ fn serve(
     let system = if keep {
         sys::mock(events_tx)?
     } else {
-        start_system(events_tx, solo, Some(conn.clone()))?
+        // A connection of the system's own: its thread reads Wayland events on it, and on a
+        // shared one that read hands the UI's events (a surface's size, frame callbacks) to the
+        // UI's queue without waking the UI's loop, so a show waited for the next mouse move.
+        let services = Connection::connect_to_env()
+            .map_err(|e| {
+                log::warn!("a second Wayland connection for the clipboard and night light: {e}")
+            })
+            .ok();
+        start_system(events_tx, solo, services)?
     };
     // A stress run's window stays up when the dashboard hides.
     let route = move |a: &App, shell: &mut Shell, c: Control| {
