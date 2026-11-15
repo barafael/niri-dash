@@ -56,25 +56,17 @@ fn dir() -> PathBuf {
     crate::files::data_home().join("applications")
 }
 
-/// How the entries start us: plain `niri-dash` when that is this binary on $PATH, else the full
-/// path (e.g. a build in target/).
+/// How the entries start us: this binary, by its full path. KWin gives the window list to a
+/// program whose desktop entry asks for it, matching the entry's `Exec` with the program's own
+/// path; a bare `niri-dash` (found on $PATH) doesn't match, so the window list stayed off.
 fn exec() -> String {
-    let me = std::env::current_exe().ok();
-    let on_path = niri_dash_system::which("niri-dash");
-    let same = match (&me, &on_path) {
-        (Some(a), Some(b)) => a.canonicalize().ok() == b.canonicalize().ok(),
-        _ => false,
-    };
+    let me = std::env::current_exe()
+        .and_then(|p| p.canonicalize())
+        .map(|p| p.to_string_lossy().into_owned());
     match me {
-        Some(p) if !same => {
-            let p = p.to_string_lossy().into_owned();
-            if p.contains(' ') {
-                format!("\"{p}\"")
-            } else {
-                p
-            }
-        }
-        _ => "niri-dash".into(),
+        Ok(p) if p.contains(' ') => format!("\"{p}\""),
+        Ok(p) => p,
+        Err(_) => "niri-dash".into(),
     }
 }
 
@@ -235,5 +227,20 @@ mod tests {
         assert!(e.contains("\nExec=niri-dash app clock\n"), "{e}");
         assert!(e.contains("\nStartupNotify=false\n"), "{e}");
         assert!(e.contains(&format!("\n{MARKER}=true\n")), "{e}");
+    }
+
+    /// KWin matches an entry's `Exec` with the program's path to give it the window list: a bare
+    /// name found on $PATH doesn't match.
+    #[test]
+    fn entries_run_this_binary_by_its_full_path() {
+        let exec = exec();
+        let path = std::path::Path::new(exec.trim_matches('"'));
+        assert!(path.is_absolute(), "{exec}");
+        assert_eq!(
+            Some(path.to_path_buf()),
+            std::env::current_exe()
+                .ok()
+                .and_then(|p| p.canonicalize().ok())
+        );
     }
 }
