@@ -397,6 +397,11 @@ impl Shell {
         self.surface.is_some()
     }
 
+    /// Frames are drawn by the GPU (FemtoVG on OpenGL ES).
+    pub fn is_gpu(&self) -> bool {
+        matches!(self.output, Output::Egl(..))
+    }
+
     /// When the show that comes next was asked for (see [`ShowTimes`]).
     pub fn set_asked(&mut self, at: std::time::Instant) {
         self.asked = Some(at);
