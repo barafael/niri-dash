@@ -48,4 +48,6 @@ This is for niri only. On Plasma the window rules are in System Settings.
 
 `niri-dash desktop-entries` installs desktop entries such as "Clock (niri-dash)" into
 `~/.local/share/applications`. `niri-dash desktop-entries --remove` takes them away again. On
-KDE Plasma they also let niri-dash see the window list, so keep them if you use that widget.
+KDE Plasma they also let niri-dash see the window list, so keep them if you use that widget. They
+start the apps without launch feedback: an app that is already open just comes up, with no
+bouncing icon.
