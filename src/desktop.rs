@@ -78,6 +78,9 @@ fn exec() -> String {
     }
 }
 
+/// A widget's desktop entry. Without launch feedback (`StartupNotify=false`): starting an app that
+/// is already open only brings it up and exits, so no new window ends the feedback, and KDE would
+/// bounce the icon until its timeout. A fresh start takes well under half a second anyway.
 fn entry(kind: Kind, exec: &str) -> String {
     format!(
         "[Desktop Entry]\n\
@@ -88,6 +91,7 @@ fn entry(kind: Kind, exec: &str) -> String {
          Exec={exec} app {widget}\n\
          Icon={icon}\n\
          Terminal=false\n\
+         StartupNotify=false\n\
          Categories=Utility;\n\
          StartupWMClass={id}\n\
          SingleMainWindow=true\n\
@@ -218,4 +222,18 @@ pub fn window_rules(output: Option<&Path>) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An app that is already open only comes up again: no launch feedback to wait out.
+    #[test]
+    fn entries_start_the_app_without_launch_feedback() {
+        let e = entry(Kind::Clock, "niri-dash");
+        assert!(e.contains("\nExec=niri-dash app clock\n"), "{e}");
+        assert!(e.contains("\nStartupNotify=false\n"), "{e}");
+        assert!(e.contains(&format!("\n{MARKER}=true\n")), "{e}");
+    }
 }
