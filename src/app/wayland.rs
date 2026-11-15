@@ -83,6 +83,10 @@ impl Surface for Shell {
         self.presented
     }
 
+    fn warms_up(&self) -> bool {
+        self.is_gpu()
+    }
+
     fn show(&mut self) {
         Shell::show(self);
     }

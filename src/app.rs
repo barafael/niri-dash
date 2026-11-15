@@ -87,6 +87,11 @@ trait Surface {
     fn hide(&mut self);
     /// About to `show`: get the sizes right, if that takes doing first.
     fn prepare(&mut self, _: &App) {}
+    /// Whether the first frame with everything in it is costly enough to draw once offscreen
+    /// before the entrance starts (the GPU renderer: glyphs, textures and caches are made then).
+    fn warms_up(&self) -> bool {
+        false
+    }
 }
 
 /// Starting the dashboard (or a snapshot) failed.
@@ -240,6 +245,9 @@ struct App {
     fonts: RefCell<Option<Vec<String>>>,
     /// The surface is up but the entrance animation hasn't started yet.
     reveal_pending: Cell<bool>,
+    /// A frame with everything in it has been drawn since the process started (see
+    /// [`Surface::warms_up`]).
+    warmed: Cell<bool>,
     /// When the exit animation ends and the surface goes away.
     hide_at: Cell<Option<Instant>>,
     /// While dragging: the widget being dragged (0 for a new one) and where others would go.
@@ -353,7 +361,20 @@ impl App {
         // renders.
         if self.reveal_pending.get() && shell.is_configured() && shell.presented() > 0 {
             self.reveal_pending.set(false);
-            self.ui().set_shown(true);
+            let ui = self.ui();
+            if shell.warms_up() && !self.warmed.replace(true) {
+                // The first frame with the widgets in it is the costly one (every glyph drawn,
+                // every texture and cache made: over 150 ms). Drawn offscreen now, while nothing
+                // moves, the entrance starts with all of that done instead of jumping past it.
+                ui.set_warming(true);
+                let t = Instant::now();
+                if let Err(e) = ui.window().take_snapshot() {
+                    log::debug!("warming up: {e}");
+                }
+                ui.set_warming(false);
+                log::debug!("warmed up in {:?}", t.elapsed());
+            }
+            ui.set_shown(true);
         }
         if let Some(t) = self.hide_at.get()
             && Instant::now() >= t
@@ -615,6 +636,7 @@ fn build(
         look_blend: Default::default(),
         fonts: Default::default(),
         reveal_pending: Cell::new(false),
+        warmed: Cell::new(false),
         hide_at: Cell::new(None),
         preview: Default::default(),
         hold: Default::default(),

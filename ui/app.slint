@@ -614,8 +614,12 @@ export component Dash inherits Window {
     callback stress-step(int, int);
     // Set by Rust once the surface is on screen, cleared just before it is hidden.
     in property <bool> shown: true;
-    property <float> reveal: self.shown ? 1 : 0;
-    animate reveal { duration: (self.shown ? 140ms : 70ms) * Theme.motion; easing: ease-out; }
+    // Rust draws one frame offscreen with everything fully there before the first entrance (see
+    // `warms_up` in app.rs): the widgets and bars show whole for it, whatever `shown` says.
+    in property <bool> warming;
+    property <float> reveal: self.warming ? 1 : self.shown-reveal;
+    property <float> shown-reveal: self.shown ? 1 : 0;
+    animate shown-reveal { duration: (self.shown ? 140ms : 70ms) * Theme.motion; easing: ease-out; }
     property <float> edit-fade: self.editing ? 1 : 0;
     animate edit-fade { duration: 160ms * Theme.motion; easing: ease-out; }
     out property <PointerShape> cursor;
@@ -1554,6 +1558,7 @@ export component Dash inherits Window {
                 op: root.op-target == w.id ? Nav.op : NavOp.none;
                 op-tip: root.op-tip;
                 shown: root.shown;
+                warming: root.warming;
                 carried: root.drag-mode == DragMode.carry && root.drag-id == w.id;
                 carry-x: root.drag-px - root.grab-dx - root.grid-x;
                 carry-y: root.drag-py - root.grab-dy - root.grid-y;

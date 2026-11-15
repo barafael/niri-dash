@@ -194,9 +194,13 @@ export component WidgetFrame inherits Rectangle {
     property <length> ch: self.height - 2 * Theme.gap;
     property <length> diameter: min(cw, ch);
 
+    // Drawn whole, whatever `appear` says, for the frame Rust draws offscreen before the first
+    // entrance (see `warming` in app.slint).
+    in property <bool> warming;
     // 0 -> 1 when the dashboard opens, staggered from the top left.
-    property <float> appear: shown ? 1 : 0;
-    animate appear {
+    property <float> shown-appear: shown ? 1 : 0;
+    property <float> appear: warming ? 1 : self.shown-appear;
+    animate shown-appear {
         duration: (root.shown ? 180ms : 70ms) * Theme.motion;
         delay: root.shown ? (root.inst.col + root.inst.row) * 5ms * Theme.motion : 0ms;
         easing: cubic-bezier(0.2, 0.9, 0.3, 1.0);
