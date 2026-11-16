@@ -17,7 +17,7 @@
 
 use accesskit::{
     Action, ActionData, ActionRequest, Live, Node, NodeId, Orientation, Rect as AkRect, Role,
-    Toggled, Tree, TreeId, TreeUpdate,
+    Toggled, TreeId, TreeInfo, TreeUpdate,
 };
 use i_slint_core::SharedString;
 use i_slint_core::accessibility::{
@@ -110,7 +110,7 @@ pub(in crate::app) fn build(
     let focus = focus
         .map(nearest_accessible_item)
         .map_or(root_id, |item| ids.id(&item));
-    let mut tree = Tree::new(root_id);
+    let mut tree = TreeInfo::new(root_id);
     tree.toolkit_name = Some("Slint".into());
     TreeUpdate {
         nodes,
@@ -125,7 +125,7 @@ fn empty() -> TreeUpdate {
     let root = NodeId(0);
     TreeUpdate {
         nodes: vec![(root, Node::new(Role::Window))],
-        tree: Some(Tree::new(root)),
+        tree: Some(TreeInfo::new(root)),
         tree_id: TreeId::ROOT,
         focus: root,
     }

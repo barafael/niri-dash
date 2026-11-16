@@ -157,6 +157,3 @@ That license asks for attribution, which is the "Made with Slint" badge at the t
 the [web version](https://barafael.github.io/niri-dash/). If you redistribute niri-dash or a fork,
 keep a badge on a public page where it can be found, or add Slint's `AboutSlint` widget to an About
 screen; or use Slint under the GPL-3.0 instead.
-
-`patches/i-slint-renderer-software` is a lightly patched copy of Slint's software renderer (see
-its README) and keeps Slint's own licenses, in its `LICENSES` directory.

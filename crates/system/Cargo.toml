@@ -37,14 +37,14 @@ wayland-protocols-plasma = { version = "0.3", features = ["client"] }
 
 # data sources
 niri-ipc = "26.4"
-sysinfo = "0.37"
+sysinfo = "0.40"
 tokio = { version = "1", features = ["rt-multi-thread", "process", "time", "io-util"] }
 futures-util = "0.3"
 zbus = { version = "5", default-features = false, features = ["tokio"] }
 system-tray = "0.8"
 freedesktop-icons = "0.4"
-ureq = { version = "2", features = ["json"] }
-nmrs = "3.5.7"
+ureq = { version = "3", features = ["json"] }
+nmrs = "3.5.12"
 
 [dev-dependencies]
 # Tests with the clock paused.
@@ -54,5 +54,5 @@ tokio = { version = "1", features = ["test-util"] }
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
-gloo-timers = { version = "0.3", features = ["futures"] }
+gloo-timers = { version = "0.4", features = ["futures"] }
 web-sys = { version = "0.3", features = ["Window", "Navigator", "Document", "Element", "HtmlElement", "CssStyleDeclaration", "Clipboard"] }

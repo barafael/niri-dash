@@ -7,7 +7,7 @@
 //! (`harness = false`) that runs each scenario in turn on a fresh dashboard.
 
 use accesskit::{Action, ActionRequest, NodeId, Role, TreeId};
-use accesskit_consumer::{Node, Tree, TreeChangeHandler};
+use accesskit_consumer::{NodeRef, Tree, TreeChangeHandler};
 use niri_dash::testing::{AccessEvent, Harness, Sandbox};
 use niri_dash_system::{Demo, brightness, wifi};
 use slint::Model;
@@ -46,7 +46,7 @@ struct Log {
     removed: usize,
 }
 
-fn name(node: &Node) -> String {
+fn name(node: &NodeRef) -> String {
     if node.role() == Role::Label {
         node.value().unwrap_or_default()
     } else {
@@ -55,18 +55,18 @@ fn name(node: &Node) -> String {
 }
 
 impl TreeChangeHandler for Log {
-    fn node_added(&mut self, _: &Node) {
+    fn node_added(&mut self, _: &NodeRef) {
         self.added += 1;
     }
-    fn node_updated(&mut self, _: &Node, _: &Node) {
+    fn node_updated(&mut self, _: &NodeRef, _: &NodeRef) {
         self.updated += 1;
     }
-    fn focus_moved(&mut self, _: Option<&Node>, new: Option<&Node>) {
+    fn focus_moved(&mut self, _: Option<&NodeRef>, new: Option<&NodeRef>) {
         if let Some(n) = new {
             self.focus.push(name(n));
         }
     }
-    fn node_removed(&mut self, _: &Node) {
+    fn node_removed(&mut self, _: &NodeRef) {
         self.removed += 1;
     }
 }

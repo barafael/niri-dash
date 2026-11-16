@@ -22,13 +22,7 @@ Reference: [config.kdl](../reference/config.md#renderer),
 ## Both only draw what changed
 
 The software renderer keeps the previous frame's buffer and repaints only the part that changed
-(Slint's `ReusedBuffer` mode). Slint 1.18's software renderer had a flaw in that mode: paths (the rings and
-graphs) weren't clipped to the repainted region, so an arc that updated under an overlay, such as a
-tray menu or a widget being dragged in from the edit-mode drawer, was drawn over it.
-
-niri-dash therefore carries a patched copy of that renderer, with a single change that clips
-paths to the dirty region. The copy and the reason are in `patches/i-slint-renderer-software`,
-along with the steps for dropping it when Slint fixes the problem. It keeps Slint's own licenses.
+(Slint's `ReusedBuffer` mode).
 
 ## The surface comes and goes; the renderer doesn't
 

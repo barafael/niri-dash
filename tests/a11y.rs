@@ -14,7 +14,7 @@ use std::collections::HashSet;
 const MOST_STOPS: usize = 80;
 
 /// What a node says about itself: its name (a text says itself, in its value).
-fn name_of(node: &accesskit_consumer::Node) -> String {
+fn name_of(node: &accesskit_consumer::NodeRef) -> String {
     if node.role() == Role::Label {
         node.value().unwrap_or_default()
     } else {
@@ -23,7 +23,10 @@ fn name_of(node: &accesskit_consumer::Node) -> String {
 }
 
 /// Every node of the tree under `node`, as the consumer sees them.
-fn walk_tree<'a>(node: accesskit_consumer::Node<'a>, out: &mut Vec<accesskit_consumer::Node<'a>>) {
+fn walk_tree<'a>(
+    node: accesskit_consumer::NodeRef<'a>,
+    out: &mut Vec<accesskit_consumer::NodeRef<'a>>,
+) {
     out.push(node);
     for child in node.children() {
         walk_tree(child, out);

@@ -58,7 +58,7 @@ pub fn decode_png(data: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
         png::Transformations::normalize_to_color8() | png::Transformations::ALPHA,
     );
     let mut reader = dec.read_info().ok()?;
-    let mut buf = vec![0; reader.output_buffer_size()];
+    let mut buf = vec![0; reader.output_buffer_size()?];
     let info = reader.next_frame(&mut buf).ok()?;
     buf.truncate(info.buffer_size());
     let rgba = match info.color_type {

@@ -60,10 +60,11 @@ struct Daily {
 }
 
 fn agent() -> ureq::Agent {
-    ureq::AgentBuilder::new()
-        .timeout(Duration::from_secs(10))
+    ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(10)))
         .user_agent(concat!("niri-dash/", env!("CARGO_PKG_VERSION")))
         .build()
+        .new_agent()
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -77,7 +78,7 @@ enum Error {
     #[error("forecast unavailable: {0}")]
     Forecast(Http),
     #[error("reading the reply: {0}")]
-    Decode(#[from] std::io::Error),
+    Decode(String),
 }
 
 /// A failed request, said briefly: the widget shows it, and ureq's own message carries the whole
@@ -90,15 +91,13 @@ impl From<ureq::Error> for Http {
     fn from(e: ureq::Error) -> Self {
         log::debug!("weather: {e}");
         Http(match &e {
-            ureq::Error::Status(429, _) => "too many requests, try again later".into(),
-            ureq::Error::Status(code @ 500.., _) => format!("server error ({code})"),
-            ureq::Error::Status(code, _) => format!("request refused ({code})"),
-            ureq::Error::Transport(t) => match t.kind() {
-                ureq::ErrorKind::Dns => "no network (the server's name doesn't resolve)".into(),
-                ureq::ErrorKind::ConnectionFailed => "can't reach the server".into(),
-                ureq::ErrorKind::Io => "network error or timeout".into(),
-                other => other.to_string(),
-            },
+            ureq::Error::StatusCode(429) => "too many requests, try again later".into(),
+            ureq::Error::StatusCode(code @ 500..) => format!("server error ({code})"),
+            ureq::Error::StatusCode(code) => format!("request refused ({code})"),
+            ureq::Error::HostNotFound => "no network (the server's name doesn't resolve)".into(),
+            ureq::Error::ConnectionFailed => "can't reach the server".into(),
+            ureq::Error::Io(_) | ureq::Error::Timeout(_) => "network error or timeout".into(),
+            other => other.to_string(),
         })
     }
 }
@@ -126,7 +125,9 @@ fn fetch(cfg: &WeatherConfig, locale: chrono::Locale) -> Result<State, Error> {
                 .query("language", lang)
                 .call()
                 .map_err(|e| Error::Lookup(e.into()))?
-                .into_json()?;
+                .body_mut()
+                .read_json()
+                .map_err(|e| Error::Decode(e.to_string()))?;
             let g = geo
                 .results
                 .and_then(|r| r.into_iter().next())
@@ -141,8 +142,8 @@ fn fetch(cfg: &WeatherConfig, locale: chrono::Locale) -> Result<State, Error> {
     };
     let f: Forecast = agent
         .get("https://api.open-meteo.com/v1/forecast")
-        .query("latitude", &lat.to_string())
-        .query("longitude", &lon.to_string())
+        .query("latitude", lat.to_string())
+        .query("longitude", lon.to_string())
         .query("current", "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,is_day")
         .query("daily", "weather_code,temperature_2m_max,temperature_2m_min")
         .query("timezone", "auto")
@@ -150,7 +151,9 @@ fn fetch(cfg: &WeatherConfig, locale: chrono::Locale) -> Result<State, Error> {
         .query("temperature_unit", unit)
         .call()
         .map_err(|e| Error::Forecast(e.into()))?
-        .into_json()?;
+        .body_mut()
+        .read_json()
+        .map_err(|e| Error::Decode(e.to_string()))?;
     let c = &f.current;
     let (icon, description) = describe(c.weather_code, c.is_day != 0);
     let deg = |t: f64| format!("{:.0}°", t);
@@ -348,10 +351,7 @@ mod tests {
 
     #[test]
     fn http_errors_are_short() {
-        let status = |code| {
-            let r = ureq::Response::new(code, "x", "").unwrap();
-            Error::Forecast(ureq::Error::Status(code, r).into()).to_string()
-        };
+        let status = |code| Error::Forecast(ureq::Error::StatusCode(code).into()).to_string();
         assert_eq!(status(503), "forecast unavailable: server error (503)");
         assert_eq!(status(404), "forecast unavailable: request refused (404)");
         assert_eq!(

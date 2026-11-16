@@ -115,14 +115,25 @@ pub fn start(ctx: Ctx) {
     std::thread::Builder::new()
         .name("perf".into())
         .spawn(move || {
-            let mut sys = System::new_with_specifics(
-                RefreshKind::nothing()
-                    .with_cpu(CpuRefreshKind::nothing().with_cpu_usage())
-                    .with_memory(MemoryRefreshKind::everything()),
-            );
-            let mut nets = Networks::new_with_refreshed_list();
-            let mut comps = Components::new_with_refreshed_list();
-            let mut disks = Disks::new_with_refreshed_list();
+            let made = (|| {
+                Ok::<_, sysinfo::Error>((
+                    System::new_with_specifics(
+                        RefreshKind::nothing()
+                            .with_cpu(CpuRefreshKind::nothing().with_usage())
+                            .with_memory(MemoryRefreshKind::everything()),
+                    )?,
+                    Networks::new_with_refreshed_list()?,
+                    Components::new_with_refreshed_list()?,
+                    Disks::new_with_refreshed_list()?,
+                ))
+            })();
+            let (mut sys, mut nets, mut comps, mut disks) = match made {
+                Ok(made) => made,
+                Err(e) => {
+                    log::warn!("performance: can't read the system's figures: {e}");
+                    return;
+                }
+            };
             let gpu = find_gpu();
             let (mut cpu_hist, mut mem_hist) = (VecDeque::new(), VecDeque::new());
             let (mut rx_hist, mut tx_hist, mut io_hist, mut gpu_hist) = (
@@ -155,7 +166,7 @@ pub fn start(ctx: Ctx) {
                 };
                 let (rx, tx) = nets
                     .iter()
-                    .filter(|(name, _)| physical(name))
+                    .filter(|(name, _)| physical(&name.to_string_lossy()))
                     .fold((0u64, 0u64), |(r, t), (_, d)| {
                         (r + d.received(), t + d.transmitted())
                     });
@@ -228,14 +239,14 @@ pub fn start(ctx: Ctx) {
                             .map(|(n, m)| (n, human_bytes(m)))
                             .collect();
                     }
-                    let load = System::load_average();
+                    let load = System::load_average().unwrap_or_default();
                     // Down and up share one scale: the higher of their peaks.
                     let net_floor = 64.0 * 1024.0;
                     let peak = peak_of(&rx_hist, net_floor).max(peak_of(&tx_hist, net_floor));
                     let io_scaled = scaled(&io_hist, peak_of(&io_hist, 1024.0 * 1024.0));
                     let iface = nets
                         .iter()
-                        .filter(|(name, _)| physical(name))
+                        .filter(|(name, _)| physical(&name.to_string_lossy()))
                         .max_by_key(|(_, d)| d.total_received() + d.total_transmitted())
                         .map(|(n, d)| {
                             let addr = d
@@ -245,7 +256,7 @@ pub fn start(ctx: Ctx) {
                                 .or_else(|| d.ip_networks().first())
                                 .map(|ip| ip.addr.to_string())
                                 .unwrap_or_default();
-                            (n.clone(), addr)
+                            (n.to_string_lossy().into_owned(), addr)
                         })
                         .unwrap_or_default();
                     let disk_rows: Vec<DiskRow> = real_disks
@@ -330,7 +341,7 @@ pub fn start(ctx: Ctx) {
                             "load {:.2} {:.2} {:.2}",
                             load.one, load.five, load.fifteen
                         ),
-                        cores: sys.cpus().iter().map(|c| c.cpu_usage() / 100.0).collect(),
+                        cores: sys.cpus().iter().map(|c| c.usage() / 100.0).collect(),
                         mem_used_text: format!(
                             "{} of {}",
                             human_bytes(sys.used_memory()),

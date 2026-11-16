@@ -20,7 +20,6 @@ exclude = [
     "/book/src/images",
     "/dist",
     "/docs",
-    "/patches",
     "/testbox",
     "/Trunk.toml",
     "/web",
@@ -33,13 +32,13 @@ members = [".", "crates/system", "xtask"]
 [workspace.dependencies]
 log = "0.4"
 thiserror = "2"
-dirs = "6"
+dirs = "7"
 notify = "8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 strum = { version = "0.28", features = ["derive"] }
 chrono = { version = "0.4", features = ["unstable-locales", "serde"] }
-png = "0.17"
+png = "0.18"
 smithay-client-toolkit = { version = "0.21", features = ["calloop", "xkbcommon"] }
 wayland-protocols = { version = "0.32", features = ["client", "staging"] }
 
@@ -60,14 +59,14 @@ png.workspace = true
 web-time = "1"
 
 # ui: no windowing backend, the platform is our own (app.rs) on top of Wayland or a canvas.
-slint = { version = "1.18", default-features = false, features = [
+slint = { version = "1.19", default-features = false, features = [
     "std",
     "compat-1-2",
     "renderer-femtovg",
 ] }
 # Must match slint's exact version. Used directly for scroll gesture phases (not in Slint's public
 # API); its features load images at runtime (icon themes, album art, notification images).
-i-slint-core = { version = "=1.18.1", features = ["image-decoders", "svg"] }
+i-slint-core = { version = "=1.19.0", features = ["image-decoders", "svg"] }
 # Not used directly: Slint decodes only png and jpeg, this adds the other formats icons come in.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "ico"] }
 
@@ -75,7 +74,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 clap = { version = "4", features = ["derive"] }
 env_logger = "0.11"
 notify.workspace = true
-slint = { version = "1.18", default-features = false, features = [
+slint = { version = "1.19", default-features = false, features = [
     "renderer-software",
     "software-renderer-path",
     "software-renderer-systemfonts",
@@ -83,8 +82,8 @@ slint = { version = "1.18", default-features = false, features = [
 
 # Screen readers: the dashboard's accessible tree, published over AT-SPI (src/app/a11y). The
 # accesskit version is the one i-slint-core's own text accessibility uses.
-accesskit = "0.24"
-accesskit_unix = { version = "0.22", default-features = false, features = ["tokio"] }
+accesskit = "0.25"
+accesskit_unix = { version = "0.24", default-features = false, features = ["tokio"] }
 
 # wayland
 smithay-client-toolkit.workspace = true
@@ -98,7 +97,7 @@ khronos-egl = { version = "6", features = ["dynamic"] }
 # The web version: a canvas, the page's events, and localStorage for files.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # Must match slint's exact version: drawing on a canvas isn't in Slint's public API.
-i-slint-renderer-femtovg = { version = "=1.18.1", features = ["opengl"] }
+i-slint-renderer-femtovg = { version = "=1.19.0", features = ["opengl"] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 console_error_panic_hook = "0.1"
@@ -128,7 +127,7 @@ web-sys = { version = "0.3", features = [
 ] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-accesskit_consumer = "0.38"
+accesskit_consumer = "0.39"
 
 # Slint wants one thread and one platform per process: the UI tests are one plain program.
 [[test]]
@@ -170,7 +169,7 @@ harness = false
 test = false
 
 [build-dependencies]
-slint-build = "1.18"
+slint-build = "1.19"
 
 # The web version: as small as it gets, since every visitor downloads it.
 [profile.web]
@@ -180,9 +179,3 @@ opt-level = "s"
 lto = true
 codegen-units = 1
 panic = "abort"
-
-# Slint 1.18's software renderer doesn't clip paths to the repainted region, so partial repaints
-# draw arcs over overlays (tray menus, a widget dragged in from the drawer). Patched copy; see its
-# README.md.
-[patch.crates-io]
-i-slint-renderer-software = { path = "patches/i-slint-renderer-software" }

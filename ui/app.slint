@@ -37,12 +37,15 @@ component TrayMenu inherits Rectangle {
         TouchArea { }
         menu-list := VerticalLayout {
             padding: 6px;
-            SectionLabel {
-                text: Tray.menu-title;
+            HorizontalLayout {
+                padding-left: 10px;
+                padding-right: 10px;
                 visible: Tray.menu-title != "";
                 height: Tray.menu-title != "" ? 26px : 0;
-                vertical-alignment: center;
-                x: 10px;
+                SectionLabel {
+                    text: Tray.menu-title;
+                    vertical-alignment: center;
+                }
             }
             for e[i] in Tray.menu: Rectangle {
                 // One role for all entries (a role must be constant): a toggle says so by being checkable.
