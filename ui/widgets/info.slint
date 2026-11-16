@@ -62,6 +62,8 @@ export component NiriDashInfoWidget inherits Rectangle {
         accessible-label: "niri-dash info";
         active: root.nav;
         count: Build.facts.length;
+        enter-does: self.cursor >= Build.facts.length ? "" : Build.facts[self.cursor].url != "" || Build.facts[self.cursor].dir != "" ? "open" : "copy";
+        copy-does: self.cursor < Build.facts.length ? "copy" : "";
         activate(i) => { root.act(i); }
         copy(i) => {
             Build.copy(Build.facts[i].value);

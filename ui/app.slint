@@ -1,6 +1,6 @@
 import { Theme, Icons } from "theme.slint";
-import { WidgetInst, WidgetKind, Shape, PaletteItem, PaletteGroup, Tray, MenuToggle, DrawerTab, PointerShape, Nav, NavMode, NavOp } from "data.slint";
-import { TextField, Icon, IconButton, TextButton, Muted, Switch, SectionLabel } from "common.slint";
+import { WidgetInst, WidgetKind, Shape, PaletteItem, PaletteGroup, Tray, MenuToggle, DrawerTab, PointerShape, Nav, NavMode, NavOp, KeyHint, TipRow } from "data.slint";
+import { TextField, Icon, IconButton, TextButton, Muted, Switch, SectionLabel, TipsLine, KeyFooter } from "common.slint";
 import { WidgetFrame, WidgetBody } from "frame.slint";
 import { Palette } from "std-widgets.slint";
 
@@ -167,52 +167,6 @@ export struct SettingRow {
     can-dec: bool,
     can-inc: bool,
     placeholder: string,
-}
-
-// A keyboard shortcut for the quick tips: the keys, and what they do. No keys: a plain note.
-export struct KeyHint {
-    key: string,
-    does: string,
-}
-
-// One shortcut as the quick tips show it: the keys on a cap, then what they do.
-component KeyChip inherits Rectangle {
-    in property <KeyHint> hint;
-    width: cap.width + (cap.width > 0 ? 6px : 0px) + label.preferred-width;
-    cap := Rectangle {
-        x: 0px;
-        y: (parent.height - self.height) / 2;
-        height: 22px;
-        width: root.hint.key == "" ? 0px : keys-text.preferred-width + 12px;
-        visible: root.hint.key != "";
-        border-radius: 5px;
-        border-width: 1px;
-        border-color: Theme.border;
-        background: Theme.subtle;
-        keys-text := Text {
-            accessible-role: none;
-            text: root.hint.key;
-            color: Theme.text;
-            font-size: Theme.font-small;
-            font-weight: 600;
-            x: 0px;
-            y: 0px;
-            width: parent.width;
-            height: parent.height;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-        }
-    }
-    label := Text {
-        x: cap.width + (cap.width > 0 ? 6px : 0px);
-        y: 0px;
-        width: self.preferred-width;
-        height: parent.height;
-        text: root.hint.does;
-        color: root.hint.key == "" ? Theme.accent : Theme.dim;
-        font-size: Theme.font-body;
-        vertical-alignment: center;
-    }
 }
 
 // One segment of the sidebar's tab bar.
@@ -578,6 +532,8 @@ export component Dash inherits Window {
     // The widget being worked on in edit mode (0 = none), its name and its settings. Its settings
     // open in a card in the middle of the screen, if it has any.
     in-out property <int> settings-id;
+    // The widget `add-widget` just added (0 if there was no room): Rust says so.
+    in-out property <int> added-id;
     in property <string> settings-title;
     // The widget being worked on is pinned.
     in property <bool> settings-pinned;
@@ -610,6 +566,8 @@ export component Dash inherits Window {
     // The panel's values, in the order of its rows: rate, events, ramp up, ramp down.
     in property <[string]> stress-values;
     in-out property <bool> stress-panel;
+    // The row of the panel that - and + change.
+    property <int> stress-row;
     callback stress-toggle();
     callback stress-step(int, int);
     // Set by Rust once the surface is on screen, cleared just before it is hidden.
@@ -683,6 +641,9 @@ export component Dash inherits Window {
     // The drawer keeps this distance to the screen edges; while it is open the cards keep the
     // same distance to the screen edge and to the drawer, and start level with its top.
     property <length> edge: 16px;
+    // The room under the grid: two lines of quick tips, and a little air below them.
+    property <length> tip-line: 24px;
+    property <length> foot: 2 * self.tip-line + 4px;
     property <length> drawer-y: self.bar + 8px;
     property <length> avail-w: self.avail-w-at(self.drawer-shift);
     // The grid's geometry with the drawer `s` of the way open (0 closed, 1 open).
@@ -695,8 +656,10 @@ export component Dash inherits Window {
     pure function grid-top-at(s: float) -> length {
         self.bar + s * (self.drawer-y - Theme.gap - self.bar)
     }
+    // The quick tips' two lines are under the grid, whatever it shows: a widget's own keys in the
+    // upper one once it is entered, so the grid is the same size before and after.
     pure function grid-bottom-at(s: float) -> length {
-        self.height - self.margin + s * (self.margin - self.edge + Theme.gap)
+        self.height - self.foot
     }
     pure function cell-at(s: float) -> length {
         min((self.avail-w-at(s) - 2 * self.grid-side-at(s)) / self.cols,
@@ -835,15 +798,26 @@ export component Dash inherits Window {
         + (Nav.op == NavOp.move ? "h j k l or arrows: one cell\nCtrl+R resize · Esc done"
             : "h j k l: grow that side\nShift: shrink it\nCtrl+M move · Esc done");
     // The quick tips along the bottom: what the keys do just now, in every mode.
+    property <[KeyHint]> menu-tips: [
+        { key: "j k", does: "entry" },
+        { key: "Enter", does: "choose" },
+        { key: "q Esc", does: "close the menu" },
+    ];
     out property <[KeyHint]> tips:
+        Tray.menu-open ? root.menu-tips :
         root.drag-mode == DragMode.carry ? [
-            { key: "Click", does: "place it" },
+            { key: "Click Enter", does: "place it" },
             { key: "Esc", does: "cancel" },
         ]
-        : root.adjust-id != 0 ? [
+        : Nav.op == NavOp.none && root.adjust-id != 0 ? [
             { key: "Drag", does: "move" },
             { key: "Edge or corner", does: "resize" },
-            { key: "◯ ▢", does: "shape" },
+            { key: "Ctrl+M", does: "move by keys" },
+            { key: "Ctrl+R", does: "resize by keys" },
+            { key: "o", does: "shape" },
+            { key: "p", does: "pin" },
+            { key: "s", does: "settings" },
+            { key: "x", does: "remove" },
             { key: "Esc", does: "done" },
         ]
         : Nav.op == NavOp.move ? [
@@ -863,11 +837,11 @@ export component Dash inherits Window {
             { key: "Ctrl+M", does: "move" },
             { key: "Ctrl+R", does: "resize" },
             { key: "Ctrl + h j k l", does: "next widget" },
-            { key: "e", does: "expand" },
+            { key: "e", does: Nav.expanded-id != 0 ? "shrink" : "expand" },
             { key: "s", does: "settings" },
             { key: "f", does: "pick another" },
             { key: "Ctrl+E", does: "edit mode" },
-            { key: "Esc", does: "leave" },
+            { key: "Esc", does: Nav.expanded-id != 0 ? "shrink" : "leave" },
         ]
         : !root.editing && Nav.mode != NavMode.hints ? [
             { key: "f", does: "pick a widget" },
@@ -931,6 +905,11 @@ export component Dash inherits Window {
             { key: "Click", does: "settings" },
             { key: "Esc", does: "done" },
         ];
+    // The upper line of the tips is the entered widget's (not while it is being moved or resized:
+    // then the keys aren't its own).
+    property <bool> own-tips: Nav.mode == NavMode.widget && !root.editing && Nav.op == NavOp.none && !root.dragging && root.adjust-id == 0 && !Tray.menu-open;
+    // A line of the tips is too long for the screen, so some of it can't be read (for the tests).
+    out property <bool> tips-clipped: tips-strip.visible && (upper.clipped || lower.clipped);
     callback toggle-shape(int);
     // Pin a widget so that it stays where it is, or let go of it.
     callback toggle-pin(int);
@@ -957,10 +936,15 @@ export component Dash inherits Window {
 
     // The widget the keyboard's move and resize modes act on: the one entered, or in edit mode the
     // picked one (0 = none, and no mode).
-    property <int> op-target: root.solo ? 0 : root.editing ? root.settings-id : Nav.mode == NavMode.widget ? Nav.active-id : 0;
+    property <int> op-target: root.solo ? 0 : root.editing ? root.settings-id : Nav.mode == NavMode.widget ? Nav.active-id : root.adjust-id;
+    // The widget a mode was started for.
+    property <int> op-for;
     // Another widget, or none: the mode ends with it.
     changed op-target => {
-        Nav.op = NavOp.none;
+        if (self.op-target != self.op-for) {
+            Nav.op = NavOp.none;
+            self.op-from-side = false;
+        }
     }
     // Ctrl+M / Ctrl+R: start the mode, switch to it from the other one, or end it. The widget
     // gives up the keyboard while it lasts, so h j k l reach the mode and not the widget.
@@ -971,6 +955,7 @@ export component Dash inherits Window {
         if (Nav.op == op) {
             root.op-end();
         } else {
+            root.op-for = root.op-target;
             root.widget-note(root.op-target);
             Nav.expanded-id = 0;
             root.side-keys = false;
@@ -979,18 +964,57 @@ export component Dash inherits Window {
             Nav.op = op;
         }
     }
+    // The mode was started from the sidebar, for a widget just added there: when it ends, the
+    // keys go back to the sidebar's list, where they were.
+    property <bool> op-from-side;
+    property <int> op-side-cursor;
+    property <int> side-restore: -1;
     function op-end() {
         Nav.op = NavOp.none;
+        if (root.op-from-side) {
+            root.op-from-side = false;
+            root.settings-id = 0;
+            root.canvas-keys = false;
+            root.side-keys = true;
+            // (Letting go of the widget puts the cursor at the top; then back to where it was.)
+            root.side-restore = root.op-side-cursor;
+        }
         // The entered widget takes the keyboard back.
         Nav.tick += 1;
         keys.focus();
     }
 
+    // A tray icon's menu takes the keyboard while it is open, however it was opened: j and k move
+    // over its entries, Enter picks one, q or Escape closes it. Then the entered widget has the
+    // keyboard again.
+    property <bool> tray-menu: Tray.menu-open;
+    changed tray-menu => {
+        if (self.tray-menu) {
+            keys.focus();
+        } else {
+            Tray.menu-cursor = -1;
+            Nav.tick += 1;
+        }
+    }
+    function menu-ok(i: int) -> bool {
+        i >= 0 && i < Tray.menu.length && !Tray.menu[i].separator && Tray.menu[i].enabled && !Tray.menu[i].header
+    }
+    function menu-past(i: int, d: int) -> int {
+        i >= 0 && i < Tray.menu.length && !root.menu-ok(i) ? i + d : i
+    }
+    // The next entry the cursor can stop on in direction d, or where it is.
+    function menu-step(d: int) -> int {
+        let n = root.menu-past(root.menu-past(root.menu-past(root.menu-past(Tray.menu-cursor + d, d), d), d), d);
+        root.menu-ok(n) ? n : Tray.menu-cursor
+    }
     // Keyboard navigation (Nav in data.slint). Typing a hint label enters that widget.
     function nav-enter(id: int) {
         keys.focus();
         Nav.typed = "";
         Nav.expanded-id = 0;
+        // The widget's scope says its keys once it has the keyboard.
+        Nav.widget-tips = [];
+        Nav.can-scroll = false;
         Nav.active-id = id;
         Nav.mode = NavMode.widget;
         Nav.tick += 1;
@@ -1025,7 +1049,8 @@ export component Dash inherits Window {
     }
     changed settings-id => {
         // Other rows: start at the top, and a text field of the one that went lets go.
-        self.side-cursor = 0;
+        self.side-cursor = self.settings-id == 0 && self.side-restore >= 0 ? self.side-restore : 0;
+        self.side-restore = -1;
         self.size-note = "";
         keys.focus();
     }
@@ -1081,7 +1106,16 @@ export component Dash inherits Window {
             if (i == 2) {
                 root.toggle-palette-group(root.filter-cursor);
             } else if (i >= 3 && i - 3 < root.palette-slots.length) {
+                // The pointer drags a new widget to a place; the keyboard adds it and goes on to
+                // moving it (h j k l, then Escape).
+                root.added-id = 0;
+                root.op-side-cursor = root.side-cursor;
                 root.add-widget(root.palette[root.palette-slots[i - 3]].kind);
+                if (root.added-id != 0) {
+                    root.configure-widget(root.added-id);
+                    root.op-toggle(NavOp.move);
+                    root.op-from-side = Nav.op == NavOp.move;
+                }
             } else if (i == 3 + root.palette-slots.length) {
                 root.reset-layout();
             }
@@ -1221,6 +1255,8 @@ export component Dash inherits Window {
         Nav.typed = "";
         Nav.expanded-id = 0;
         Nav.mode = NavMode.off;
+        Nav.widget-tips = [];
+        Nav.can-scroll = false;
         keys.focus();
     }
     // h/j/k/l or the arrows, either case: the direction (0..3), or -1.
@@ -1265,6 +1301,22 @@ export component Dash inherits Window {
                 root.stress-toggle();
                 return accept;
             }
+            // The stress run's pace, as its panel's buttons: p shows the panel, [ and ] pick a
+            // row, - and + change it.
+            if (root.stress && !root.stress-synthetic && !e.modifiers.control && !e.modifiers.alt && !e.modifiers.meta) {
+                if (e.text == "p") {
+                    root.stress-panel = !root.stress-panel;
+                    return accept;
+                }
+                if (root.stress-panel && (e.text == "[" || e.text == "]")) {
+                    root.stress-row = clamp(root.stress-row + (e.text == "[" ? -1 : 1), 0, 3);
+                    return accept;
+                }
+                if (root.stress-panel && (e.text == "-" || e.text == "+")) {
+                    root.stress-step(root.stress-row, e.text == "-" ? -1 : 1);
+                    return accept;
+                }
+            }
             if (e.text == Key.Escape) {
                 if (root.editing && !keys.has-focus) {
                     // Out of a sidebar text field, back to the keys of edit mode.
@@ -1293,9 +1345,30 @@ export component Dash inherits Window {
                 }
                 return accept;
             }
+            // A widget carried by the pointer: Enter puts it down where it is, as a click does.
+            if (root.drag-mode == DragMode.carry && e.text == Key.Return) {
+                root.finish-drag(true);
+                return accept;
+            }
+            if (Tray.menu-open) {
+                if (!e.modifiers.control && !e.modifiers.alt && !e.modifiers.meta) {
+                    if (e.text == "j" || e.text == Key.DownArrow) {
+                        Tray.menu-cursor = root.menu-step(1);
+                    } else if (e.text == "k" || e.text == Key.UpArrow) {
+                        Tray.menu-cursor = root.menu-step(-1);
+                    } else if (e.text == Key.Return || e.text == " ") {
+                        if (root.menu-ok(Tray.menu-cursor)) {
+                            Tray.menu-activate(Tray.menu[Tray.menu-cursor].id);
+                        }
+                    } else if (e.text == "q" || e.text == Key.Backspace) {
+                        Tray.menu-close();
+                    }
+                }
+                return accept;
+            }
             // Ctrl+M moves the widget in hand, Ctrl+R resizes it (not while a sidebar text field
             // has the keyboard).
-            if (!root.solo && !root.dragging && root.adjust-id == 0 && root.op-target != 0
+            if (!root.solo && !root.dragging && root.op-target != 0
                 && (!root.editing || keys.has-focus) && e.modifiers.control && !e.modifiers.alt
                 && !e.modifiers.meta && !e.modifiers.shift && (e.text == "m" || e.text == "r")) {
                 root.op-toggle(e.text == "m" ? NavOp.move : NavOp.resize);
@@ -1312,6 +1385,23 @@ export component Dash inherits Window {
                     } else {
                         root.size-widget(root.op-target, d, e.modifiers.shift || e.text != e.text.to-lowercase());
                     }
+                }
+                return accept;
+            }
+            // A widget opened for adjusting (a long press, a double click): what its toolbar does.
+            if (root.adjust-id != 0 && !root.solo && !root.dragging
+                && !e.modifiers.control && !e.modifiers.alt && !e.modifiers.meta) {
+                let id = root.adjust-id;
+                if (e.text == "o") {
+                    root.toggle-shape(id);
+                } else if (e.text == "p") {
+                    root.toggle-pin(id);
+                } else if (e.text == "x" || e.text == Key.Delete) {
+                    root.adjust-id = 0;
+                    root.remove-widget(id);
+                } else if (e.text == "s") {
+                    root.adjust-id = 0;
+                    root.open-settings(id);
                 }
                 return accept;
             }
@@ -1465,26 +1555,30 @@ export component Dash inherits Window {
             }
         }
 
-        // Quick tips along the bottom, in the margin under the grid: what the keys do just now. One
-        // that doesn't fit whole is left out.
+        // Quick tips along the bottom, under the grid: what the keys do just now, all of them. With
+        // a widget entered its own keys are the upper line and the dashboard's the lower one; else
+        // the dashboard's take both lines if one is too short for them.
         tips-strip := Rectangle {
-            visible: !root.solo && root.tips.length > 0;
+            visible: !root.solo && !root.expand-on;
             // Where the grid shows while the drawer slides, as the top bar.
             x: root.shown-x + Theme.gap;
-            y: root.height - root.margin;
+            y: root.height - root.foot;
             width: root.avail-w - 2 * (root.shown-x + Theme.gap);
-            height: root.margin;
+            height: 2 * root.tip-line;
             opacity: root.reveal;
-            clip: true;
-            HorizontalLayout {
+            property <[TipRow]> lines: Nav.pack(root.tips, self.width);
+            upper := TipsLine {
+                y: 0px;
                 width: parent.width;
-                height: parent.height;
-                alignment: start;
-                spacing: 16px;
-                for hint in root.tips: KeyChip {
-                    hint: hint;
-                    visible: self.x + self.width <= tips-strip.width;
-                }
+                height: root.tip-line;
+                strong: root.own-tips;
+                tips: root.own-tips ? Nav.widget-tips : tips-strip.lines.length > 1 ? tips-strip.lines[0].chips : [];
+            }
+            lower := TipsLine {
+                y: root.tip-line;
+                width: parent.width;
+                height: root.tip-line;
+                tips: root.own-tips || tips-strip.lines.length <= 1 ? root.tips : tips-strip.lines[1].chips;
             }
         }
 
@@ -1551,6 +1645,8 @@ export component Dash inherits Window {
                 area-w: root.cols * root.cell;
                 area-h: root.rows * root.cell;
                 expanded: root.expand-on && Nav.expanded-id == w.id;
+                more-tips: root.tips;
+                own-tips: root.own-tips;
                 cols: root.cols;
                 rows: root.rows;
                 editing: root.editing || root.adjust-id == w.id;
@@ -2230,15 +2326,23 @@ export component Dash inherits Window {
         // A standalone app: the card is the window, round widgets sit centered in it.
         if root.solo: Rectangle {
             property <bool> round: root.solo-inst.shape == Shape.round;
-            property <length> side: min(self.width, self.height);
+            property <length> side: min(self.width, self.room);
             background: Theme.card.transparentize(1 - Theme.card-opacity);
+            // What the keys do is under the widget, in the window itself.
+            property <length> room: self.height - solo-foot.room;
             WidgetBody {
                 x: parent.round ? (parent.width - parent.side) / 2 : 0;
-                y: parent.round ? (parent.height - parent.side) / 2 : 0;
+                y: parent.round ? (parent.room - parent.side) / 2 : 0;
                 width: parent.round ? parent.side : parent.width;
-                height: parent.round ? parent.side : parent.height;
+                height: parent.round ? parent.side : parent.room;
                 inst: root.solo-inst;
                 round: parent.round;
+            }
+            solo-foot := KeyFooter {
+                y: parent.height - self.room;
+                width: parent.width;
+                own: !Tray.menu-open;
+                more: Tray.menu-open ? root.menu-tips : [{ key: "Esc", does: "close" }];
             }
         }
 
@@ -2313,13 +2417,20 @@ export component Dash inherits Window {
                         }
                     }
                 }
+                Text {
+                    accessible-role: none;
+                    text: root.stress-panel ? "Space pause · p hide · [ ] row · - + change" : "Space pause · p pace";
+                    color: Theme.faint;
+                    font-size: Theme.font-small;
+                    overflow: elide;
+                }
                 if root.stress-panel: VerticalLayout {
                     spacing: 2px;
                     for label[i] in ["Rate", "Events", "Ramp up", "Ramp down"]: HorizontalLayout {
                         spacing: 6px;
                         Text {
                             text: label;
-                            color: Theme.dim;
+                            color: i == root.stress-row ? Theme.accent : Theme.dim;
                             font-size: Theme.font-small;
                             vertical-alignment: center;
                             horizontal-stretch: 1;

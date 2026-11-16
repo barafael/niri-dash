@@ -298,6 +298,15 @@ export component CalendarWidget inherits Rectangle {
     keys := NavScope {
         accessible-label: "Calendar";
         active: root.nav;
+        jk-does: root.round ? "" : "week";
+        hl-does: root.round ? "" : "day";
+        adjust-does: "month";
+        enter-does: root.round ? "this month" : "";
+        copy-does: root.round ? "" : "copy the day";
+        binds: [
+            { key: "p", key2: "n", does: "previous, next month", on: !root.round },
+            { key: "t", does: "today", on: true },
+        ];
         // Round, there is no cursor to lose.
         activate => {
             if (root.round) {

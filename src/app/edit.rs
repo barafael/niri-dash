@@ -683,7 +683,9 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     let a = app.clone();
     ui.on_add_widget(move |k| {
         let kind = kind_from_ui(k);
-        if a.layout.borrow_mut().add(kind).is_some() {
+        let added = a.layout.borrow_mut().add(kind);
+        a.ui().set_added_id(added.map_or(0, |id| id as i32));
+        if added.is_some() {
             a.layout_changed();
             a.toast(&format!("Added {}", kind.info().title));
         } else {

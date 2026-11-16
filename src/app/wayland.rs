@@ -225,11 +225,14 @@ pub fn run_app(kind: Kind) -> Result<()> {
     let placed = config.layout.solo_widget(kind);
     let px = |cells: i32| (cells.max(1) as f32 * crate::layout::AUTO_CELL).round() as u32;
     let (min_w, min_h) = kind.info().min_size;
+    // Under the widget the window says what the keys do (`KeyFooter` in ui/common.slint): room
+    // for two lines of that, so the widget itself is as big as on the dashboard.
+    const KEYS: u32 = 2 * 24 + 10;
     let mode = Mode::App {
         app_id: crate::desktop::app_id(kind),
         title: crate::desktop::name(kind),
-        size: (px(placed.w), px(placed.h)),
-        min_size: (px(min_w), px(min_h)),
+        size: (px(placed.w), px(placed.h) + KEYS),
+        min_size: (px(min_w), px(min_h) + KEYS),
     };
     log::info!("{} running; control socket {}", kind.name(), path.display());
     let result = serve(

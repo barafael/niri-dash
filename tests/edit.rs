@@ -11,7 +11,7 @@
 //! `NIRI_DASH_EDIT_SEEDS=1,2,3` and `NIRI_DASH_EDIT_OPS=400` set the random sequences.
 
 use niri_dash::testing::{self, Harness, Sandbox, Tile};
-use niri_dash::{Nav, NavMode, RowKind, SettingRow};
+use niri_dash::{Nav, NavMode, NavOp, RowKind, SettingRow};
 use slint::platform::PointerEventButton;
 use slint::{ComponentHandle, Model, SharedString};
 use std::collections::BTreeSet;
@@ -1453,6 +1453,15 @@ fn keyboard_editing(issues: &mut Issues) {
             toast(&h)
         ));
     }
+    // The new widget is in move mode (the keyboard's way of dragging it to a place); Escape
+    // ends that, and the keys are back in the list.
+    if h.ui().global::<Nav>().get_op() != NavOp::Move {
+        issues.add("keyboard: a widget added from the palette isn't in move mode");
+    }
+    h.press("esc");
+    if h.ui().global::<Nav>().get_op() != NavOp::None || h.ui().get_settings_id() != 0 {
+        issues.add("keyboard: Escape after adding didn't go back to the palette");
+    }
     issues.check(&h, "keyboard: adding from the palette");
 
     // Colors (past Arrange): another scheme.
@@ -2389,6 +2398,8 @@ fn palette_filter(issues: &mut Issues) {
     let n = h.tiles().len();
     h.press("j");
     h.press("enter");
+    // (Out of the move mode a new widget starts in.)
+    h.press("esc");
     let first = &now[slots(&h)[0] as usize];
     if first.group == 0 {
         issues.add("filter: the first listed widget is one that was filtered out");

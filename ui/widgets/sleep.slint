@@ -129,6 +129,23 @@ component SleepBody inherits Rectangle {
             active: root.nav;
             count: root.round ? 0 : root.k-actions + 1;
             subs: keys.cursor == root.k-toggles ? 2 : keys.cursor == root.k-actions ? 4 : 1;
+            property <string> primary-does: Sleep.status == SleepStatus.armed ? "pause" : Sleep.status == SleepStatus.paused ? "resume" : "arm";
+            enter-does: root.round ? self.primary-does
+                : self.cursor == 0 ? "type the time"
+                : self.cursor == root.k-toggles ? "switch"
+                : self.cursor != root.k-actions ? "arm with it"
+                : self.sub == 0 ? self.primary-does : self.sub == 1 ? "abort" : self.sub == 2 ? "a minute less" : "a minute more";
+            adjust-does: !root.round && !root.list && self.cursor == 1 && root.modes > 0 ? "mode"
+                : root.round && root.counting ? "sooner, later" : "";
+            back-does: root.counting || Sleep.status == SleepStatus.fired ? "abort" : "";
+            field-does: "arm";
+            binds: [
+                { key: "i", does: "type the time", on: !root.round && self.cursor == 0 },
+                { key: "Space", key2: "p", does: "pause, resume", on: root.counting },
+                { key: "+", key2: "-", does: "later, sooner", on: root.counting },
+                { key: "d", key2: "Ctrl+D", does: "dry run", on: true },
+                { key: "a", does: "keep the screen on", on: true },
+            ];
             // The mode highlight follows the cursor down the list.
             changed cursor => {
                 if (root.list && self.cursor >= 1 && self.cursor <= root.modes && Sleep.selected != self.cursor - 1) {
@@ -168,15 +185,15 @@ component SleepBody inherits Rectangle {
                     Sleep.pause-resume();
                     return true;
                 }
-                if (t == "p") {
+                if (t == "p" && root.counting) {
                     Sleep.pause-resume();
                     return true;
                 }
-                if (t == "+" || t == "=") {
+                if (t == "+") {
                     Sleep.longer();
                     return true;
                 }
-                if (t == "-" || t == "_") {
+                if (t == "-") {
                     Sleep.shorter();
                     return true;
                 }

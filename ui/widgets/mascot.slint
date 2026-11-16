@@ -278,6 +278,7 @@ component FigureMascot inherits Rectangle {
     NavScope {
         accessible-label: "Mascot";
         active: root.nav;
+        enter-does: "say something else";
         activate => { Mascots.next(root.id); }
     }
 }
@@ -388,6 +389,7 @@ component CowSay inherits Rectangle {
     NavScope {
         accessible-label: "Cow";
         active: root.nav;
+        enter-does: "say something else";
         activate => { Mascots.next(root.id); }
     }
 }

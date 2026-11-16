@@ -1,13 +1,54 @@
 import { AboutSlint } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
 import { Build } from "../data.slint";
-import { Muted } from "../common.slint";
+import { Muted, NavScope } from "../common.slint";
+
+// A line that opens a web page: clicked, or with Enter under the keyboard cursor.
+component Link inherits Rectangle {
+    in property <string> text;
+    in property <string> url;
+    in property <bool> kfocus;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-item-selected: root.kfocus;
+    accessible-action-default => { Build.open-url(root.url); }
+    height: 20px;
+    border-radius: Theme.radius-small;
+    background: root.kfocus || touch.has-hover ? Theme.hover : transparent;
+    border-width: root.kfocus ? 2px : 0px;
+    border-color: Theme.accent;
+    Text {
+        accessible-role: none;
+        x: 2px;
+        width: parent.width - 4px;
+        height: parent.height;
+        text: root.text;
+        color: Theme.dim;
+        font-size: Theme.font-small;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    touch := TouchArea {
+        clicked => { Build.open-url(root.url); }
+    }
+}
 
 // What this is, and what it is made with. Slint's license asks for its AboutSlint widget in an
 // About screen, so it is shown whole here, not redrawn.
 export component AboutWidget inherits Rectangle {
+    // Entered with the keyboard: j/k over the two links, Enter opens one.
+    in property <bool> nav;
     accessible-role: groupbox;
     accessible-label: "About niri-dash";
+    keys := NavScope {
+        accessible-label: "About";
+        active: root.nav;
+        count: 2;
+        enter-does: "open the page";
+        activate(i) => {
+            Build.open-url(i == 0 ? "https://github.com/barafael/niri-dash" : "https://slint.dev");
+        }
+    }
     VerticalLayout {
         padding: Theme.pad;
         spacing: 4px;
@@ -21,12 +62,22 @@ export component AboutWidget inherits Rectangle {
         Muted {
             text: "MIT or Apache-2.0";
         }
-        Muted {
+        Link {
             text: "github.com/barafael/niri-dash";
+            url: "https://github.com/barafael/niri-dash";
+            kfocus: keys.on && keys.cursor == 0;
         }
         Rectangle {
             vertical-stretch: 1;
             clip: true;
+            // Its own click opens slint.dev; under the keyboard cursor Enter does.
+            accessible-role: button;
+            accessible-label: "Made with Slint";
+            accessible-item-selected: keys.on && keys.cursor == 1;
+            accessible-action-default => { Build.open-url("https://slint.dev"); }
+            border-radius: Theme.radius-small;
+            border-width: keys.on && keys.cursor == 1 ? 2px : 0px;
+            border-color: Theme.accent;
             AboutSlint {
                 width: parent.width;
                 height: parent.height;

@@ -89,6 +89,28 @@ export struct HintChars {
     chars: [string],
 }
 
+// A keyboard shortcut for the quick tips: the keys, and what they do. No keys: a plain note.
+export struct KeyHint {
+    key: string,
+    does: string,
+}
+
+// A key of a widget's own, as its NavScope lists it: the key (and a second one that goes on the
+// same cap: "d x", "+ -"), what it does, and whether it does anything just now. Only a key that
+// is `on` reaches the widget, and every one that is `on` is shown, so the tips can't be wrong.
+// "Space" stands for the space bar, "0-9" for any digit.
+export struct KeyBind {
+    key: string,
+    key2: string,
+    does: string,
+    on: bool,
+}
+
+// One line of quick tips.
+export struct TipRow {
+    chips: [KeyHint],
+}
+
 // Keyboard navigation. `f` shows a label on every widget (hints); typing one enters that widget
 // (widget), whose controls j/k/h/l/Enter then work.
 export enum NavMode { off, hints, widget }
@@ -114,6 +136,22 @@ export global Nav {
     callback pick(string) -> int;
     // The widget next to one, in a direction (0..3 = h, j, k, l); 0 if there is none.
     callback neighbor(int, int) -> int;
+    // What the keys do in the widget entered, just now: every key it takes. Its NavScope says so
+    // with `publish` whenever that changes; entering or leaving a widget empties it first.
+    in-out property <[KeyHint]> widget-tips;
+    // Ctrl+D and Ctrl+U scroll a list of the entered widget that the cursor can't (rows that
+    // are only to be read): the list says whether there is anything to scroll, the widget's scope
+    // bumps the tick, and the list moves half its height down (1) or up (-1).
+    in-out property <bool> can-scroll;
+    in-out property <int> scroll-tick;
+    in-out property <int> scroll-dir;
+    // A scope's keys: the general ones before its own, its own (the ones that are on), the
+    // general ones after. Entries that do nothing (no `does`) are left out.
+    callback publish([KeyHint], [KeyBind], [KeyHint]);
+    // Which of the binds a key is (the event's text), -1 if none that is on.
+    pure callback find-bind([KeyBind], string) -> int;
+    // Tips broken into lines that fit a width.
+    pure callback pack([KeyHint], length) -> [TipRow];
 }
 
 // Called by widgets that act on something outside the dashboard (focus a window, open a tray

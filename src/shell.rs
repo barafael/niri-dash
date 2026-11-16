@@ -859,6 +859,8 @@ fn key_text(ev: &KeyEvent) -> Option<slint::SharedString> {
         Keysym::Tab => Some(Key::Tab),
         Keysym::ISO_Left_Tab => Some(Key::Backtab),
         Keysym::Delete => Some(Key::Delete),
+        // The key for a context menu (the notes widget's cut, copy and paste).
+        Keysym::Menu => Some(Key::Menu),
         Keysym::Left => Some(Key::LeftArrow),
         Keysym::Right => Some(Key::RightArrow),
         Keysym::Up => Some(Key::UpArrow),

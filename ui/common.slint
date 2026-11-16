@@ -1,5 +1,5 @@
 import { Theme } from "theme.slint";
-import { Nav, NavMode } from "data.slint";
+import { Nav, NavMode, KeyHint, KeyBind, TipRow } from "data.slint";
 
 export component Icon inherits Image {
     in property <color> tint: Theme.text;
@@ -746,6 +746,22 @@ export component ScrollList inherits Rectangle {
     }
     // The widget was resized under the cursor: its row stays in sight.
     changed height => { root.keep-in-view(); }
+    // Ctrl+D and Ctrl+U scroll this list while its widget has the keyboard (`Nav.can-scroll`):
+    // for a list with rows the cursor doesn't stop on.
+    in property <bool> scroll-keys;
+    property <bool> offer: self.scroll-keys && self.scrolls;
+    changed offer => { Nav.can-scroll = self.offer; }
+    init => {
+        if (self.scroll-keys) {
+            Nav.can-scroll = self.offer;
+        }
+    }
+    property <int> tick: Nav.scroll-tick;
+    changed tick => {
+        if (self.offer) {
+            flick.content-y = clamp(flick.content-y - Nav.scroll-dir * self.height / 2, min(0px, flick.height - flick.content-height), 0px);
+        }
+    }
     flick := Flickable {
         x: 0;
         width: root.width - root.gutter;
@@ -778,11 +794,15 @@ export component ScrollList inherits Rectangle {
 // It takes the keyboard when the widget is entered and moves a cursor over `count` stops: j/k (and
 // the arrows, Tab and Shift+Tab) step, g/G jump to the ends, h/l move between the `subs` parts of
 // the stop (a row and its buttons) or else go to `adjust`. With no stops to step between (a knob,
-// one slider), j/k go to `adjust` too: k (up) as +1, j (down) as -1. Enter goes to `activate`;
-// other keys go to `letter`, Space too, and to `activate` if the widget doesn't take it; `e` is
-// the dashboard's (it expands the widget), so it never gets to `letter`. Escape coming up from a text field inside
-// takes the keyboard back; otherwise `back` gets a chance (close a prompt, leave a page) before
-// the dashboard leaves the widget.
+// one slider), j/k go to `adjust` too: k (up) as +1, j (down) as -1. Enter goes to `activate` if
+// the widget says what it does there (`enter-does`), and so does Space unless the widget lists it
+// as its own. A letter goes to `letter` if it is one of the widget's `binds` and on just now; any
+// other key is not the widget's, and goes up to the dashboard (`e`, which expands the widget,
+// always does). Escape coming up from a text field inside takes the keyboard back; otherwise
+// `back` gets a chance (close a prompt, leave a page) before the dashboard leaves the widget.
+//
+// The widget says what its keys do (`binds` and the `-does` words), and the scope passes that on
+// to the quick tips whenever it changes, so the tips show every key that works and no other.
 //
 // For screen readers and the tests: a NavScope is an accessible list of its `count` stops, named
 // by each use with `accessible-label` (the widget's name). The element under the cursor says so
@@ -813,6 +833,59 @@ export component NavScope inherits FocusScope {
     callback filter(string) -> bool;
     // Ctrl+C on the stop under the cursor; true if there was something to copy.
     callback copy(int) -> bool;
+    // What the keys do, for the quick tips. Only what is said here works: Enter and Space with
+    // `enter-does`, a letter that is one of `binds` and on, so the tips show every key there is.
+    // The widget's own letters.
+    in property <[KeyBind]> binds;
+    // What Enter does on the stop under the cursor ("" = nothing).
+    in property <string> enter-does;
+    // What h and l change on a stop without parts (and j and k too, with no stops to step over).
+    in property <string> adjust-does;
+    // What j/k and h/l do, for a widget that says it better than "move" and "part", or whose
+    // `filter` gives them another job.
+    in property <string> jk-does;
+    in property <string> hl-does;
+    // What Ctrl+C (and y) copy.
+    in property <string> copy-does;
+    // What Escape (and Backspace) do while `back` has something to leave.
+    in property <string> back-does;
+    // What Ctrl+D and Ctrl+U scroll: a list with `scroll-keys` that has more than it shows, whose
+    // rows the cursor doesn't stop on.
+    in property <string> scroll-does;
+    // g and G go to the ends (not while a `filter` has the keys for something else).
+    in property <bool> ends: true;
+    // What Enter does in a text field inside.
+    in property <string> field-does: "done";
+    property <bool> lone: self.count <= 1 && self.jk-does == "";
+    // (Each on its own: a struct that reads one property twice doesn't compile, Slint 1.18.)
+    property <string> jk-tip: self.jk-does != "" ? self.jk-does : self.count > 1 ? "move" : "";
+    property <string> hl-key: self.lone && !self.parts && self.hl-does == "" ? "j k h l" : "h l";
+    property <bool> parts: self.subs > 1 && self.count > 0;
+    property <string> hl-tip: self.hl-does != "" ? self.hl-does : self.parts ? "part" : self.adjust-does;
+    property <string> scroll-tip: Nav.can-scroll ? self.scroll-does : "";
+    property <[KeyHint]> head: !self.has-focus ? [
+        { key: "Enter", does: self.field-does },
+        { key: "Esc", does: "back to the keys" },
+    ] : [
+        { key: "j k", does: self.jk-tip },
+        { key: self.hl-key, does: self.hl-tip },
+        { key: "g G", does: self.ends && self.count > 2 ? "ends" : "" },
+        { key: "Enter", does: self.enter-does },
+    ];
+    property <[KeyHint]> tail: !self.has-focus ? [] : [
+        { key: "Ctrl+D Ctrl+U", does: self.scroll-tip },
+        { key: "y", does: self.copy-does },
+        { key: "Esc", does: self.back-does },
+    ];
+    function tell() {
+        if (self.on) {
+            Nav.publish(self.head, self.has-focus ? self.binds : [], self.tail);
+        }
+    }
+    changed head => { self.tell(); }
+    changed tail => { self.tell(); }
+    changed binds => { self.tell(); }
+    changed has-focus => { self.tell(); }
     // The cursor shows only while the widget is entered.
     out property <bool> on: self.active && Nav.mode == NavMode.widget;
     focus-on-click: false;
@@ -823,11 +896,13 @@ export component NavScope inherits FocusScope {
         if (self.active) {
             self.focus();
         }
+        self.tell();
     }
     init => {
         if (self.active) {
             self.focus();
         }
+        self.tell();
     }
     changed count => {
         if (self.cursor >= self.count) {
@@ -840,6 +915,7 @@ export component NavScope inherits FocusScope {
         if (self.on) {
             self.go(self.cursor, 1);
         }
+        self.tell();
     }
     // The list changed under the cursor and put a stop it can't rest on there (a window moved to
     // another workspace, and its heading is here now): on to the next one, or the one before.
@@ -896,7 +972,16 @@ export component NavScope inherits FocusScope {
         }
         if ((e.text == "c" || e.text == "C") && e.modifiers.control && !e.modifiers.shift
             && !e.modifiers.alt && !e.modifiers.meta) {
+            if (self.copy-does == "") {
+                return reject;
+            }
             return self.copy(self.cursor) ? accept : reject;
+        }
+        if (self.scroll-tip != "" && e.modifiers.control && !e.modifiers.alt && !e.modifiers.meta
+            && (e.text == "d" || e.text == "u" || e.text == "D" || e.text == "U")) {
+            Nav.scroll-dir = e.text == "d" || e.text == "D" ? 1 : -1;
+            Nav.scroll-tick += 1;
+            return accept;
         }
         if (e.modifiers.control || e.modifiers.alt || e.modifiers.meta) {
             return reject;
@@ -922,28 +1007,32 @@ export component NavScope inherits FocusScope {
             }
             return accept;
         }
-        if (e.text == "g" || e.text == Key.Home) {
+        // (With two stops j and k do as much, and the tips don't list these.)
+        if (self.ends && self.count > 2 && (e.text == "g" || e.text == Key.Home)) {
             self.go(0, 1);
             return accept;
         }
-        if (e.text == "G" || e.text == Key.End) {
+        if (self.ends && self.count > 2 && (e.text == "G" || e.text == Key.End)) {
             self.go(self.count - 1, -1);
             return accept;
         }
         if (e.text == "h" || e.text == Key.LeftArrow || e.text == "l" || e.text == Key.RightArrow) {
             let d = e.text == "h" || e.text == Key.LeftArrow ? -1 : 1;
-            if (self.subs > 1) {
+            if (self.parts) {
                 self.sub = clamp(self.sub + d, 0, self.subs - 1);
                 return accept;
             }
             return self.adjust(self.cursor, d) ? accept : reject;
         }
-        // Space is the widget's own first (play / pause, say), else the same as Enter.
-        if (e.text == Key.Return || (e.text == " " && !self.letter(e.text, self.cursor))) {
-            self.activate(self.cursor, min(self.sub, self.subs - 1));
+        // Only what the tips say. Space is the widget's own if it lists it, else Enter's.
+        if (e.text == " " && Nav.find-bind(self.binds, e.text) >= 0) {
+            self.letter(e.text, self.cursor);
             return accept;
         }
-        if (e.text == " ") {
+        if (e.text == Key.Return || e.text == " ") {
+            if (self.enter-does != "") {
+                self.activate(self.cursor, min(self.sub, self.subs - 1));
+            }
             return accept;
         }
         if (e.text == Key.Backspace) {
@@ -952,7 +1041,14 @@ export component NavScope inherits FocusScope {
         if (e.text == "e") {
             return reject;
         }
-        self.letter(e.text, self.cursor) ? accept : reject
+        if (e.text == "y" && self.copy-does != "") {
+            return self.copy(self.cursor) ? accept : reject;
+        }
+        if (Nav.find-bind(self.binds, e.text) >= 0) {
+            self.letter(e.text, self.cursor);
+            return accept;
+        }
+        reject
     }
     @children
 }
@@ -1031,5 +1127,117 @@ export component TextField inherits SilentTextField {
     accessible-action-set-value(v) => {
         root.text = v;
         root.edited(v);
+    }
+}
+
+// One shortcut as the quick tips show it: the keys on a cap, then what they do.
+export component KeyChip inherits Rectangle {
+    in property <KeyHint> hint;
+    // In the text colour, not dimmed: the entered widget's own keys.
+    in property <bool> strong;
+    width: cap.width + (cap.width > 0 ? 6px : 0px) + label.preferred-width;
+    cap := Rectangle {
+        x: 0px;
+        y: (parent.height - self.height) / 2;
+        height: 22px;
+        width: root.hint.key == "" ? 0px : keys-text.preferred-width + 12px;
+        visible: root.hint.key != "";
+        border-radius: 5px;
+        border-width: 1px;
+        border-color: Theme.border;
+        background: Theme.subtle;
+        keys-text := Text {
+            accessible-role: none;
+            text: root.hint.key;
+            color: Theme.text;
+            font-size: Theme.font-small;
+            font-weight: 600;
+            x: 0px;
+            y: 0px;
+            width: parent.width;
+            height: parent.height;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+    label := Text {
+        x: cap.width + (cap.width > 0 ? 6px : 0px);
+        y: 0px;
+        width: self.preferred-width;
+        height: parent.height;
+        text: root.hint.does;
+        color: root.hint.key == "" ? Theme.accent : root.strong ? Theme.text : Theme.dim;
+        font-size: Theme.font-body;
+        vertical-alignment: center;
+    }
+}
+
+// One line of quick tips. Tips that don't fit are cut off, and `clipped` says so.
+export component TipsLine inherits Rectangle {
+    in property <[KeyHint]> tips;
+    in property <bool> strong;
+    out property <bool> clipped: line.preferred-width > self.width + 0.5px;
+    clip: true;
+    line := HorizontalLayout {
+        x: 0px;
+        width: self.preferred-width;
+        height: parent.height;
+        alignment: start;
+        spacing: 16px;
+        for hint in root.tips: KeyChip {
+            hint: hint;
+            strong: root.strong;
+        }
+    }
+}
+
+// Quick tips under a widget that has the whole window or is blown up: its own keys, then `more`
+// (the window's or the dashboard's), in as many lines as it takes at this width.
+export component KeyFooter inherits Rectangle {
+    in property <[KeyHint]> more;
+    // Shown at all (a widget in its place on the dashboard has none: the tips are along the bottom).
+    in property <bool> shown: true;
+    in property <length> line-height: 24px;
+    in property <length> pad: Theme.pad;
+    // With the widget's own keys above `more` (not while something else has the keyboard).
+    in property <bool> own: true;
+    property <[TipRow]> own-rows: Nav.pack(self.shown && self.own ? Nav.widget-tips : [], self.width - 2 * self.pad);
+    property <[TipRow]> rest: Nav.pack(self.shown ? root.more : [], self.width - 2 * self.pad);
+    property <int> lines: self.own-rows.length + self.rest.length;
+    // The most lines it has had since it was shown at this width. It keeps that room: what a
+    // widget's keys are can depend on how high the widget is (a list that scrolls or doesn't), and
+    // how high it is on the room left over here, so giving room back could go back and forth.
+    property <int> most;
+    changed lines => {
+        if (self.lines > self.most) {
+            self.most = self.lines;
+        }
+    }
+    changed shown => { self.most = 0; }
+    changed width => { self.most = self.lines; }
+    property <int> kept: max(self.most, self.lines);
+    // How much of the height it takes: its lines, a line above them, a little air below.
+    out property <length> room: self.kept > 0 ? self.kept * self.line-height + 10px : 0px;
+    height: self.room;
+    visible: self.lines > 0;
+    Rectangle {
+        y: 0px;
+        height: 1px;
+        background: Theme.border;
+    }
+    for row[i] in root.own-rows: TipsLine {
+        x: root.pad;
+        y: 5px + i * root.line-height;
+        width: root.width - 2 * root.pad;
+        height: root.line-height;
+        strong: true;
+        tips: row.chips;
+    }
+    for row[i] in root.rest: TipsLine {
+        x: root.pad;
+        y: 5px + (root.own-rows.length + i) * root.line-height;
+        width: root.width - 2 * root.pad;
+        height: root.line-height;
+        tips: row.chips;
     }
 }

@@ -315,6 +315,7 @@ export component BatteryWidget inherits Rectangle {
             }
             ScrollList {
                 vertical-stretch: 1;
+                scroll-keys: keys.on;
                 for b in Power.blockers: HorizontalLayout {
                     height: 22px;
                     spacing: 6px;
@@ -341,8 +342,15 @@ export component BatteryWidget inherits Rectangle {
         active: root.nav;
         count: root.round ? 0 : (root.has-profiles ? 1 : 0) + (root.show-inhibit ? 1 : 0);
         accessible-label: "Battery & power";
+        property <bool> on-profiles: root.has-profiles && (root.round || self.cursor == 0);
+        enter-does: self.on-profiles ? "next profile" : !root.round && root.show-inhibit ? "keep awake, or not" : "";
+        adjust-does: self.on-profiles ? "profile" : "";
+        scroll-does: root.round ? "" : "what blocks sleep";
         activate(i) => {
             if (!root.round && (!root.has-profiles || i == 1)) {
+                if (!root.show-inhibit) {
+                    return;
+                }
                 Power.toggle-inhibit();
             } else if (root.has-profiles) {
                 // With none current, the first is the one lit: that's what Enter picks.
@@ -545,6 +553,16 @@ export component VolumeWidget inherits Rectangle {
         active: root.nav;
         count: root.round ? 0 : root.k-count;
         accessible-label: "Volume";
+        property <bool> on-slider: root.round || self.cursor >= root.k-out;
+        jk-does: self.on-slider ? "quieter, louder" : "move";
+        hl-does: self.on-slider ? "quieter, louder" : "";
+        enter-does: self.on-slider ? "mute" : root.can-pick && self.cursor == 0 ? (root.picking ? "close" : "outputs") : "use this output";
+        back-does: root.picking ? "close" : "";
+        binds: [
+            { key: "Tab", does: "next slider", on: self.count > 1 && self.on-slider },
+            { key: "m", does: "mute", on: true },
+            { key: "0-9", does: "10 to 100 %", on: self.on-slider },
+        ];
         filter(t) => {
             let down = t == "j" || t == Key.DownArrow;
             let up = t == "k" || t == Key.UpArrow;
@@ -627,6 +645,11 @@ export component BrightnessWidget inherits Rectangle {
     keys := NavScope {
         accessible-label: "Brightness";
         active: root.nav;
+        adjust-does: "darker, brighter";
+        enter-does: root.round ? "dim, full" : "";
+        binds: [
+            { key: "0-9", does: "10 to 100 %", on: true },
+        ];
         activate => {
             if (root.round) {
                 Brightness.set(Brightness.level > 0.6 ? 0.3 : 1.0);
@@ -724,6 +747,12 @@ export component NightLightWidget inherits Rectangle {
         count: root.round ? 0 : 1 + (root.has-slider ? 1 : 0) + (root.has-presets ? 1 : 0);
         accessible-label: "Night light";
         subs: !root.round && self.cursor == 2 ? 3 : 1;
+        enter-does: !root.round && self.cursor == 2 ? "use it" : "on, off";
+        adjust-does: root.has-slider && (root.round || self.cursor == 1) ? "cooler, warmer" : "";
+        hl-does: !root.round && self.cursor == 2 ? "temperature" : "";
+        binds: [
+            { key: "t", does: "on, off", on: true },
+        ];
         activate(i, sub) => {
             if (!root.round && i == 2) {
                 NightLight.set-kelvin(sub == 0 ? 3400 : sub == 1 ? 4500 : 5500);
@@ -919,6 +948,8 @@ export component SessionWidget inherits Rectangle {
         active: root.nav;
         count: root.k-count;
         accessible-label: "Session";
+        hl-does: root.k-count > 1 ? "move" : "";
+        enter-does: root.k-count > 0 ? "press" : "";
         activate => { root.presses += 1; }
         adjust(i, d) => {
             self.move-to(clamp(i + d, 0, max(0, root.k-count - 1)));

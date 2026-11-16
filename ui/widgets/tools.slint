@@ -112,6 +112,8 @@ export component KeyboardLayoutWidget inherits Rectangle {
         accessible-label: "Keyboard layout";
         active: root.nav;
         count: root.list ? KeyboardLayouts.layouts.length : 0;
+        enter-does: root.list ? "use it" : "next layout";
+        adjust-does: "previous, next layout";
         activate(i) => {
             if (root.list) { KeyboardLayouts.pick(i); } else { KeyboardLayouts.next(); }
         }
@@ -269,6 +271,10 @@ export component ColorPickerWidget inherits Rectangle {
         accessible-label: "Color picker";
         active: root.nav;
         count: root.round ? 0 : root.texts + 1 + root.swatches;
+        enter-does: root.round || self.cursor == root.pipette ? "pick a colour" : "copy";
+        binds: [
+            { key: "p", does: "pick a colour", on: true },
+        ];
         activate(i) => {
             if (root.round || i == root.pipette) {
                 ColorPicker.pick();
@@ -500,6 +506,7 @@ component TimerBody inherits Rectangle {
         }
         if root.lap-list: ScrollList {
             vertical-stretch: 1;
+            scroll-keys: keys.on;
             for l[i] in Countdown.laps: HorizontalLayout {
                 height: 24px;
                 Text {
@@ -524,6 +531,15 @@ component TimerBody inherits Rectangle {
         accessible-label: root.sw ? "Stopwatch" : "Timer";
         active: root.nav;
         count: root.round ? 0 : root.buttons + root.presets;
+        property <int> at: root.round ? 0 : root.stop(self.cursor);
+        enter-does: self.at == 0 ? "start, pause" : self.at == 1 ? "lap" : self.at == 2 ? "reset" : "set";
+        adjust-does: root.sw ? "" : "a minute less, more";
+        scroll-does: root.lap-list ? "the laps" : "";
+        binds: [
+            { key: "Space", does: "start, pause", on: true },
+            { key: "r", does: "reset", on: true },
+            { key: "a", does: "lap", on: root.sw && Countdown.sw-running },
+        ];
         activate(i) => {
             if (root.round) {
                 root.toggle();
@@ -664,15 +680,28 @@ export component NotesWidget inherits Rectangle {
     // Entered with the keyboard: straight into the text. Escape leaves it again.
     in property <bool> nav;
     property <int> want: root.nav ? Nav.tick : -1;
+    // Every key is the text's; the quick tips say the ones that aren't letters.
+    function tell() {
+        if (root.nav) {
+            Nav.publish([
+                { key: "", does: "Type to write" },
+                { key: "Ctrl+X C V", does: "cut, copy, paste" },
+                { key: "Ctrl+A", does: "select all" },
+                { key: "Menu", does: "the same as a menu" },
+            ], [], []);
+        }
+    }
     changed want => {
         if (root.nav) {
             edit.focus();
         }
+        root.tell();
     }
     init => {
         if (root.nav) {
             edit.focus();
         }
+        root.tell();
     }
     property <string> text: root.id < Notes.texts.length ? Notes.texts[root.id] : "";
     property <string> name: root.id < Notes.names.length ? Notes.names[root.id] : "Notes";
@@ -793,6 +822,13 @@ export component ClipboardWidget inherits Rectangle {
         active: root.nav;
         count: root.round ? 0 : Clipboard.items.length;
         subs: 2;
+        property <bool> on-item: self.cursor < Clipboard.items.length;
+        enter-does: !self.on-item || root.round ? "" : self.sub == 1 ? "remove" : "copy";
+        hl-does: self.on-item && !root.round ? "remove button" : "";
+        binds: [
+            { key: "d", does: "remove", on: self.on-item },
+            { key: "D", does: "clear", on: Clipboard.items.length > 0 },
+        ];
         activate(i, sub) => {
             if (i < Clipboard.items.length) {
                 if (sub == 1) { Clipboard.remove(Clipboard.items[i].index); } else { Clipboard.copy(Clipboard.items[i].index); }

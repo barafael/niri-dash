@@ -144,6 +144,10 @@ name = "a11y"
 harness = false
 
 [[test]]
+name = "keys"
+harness = false
+
+[[test]]
 name = "edit"
 harness = false
 

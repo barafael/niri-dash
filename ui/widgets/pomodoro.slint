@@ -195,6 +195,12 @@ export component PomodoroWidget inherits Rectangle {
         accessible-label: "Pomodoro";
         active: root.nav;
         count: root.round ? 0 : root.buttons;
+        enter-does: root.round || self.cursor == 0 ? "start, pause" : self.cursor == 1 ? "skip" : "reset";
+        binds: [
+            { key: "Space", does: "start, pause", on: true },
+            { key: "n", does: "skip", on: true },
+            { key: "r", does: "reset", on: true },
+        ];
         activate(i) => {
             if (root.round || i == 0) {
                 Pomodoro.toggle();

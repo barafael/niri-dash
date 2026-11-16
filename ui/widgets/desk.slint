@@ -103,6 +103,12 @@ export component WindowsWidget inherits Rectangle {
         active: root.nav;
         count: root.round ? 0 : Windows.items.length;
         subs: 2;
+        property <bool> on-window: !root.round && self.cursor < Windows.items.length && !Windows.items[self.cursor].header;
+        enter-does: !self.on-window ? "" : self.sub == 1 ? "close" : "go to it";
+        hl-does: self.on-window ? "close button" : "";
+        binds: [
+            { key: "d", key2: "x", does: "close", on: self.cursor < Windows.items.length && !Windows.items[self.cursor].header },
+        ];
         skip(i) => { return i < Windows.items.length && Windows.items[i].header; }
         activate(i, sub) => {
             if (root.round || i >= Windows.items.length || Windows.items[i].header) {
@@ -340,6 +346,18 @@ export component NotificationsWidget inherits Rectangle {
         active: root.nav;
         count: root.round ? 0 : root.choices + Notifications.items.length;
         subs: self.cursor >= root.choices ? 2 : 1;
+        property <int> at: self.cursor - root.choices;
+        property <bool> on-item: self.at >= 0 && self.at < Notifications.items.length;
+        enter-does: root.round ? "" : self.cursor < root.choices ? "choose"
+            : !self.on-item ? "" : self.sub == 1 ? "dismiss" : Notifications.items[self.at].has-default ? "open" : "";
+        hl-does: !root.round && self.on-item ? "dismiss button" : "";
+        back-does: root.choosing ? "close the choices" : "";
+        binds: [
+            { key: "d", does: "dismiss", on: self.on-item },
+            { key: "D", does: "clear all", on: Notifications.items.length > 0 },
+            { key: "z", does: root.choosing ? "close the choices" : "do not disturb",
+              on: !root.round && (Notifications.server || Notifications.can-pause) },
+        ];
         activate(i, sub) => {
             if (root.round) {
                 return;
@@ -396,32 +414,12 @@ export component TrayWidget inherits Rectangle {
     property <int> per-row: max(1, floor((root.width - 2 * self.inset) / self.slot));
     // The icons that fit (the rest are hidden).
     property <int> shown: min(Tray.items.length, root.per-row * max(0, floor((root.height + 1px - root.inset) / root.slot)));
-    // The keyboard opened the menu: j/k and Enter work in it.
-    property <bool> kbd-menu;
-    property <bool> menu: Tray.menu-open;
-    changed menu => {
-        if (!self.menu) {
-            root.kbd-menu = false;
-            Tray.menu-cursor = -1;
-        }
-    }
     // The centre of icon i, in window coordinates (for the menu's position).
     function cx(i: int) -> length {
         root.absolute-position.x + root.inset + (mod(i, root.per-row) + 0.5) * root.slot
     }
     function cy(i: int) -> length {
         root.absolute-position.y + root.inset + (floor(i / root.per-row) + 0.5) * root.slot
-    }
-    function entry-ok(i: int) -> bool {
-        i >= 0 && i < Tray.menu.length && !Tray.menu[i].separator && Tray.menu[i].enabled && !Tray.menu[i].header
-    }
-    function entry-past(i: int, d: int) -> int {
-        i >= 0 && i < Tray.menu.length && !root.entry-ok(i) ? i + d : i
-    }
-    // The next entry the cursor can stop on in direction d, or where it is.
-    function entry-step(d: int) -> int {
-        let n = root.entry-past(root.entry-past(root.entry-past(root.entry-past(Tray.menu-cursor + d, d), d), d), d);
-        root.entry-ok(n) ? n : Tray.menu-cursor
     }
     if Tray.items.length == 0: Empty {
         text: root.round ? "" : "No tray icons";
@@ -472,6 +470,13 @@ export component TrayWidget inherits Rectangle {
         active: root.nav;
         count: root.shown;
         stride: root.per-row;
+        jk-does: root.shown > root.per-row ? "row" : "";
+        hl-does: root.shown > 1 ? "icon" : "";
+        enter-does: self.cursor < root.shown ? "open" : "";
+        // (The menu's own keys are the dashboard's: it takes the keyboard while a menu is open.)
+        binds: [
+            { key: "m", does: "menu", on: self.cursor < root.shown && Tray.items[self.cursor].has-menu },
+        ];
         adjust(i, d) => {
             self.move-to(clamp(i + d, 0, max(0, root.shown - 1)));
             true
@@ -483,29 +488,11 @@ export component TrayWidget inherits Rectangle {
         }
         letter(t, i) => {
             if (t == "m" && i < root.shown && Tray.items[i].has-menu) {
-                root.kbd-menu = true;
                 Tray.menu-cursor = -1;
                 Tray.open-menu(Tray.items[i].id, root.cx(i), root.cy(i));
                 return true;
             }
             false
-        }
-        filter(t) => {
-            if (!Tray.menu-open || !root.kbd-menu) {
-                return false;
-            }
-            if (t == "j" || t == Key.DownArrow) {
-                Tray.menu-cursor = root.entry-step(1);
-            } else if (t == "k" || t == Key.UpArrow) {
-                Tray.menu-cursor = root.entry-step(-1);
-            } else if (t == Key.Return || t == " ") {
-                if (root.entry-ok(Tray.menu-cursor)) {
-                    Tray.menu-activate(Tray.menu[Tray.menu-cursor].id);
-                }
-            } else if (t == "q" || t == Key.Backspace) {
-                Tray.menu-close();
-            }
-            true
         }
     }
 }
@@ -671,6 +658,8 @@ export component MediaWidget inherits Rectangle {
     keys := NavScope {
         accessible-label: "Media";
         active: root.nav;
+        enter-does: "play, pause";
+        adjust-does: "previous, next";
         activate => { Media.play-pause(); }
         adjust(i, d) => {
             if (d > 0) { Media.next(); } else { Media.previous(); }
@@ -789,6 +778,7 @@ export component ClaudeSessionsWidget inherits Rectangle {
         accessible-label: "Claude sessions";
         active: root.nav;
         count: root.round ? 0 : Claude.sessions.length;
+        enter-does: !root.round && self.cursor < Claude.sessions.length && Claude.sessions[self.cursor].has-window ? "go to it" : "";
         activate(i) => {
             if (!root.round && i < Claude.sessions.length && Claude.sessions[i].has-window) {
                 Claude.focus(Claude.sessions[i].pid);

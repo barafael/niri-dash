@@ -99,6 +99,7 @@ export component PrivacyWidget inherits Rectangle {
         }
         if root.any: privacy-list := ScrollList {
             vertical-stretch: 1;
+            scroll-keys: keys.on;
             for it[i] in Privacy.items: HorizontalLayout {
                 height: 36px;
                 spacing: 10px;
@@ -140,6 +141,8 @@ export component PrivacyWidget inherits Rectangle {
     keys := NavScope {
         accessible-label: "Privacy";
         active: root.nav;
+        enter-does: root.list && self.cursor < self.count ? "stop sharing" : "";
+        scroll-does: root.any ? "the list" : "";
         // Only the shares can be stopped; with none there are no stops at all.
         count: root.list ? Privacy.items.length - Privacy.first-share : 0;
         activate(i) => {
@@ -308,6 +311,14 @@ export component RemovableDrivesWidget inherits Rectangle {
         accessible-label: "Removable drives";
         active: root.nav;
         count: root.list ? Drives.volumes.length : 0;
+        property <bool> on-volume: root.list && self.cursor < Drives.volumes.length;
+        enter-does: self.on-volume ? (Drives.volumes[self.cursor].mounted ? "open" : Drives.volumes[self.cursor].locked ? "" : "mount")
+            : !root.list && root.single ? (Drives.drives[0].volumes[0].mounted ? "open" : "mount") : "";
+        binds: [
+            { key: "u", does: "unmount", on: self.on-volume && Drives.volumes[self.cursor].mounted },
+            { key: "x", does: "eject", on: root.count > 0 },
+            { key: "X", does: "eject all", on: root.count > 1 },
+        ];
         skip(i) => { return root.list && i < Drives.volumes.length && Drives.volumes[i].locked; }
         activate(i) => {
             let v = root.list ? Drives.volumes[i] : Drives.drives[0].volumes[0];
@@ -532,6 +543,11 @@ export component PhoneWidget inherits Rectangle {
         accessible-label: "Phone";
         active: root.nav;
         count: root.all ? root.count : 0;
+        property <bool> in-list: root.all && self.cursor < root.count;
+        binds: [
+            { key: "r", does: "ring it", on: root.count > 0 && (self.in-list ? Phones.phones[self.cursor].can-ring : root.main.can-ring) },
+            { key: "u", does: "send files", on: root.count > 0 && (self.in-list ? Phones.phones[self.cursor].can-share : root.main.can-share) },
+        ];
         letter(t, i) => {
             let p = root.all && i < root.count ? Phones.phones[i] : root.main;
             if (root.count == 0) {

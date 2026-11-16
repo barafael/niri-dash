@@ -383,6 +383,113 @@ fn volume_keys() {
     assert!(near(audio(&h).1, 0.45), "Tab then j: {:?}", audio(&h));
 }
 
+/// What the quick tips say the entered widget's keys do, as "key does" each.
+fn widget_tips(h: &Harness) -> Vec<String> {
+    h.ui()
+        .global::<niri_dash::Nav>()
+        .get_widget_tips()
+        .iter()
+        .map(|t| format!("{} {}", t.key, t.does))
+        .collect()
+}
+
+/// The quick tips list the volume widget's keys once it is entered, and only the ones that do
+/// something where the cursor is; leaving the widget takes them away.
+fn volume_tips() {
+    let mut h = testing::Harness::new(
+        "grid columns=16 rows=9\nlayout {\n    volume col=0 row=0 width=4 height=4\n}\n",
+    );
+    assert!(widget_tips(&h).is_empty(), "{:?}", widget_tips(&h));
+    enter(&mut h, "Volume");
+    let tips = widget_tips(&h);
+    for want in [
+        "j k h l quieter, louder",
+        "Enter mute",
+        "m mute",
+        "0-9 10 to 100 %",
+    ] {
+        assert!(tips.iter().any(|t| t == want), "no {want:?} in {tips:?}");
+    }
+    // A key that isn't listed does nothing, and doesn't stay in the widget.
+    let before = h.ui().global::<niri_dash::Audio>().get_volume();
+    h.key("q");
+    assert_eq!(h.ui().global::<niri_dash::Audio>().get_volume(), before);
+    h.press("esc");
+    assert!(widget_tips(&h).is_empty(), "{:?}", widget_tips(&h));
+}
+
+/// The tips follow the cursor: a key is listed only where it does something. On the drives, u
+/// unmounts a mounted volume, which is also the one Enter opens; on one that isn't mounted Enter
+/// mounts and u is not listed.
+fn tips_follow_the_cursor() {
+    let mut h =
+        testing::Harness::new("layout {\n    removable-drives col=0 row=0 width=4 height=7\n}\n");
+    let mut state = Demo::new().drives;
+    state.drives.truncate(1);
+    state.drives[0].volumes = (0..2)
+        .map(|i| niri_dash_system::drives::Volume {
+            path: format!("/v{i}"),
+            name: format!("Volume {i}"),
+            mount: (i == 0).then(|| "/mnt/v0".into()),
+            ..Default::default()
+        })
+        .collect();
+    h.send(niri_dash_system::drives::Event::State(state));
+    enter(&mut h, "Removable drives");
+    let has = |h: &Harness, want: &str| widget_tips(h).iter().any(|t| t == want);
+    assert!(has(&h, "Enter open"), "{:?}", widget_tips(&h));
+    assert!(has(&h, "u unmount"), "{:?}", widget_tips(&h));
+    assert!(has(&h, "x eject"), "{:?}", widget_tips(&h));
+    h.key("j");
+    assert!(has(&h, "Enter mount"), "{:?}", widget_tips(&h));
+    assert!(!has(&h, "u unmount"), "{:?}", widget_tips(&h));
+    assert!(has(&h, "x eject"), "{:?}", widget_tips(&h));
+}
+
+/// A part of a widget that takes the keys over says so: the notifications' do-not-disturb
+/// choices list Enter and Escape for themselves, and going back takes that away.
+fn tips_follow_what_is_open() {
+    let mut h = testing::Harness::with_mock(
+        "layout {\n    notifications col=0 row=0 width=8 height=7\n}\n",
+    );
+    h.settle(30);
+    enter(&mut h, "Notifications");
+    let has = |h: &Harness, want: &str| widget_tips(h).iter().any(|t| t == want);
+    assert!(has(&h, "z do not disturb"), "{:?}", widget_tips(&h));
+    h.key("z");
+    assert!(has(&h, "Enter choose"), "{:?}", widget_tips(&h));
+    assert!(has(&h, "z Esc close the choices"), "{:?}", widget_tips(&h));
+    h.press("esc");
+    assert!(!has(&h, "z Esc close the choices"), "{:?}", widget_tips(&h));
+    assert!(
+        has(&h, "z do not disturb"),
+        "still in the widget: {:?}",
+        widget_tips(&h)
+    );
+}
+
+/// While a text field inside the widget has the keyboard, the tips are the field's: what Enter
+/// does there, and Escape back to the widget's keys.
+fn tips_in_a_text_field() {
+    let mut h = testing::Harness::new(
+        "grid columns=16 rows=9\nlayout {\n    sleep-timer col=0 row=0 width=4 height=5\n}\n",
+    );
+    enter(&mut h, "Sleep timer");
+    assert!(
+        widget_tips(&h).iter().any(|t| t == "Enter i type the time"),
+        "{:?}",
+        widget_tips(&h)
+    );
+    h.key("i");
+    assert_eq!(widget_tips(&h), ["Enter arm", "Esc back to the keys"]);
+    h.press("esc");
+    assert!(
+        widget_tips(&h).iter().any(|t| t == "Enter i type the time"),
+        "{:?}",
+        widget_tips(&h)
+    );
+}
+
 /// A list growing above the row the cursor is on scrolls, so the cursor stays in sight.
 fn cursor_stays_in_sight_as_a_list_grows() {
     let mut h = dashboard();
@@ -1232,6 +1339,10 @@ fn main() {
         ("tray: activate", tray_activate),
         ("color picker: pick", color_pick),
         ("volume: j and k", volume_keys),
+        ("volume: its keys in the quick tips", volume_tips),
+        ("tips: follow the cursor", tips_follow_the_cursor),
+        ("tips: follow what is open", tips_follow_what_is_open),
+        ("tips: a text field's own", tips_in_a_text_field),
         (
             "clipboard history: off by default",
             clipboard_history_off_by_default,

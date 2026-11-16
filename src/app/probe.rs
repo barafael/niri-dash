@@ -266,7 +266,21 @@ impl Harness {
             ));
         }
 
-        // Hint labels: one per shown widget, none the start of another.
+        // The quick tips: every key shown whole, none cut off at the screen's edge.
+        if ui.get_tips_clipped() {
+            let line = |tips: slint::ModelRc<crate::KeyHint>| {
+                tips.iter()
+                    .map(|t| format!("{} {}", t.key, t.does))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            };
+            out.push(format!(
+                "the quick tips don't fit: [{}] over [{}]",
+                line(ui.global::<crate::Nav>().get_widget_tips()),
+                line(ui.get_tips())
+            ));
+        }
+
         let labels: Vec<String> = ui
             .get_widgets()
             .iter()

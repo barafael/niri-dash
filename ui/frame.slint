@@ -1,6 +1,6 @@
 import { Theme, Icons } from "theme.slint";
-import { WidgetInst, WidgetKind, Shape, PointerShape, Nav, NavMode, NavOp } from "data.slint";
-import { Icon, IconButton } from "common.slint";
+import { WidgetInst, WidgetKind, Shape, PointerShape, Nav, NavMode, NavOp, KeyHint } from "data.slint";
+import { Icon, IconButton, KeyFooter } from "common.slint";
 import { ClockWidget, CalendarWidget, WeatherWidget } from "widgets/time.slint";
 import { SystemMonitorWidget, BatteryWidget, VolumeWidget, BrightnessWidget, NightLightWidget, SessionWidget } from "widgets/system.slint";
 import { MemoryWidget, DisksWidget, NetworkWidget, GpuWidget, ClaudeUsageWidget } from "widgets/monitor.slint";
@@ -53,7 +53,7 @@ export component WidgetBody inherits Rectangle {
     if root.inst.kind == WidgetKind.phone: PhoneWidget { round: root.round; nav: root.nav; }
     if root.inst.kind == WidgetKind.sleep-timer: SleepTimerWidget { round: root.round; nav: root.nav; }
     if root.inst.kind == WidgetKind.pomodoro: PomodoroWidget { round: root.round; nav: root.nav; }
-    if root.inst.kind == WidgetKind.about: AboutWidget { }
+    if root.inst.kind == WidgetKind.about: AboutWidget { nav: root.nav; }
     if root.inst.kind == WidgetKind.niri-dash-info: NiriDashInfoWidget { nav: root.nav; }
 }
 
@@ -81,6 +81,10 @@ export component WidgetFrame inherits Rectangle {
     // Blown up in the middle of the grid (area-w × area-h) with `e`: big, and rectangular even
     // if it is round, so it shows all it has.
     in property <bool> expanded;
+    // The dashboard's quick tips, for under the widget's own while it is expanded.
+    in property <[KeyHint]> more-tips;
+    // Its own keys go above them (not while it is moved or resized, or a menu is open).
+    in property <bool> own-tips: true;
     in property <length> area-w;
     in property <length> area-h;
     // Picked up with a double click: the dashboard moves it via carry-x/y.
@@ -285,7 +289,21 @@ export component WidgetFrame inherits Rectangle {
             }
         }
 
-        WidgetBody { inst: root.inst; round: root.shows-round; }
+        WidgetBody {
+            y: 0px;
+            height: parent.height - foot.room;
+            inst: root.inst;
+            round: root.shows-round;
+        }
+        // Blown up, it shows what the keys do itself, under what it shows: its own, then the
+        // dashboard's.
+        foot := KeyFooter {
+            y: parent.height - self.room;
+            width: parent.width;
+            shown: root.expanded;
+            more: root.more-tips;
+            own: root.own-tips;
+        }
 
         // Move or resize mode: a veil with the mode's name and keys. Slightly see-through, so the
         // widget stays recognisable under it. Resizing marks the four sides that can be pulled.

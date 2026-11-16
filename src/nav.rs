@@ -216,10 +216,174 @@ pub fn resized(r: Rect, edge: Dir, grow: bool, round: bool, min: (i32, i32)) -> 
     })
 }
 
+/// A quick tip: the keys on the cap, and what they do.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Tip {
+    pub key: String,
+    pub does: String,
+}
+
+/// One of a widget's own keys (`KeyBind` in ui/data.slint).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Bind {
+    pub key: String,
+    pub key2: String,
+    pub does: String,
+    pub on: bool,
+}
+
+/// The keys the dashboard keeps for itself while a widget is entered (ui/app.slint): a widget
+/// that listed one would show a key that never reaches it.
+pub const DASHBOARD_KEYS: [&str; 7] = ["e", "s", "f", "H", "J", "K", "L"];
+
+/// Whether a bind's key is the one pressed (`text` is the key event's text). "Space" is the
+/// space bar and "0-9" any digit.
+fn key_is(key: &str, text: &str) -> bool {
+    match key {
+        "" => false,
+        "Space" => text == " ",
+        "0-9" => text.len() == 1 && text.as_bytes()[0].is_ascii_digit(),
+        _ => key == text,
+    }
+}
+
+/// Which of `binds` the key pressed is, if that one is on.
+pub fn find_bind(binds: &[Bind], text: &str) -> Option<usize> {
+    binds
+        .iter()
+        .position(|b| b.on && (key_is(&b.key, text) || key_is(&b.key2, text)))
+}
+
+/// What the quick tips show for a widget: the general keys before, its own that are on, the
+/// general keys after; the ones that do nothing just now (no `does`) are left out.
+pub fn shown(head: &[Tip], binds: &[Bind], tail: &[Tip]) -> Vec<Tip> {
+    let general = |t: &&Tip| !t.does.is_empty();
+    let own = binds
+        .iter()
+        .filter(|b| b.on && !b.does.is_empty())
+        .map(|b| Tip {
+            key: if b.key2.is_empty() {
+                b.key.clone()
+            } else {
+                format!("{} {}", b.key, b.key2)
+            },
+            does: b.does.clone(),
+        });
+    let all = head
+        .iter()
+        .filter(general)
+        .cloned()
+        .chain(own)
+        .chain(tail.iter().filter(general).cloned());
+    // Keys next to each other that do the same share a tip ("j k h l quieter, louder").
+    let mut out: Vec<Tip> = Vec::new();
+    for t in all {
+        match out.last_mut() {
+            Some(last) if last.does == t.does => {
+                last.key = format!("{} {}", last.key, t.key);
+            }
+            _ => out.push(t),
+        }
+    }
+    out
+}
+
+/// The room between two tips (the strip's spacing in ui/common.slint).
+const TIP_GAP: f32 = 16.0;
+
+/// How wide a tip is drawn, at most: text isn't measured here, so every letter counts as a
+/// fairly wide one (the cap is 12 px semibold with 12 px of padding, the words are 14 px, 6 px
+/// between; as drawn, a letter of either comes to 6 to 7 px).
+fn tip_width(t: &Tip) -> f32 {
+    let cap = if t.key.is_empty() {
+        0.0
+    } else {
+        t.key.chars().count() as f32 * 7.2 + 12.0 + 6.0
+    };
+    cap + t.does.chars().count() as f32 * 7.6
+}
+
+/// Tips broken into lines no wider than `width`, in order. A tip wider than a whole line gets
+/// one to itself.
+pub fn pack(tips: &[Tip], width: f32) -> Vec<Vec<Tip>> {
+    let mut rows: Vec<Vec<Tip>> = Vec::new();
+    let mut used = 0.0;
+    for t in tips {
+        let w = tip_width(t);
+        match rows.last_mut() {
+            Some(row) if used + TIP_GAP + w <= width => {
+                row.push(t.clone());
+                used += TIP_GAP + w;
+            }
+            _ => {
+                rows.push(vec![t.clone()]);
+                used = w;
+            }
+        }
+    }
+    rows
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use strum::IntoEnumIterator;
+
+    fn tip(key: &str, does: &str) -> Tip {
+        Tip {
+            key: key.into(),
+            does: does.into(),
+        }
+    }
+
+    fn bind(key: &str, key2: &str, does: &str, on: bool) -> Bind {
+        Bind {
+            key: key.into(),
+            key2: key2.into(),
+            does: does.into(),
+            on,
+        }
+    }
+
+    #[test]
+    fn only_binds_that_are_on_are_found_and_shown() {
+        let binds = [
+            bind("d", "x", "close", true),
+            bind("u", "", "unmount", false),
+            bind("Space", "", "pause", true),
+            bind("0-9", "", "level", true),
+        ];
+        assert_eq!(find_bind(&binds, "d"), Some(0));
+        assert_eq!(find_bind(&binds, "x"), Some(0));
+        assert_eq!(find_bind(&binds, "u"), None);
+        assert_eq!(find_bind(&binds, " "), Some(2));
+        assert_eq!(find_bind(&binds, "7"), Some(3));
+        assert_eq!(find_bind(&binds, "q"), None);
+        assert_eq!(find_bind(&binds, ""), None);
+        let l = shown(
+            &[tip("j k", "move"), tip("Enter", "")],
+            &binds,
+            &[tip("Esc", "back")],
+        );
+        let keys: Vec<&str> = l.iter().map(|t| t.key.as_str()).collect();
+        assert_eq!(keys, ["j k", "d x", "Space", "0-9", "Esc"]);
+        let l = shown(&[tip("j k", "louder"), tip("h l", "louder")], &[], &[]);
+        assert_eq!(l, [tip("j k h l", "louder")]);
+    }
+
+    #[test]
+    fn tips_wrap_in_order() {
+        let tips: Vec<Tip> = (0..6).map(|i| tip("k", &format!("thing {i}"))).collect();
+        let one = pack(&tips, 10_000.0);
+        assert_eq!(one.len(), 1);
+        let rows = pack(&tips, 200.0);
+        assert!(rows.len() > 1);
+        let flat: Vec<Tip> = rows.iter().flatten().cloned().collect();
+        assert_eq!(flat, tips);
+        // Too narrow for any: one each, none lost.
+        assert_eq!(pack(&tips, 1.0).len(), 6);
+        assert!(pack(&[], 100.0).is_empty());
+    }
 
     #[test]
     fn resize_keys_pull_their_own_side_and_fall_back_to_the_other() {
