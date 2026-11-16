@@ -1,6 +1,6 @@
 [package]
 name = "niri-dash-system"
-version = "0.1.0"
+version = "1.0.0-rc.1"
 edition = "2024"
 description = "The system niri-dash runs on: one actor per applet, behind command and event enums"
 license = "MIT OR Apache-2.0"

@@ -2948,7 +2948,7 @@ dependencies = [
 
 [[package]]
 name = "niri-dash"
-version = "0.1.0"
+version = "1.0.0-rc.1"
 dependencies = [
  "accesskit",
  "accesskit_consumer",
@@ -2988,7 +2988,7 @@ dependencies = [
 
 [[package]]
 name = "niri-dash-system"
-version = "0.1.0"
+version = "1.0.0-rc.1"
 dependencies = [
  "chrono",
  "dirs 7.0.0",
