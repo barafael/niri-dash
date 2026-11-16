@@ -8,8 +8,8 @@ system is read or changed.
 
 Open <https://barafael.github.io/niri-dash/> in a browser.
 
-You see the dashboard: a clock, the weather, a calendar, a list of windows, Wi-Fi, Bluetooth and
-more, on a machine whose values keep changing.
+You see the dashboard, on a machine whose values keep changing. (The pictures here use another
+color scheme than the web version starts with.)
 
 ![The dashboard](../images/dashboard.png)
 
@@ -26,14 +26,14 @@ others.
 
 Type `ca`.
 
-The calendar is now the widget you are working in. Press `n`: the calendar shows the next
-month. Press `t`: it comes back to today.
+The calendar is now the widget you are working in, and the upper line of tips along the bottom
+lists its keys. Press `n`: the calendar shows the next month. Press `t`: it comes back to today.
 
 ## 4. Blow the calendar up
 
 Press `e`.
 
-The calendar opens in the middle of the dashboard, large.
+The calendar opens in the middle of the dashboard, large, with the tips under it.
 
 ![The calendar, expanded](../images/keys-expanded.png)
 
@@ -51,8 +51,7 @@ click brings it back.)
 Click the pencil in the top right corner.
 
 The widgets get small toolbars, empty cells show behind them, and a sidebar opens on the right
-with four tabs: Widgets, Arrange, Colors and Style. The tips along the bottom of the screen list the keys
-that work at the moment.
+with four tabs: Widgets, Arrange, Colors and Style.
 
 ![Edit mode](../images/edit-mode.png)
 

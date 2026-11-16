@@ -10,31 +10,40 @@ background puts it away.
 
 **[Try it in your browser](https://barafael.github.io/niri-dash/)** · **[Read the manual](https://barafael.github.io/niri-dash/manual/)**
 
-The browser version is the same dashboard, keyboard and all, on a simulated system whose machine,
-network and notifications keep changing. The manual has a tutorial, how-to guides, and a reference
-for every widget, key, setting and command.
-
-## What it is
+The browser version is the same dashboard on a simulated system.
 
 - **One overlay, on demand.** A single daemon draws a layer-shell overlay with
-  [Slint](https://slint.dev), on the GPU through EGL or in software. While it is hidden it renders
-  nothing and its data sources go quiet.
-- **Widgets for the whole desktop:** time, windows, notifications, Wi-Fi, Bluetooth, volume, media,
-  battery, system load, and more. Most come in a rectangular and a round shape, and any one can run
-  on its own as a small app window: `niri-dash app clock`.
-- **Keyboard first.** Everything works without a mouse.
-- **Yours to arrange.** A Plasma-style edit mode: drag, resize, restyle, recolor. Your layout is a
-  plain text file.
+  [Slint](https://slint.dev), on the GPU or in software. Hidden, it renders nothing and its data
+  sources go quiet.
+- **Widgets for the whole desktop.** Most come in a rectangular and a round shape, and any one
+  runs on its own as a small window: `niri-dash app clock`.
+- **Yours to arrange.** Drag, resize, restyle, recolor. The layout is a plain text file.
+- **Works without a mouse**, and always shows which keys do what.
 
-## Screenshots
+## Widgets
+
+| | |
+|---|---|
+| **Time** | Clock, calendar, weather (Open-Meteo, no API key), timer, stopwatch, pomodoro, sleep timer |
+| **Activity** | Windows by workspace, notifications, clipboard history, sticky notes, Claude Code sessions and usage, a mascot, an About card |
+| **Media** | Now playing (MPRIS) |
+| **System** | CPU, memory, disks, network and GPU, battery and power profiles, privacy (who uses the microphone, camera or screen) |
+| **Devices** | Wi-Fi, Bluetooth, removable drives, phone (KDE Connect) |
+| **Controls** | Volume, brightness, night light, system tray, session (lock, suspend, log out, …), keyboard layout, color picker |
+
+Sizes and settings of each are in the [widget reference](https://barafael.github.io/niri-dash/manual/reference/widgets/index.html).
+
+<img src="book/src/images/app-sleep-timer.png" alt="The sleep timer as a window of its own, with its keys listed under it" width="320">
+
+*`niri-dash app sleep-timer`: a widget as its own window.*
+
+## Edit mode
 
 ![Edit mode, with the sidebar open on the Colors tab](book/src/images/edit-colors.png)
 
-*Edit mode: drag widgets, resize them from any edge, add more from the sidebar.*
-
-![Pressing f labels every widget](book/src/images/keys-labels.png)
-
-*Pressing `f` labels every widget; typing a label goes into that widget.*
+The pencil in the corner (or a right-click on the background) opens it. Drag widgets, resize them
+from any edge, add more from the sidebar. The sidebar also sets the grid, the color scheme and the
+style, and its Arrange tab lays the widgets out by itself (experimental).
 
 Color schemes and styles are separate, and mix freely:
 
@@ -44,20 +53,19 @@ Color schemes and styles are separate, and mix freely:
 | **nord, compact** | **rose-pine-dawn, default** |
 | ![Nord with the compact style: tighter spacing](book/src/images/style-nord-compact.png) | ![Rose Pine Dawn with the default style](book/src/images/style-rose-pine-dawn.png) |
 
-## What it shows
+The pictures above the table are gruvbox-dark with the sharp style and the Hack font.
 
-| | |
-|---|---|
-| **Time** | Clock, calendar, weather (Open-Meteo, no API key), timer, stopwatch, pomodoro, sleep timer |
-| **Activity** | Windows by workspace, notifications, clipboard history, sticky notes, Claude Code sessions and usage, a mascot that comments on your day, an About card and the build it is |
-| **Media** | Now playing (MPRIS) |
-| **System** | CPU, memory, disks, network and GPU, battery and power profiles (with a switch that blocks sleep and screen locking), privacy (who uses the microphone, camera or screen) |
-| **Devices** | Wi-Fi, Bluetooth, removable drives, phone (KDE Connect) |
-| **Controls** | Volume, brightness, night light, system tray, session (lock, suspend, log out, …), keyboard layout, color picker |
+## Keyboard
 
-Every widget, with its sizes and settings, is in the [widget reference](https://barafael.github.io/niri-dash/manual/reference/widgets/index.html).
+![Inside the notifications widget: its keys on the upper line along the bottom, the dashboard's on the lower](book/src/images/keys-widget.png)
 
-### What it reads
+`f` labels every widget; typing a label goes into that widget. The two lines along the bottom
+list every key that works just now: the widget's own above, the dashboard's below. A key that
+isn't listed does nothing. `e` blows a widget up, Ctrl+M moves it, Ctrl+R resizes it, Ctrl+E opens
+edit mode, Escape steps back. The [keyboard reference](https://barafael.github.io/niri-dash/manual/reference/keyboard.html)
+has all of them.
+
+## What it reads
 
 - **Clipboard history is opt-in.** niri-dash reads what you copy only while a clipboard widget is in
   your layout or `niri-dash app clipboard` is running. The history stays in memory and skips what
@@ -67,23 +75,7 @@ Every widget, with its sizes and settings, is in the [widget reference](https://
   login tokens.
 - **The weather widget is the only one that makes network requests of its own** (to Open-Meteo).
 
-### From the keyboard
-
-`f` labels every widget with the start of its name, and typing a label goes into that widget;
-`j`/`k`/`h`/`l` move inside it, `e` blows it up, `s` opens its settings, and Escape steps back.
-Ctrl+M moves the widget and Ctrl+R resizes it (`h`/`j`/`k`/`l` act on it until Escape; in resize
-mode Shift pulls a side in). Ctrl+E opens edit mode. The tips along the bottom of the screen
-always list the keys that work just now. Lists have letters of their own: `d` closes a window or dismisses a
-notification, `r` rescans Wi-Fi, `t` turns it on and off, `m` mutes, `1`–`0` set a slider to
-10–100 %, `x` ejects a drive, and so on. The calendar has a day cursor: `h`/`l` a day, `j`/`k` a
-week, `n`/`p` a month, `t` back to today, `Ctrl+C` copies the day as `YYYY-MM-DD`.
-
-### Edit mode
-
-The pencil in the corner (or a right-click on the background) opens edit mode. Its sidebar also sets
-the grid, the color scheme (gruvbox, catppuccin, nord, dracula, rose-pine, …) and the style: corners,
-spacing, fonts, animation speed, frosted glass. Its Arrange tab lays the widgets out by itself
-(experimental: its settings may change between releases).
+[SECURITY.md](SECURITY.md) says what else niri-dash touches, and how to report a problem.
 
 ## Where it runs
 
@@ -136,12 +128,6 @@ Konsole gets its tab brought up too. Noticing screen sharing needs niri. The man
 
 `~/.config` is `$XDG_CONFIG_HOME` where that is set. The manual lists
 [every file and environment variable](https://barafael.github.io/niri-dash/manual/reference/environment.html).
-
-## Where to read more
-
-- The [manual](https://barafael.github.io/niri-dash/manual/): start with the tutorial.
-- The [web version](https://barafael.github.io/niri-dash/): try it without installing.
-- [SECURITY.md](SECURITY.md): what niri-dash touches, and how to report a problem.
 
 ## Developing
 

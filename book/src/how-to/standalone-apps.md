@@ -7,7 +7,10 @@ niri-dash app clock
 ```
 
 If that app is already running, the command shows and focuses it. The widget name is the one
-used in `config.kdl`: see the [widget index](../reference/widgets/index.md).
+used in `config.kdl`: see the [widget index](../reference/widgets/index.md). Under the widget,
+the window lists the keys that work in it.
+
+![The sleep timer as a window of its own](../images/app-sleep-timer.png)
 
 ## Bind a key that opens and closes it
 

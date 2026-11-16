@@ -93,4 +93,10 @@ what they mean follows what the widget is: down a list, along a slider, across a
 widget adds letters for its own actions (`d` to close a window, `t` to switch a radio, `x` to
 eject a drive).
 
+The same letter can mean different things in different widgets: `r` rescans Wi-Fi, rings a phone
+and resets a timer. So no key is hidden. Each widget keeps one list of its keys, what they do,
+and whether each does anything where the cursor is; the quick tips show that list, and a letter
+reaches the widget only if the list has it. The tips are always under the grid, so entering a
+widget moves nothing; a widget that has the screen to itself shows them under its own content.
+
 Reference: [Keyboard](../reference/keyboard.md).

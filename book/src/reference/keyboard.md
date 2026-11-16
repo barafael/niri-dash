@@ -1,12 +1,14 @@
 # Keyboard
 
-niri-dash is built to be used from the keyboard. Keys fall into three levels: the dashboard,
-inside a widget, and edit mode, with two modes on top (moving and resizing a widget). Escape
-always steps back one level.
+Keys fall into three levels: the dashboard, inside a widget, and edit mode, with two modes on top
+(moving and resizing a widget). Escape always steps back one level.
 
-The **quick tips** along the bottom of the screen always list the keys that work right now, and
-change as you go. A widget being moved or resized also says so on itself, in a veil with the
-mode's name and keys.
+The **quick tips** along the bottom list every key that works right now, in two lines: the
+entered widget's own keys above, the dashboard's below. A widget's key is listed only where it
+does something (`u` unmounts shows on a mounted volume), and a key that isn't listed does
+nothing. A widget blown up with `e`, and a standalone app, show the tips under their own content.
+
+![Inside the notifications widget: its keys on the upper line, the dashboard's on the lower](../images/keys-widget.png)
 
 ![Pressing `f` labels every widget](../images/keys-labels.png)
 
@@ -30,24 +32,48 @@ A standalone app (`niri-dash app <widget>`) starts inside its widget.
 | `j` `k` | Moves between rows and buttons. Turns a knob or a lone slider down and up. |
 | `h` `l` | Moves sideways, or changes a slider. |
 | Tab, Shift+Tab | Steps through the stops. |
-| Enter, Space | Presses. |
-| `g` `G` | Jumps to the first or last item. |
+| Enter, Space | Presses. Space is a key of its own where the tips list it (play and pause). |
+| `g` `G` | Jumps to the first or last item, where there are more than two. |
+| `y` (or Ctrl+C) | Copies what is under the cursor, where the tips list it. |
+| Ctrl+`d` Ctrl+`u` | Scrolls a list that is only to be read (a network's details, what blocks sleep, the laps), half a page down or up. |
 | `e` | Blows the widget up in the middle of the dashboard (round widgets open into their full form). `e` or Escape puts it back. |
 | `s` | Opens the widget's settings, the same card as in edit mode. |
 | Ctrl+`m` | Moves the widget: [move mode](#moving-and-resizing). |
 | Ctrl+`r` | Resizes the widget: [resize mode](#moving-and-resizing). |
 | Enter on a text field | Types into it. Escape gets you out again. |
 
-Lists have letters of their own:
+Widgets have letters of their own:
 
-| Key | Does |
-|---|---|
-| `d` | Closes a window, or dismisses a notification. |
-| `r` | Rescans Wi-Fi. |
-| `t` | Turns the thing on and off. |
-| `m` | Mutes. |
-| `1` … `9`, `0` | Sets a slider to 10 … 90 %, and 100 %. |
-| `x` | Ejects a drive. |
+| Widget | Key | Does |
+|---|---|---|
+| Windows | `d` or `x` | Closes the window. |
+| Notifications | `d` | Dismisses the notification. |
+| | `D` | Clears all. |
+| | `z` | Shows the do-not-disturb choices. |
+| Clipboard | `d` | Removes the entry. |
+| | `D` | Clears the history. |
+| Tray | `m` | Opens the icon's menu. In a menu, however it was opened: `j` `k` move, Enter picks, `q` or Escape closes. |
+| Wi-Fi | `r` | Rescans. |
+| | `t` | Turns Wi-Fi on and off. |
+| | `d` | Disconnects. |
+| | `i` | Types into the field under the cursor (Enter does too). |
+| Bluetooth | `r` | Looks for devices, or stops looking. |
+| | `t` | Turns Bluetooth on and off. |
+| | `i` | Types the device's new name; `l` goes to the Rename button. |
+| Volume | `m` | Mutes the slider under the cursor. |
+| Volume, Brightness | `1` … `9`, `0` | Sets the slider to 10 … 90 %, and 100 %. |
+| Night light | `t` | Turns it on and off. |
+| Removable drives | `u` | Unmounts the volume. |
+| | `x` | Ejects the drive of the volume under the cursor. |
+| | `X` | Ejects all. |
+| Phone | `r` | Rings it. |
+| | `u` | Sends files. |
+| Color picker | `p` | Picks a colour from the screen. |
+| Timer, Stopwatch | Space | Starts and pauses. |
+| | `r` | Resets. |
+| | `a` | Takes a lap (stopwatch, while it runs). |
+| Notes | Menu | Opens the cut, copy and paste menu. Every other key is the text's. |
+| About | Enter | Opens the page of the link under the cursor. |
 
 ### Calendar
 
@@ -57,6 +83,7 @@ Lists have letters of their own:
 | `j` `k` | A week forward, back. |
 | `n` `p` | A month forward, back. |
 | `t` | Back to today. |
+| `y` (or Ctrl+C) | Copies the day as `YYYY-MM-DD`. |
 
 ### Volume
 
@@ -162,7 +189,9 @@ for it is refused with a message. The status line shows the size after each step
 
 In a text field: Enter saves, Escape discards, and Tab leaves the field.
 
-When you carry a new widget in from the Widgets tab: a click places it, and Escape cancels.
+When you carry a widget with the pointer: a click or Enter places it, and Escape cancels. A
+widget added from the Widgets tab with Enter goes where there is room and is in
+[move mode](#moving-and-resizing) at once, so `h` `j` `k` `l` take it where you want it.
 
 On the Widgets tab, the row of categories under **Add** is one stop: `h` `l` move between the
 categories, and Enter or Space picks or unpicks the one under the cursor. `j` `k` skip the
@@ -178,7 +207,11 @@ adjusted all give way.
 |---|---|
 | Drag the widget | Moves it. |
 | Drag an edge or corner | Resizes it. |
-| The ◯ ▢ button | Changes its shape. |
+| Ctrl+`m`, Ctrl+`r` | [Move and resize mode](#moving-and-resizing), by keys. |
+| The ◯ ▢ button, or `o` | Changes its shape. |
+| The pin button, or `p` | Pins it, or unpins it. |
+| The settings button, or `s` | Opens its settings. |
+| The remove button, or `x` | Removes it. |
 | Escape | Done. |
 
 This doesn't work in a standalone app, or in edit mode, where every widget is open already.
