@@ -1284,6 +1284,47 @@ fn type_label(h: &mut Harness, kind: &str) {
     }
 }
 
+/// Tab and Shift+Tab inside a widget stay in it, whatever the widget: with stops they step
+/// through them, without they do nothing; in move or resize mode too.
+fn tab_stays_in_the_widget(issues: &mut Issues) {
+    use slint::platform::Key;
+    for kind in testing::kind_names() {
+        let config = format!(
+            "grid columns=16 rows=9\nlayout {{\n    clock col=0 row=0 width=4 height=2\n    {kind} col=4 row=2 width=4 height=4\n    calendar col=10 row=2 width=4 height=4\n}}\n"
+        );
+        let mut h = dashboard(&config);
+        let id = id_of(&h, kind);
+        let inside = |h: &Harness| {
+            let nav = h.ui().global::<Nav>();
+            nav.get_mode() == NavMode::Widget && nav.get_active_id() == id as i32
+        };
+        h.press("f");
+        type_label(&mut h, kind);
+        if !inside(&h) {
+            // Not every kind can be entered; those have nothing to leave.
+            continue;
+        }
+        for (what, keys) in [
+            ("Tab", &[Key::Tab; 6][..]),
+            ("Shift+Tab", &[Key::Backtab; 6][..]),
+        ] {
+            for k in keys {
+                h.special(*k);
+                if !inside(&h) {
+                    issues.add(format!("tab: {what} left the {kind}"));
+                    break;
+                }
+            }
+        }
+        h.press("ctrl+m");
+        h.special(Key::Tab);
+        if !inside(&h) {
+            issues.add(format!("tab: Tab in move mode left the {kind}"));
+        }
+        issues.check(&h, &format!("tab: in the {kind}"));
+    }
+}
+
 /// Move and resize modes (Ctrl+M, Ctrl+R) from inside a widget, without edit mode.
 fn keyboard_modes(issues: &mut Issues) {
     let mut h = dashboard(MIXED);
@@ -1347,6 +1388,27 @@ fn keyboard_modes(issues: &mut Issues) {
         issues.add("modes: Ctrl+M on the bare dashboard started a mode");
     }
     issues.check(&h, "modes: after");
+
+    // The veil keeps the pointer off the widget in hand: a double click on the calendar's empty
+    // day grid, which would otherwise pick it up, does nothing.
+    let cal = id_of(&h, "calendar");
+    h.press("f");
+    type_label(&mut h, "calendar");
+    h.press("ctrl+m");
+    h.settle(100);
+    let a0 = tile(&h, cal).unwrap();
+    let (px, py) = h.cell_origin(a0.col as f32 + 2.0, a0.row as f32 + 3.0);
+    for _ in 0..2 {
+        h.down(px, py, PointerEventButton::Left);
+        h.up(px, py, PointerEventButton::Left);
+    }
+    h.settle(100);
+    if op(&h) != niri_dash::NavOp::Move {
+        issues.add("modes: the calendar didn't go into move mode");
+    } else if h.ui().get_adjust_id() != 0 {
+        issues.add("modes: a double click went through the move veil and picked up the calendar");
+    }
+    issues.check(&h, "modes: clicks on the veil");
 }
 
 /// Edit mode with the keyboard alone, start to end: everything the pointer can do there.
@@ -2488,6 +2550,7 @@ fn main() {
             pointer_long_press,
         ),
         ("keyboard: move and resize modes", keyboard_modes),
+        ("keyboard: Tab stays in the widget", tab_stays_in_the_widget),
         ("keyboard: edit mode", keyboard_editing),
         ("hints: the quick tips along the bottom", shortcut_hints),
         (

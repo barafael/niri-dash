@@ -355,6 +355,11 @@ export component WidgetFrame inherits Rectangle {
                     overflow: elide;
                 }
             }
+            // The veil takes the pointer: the widget under it is in the keyboard's hands, so
+            // clicks and wheel turns don't reach it.
+            TouchArea {
+                scroll-event(e) => { accept }
+            }
         }
 
         // In edit mode the whole card is a drag handle and the content gets no input.
