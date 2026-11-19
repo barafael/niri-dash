@@ -1067,6 +1067,9 @@ export component SilentTextField inherits Rectangle {
     callback edited(string);
     min-height: 28px;
     preferred-height: 32px;
+    // One line: never taller, however much room the layout around it has.
+    max-height: 32px;
+    vertical-stretch: 0;
     border-radius: Theme.radius-small;
     background: Theme.subtle;
     border-width: 1px;

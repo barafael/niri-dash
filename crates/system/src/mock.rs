@@ -228,12 +228,40 @@ impl MockSystem {
                 match c {
                     wifi::Command::Toggle => d.wifi.enabled = !d.wifi.enabled,
                     wifi::Command::Connect { key } => {
-                        let ssid = key.rsplit_once(':').map_or(key.as_str(), |(_, s)| s);
-                        d.wifi.ssid = ssid.to_string();
-                        for n in &mut d.wifi.networks {
-                            n.active = n.ssid == d.wifi.ssid;
+                        let net = d.wifi.networks.iter().find(|n| n.key() == *key);
+                        let found = net.map(|n| (n.ssid.clone(), n.security, n.known()));
+                        match found {
+                            // A secured network without a saved profile asks for its password,
+                            // as NetworkManager does.
+                            Some((ssid, security, false)) if security != wifi::Security::Open => {
+                                let serial = d.wifi.prompt.as_ref().map_or(0, |p| p.serial) + 1;
+                                d.wifi.prompt = Some(wifi::Prompt {
+                                    serial,
+                                    ssid,
+                                    kind: wifi::PromptKind::of(security),
+                                    new: true,
+                                    ..Default::default()
+                                });
+                            }
+                            Some((ssid, ..)) => {
+                                d.wifi.prompt = None;
+                                d.wifi.ssid = ssid;
+                                for n in &mut d.wifi.networks {
+                                    n.active = n.ssid == d.wifi.ssid;
+                                }
+                            }
+                            None => {}
                         }
                     }
+                    wifi::Command::Answer { .. } => {
+                        if let Some(p) = d.wifi.prompt.take() {
+                            d.wifi.ssid = p.ssid;
+                            for n in &mut d.wifi.networks {
+                                n.active = n.ssid == d.wifi.ssid;
+                            }
+                        }
+                    }
+                    wifi::Command::CancelPrompt => d.wifi.prompt = None,
                     wifi::Command::Disconnect => {
                         d.wifi.ssid.clear();
                         for n in &mut d.wifi.networks {

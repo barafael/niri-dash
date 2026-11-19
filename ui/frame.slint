@@ -24,7 +24,7 @@ export component WidgetBody inherits Rectangle {
     if root.inst.kind == WidgetKind.calendar: CalendarWidget { round: root.round; opts: root.inst.opts; nav: root.nav; }
     if root.inst.kind == WidgetKind.system-monitor: SystemMonitorWidget { round: root.round; opts: root.inst.opts; }
     if root.inst.kind == WidgetKind.windows: WindowsWidget { round: root.round; nav: root.nav; }
-    if root.inst.kind == WidgetKind.wifi: WifiWidget { round: root.round; nav: root.nav; }
+    if root.inst.kind == WidgetKind.wifi: WifiWidget { round: root.round; nav: root.nav; id: root.inst.id; }
     if root.inst.kind == WidgetKind.bluetooth: BluetoothWidget { round: root.round; nav: root.nav; }
     if root.inst.kind == WidgetKind.battery: BatteryWidget { round: root.round; nav: root.nav; }
     if root.inst.kind == WidgetKind.volume: VolumeWidget { round: root.round; nav: root.nav; }

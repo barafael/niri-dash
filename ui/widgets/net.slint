@@ -1,5 +1,5 @@
 import { Theme, Icons } from "../theme.slint";
-import { Wifi, Bluetooth, BtDevice, DeviceKind } from "../data.slint";
+import { Wifi, Bluetooth, BtDevice, DeviceKind, Nav, NavMode, NavOp } from "../data.slint";
 import { SilentTextField, Icon, IconButton, TextButton, Switch, Header, Row, SectionLabel, Muted, Empty, SignalBars, ScrollList, RoundFace, NavScope } from "../common.slint";
 
 // A row of choices, one of them picked (security type, EAP method).
@@ -177,7 +177,20 @@ component WifiPasswordPrompt inherits Rectangle {
     // one network is sent to another.
     property <int> serial: Wifi.prompt.serial;
     changed serial => { root.reset(); }
-    init => { root.reset(); }
+    init => {
+        root.reset();
+        if (self.entered) {
+            root.edit-tick += 1;
+        }
+    }
+    // Entered (now, or already when it opened): the keyboard goes into the first field, so a
+    // password can be typed right away; Escape leaves the field for the buttons.
+    property <bool> entered: keys.on;
+    changed entered => {
+        if (self.entered) {
+            root.edit-tick += 1;
+        }
+    }
     border-radius: Theme.radius-small;
     background: Theme.card-raised;
     // j/k over the fields and buttons; Enter (or i) types into a field, h/l pick the method.
@@ -309,11 +322,27 @@ component WifiPasswordPrompt inherits Rectangle {
 export component WifiWidget inherits Rectangle {
     in property <bool> round;
     in property <bool> nav;
+    // Its id on the dashboard (0 in a standalone app, which is always entered).
+    in property <int> id;
     // 0: networks, 1: one network's details, 2: join a hidden network, 3: saved networks.
     property <int> page;
     // Where the details page goes back to.
     property <int> back-to;
     property <bool> asking: Wifi.prompt.ssid != "";
+    // A password prompt wants the keyboard: the dashboard enters this widget (it may have been
+    // opened with a click, or by NetworkManager asking), so its keys work and Escape doesn't
+    // close the dashboard.
+    changed asking => {
+        if (self.asking && !self.round && self.id != 0 && Nav.op == NavOp.none) {
+            Nav.typed = "";
+            if (Nav.expanded-id != self.id) {
+                Nav.expanded-id = 0;
+            }
+            Nav.active-id = self.id;
+            Nav.mode = NavMode.widget;
+            Nav.tick += 1;
+        }
+    }
     // Keyboard stops. Networks page: the sign-in row, the networks, "Hidden network…", "Saved
     // networks". Details: the autoconnect switch, then the buttons, the main one first. Hidden
     // network: the form's fields and Join. Saved: the networks.
@@ -506,8 +535,10 @@ export component WifiWidget inherits Rectangle {
                 color: Wifi.failed ? Theme.bad : Theme.dim;
                 wrap: word-wrap;
             }
+            // Its own height: the room left over is the network list's.
             if root.asking: WifiPasswordPrompt {
                 nav: root.nav;
+                vertical-stretch: 0;
             }
             if !Wifi.available: Empty {
                 vertical-stretch: 1;
