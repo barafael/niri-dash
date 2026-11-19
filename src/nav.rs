@@ -169,18 +169,22 @@ impl Dir {
             Dir::Right => (1, 0),
         }
     }
+
+    /// The other way.
+    pub fn opposite(self) -> Dir {
+        match self {
+            Dir::Left => Dir::Right,
+            Dir::Right => Dir::Left,
+            Dir::Up => Dir::Down,
+            Dir::Down => Dir::Up,
+        }
+    }
 }
 
 /// What a key of the resize mode does: it pulls the `edge` side out (`grow`) or in. A widget that
 /// can't grow that way (something is in the way, or the grid ends) tries the opposite side.
 pub fn size_edges(edge: Dir, grow: bool) -> (Dir, Option<Dir>) {
-    let opposite = match edge {
-        Dir::Left => Dir::Right,
-        Dir::Right => Dir::Left,
-        Dir::Up => Dir::Down,
-        Dir::Down => Dir::Up,
-    };
-    (edge, grow.then_some(opposite))
+    (edge, grow.then_some(edge.opposite()))
 }
 
 /// `r` with its `edge` side pushed out one cell (`grow`) or pulled in, for the keyboard's resize

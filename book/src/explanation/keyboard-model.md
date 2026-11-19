@@ -67,7 +67,7 @@ it is.
 Moving and resizing a widget are modes, entered with Ctrl+`m` and Ctrl+`r`. A mode takes
 `h`, `j`, `k`, `l` (or the arrows) away from whatever they meant, so they can act on the widget as
 a whole: in move mode they push it a cell, in resize mode they pull the side they point to
-outwards, and with Shift inwards. Ctrl is what keeps the modes out of a widget's way: inside a
+outwards, and with Shift the opposite side inwards, so an edge always moves the way the key points. Ctrl is what keeps the modes out of a widget's way: inside a
 widget every plain letter is the widget's own (`m` mutes the volume, `r` restarts the
 Pomodoro), but no widget uses Ctrl+`m` or Ctrl+`r`.
 

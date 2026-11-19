@@ -586,8 +586,11 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
         }
     });
     let a = app.clone();
-    ui.on_size_widget(move |id, edge, shrink| {
-        if let Some(edge) = Dir::from_index(edge) {
+    ui.on_size_widget(move |id, key, shrink| {
+        // A key moves an edge its way: without Shift the side it names goes out, with Shift the
+        // opposite side comes in (Shift+l moves the left side right).
+        if let Some(key) = Dir::from_index(key) {
+            let edge = if shrink { key.opposite() } else { key };
             a.size_by(id as u32, edge, !shrink);
         }
     });

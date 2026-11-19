@@ -790,7 +790,7 @@ export component Dash inherits Window {
     // Widget id and where it goes: column, row, width, height.
     callback resize-widget(int, int, int, int, int);
     // From the keyboard's move and resize modes: move a widget one cell (0..3 = h, j, k, l), or
-    // pull its side that way (0..3) out one cell, or in if the bool is set.
+    // pull its side that way (0..3) out one cell, or if the bool is set pull the opposite side in.
     callback nudge-widget(int, int);
     callback size-widget(int, int, bool);
     // What a widget is now, for the quick tips ("Volume 3×2"); sizing updates it.

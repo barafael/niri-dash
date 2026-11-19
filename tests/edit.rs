@@ -1700,7 +1700,8 @@ fn keyboard_editing(issues: &mut Issues) {
         ));
     }
     issues.check(&h, "keyboard: moving the clock");
-    // Resize mode (Ctrl+R): a key pulls its own side out, Shift pulls it in.
+    // Resize mode (Ctrl+R): a key pulls its own side out, Shift pulls the opposite side in: either
+    // way the edge moves the key's way.
     h.press("ctrl+r");
     if op(&h) != niri_dash::NavOp::Resize {
         issues.add("keyboard: Ctrl+R didn't switch to resize mode");
@@ -1713,9 +1714,9 @@ fn keyboard_editing(issues: &mut Issues) {
             c2.w, c2.h, c2.col, c1.w, c1.h, c1.col
         ));
     }
-    h.press("L");
-    if tile(&h, clock).unwrap().w != c1.w {
-        issues.add("keyboard: Shift+l didn't pull the right side in again");
+    h.press("H");
+    if tile(&h, clock).unwrap() != c1 {
+        issues.add("keyboard: Shift+h didn't pull the right side in again");
     }
     // h pulls the left side out: the right edge stays.
     let right = c1.col + c1.w;
@@ -1727,9 +1728,9 @@ fn keyboard_editing(issues: &mut Issues) {
             c3.w, c3.h, c3.col
         ));
     }
-    h.press("H");
-    if tile(&h, clock).unwrap().w != c1.w {
-        issues.add("keyboard: Shift+h didn't pull the left side in again");
+    h.press("L");
+    if tile(&h, clock).unwrap() != c1 {
+        issues.add("keyboard: Shift+l didn't pull the left side in again");
     }
     h.press("j");
     let c4 = tile(&h, clock).unwrap();
@@ -1739,9 +1740,9 @@ fn keyboard_editing(issues: &mut Issues) {
             c4.h, c1.h
         ));
     }
-    h.press("J");
-    if tile(&h, clock).unwrap().h != c1.h {
-        issues.add("keyboard: Shift+j didn't pull the bottom in again");
+    h.press("K");
+    if tile(&h, clock).unwrap() != c1 {
+        issues.add("keyboard: Shift+k didn't pull the bottom in again");
     }
     // Other keys do nothing in the mode; the arrows work like h j k l.
     h.press("x");

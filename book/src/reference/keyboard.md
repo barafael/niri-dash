@@ -125,7 +125,7 @@ and its keys; the tips at the bottom say the same.
 | Ctrl+`m` | Starts move mode. In move mode it ends it, and in resize mode it switches to moving. |
 | Ctrl+`r` | The same for resize mode. |
 | `h` `j` `k` `l` (or the arrows) | In move mode: moves the widget one cell that way, the others making room. In resize mode: pulls the side on that side out by one cell: `l` the right side, `h` the left, `j` the bottom, `k` the top. |
-| Shift + `h` `j` `k` `l` (or Shift + the arrows) | In resize mode: pulls that side in by one cell. |
+| Shift + `h` `j` `k` `l` (or Shift + the arrows) | In resize mode: pulls the opposite side in by one cell, so the edge still moves the key's way: Shift+`l` the left side, Shift+`h` the right, Shift+`j` the top, Shift+`k` the bottom. |
 | Escape | Ends the mode. You are back in the widget (or, in edit mode, with the widget picked). |
 
 A widget that can't grow the way you ask grows the other way instead. A size that leaves no room
@@ -162,7 +162,7 @@ Edit mode has two places for the keys: the **widgets** and the **sidebar**. A wi
 | Key | Does |
 |---|---|
 | Ctrl+`m` | [Move mode](#moving-and-resizing): `h` `j` `k` `l` move it one cell, the others making room. |
-| Ctrl+`r` | [Resize mode](#moving-and-resizing): `h` `j` `k` `l` pull a side out, Shift pulls it in. |
+| Ctrl+`r` | [Resize mode](#moving-and-resizing): `h` `j` `k` `l` pull a side out, Shift pulls the opposite side in. |
 | `o` | Change its shape. |
 | `p` | Pin it, or unpin it. While it is pinned the tips offer only unpinning, picking another widget, its settings and removing it: it can't be sized or moved. |
 | `x` (or Delete) | Remove it. |
