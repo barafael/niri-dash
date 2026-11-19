@@ -31,7 +31,7 @@ A standalone app (`niri-dash app <widget>`) starts inside its widget.
 |---|---|
 | `j` `k` | Moves between rows and buttons. Turns a knob or a lone slider down and up. |
 | `h` `l` | Moves sideways, or changes a slider. |
-| Tab, Shift+Tab | Steps through the stops. |
+| Tab, Shift+Tab | Steps through the stops. From a text field too: Tab never leaves the widget, and from one field into the next it keeps typing. |
 | Enter, Space | Presses. Space is a key of its own where the tips list it (play and pause). |
 | `g` `G` | Jumps to the first or last item, where there are more than two. |
 | `y` (or Ctrl+C) | Copies what is under the cursor, where the tips list it. |

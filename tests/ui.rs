@@ -324,6 +324,60 @@ fn a11y_password_stays_secret() {
     ));
 }
 
+/// Tab in a widget's text field goes to the widget's next stop, never to a text field in another
+/// widget (the sleep timer's time, here): from the user name into the password, typing, and on
+/// from the last field to the buttons.
+fn tab_stays_in_the_widget_from_a_field() {
+    let mut h = testing::Harness::new(
+        "grid columns=16 rows=9\nlayout {\n    wifi col=0 row=0 width=4 height=5\n    sleep-timer col=4 row=0 width=4 height=5\n}\n",
+    );
+    let when = sl(&h).get_when();
+    // Drawn before the prompt comes, as on screen: the prompt's arrival is a change.
+    h.render();
+    let mut state = Demo::new().wifi;
+    let mut prompt = wifi::Prompt::default();
+    prompt.serial = 3;
+    prompt.ssid = "Campus".into();
+    prompt.kind = wifi::PromptKind::Enterprise;
+    state.prompt = Some(prompt);
+    h.send(wifi::Event::State(Box::new(state)));
+    h.render();
+    h.settle(5);
+    let wifi_id = h
+        .ui()
+        .get_widgets()
+        .iter()
+        .find(|w| w.title == "Wi-Fi")
+        .expect("the Wi-Fi widget")
+        .id;
+    let inside = |h: &Harness| {
+        let nav = h.ui().global::<niri_dash::Nav>();
+        nav.get_mode() == niri_dash::NavMode::Widget && nav.get_active_id() == wifi_id
+    };
+    let nav = h.ui().global::<niri_dash::Nav>();
+    assert!(inside(&h), "the prompt didn't enter the Wi-Fi widget: {:?} {} vs {wifi_id}", nav.get_mode(), nav.get_active_id());
+    for c in "ann".chars() {
+        h.press(&c.to_string());
+    }
+    h.press("tab");
+    for c in "pw9".chars() {
+        h.press(&c.to_string());
+    }
+    // Past the last field: the buttons, and the keys are the widget's again.
+    h.press("tab");
+    h.press("9");
+    h.press("shift+tab");
+    assert!(inside(&h), "Tab left the Wi-Fi widget");
+    assert_eq!(sl(&h).get_when(), when, "Tab put the keyboard in the sleep timer");
+    h.press("enter");
+    h.press("enter");
+    assert!(matches!(
+        h.inbox.wifi.try_recv(),
+        Ok(wifi::Command::Answer { serial: 3, answer })
+            if answer.identity == "ann" && answer.password == "pw9"
+    ));
+}
+
 /// Joining from a text field closes the form and the field with it. The keyboard comes back: the
 /// keys still work, and Escape still gets out.
 fn keyboard_survives_its_field_going_away() {
@@ -335,8 +389,11 @@ fn keyboard_survives_its_field_going_away() {
     for c in "Attic".chars() {
         h.press(&c.to_string());
     }
-    // Enter joins from the password field, not from the name.
+    // Enter joins from the password field, not from the name. Tab leaves the name for the
+    // next stop; Enter on the password types into it, and Enter there joins.
     h.press("tab");
+    walk_to(&mut h, "Password");
+    h.press("enter");
     h.press("enter");
     h.settle(20);
     assert!(matches!(
@@ -1414,6 +1471,10 @@ fn main() {
         (
             "cursor_stays_in_sight_as_a_tile_shrinks",
             cursor_stays_in_sight_as_a_tile_shrinks,
+        ),
+        (
+            "keyboard: Tab from a field stays in the widget",
+            tab_stays_in_the_widget_from_a_field,
         ),
         (
             "keyboard survives its field going away",

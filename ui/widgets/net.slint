@@ -199,6 +199,7 @@ component WifiPasswordPrompt inherits Rectangle {
         active: root.nav;
         count: root.k-cancel + 2;
         property <bool> on-field: self.cursor == root.k-ident || self.cursor == root.k-pass || self.cursor == root.k-domain;
+        field-stop: self.on-field;
         enter-does: self.cursor == root.k-method ? "the other method" : self.cursor == root.k-insecure ? "switch"
             : self.cursor == root.k-cancel ? "cancel" : self.cursor == root.k-cancel + 1 ? "join" : "type";
         adjust-does: self.cursor == root.k-method ? "method" : "";
@@ -408,6 +409,7 @@ export component WifiWidget inherits Rectangle {
         property <bool> net-active: self.on-net && Wifi.networks[self.cursor - root.k-net].active;
         property <bool> on-field: !root.round && root.page == 2
             && (self.cursor == 0 || self.cursor == root.k-ident || self.cursor == root.k-pass || self.cursor == root.k-domain);
+        field-stop: self.on-field;
         property <string> enter-0: self.cursor < root.k-net ? "sign in"
             : self.on-net ? (self.sub == 0 && !self.net-active ? "connect" : self.sub == 1 && self.net-active ? "disconnect" : "details")
             : self.cursor == root.k-hidden ? "hidden network" : "saved networks";
@@ -1072,6 +1074,7 @@ component BtPairingPrompt inherits Rectangle {
         active: root.nav;
         count: root.k-no + (root.shows-code ? 1 : 2);
         enter-does: self.cursor < root.k-no ? "type" : self.cursor == root.k-no ? "no" : "yes";
+        field-stop: self.cursor < root.k-no;
         hl-does: "answer";
         back-does: "no";
         field-does: "answer";
@@ -1337,6 +1340,7 @@ export component BluetoothWidget inherits Rectangle {
         // (Round, the prompt isn't shown, and Enter still switches it on and off.)
         active: root.nav && (!root.asking || root.round);
         count: root.k-count;
+        field-stop: !root.round && root.page == 1 && root.paired && self.cursor == 2 && self.sub == 0;
         // A device and its details button; the new name and its Rename button.
         subs: (root.page == 0 && self.cursor < root.k-add) || (root.page == 1 && root.paired && self.cursor == 2) ? 2 : 1;
         property <bool> on-device: !root.round && root.page == 0 && self.cursor < root.k-add;

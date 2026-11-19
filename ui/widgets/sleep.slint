@@ -128,6 +128,7 @@ component SleepBody inherits Rectangle {
             accessible-label: "Sleep timer";
             active: root.nav;
             count: root.round ? 0 : root.k-actions + 1;
+            field-stop: !root.round && self.cursor == 0;
             subs: keys.cursor == root.k-toggles ? 2 : keys.cursor == root.k-actions ? 4 : 1;
             property <string> primary-does: Sleep.status == SleepStatus.armed ? "pause" : Sleep.status == SleepStatus.paused ? "resume" : "arm";
             enter-does: root.round ? self.primary-does

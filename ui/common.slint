@@ -839,6 +839,9 @@ export component NavScope inherits FocusScope {
     in property <[KeyBind]> binds;
     // What Enter does on the stop under the cursor ("" = nothing).
     in property <string> enter-does;
+    // The stop under the cursor is a text field, which Enter types into: Tab out of another
+    // field lands in it typing.
+    in property <bool> field-stop;
     // What h and l change on a stop without parts (and j and k too, with no stops to step over).
     in property <string> adjust-does;
     // What j/k and h/l do, for a widget that says it better than "move" and "part", or whose
@@ -967,7 +970,21 @@ export component NavScope inherits FocusScope {
             return self.back() ? accept : reject;
         }
         if (!self.has-focus) {
-            // Something inside (a text field) has the keyboard and passed this key on.
+            // Something inside (a text field) has the keyboard and passed this key on. Tab
+            // leaves it for the next stop: let through, Slint would hand the keyboard to the
+            // next text field on the dashboard, in another widget.
+            if (e.text == Key.Tab || e.text == Key.Backtab) {
+                let d = e.text == Key.Tab ? 1 : -1;
+                self.focus();
+                if (self.count > 1) {
+                    self.go(self.fit(self.cursor + d), d);
+                }
+                // From field to field, as in any form: the next one takes the keyboard.
+                if (self.field-stop) {
+                    self.activate(self.cursor, min(self.sub, self.subs - 1));
+                }
+                return accept;
+            }
             return reject;
         }
         if ((e.text == "c" || e.text == "C") && e.modifiers.control && !e.modifiers.shift
