@@ -490,20 +490,20 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     // Windows.
     let w = ui.global::<UiWindows>();
     let a = app.clone();
-    w.on_focus(move |id| a.tx.windows.tell(windows::Command::Focus(id as u64)));
+    w.on_focus(move |id| a.tx.tell(windows::Command::Focus(id as u64)));
     let a = app.clone();
-    w.on_close(move |id| a.tx.windows.tell(windows::Command::Close(id as u64)));
+    w.on_close(move |id| a.tx.tell(windows::Command::Close(id as u64)));
     use keyboard::{Command::Switch, Switch as To};
     let kb = ui.global::<crate::KeyboardLayouts>();
     let a = app.clone();
-    kb.on_next(move || a.tx.keyboard.tell(Switch(To::Next)));
+    kb.on_next(move || a.tx.tell(Switch(To::Next)));
     let a = app.clone();
-    kb.on_prev(move || a.tx.keyboard.tell(Switch(To::Prev)));
+    kb.on_prev(move || a.tx.tell(Switch(To::Prev)));
     let a = app.clone();
-    kb.on_pick(move |i| a.tx.keyboard.tell(Switch(To::Index(i.max(0) as u32))));
+    kb.on_pick(move |i| a.tx.tell(Switch(To::Index(i.max(0) as u32))));
     // Wi-Fi.
     let w = ui.global::<UiWifi>();
-    let wifi = |a: &Rc<App>, cmd: wifi::Command| a.tx.wifi.tell(cmd);
+    let wifi = |a: &Rc<App>, cmd: wifi::Command| a.tx.tell(cmd);
     let a = app.clone();
     w.on_toggle(move || wifi(&a, wifi::Command::Toggle));
     let a = app.clone();
@@ -574,7 +574,7 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     // Bluetooth.
     use bluetooth::Command as Bt;
     let b = ui.global::<UiBluetooth>();
-    let bt = |a: &Rc<App>, cmd: Bt| a.tx.bluetooth.tell(cmd);
+    let bt = |a: &Rc<App>, cmd: Bt| a.tx.tell(cmd);
     let a = app.clone();
     b.on_toggle(move || bt(&a, Bt::Toggle));
     let a = app.clone();
@@ -624,7 +624,7 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     let a = app.clone();
     ui.global::<crate::Brightness>().on_set(move |v| {
         a.brightness_touched.set(Some(Instant::now()));
-        a.tx.brightness.tell(brightness::Command::Set(v));
+        a.tx.tell(brightness::Command::Set(v));
         if let Some(ui) = a.ui.upgrade() {
             ui.global::<crate::Brightness>().set_level(v);
         }
@@ -640,13 +640,13 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
             .find(|i| i.address == id.as_str())
             .cloned();
         match item {
-            Some(i) if i.item_is_menu && i.has_menu => a.tx.tray.tell(tray::Command::OpenMenu {
+            Some(i) if i.item_is_menu && i.has_menu => a.tx.tell(tray::Command::OpenMenu {
                 address: i.address,
                 x,
                 y,
             }),
             Some(i) => {
-                a.tx.tray.tell(tray::Command::Activate {
+                a.tx.tell(tray::Command::Activate {
                     address: i.address,
                     x: x as i32,
                     y: y as i32,
@@ -658,7 +658,7 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     });
     let a = app.clone();
     t.on_open_menu(move |id, x, y| {
-        a.tx.tray.tell(tray::Command::OpenMenu {
+        a.tx.tell(tray::Command::OpenMenu {
             address: id.into(),
             x,
             y,
@@ -667,7 +667,7 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     let a = app.clone();
     t.on_menu_activate(move |id| {
         let address = a.menu_address.borrow().clone();
-        a.tx.tray.tell(tray::Command::MenuItem { address, id });
+        a.tx.tell(tray::Command::MenuItem { address, id });
         if let Some(ui) = a.ui.upgrade() {
             ui.global::<UiTray>().set_menu_open(false);
         }
@@ -684,16 +684,16 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     ui.global::<UiClaude>().on_focus(move |pid| {
         let win = a.claude_windows.borrow().get(&pid).copied();
         if let Some(id) = win {
-            a.tx.windows.tell(windows::Command::ShowTab(pid));
-            a.tx.windows.tell(windows::Command::Focus(id));
+            a.tx.tell(windows::Command::ShowTab(pid));
+            a.tx.tell(windows::Command::Focus(id));
         }
     });
     // Media.
     let m = ui.global::<UiMedia>();
     let a = app.clone();
-    m.on_play_pause(move || a.tx.media.tell(media::Command::PlayPause));
+    m.on_play_pause(move || a.tx.tell(media::Command::PlayPause));
     let a = app.clone();
-    m.on_next(move || a.tx.media.tell(media::Command::Next));
+    m.on_next(move || a.tx.tell(media::Command::Next));
     let a = app.clone();
-    m.on_previous(move || a.tx.media.tell(media::Command::Previous));
+    m.on_previous(move || a.tx.tell(media::Command::Previous));
 }

@@ -93,5 +93,5 @@ impl App {
 pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     let a = app.clone();
     ui.global::<crate::Privacy>()
-        .on_stop(move |session| a.tx.privacy.tell(Command::StopCast(session as u64)));
+        .on_stop(move |session| a.tx.tell(Command::StopCast(session as u64)));
 }

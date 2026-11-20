@@ -84,7 +84,7 @@ impl App {
             s.last.set(None);
         }
         if s.awake.replace(awake) != awake {
-            self.tx.sleep.tell(sleep::Command::KeepAwake(awake));
+            self.tx.tell(sleep::Command::KeepAwake(awake));
         }
         self.push_sleep();
     }
@@ -109,7 +109,7 @@ impl App {
     fn sleep_fire(&self, mode: sleep::Mode) {
         let script = self.sleeper.script.borrow().clone();
         if !self.sleeper.ctl.borrow().dry_run {
-            self.tx.sleep.tell(sleep::Command::Run { mode, script });
+            self.tx.tell(sleep::Command::Run { mode, script });
             return;
         }
         self.sleeper.ctl.borrow_mut().pretend(mode, &script);
@@ -122,13 +122,11 @@ impl App {
         if self.caps.notifications_server {
             self.osd(&text, "weather-clear-night");
         }
-        self.tx
-            .notifications
-            .tell(notifications::Command::AddLocal {
-                app: "Sleep timer".into(),
-                summary: text,
-                body: String::new(),
-            });
+        self.tx.tell(notifications::Command::AddLocal {
+            app: "Sleep timer".into(),
+            summary: text,
+            body: String::new(),
+        });
     }
 
     pub(super) fn sleep_event(&self, event: sleep::Event) {
@@ -182,7 +180,7 @@ impl App {
             }
         }
         if before.as_ref().is_none_or(|b| b.script != now.script) {
-            self.tx.sleep.tell(sleep::Command::Detect { script });
+            self.tx.tell(sleep::Command::Detect { script });
         }
         self.sleep_settled();
     }

@@ -255,11 +255,13 @@ impl App {
         let (target, problems) = self.current_look();
         {
             let l = self.layout.borrow();
-            let _ = self.watched.send(vec![
-                Layout::path(),
-                theme::colorscheme_path(&l.colorscheme),
-                theme::style_path(&l.style),
-            ]);
+            if let Ok(mut watched) = self.watched.lock() {
+                *watched = Some(vec![
+                    Layout::path(),
+                    theme::colorscheme_path(&l.colorscheme),
+                    theme::style_path(&l.style),
+                ]);
+            }
         }
         self.show_look(target, &problems, animate);
     }
@@ -379,6 +381,6 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     ui.on_open_themes_folder(move || {
         let dir = theme::colorschemes_dir();
         let dir = dir.parent().map_or(dir.clone(), |d| d.to_path_buf());
-        a.tx.host.tell(host::Command::Open(dir));
+        a.tx.tell(host::Command::Open(dir));
     });
 }

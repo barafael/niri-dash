@@ -10,7 +10,7 @@ enum Request<T, E> {
 
 /// Hands out clones of a `T` that is made on first use. Askers wait in line while it is being made,
 /// so there is only ever one; when making it fails, the next asker tries again.
-pub struct Connector<T, E>(mpsc::UnboundedSender<Request<T, E>>);
+pub struct Connector<T, E>(mpsc::Sender<Request<T, E>>);
 
 impl<T, E> Clone for Connector<T, E> {
     fn clone(&self) -> Self {
@@ -30,7 +30,7 @@ where
         F: FnMut() -> Fut + Send + 'static,
         Fut: Future<Output = Result<T, E>> + Send,
     {
-        let (tx, mut rx) = mpsc::unbounded_channel();
+        let (tx, mut rx) = mpsc::channel(crate::COMMAND_QUEUE);
         rt.spawn(async move {
             let mut current: Option<T> = None;
             while let Some(request) = rx.recv().await {
@@ -56,7 +56,7 @@ where
     /// The connection, made now if there is none.
     pub async fn get(&self) -> Result<T, E> {
         let (reply, answer) = oneshot::channel();
-        let _ = self.0.send(Request::Get(reply));
+        let _ = self.0.send(Request::Get(reply)).await;
         match answer.await {
             Ok(result) => result,
             // The runtime is going down, and this task with it.
@@ -66,7 +66,11 @@ where
 
     /// Forget the connection (it failed), so the next `get` makes a new one.
     pub fn reset(&self) {
-        let _ = self.0.send(Request::Reset);
+        // Only refused with a whole queue of askers waiting; they then get the broken one, and
+        // the first of them to fail resets it again.
+        if let Err(mpsc::error::TrySendError::Full(_)) = self.0.try_send(Request::Reset) {
+            log::warn!("a connector is backed up: dropped a reset");
+        }
     }
 }
 

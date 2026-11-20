@@ -5,7 +5,7 @@ use super::{App, Error, Result, Surface, build, new_ui, stress};
 use crate::layout::{Kind, Layout, Loaded, RendererChoice};
 use crate::shell::{Mode, Shell};
 use crate::{Clipboard as UiClipboard, Control, named_socket_path, socket_path};
-use niri_dash_system::{self as sys, Event, Feed, Started, Tell};
+use niri_dash_system::{self as sys, Event, Feed, System, Tell};
 use slint::ComponentHandle;
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
 use slint::platform::{Platform, WindowAdapter};
@@ -140,9 +140,7 @@ impl App {
 
     fn prepare_for_output(&self, shell: &mut Shell) {
         let (reply, output) = sys::oneshot::channel();
-        self.tx
-            .host
-            .tell(sys::host::Command::FocusedOutput { reply });
+        self.tx.tell(sys::host::Command::FocusedOutput { reply });
         // Blocks until the compositor answers, as the first frame needs the size.
         if let Ok(Some((width, height, scale))) = output.blocking_recv() {
             shell.prepare(width, height, scale);
@@ -256,7 +254,7 @@ pub(super) fn start_system(
     events: sys::EventSender,
     solo: Option<Kind>,
     wayland: Option<Connection>,
-) -> Result<Started> {
+) -> Result<System> {
     if std::env::var_os("NIRI_DASH_SIM").is_some() {
         log::info!("running on the simulated system");
         return Ok(sys::simulated(events)?);
@@ -322,8 +320,8 @@ fn serve(
     config: Loaded,
     mut stress: Option<&mut stress::Run>,
 ) -> Result<()> {
-    let (events_tx, events) = super::loop_channel::<Event>();
-    let (input_tx, inputs) = super::loop_channel::<Input>();
+    let (events_tx, events) = super::loop_channel::<Event>("the dashboard's events");
+    let (input_tx, inputs) = super::loop_channel::<Input>("the dashboard's inputs");
     let conn = Connection::connect_to_env()?;
     let keep = stress.is_some();
     let system = if keep {

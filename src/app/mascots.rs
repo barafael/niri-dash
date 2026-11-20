@@ -63,9 +63,7 @@ impl App {
     pub(super) fn mascot_todo(&self, todo: Vec<crate::mascots::Todo>) {
         for t in todo {
             if let crate::mascots::Todo::Run { id, command, name } = t {
-                self.tx
-                    .mascot
-                    .tell(mascot::Command::Run { id, name, command });
+                self.tx.tell(mascot::Command::Run { id, name, command });
             }
         }
         self.push_mascots();

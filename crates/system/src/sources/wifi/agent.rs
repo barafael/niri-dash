@@ -6,11 +6,11 @@
 //! it says it has no secrets, so another agent (a desktop's own) can answer instead.
 
 use super::{AgentReply, Error, Found, Inner, PromptKind, nm};
+use crate::sources::Post;
 use futures_util::StreamExt;
 use nmrs::agent::{SecretAgent, SecretAgentCapabilities, SecretRequest};
 use std::collections::HashMap;
 use std::time::Duration;
-use tokio::sync::mpsc::UnboundedSender;
 use zbus::zvariant::{OwnedValue, Value};
 
 const IDENTIFIER: &str = "io.github.niri_dash";
@@ -18,7 +18,7 @@ const IDENTIFIER: &str = "io.github.niri_dash";
 const WAIT: Duration = Duration::from_secs(115);
 
 /// Register the agent, and again whenever NetworkManager restarts.
-pub async fn serve_forever(actor: UnboundedSender<Inner>) {
+pub async fn serve_forever(actor: Post<Inner>) {
     loop {
         if let Err(e) = serve(&actor).await {
             log::debug!("wifi agent: {e}");
@@ -27,7 +27,7 @@ pub async fn serve_forever(actor: UnboundedSender<Inner>) {
     }
 }
 
-async fn serve(actor: &UnboundedSender<Inner>) -> Result<(), Error> {
+async fn serve(actor: &Post<Inner>) -> Result<(), Error> {
     let (mut handle, mut requests) = SecretAgent::builder()
         .with_identifier(IDENTIFIER)
         // Only Wi-Fi: no VPN hints wanted.
@@ -45,13 +45,13 @@ async fn serve(actor: &UnboundedSender<Inner>) -> Result<(), Error> {
         tokio::select! {
             request = requests.next() => match request {
                 Some(r) => {
-                    let _ = actor.send(Inner::Agent(Box::new(r)));
+                    let _ = actor.put(Inner::Agent(Box::new(r))).await;
                 }
                 None => return Ok(()),
             },
             Some(cancel) = handle.cancellations().next() => {
                 let gone = Found::AgentGone(cancel.connection_path.to_string());
-                let _ = actor.send(gone.into());
+                let _ = actor.put(gone.into()).await;
             }
             change = owners.next() => match change {
                 Some(c) if c.args().is_ok_and(|a| a.new_owner().is_some()) => {
@@ -67,12 +67,7 @@ async fn serve(actor: &UnboundedSender<Inner>) -> Result<(), Error> {
 }
 
 /// Tell NetworkManager what became of a request: nothing here, or what the prompt got.
-pub async fn respond(
-    req: SecretRequest,
-    reply: AgentReply,
-    path: String,
-    actor: UnboundedSender<Inner>,
-) {
+pub async fn respond(req: SecretRequest, reply: AgentReply, path: String, actor: Post<Inner>) {
     let (kind, answer) = match reply {
         AgentReply::NoSecrets => {
             let _ = req.responder.no_secrets().await;
@@ -100,7 +95,7 @@ pub async fn respond(
         },
         Ok(_) => req.responder.cancel().await,
         Err(_) => {
-            let _ = actor.send(Found::AgentGone(path).into());
+            let _ = actor.put(Found::AgentGone(path).into()).await;
             req.responder.cancel().await
         }
     };

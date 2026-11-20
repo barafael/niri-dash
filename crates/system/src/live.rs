@@ -2,8 +2,10 @@
 //! turns the applet's commands into what the sources do.
 
 use super::{
-    Capabilities, EventSender, Feed, Senders, Started, audio, brightness, clipboard, color, host,
-    keyboard, mascot, night_light, power, privacy, session, sleep, tray, wayland, weather, windows,
+    COMMAND_QUEUE, Capabilities, Command, EventSender, Feed, Receiver, Sender, Sink, System, audio,
+    bluetooth, brightness, channel, clipboard, color, drives, host, keyboard, mascot, media,
+    night_light, notifications, phones, power, privacy, session, sleep, tray, wayland, weather,
+    wifi, windows,
 };
 use crate::compositor;
 use crate::sources::{
@@ -11,11 +13,9 @@ use crate::sources::{
     inhibit::Inhibit, kdeconnect::KdeConnect, media::Media, notifications::Notifications,
     tray::Tray, udisks::Drives, weather::Weather, wifi::Wifi,
 };
-use smithay_client_toolkit::reexports::calloop::channel::Sender;
 use smithay_client_toolkit::reexports::client::Connection;
 use std::future::Future;
 use std::time::Duration;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 /// How the live system is started.
 pub struct Options {
@@ -30,9 +30,10 @@ pub struct Options {
 }
 
 /// Start the real system on a thread of its own, reporting to `events`. Returns once it is
-/// running and knows which compositor this is. It stops when every sender is dropped.
-pub fn live(events: EventSender, opts: Options) -> std::io::Result<Started> {
-    let (started_tx, started_rx) = std::sync::mpsc::channel();
+/// running and knows which compositor this is. It stops when every clone of
+/// [`System::commands`] is dropped.
+pub fn live(events: EventSender, opts: Options) -> std::io::Result<System> {
+    let (started_tx, started_rx) = std::sync::mpsc::sync_channel(1);
     std::thread::Builder::new()
         .name("niri-dash-system".into())
         .spawn(move || {
@@ -66,15 +67,15 @@ pub fn live(events: EventSender, opts: Options) -> std::io::Result<Started> {
                 Some(w) => ctx.with_kwin_windows(w.windows_by_pid.clone()),
                 None => ctx,
             };
-            let (host_tx, host_rx) = unbounded_channel();
-            let senders = {
+            let (commands, inbox) = System::inbox();
+            let router = {
                 let _in_runtime = rt.enter();
-                start(&ctx, opts.feeds, host_tx, wayland)
+                start(&ctx, opts.feeds, wayland)
             };
-            if started_tx.send(Ok(Started { senders, caps })).is_err() {
+            if started_tx.send(Ok(System { commands, caps })).is_err() {
                 return;
             }
-            rt.block_on(Host { ctx }.event_loop(host_rx));
+            rt.block_on(router.event_loop(inbox));
         })?;
     started_rx
         .recv()
@@ -92,12 +93,7 @@ fn runtime() -> std::io::Result<tokio::runtime::Runtime> {
 
 /// Start every source (those a standalone app doesn't show get a dormant context: they exist but
 /// stay idle) and the actors in front of them.
-fn start(
-    ctx: &Ctx,
-    feeds: Option<&'static [Feed]>,
-    host: UnboundedSender<host::Command>,
-    wayland: Option<wayland::Handles>,
-) -> Senders {
+fn start(ctx: &Ctx, feeds: Option<&'static [Feed]>, wayland: Option<wayland::Handles>) -> Router {
     let wants = |f: Feed| feeds.is_none_or(|fs| fs.contains(&f));
     let feed = |f: Feed| ctx.live_if(wants(f));
     sources::perf::start(feed(Feed::Perf));
@@ -109,8 +105,8 @@ fn start(
     let locale = sources::locale();
     let kwin = ctx.is_kwin();
     let base = || ctx.clone();
-    Senders {
-        host,
+    Router {
+        host: run(Host { ctx: base() }),
         windows: run(WindowsActor {
             ctx: base(),
             kwin: wayland
@@ -157,6 +153,34 @@ fn start(
     }
 }
 
+macro_rules! router {
+    ($($variant:ident($module:ident)),* $(,)?) => {
+        /// The live system as the dashboard sees it: one actor that hands each command to the
+        /// applet's own actor. It waits for room there, so a busy applet holds up the others
+        /// only once its whole queue is full.
+        struct Router {
+            $($module: Sender<$module::Command>,)*
+        }
+
+        impl Router {
+            /// Route commands until the dashboard's sender is gone; the applets' actors end with
+            /// it.
+            async fn event_loop(self, mut inbox: Receiver<Command>) {
+                while let Some(cmd) = inbox.recv().await {
+                    let sent = match cmd {
+                        $(Command::$variant(c) => self.$module.send(c).await.is_ok(),)*
+                    };
+                    if !sent {
+                        log::debug!("a system actor has stopped");
+                    }
+                }
+            }
+        }
+    };
+}
+
+crate::applets!(router);
+
 /// An actor: its data, and what it does with each command. The loop ends when every sender is
 /// gone, and hands the actor back.
 pub(crate) trait Actor: Sized + Send + 'static {
@@ -164,10 +188,7 @@ pub(crate) trait Actor: Sized + Send + 'static {
 
     fn handle(&mut self, cmd: Self::Command);
 
-    fn event_loop(
-        mut self,
-        mut rx: UnboundedReceiver<Self::Command>,
-    ) -> impl Future<Output = Self> + Send {
+    fn event_loop(mut self, mut rx: Receiver<Self::Command>) -> impl Future<Output = Self> + Send {
         async move {
             while let Some(cmd) = rx.recv().await {
                 self.handle(cmd);
@@ -195,7 +216,7 @@ impl<T: Stateful> Actor for T {
         self.on_command(cmd);
     }
 
-    async fn event_loop(mut self, mut rx: UnboundedReceiver<T::Command>) -> Self {
+    async fn event_loop(mut self, mut rx: Receiver<T::Command>) -> Self {
         while let Some(next) = self.mailbox().next(&mut rx).await {
             match next {
                 Next::Inner(inner) => self.on_inner(inner),
@@ -207,8 +228,8 @@ impl<T: Stateful> Actor for T {
 }
 
 /// Run `actor`'s event loop on the current runtime; returns where to send it commands.
-fn run<A: Actor>(actor: A) -> UnboundedSender<A::Command> {
-    let (tx, rx) = unbounded_channel();
+fn run<A: Actor>(actor: A) -> Sender<A::Command> {
+    let (tx, rx) = channel(COMMAND_QUEUE);
     tokio::spawn(actor.event_loop(rx));
     tx
 }
@@ -259,7 +280,7 @@ impl Actor for Host {
 struct WindowsActor {
     ctx: Ctx,
     /// KWin's window list lives on the Wayland thread.
-    kwin: Option<Sender<windows::Command>>,
+    kwin: Option<Sink<windows::Command>>,
 }
 
 impl Actor for WindowsActor {
@@ -432,7 +453,7 @@ struct NightLightActor {
     /// KWin's night light; None where it isn't KWin's.
     kwin: Option<sources::kde::NightLight>,
     /// The Wayland side's gamma tables; None without Wayland.
-    gamma: Option<Sender<Option<u32>>>,
+    gamma: Option<Sink<Option<u32>>>,
     mailbox: Mailbox<sources::kde::NightLightInner>,
 }
 
@@ -468,7 +489,7 @@ impl Stateful for NightLightActor {
 
 /// Hands clipboard commands to the Wayland side's event loop; None without Wayland, where what
 /// is copied goes nowhere.
-struct ClipboardActor(Option<Sender<clipboard::Command>>);
+struct ClipboardActor(Option<Sink<clipboard::Command>>);
 
 impl Actor for ClipboardActor {
     type Command = clipboard::Command;

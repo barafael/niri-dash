@@ -495,7 +495,7 @@ impl App {
         self.refresh_settings();
         if kind == Kind::Weather {
             let config = self.layout.borrow().weather_config(self.locale.us);
-            self.tx.weather.tell(weather::Command::Configure(config));
+            self.tx.tell(weather::Command::Configure(config));
         }
     }
 }

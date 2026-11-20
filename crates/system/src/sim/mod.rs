@@ -16,9 +16,9 @@ mod wifi;
 mod world;
 
 use crate::{
-    Capabilities, Event, EventSender, Inboxes, MockSystem, Received, Started, audio, brightness,
-    channels, claude, clipboard, color, drives, host, keyboard, mascot, media, night_light,
-    notifications, perf, phones, power, privacy, session, sleep, tray, weather, windows,
+    Capabilities, Command, Event, EventSender, MockSystem, Receiver, System, audio, brightness,
+    claude, clipboard, color, drives, host, keyboard, mascot, media, night_light, notifications,
+    perf, phones, power, privacy, session, sleep, tray, weather, windows,
 };
 use art::Icons;
 use std::time::Duration;
@@ -30,16 +30,13 @@ const TICK: Duration = Duration::from_millis(200);
 /// Start a simulated system, reporting to `events`: on a thread of its own on the desktop, on the
 /// page's event loop in a browser.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn simulated(events: EventSender) -> std::io::Result<Started> {
-    let (senders, inboxes) = channels();
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_time()
-        .build()?;
-    std::thread::Builder::new()
-        .name("niri-dash-sim".into())
-        .spawn(move || rt.block_on(Sim::new(now(), events).event_loop(inboxes)))?;
-    Ok(Started {
-        senders,
+pub fn simulated(events: EventSender) -> std::io::Result<System> {
+    let (commands, inbox) = System::inbox();
+    crate::mock::on_thread("niri-dash-sim", move || {
+        Sim::new(now(), events).event_loop(inbox)
+    })?;
+    Ok(System {
+        commands,
         caps: Capabilities {
             simulated: true,
             ..MockSystem::CAPS
@@ -50,13 +47,13 @@ pub fn simulated(events: EventSender) -> std::io::Result<Started> {
 /// Start a simulated system, reporting to `events`: on a thread of its own on the desktop, on the
 /// page's event loop in a browser.
 #[cfg(target_arch = "wasm32")]
-pub fn simulated(events: EventSender) -> std::io::Result<Started> {
-    let (senders, inboxes) = channels();
+pub fn simulated(events: EventSender) -> std::io::Result<System> {
+    let (commands, inbox) = System::inbox();
     wasm_bindgen_futures::spawn_local(async move {
-        Sim::new(now(), events).event_loop(inboxes).await;
+        Sim::new(now(), events).event_loop(inbox).await;
     });
-    Ok(Started {
-        senders,
+    Ok(System {
+        commands,
         caps: Capabilities {
             simulated: true,
             ..MockSystem::CAPS
@@ -235,10 +232,10 @@ impl Sim {
     }
 
     /// Answer commands and move with the clock until every sender is gone; hands back the state.
-    pub async fn event_loop(mut self, mut inbox: Inboxes) -> Self {
+    pub async fn event_loop(mut self, mut inbox: Receiver<Command>) -> Self {
         loop {
             tokio::select! {
-                cmd = inbox.next() => match cmd {
+                cmd = inbox.recv() => match cmd {
                     Some(cmd) => {
                         self.t = now();
                         self.handle(cmd);
@@ -402,8 +399,8 @@ impl Sim {
         self.report_world(true);
     }
 
-    fn handle(&mut self, cmd: Received) {
-        use Received as R;
+    fn handle(&mut self, cmd: Command) {
+        use Command as R;
         let t = self.t;
         match cmd {
             R::Host(host::Command::FocusedOutput { reply }) => {
@@ -558,13 +555,12 @@ mod tests {
     #[tokio::test]
     async fn answers_commands_and_ends_with_its_senders() {
         let (sim, rx) = sim();
-        let (tx, inbox) = channels();
-        tx.host.tell(host::Command::Visible(true));
-        tx.brightness.tell(brightness::Command::Set(0.3));
-        tx.audio.tell(audio::Command::ToggleMute);
-        tx.wifi.tell(w::Command::Toggle);
-        tx.power
-            .tell(power::Command::SetProfile(power::Profile::Performance));
+        let (tx, inbox) = System::inbox();
+        tx.tell(host::Command::Visible(true));
+        tx.tell(brightness::Command::Set(0.3));
+        tx.tell(audio::Command::ToggleMute);
+        tx.tell(w::Command::Toggle);
+        tx.tell(power::Command::SetProfile(power::Profile::Performance));
         drop(tx);
         let sim = sim.event_loop(inbox).await;
         assert_eq!(sim.brightness, 0.3);
@@ -584,7 +580,7 @@ mod tests {
     #[test]
     fn coming_up_reports_everything_once() {
         let (mut sim, rx) = sim();
-        sim.handle(Received::Host(host::Command::Visible(true)));
+        sim.handle(Command::Host(host::Command::Visible(true)));
         let seen = drain(rx);
         let count = |f: fn(&Event) -> bool| seen.iter().filter(|e| f(e)).count();
         for (what, n) in [
@@ -614,14 +610,14 @@ mod tests {
     fn the_clipboard_is_only_read_when_asked() {
         let clip = |e: &Event| matches!(e, Event::Clipboard(_));
         let (mut sim, rx) = sim();
-        sim.handle(Received::Host(host::Command::Visible(true)));
+        sim.handle(Command::Host(host::Command::Visible(true)));
         sim.tick(T + 1000.0);
         assert!(!drain(rx).iter().any(clip));
 
         let (tx, rx) = EventSender::channel();
         sim.events = tx;
         sim.t = T + 1000.0;
-        sim.handle(Received::Clipboard(clipboard::Command::Record(true)));
+        sim.handle(Command::Clipboard(clipboard::Command::Record(true)));
         sim.tick(T + 2000.0);
         let seen = drain(rx);
         // What was there when it started, and what came since.
@@ -629,7 +625,7 @@ mod tests {
 
         let (tx, rx) = EventSender::channel();
         sim.events = tx;
-        sim.handle(Received::Clipboard(clipboard::Command::Record(false)));
+        sim.handle(Command::Clipboard(clipboard::Command::Record(false)));
         sim.tick(T + 3000.0);
         assert!(!drain(rx).iter().any(clip));
     }
@@ -637,7 +633,7 @@ mod tests {
     #[test]
     fn nothing_is_reported_while_away() {
         let (mut sim, rx) = sim();
-        sim.handle(Received::Host(host::Command::Visible(false)));
+        sim.handle(Command::Host(host::Command::Visible(false)));
         sim.tick(T + 500.0);
         assert!(drain(rx).is_empty());
     }
@@ -645,7 +641,7 @@ mod tests {
     #[test]
     fn only_news_is_reported() {
         let (mut sim, rx) = sim();
-        sim.handle(Received::Host(host::Command::Visible(true)));
+        sim.handle(Command::Host(host::Command::Visible(true)));
         // The same moment again changes nothing.
         let before = drain(rx);
         assert!(!before.is_empty());
@@ -658,7 +654,7 @@ mod tests {
     #[test]
     fn a_long_look_at_the_world() {
         let (mut sim, _rx) = sim();
-        sim.handle(Received::Host(host::Command::Visible(true)));
+        sim.handle(Command::Host(host::Command::Visible(true)));
         for i in 0..4000 {
             sim.tick(T + i as f64 * 1.7);
         }
@@ -667,7 +663,7 @@ mod tests {
     #[test]
     fn a_pick_comes_back_a_moment_later() {
         let (mut sim, rx) = sim();
-        sim.handle(Received::Color(color::Command::Pick));
+        sim.handle(Command::Color(color::Command::Pick));
         sim.tick(T + 0.1);
         sim.tick(T + 1.0);
         let seen = drain(rx);
@@ -681,7 +677,7 @@ mod tests {
     #[test]
     fn a_session_command_only_says_so() {
         let (mut sim, rx) = sim();
-        sim.handle(Received::Session(session::Command::Poweroff));
+        sim.handle(Command::Session(session::Command::Poweroff));
         assert!(
             drain(rx)
                 .iter()
@@ -692,10 +688,10 @@ mod tests {
     #[test]
     fn the_sleep_timer_offers_modes_and_only_pretends_to_sleep() {
         let (mut sim, rx) = sim();
-        sim.handle(Received::Sleep(sleep::Command::Detect {
+        sim.handle(Command::Sleep(sleep::Command::Detect {
             script: "sleep.sh".into(),
         }));
-        sim.handle(Received::Sleep(sleep::Command::Run {
+        sim.handle(Command::Sleep(sleep::Command::Run {
             mode: sleep::Mode::Hibernate,
             script: "sleep.sh".into(),
         }));
@@ -717,8 +713,8 @@ mod tests {
     #[test]
     fn what_pairing_needs_goes_through_the_actor() {
         let (mut sim, rx) = sim();
-        sim.handle(Received::Host(host::Command::Visible(true)));
-        sim.handle(Received::Bluetooth(bt::Command::Scan(true)));
+        sim.handle(Command::Host(host::Command::Visible(true)));
+        sim.handle(Command::Bluetooth(bt::Command::Scan(true)));
         sim.tick(T + 15.0);
         let address = sim
             .bluetooth
@@ -728,7 +724,7 @@ mod tests {
             .expect("a stranger")
             .address
             .clone();
-        sim.handle(Received::Bluetooth(bt::Command::Pair(address)));
+        sim.handle(Command::Bluetooth(bt::Command::Pair(address)));
         sim.tick(T + 17.0);
         assert!(drain(rx).iter().any(|e| matches!(
             e,

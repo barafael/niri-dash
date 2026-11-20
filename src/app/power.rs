@@ -51,32 +51,30 @@ impl App {
 pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     // Power profiles and inhibiting sleep.
     let a = app.clone();
-    ui.global::<UiPower>().on_set_profile(move |p| {
-        a.tx.power
-            .tell(power::Command::SetProfile(profile_from_ui(p)))
-    });
+    ui.global::<UiPower>()
+        .on_set_profile(move |p| a.tx.tell(power::Command::SetProfile(profile_from_ui(p))));
     let a = app.clone();
     ui.global::<UiPower>()
-        .on_toggle_inhibit(move || a.tx.power.tell(power::Command::ToggleInhibit));
+        .on_toggle_inhibit(move || a.tx.tell(power::Command::ToggleInhibit));
     // Session.
     let s = ui.global::<UiSession>();
     let a = app.clone();
     s.on_lock(move || {
         a.pending.borrow_mut().push(Control::Hide);
-        a.tx.session.tell(session::Command::Lock);
+        a.tx.tell(session::Command::Lock);
     });
     let a = app.clone();
     s.on_suspend(move || {
         a.pending.borrow_mut().push(Control::Hide);
-        a.tx.session.tell(session::Command::Suspend);
+        a.tx.tell(session::Command::Suspend);
     });
     let a = app.clone();
     s.on_logout(move || {
         a.pending.borrow_mut().push(Control::Hide);
-        a.tx.session.tell(session::Command::Logout);
+        a.tx.tell(session::Command::Logout);
     });
     let a = app.clone();
-    s.on_reboot(move || a.tx.session.tell(session::Command::Reboot));
+    s.on_reboot(move || a.tx.tell(session::Command::Reboot));
     let a = app.clone();
-    s.on_poweroff(move || a.tx.session.tell(session::Command::Poweroff));
+    s.on_poweroff(move || a.tx.tell(session::Command::Poweroff));
 }

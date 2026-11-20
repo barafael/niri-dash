@@ -1,7 +1,8 @@
 //! The system niri-dash runs on, split from the dashboard. Each applet has a module here with the
 //! `Command`s it can be asked to do and the `Event`s it reports. Behind every module with
-//! commands is an actor that owns that part of the system. The dashboard holds nothing but the
-//! actors' senders ([`Senders`]) and gets their events on its event loop.
+//! commands is an actor that owns that part of the system. A whole system is an actor too
+//! ([`System`]): the dashboard sends it one [`Command`] enum and gets one [`Event`] enum back, each
+//! through a queue of fixed length, and holds nothing else of it.
 //!
 //! [`live`] runs the real system, under niri, KWin or another compositor (not in a browser).
 //! [`simulated`] runs a made-up one that keeps moving, which is all a browser gets. [`mock`] runs
@@ -48,51 +49,105 @@ pub use compositor::guess as guess_compositor;
 pub use live::{Options, live};
 #[cfg(not(target_arch = "wasm32"))]
 pub use mock::mock;
-pub use mock::{Demo, MockSystem, Received};
+pub use mock::{Demo, MockSystem};
 pub use sim::{Sim, simulated};
 #[cfg(not(target_arch = "wasm32"))]
 pub use sources::which;
 use std::path::PathBuf;
 use std::sync::Arc;
 pub use text::{Locale, clean_label, locale, one_line, strip_spinner, unescape_entities};
-pub use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+pub use tokio::sync::mpsc::{Receiver, Sender, channel};
 pub use tokio::sync::oneshot;
+
+/// How many commands may wait for the system, and for each of its actors. Actors handle a command
+/// without waiting on anything, so a full queue means the system has stopped reading; the UI
+/// doesn't wait for room then, and the command is dropped (and logged).
+pub const COMMAND_QUEUE: usize = 256;
+
+/// How many events may wait for the dashboard, which takes all of them each time its loop wakes.
+/// A full queue means the UI thread is stuck; what the system finds meanwhile is dropped (and
+/// logged), and what is still true is reported again with the next change.
+pub const EVENT_QUEUE: usize = 1024;
 
 /// Where a system's events go: a function that hands each one to the dashboard and wakes it. What
 /// wakes it is the dashboard's business (a Wayland event loop, a browser promise, a test's
 /// receiver), so nothing here depends on it.
 pub type EventSender = Sink<Event>;
 
-/// The other end is gone; there is nobody left to tell.
+/// Why a value wasn't sent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Closed;
+pub enum Refused {
+    /// There is no room: the other end has stopped reading for a while.
+    Full,
+    /// The other end is gone; there is nobody left to tell.
+    Closed,
+}
 
-/// A way to send values to someone who wakes up for them.
-pub struct Sink<T>(Arc<dyn Fn(T) -> Result<(), Closed> + Send + Sync>);
+/// A way to send values to someone who wakes up for them, through a queue of fixed length. It
+/// never waits: a value that finds no room is refused.
+pub struct Sink<T> {
+    /// What the queue holds, for the log ("the dashboard's events").
+    name: &'static str,
+    send: Arc<dyn Fn(T) -> Result<(), Refused> + Send + Sync>,
+}
 
 impl<T> Clone for Sink<T> {
     fn clone(&self) -> Self {
-        Self(self.0.clone())
+        Self {
+            name: self.name,
+            send: self.send.clone(),
+        }
     }
 }
 
 impl<T> Sink<T> {
-    /// A sink that calls `send` with each value, from whichever thread sends it.
-    pub fn new(send: impl Fn(T) -> Result<(), Closed> + Send + Sync + 'static) -> Self {
-        Self(Arc::new(send))
+    /// A sink that calls `send` with each value, from whichever thread sends it. `send` must not
+    /// block: it refuses a value it has no room for.
+    pub fn new(
+        name: &'static str,
+        send: impl Fn(T) -> Result<(), Refused> + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            name,
+            send: Arc::new(send),
+        }
     }
 
-    pub fn send(&self, value: T) -> Result<(), Closed> {
-        (self.0)(value)
+    /// Send `value` if there is room. A value dropped for want of room is logged here, so callers
+    /// only need to look at the result if they would do something else then.
+    pub fn send(&self, value: T) -> Result<(), Refused> {
+        let sent = (self.send)(value);
+        if sent == Err(Refused::Full) {
+            log::warn!("dropped one of {}: the queue is full", self.name);
+        }
+        sent
     }
 }
 
 impl<T: Send + 'static> Sink<T> {
-    /// A sink and the receiver that gets what is sent to it, with nothing to wake: for tests and
-    /// anything else that reads when it chooses to.
+    /// A sink into an async queue of `cap`, and the queue's receiving end.
+    pub fn queue(name: &'static str, cap: usize) -> (Self, Receiver<T>) {
+        let (tx, rx) = channel(cap);
+        let sink = Self::new(name, move |v| {
+            tx.try_send(v).map_err(|e| match e {
+                tokio::sync::mpsc::error::TrySendError::Full(_) => Refused::Full,
+                tokio::sync::mpsc::error::TrySendError::Closed(_) => Refused::Closed,
+            })
+        });
+        (sink, rx)
+    }
+
+    /// A sink of [`EVENT_QUEUE`] and the receiver that gets what is sent to it, with nothing to
+    /// wake: for tests and anything else that reads when it chooses to.
     pub fn channel() -> (Self, std::sync::mpsc::Receiver<T>) {
-        let (tx, rx) = std::sync::mpsc::channel();
-        (Self::new(move |v| tx.send(v).map_err(|_| Closed)), rx)
+        let (tx, rx) = std::sync::mpsc::sync_channel(EVENT_QUEUE);
+        let sink = Self::new("a test's values", move |v| {
+            tx.try_send(v).map_err(|e| match e {
+                std::sync::mpsc::TrySendError::Full(_) => Refused::Full,
+                std::sync::mpsc::TrySendError::Disconnected(_) => Refused::Closed,
+            })
+        });
+        (sink, rx)
     }
 }
 
@@ -135,110 +190,96 @@ impl std::fmt::Display for Compositor {
     }
 }
 
-/// Hand a command to an actor. Commands are never refused, so the only failure is that the actor
-/// is gone, which means the system is shutting down; there is nobody left to tell.
+/// Hand a command to the system, without waiting. A full queue is logged by the sink; a closed
+/// one means the system is shutting down, and there is nobody left to tell.
 pub trait Tell<T> {
     fn tell(&self, cmd: T);
 }
 
-impl<T> Tell<T> for UnboundedSender<T> {
+impl<T: Into<Command>> Tell<T> for Sink<Command> {
     fn tell(&self, cmd: T) {
-        if self.send(cmd).is_err() {
-            log::debug!("a system actor has stopped");
+        if self.send(cmd.into()) == Err(Refused::Closed) {
+            log::debug!("the system has stopped");
         }
     }
 }
 
-/// Where the dashboard sends its commands: one actor per applet. Unbounded, because the UI thread
-/// must neither block nor drop a click; actors that get floods (slider drags) only act on the
-/// latest value.
-#[derive(Clone)]
-pub struct Senders {
-    pub host: UnboundedSender<host::Command>,
-    pub windows: UnboundedSender<windows::Command>,
-    pub keyboard: UnboundedSender<keyboard::Command>,
-    pub privacy: UnboundedSender<privacy::Command>,
-    pub color: UnboundedSender<color::Command>,
-    pub wifi: UnboundedSender<wifi::Command>,
-    pub bluetooth: UnboundedSender<bluetooth::Command>,
-    pub audio: UnboundedSender<audio::Command>,
-    pub brightness: UnboundedSender<brightness::Command>,
-    pub notifications: UnboundedSender<notifications::Command>,
-    pub tray: UnboundedSender<tray::Command>,
-    pub media: UnboundedSender<media::Command>,
-    pub power: UnboundedSender<power::Command>,
-    pub session: UnboundedSender<session::Command>,
-    pub drives: UnboundedSender<drives::Command>,
-    pub phones: UnboundedSender<phones::Command>,
-    pub weather: UnboundedSender<weather::Command>,
-    pub night_light: UnboundedSender<night_light::Command>,
-    pub mascot: UnboundedSender<mascot::Command>,
-    pub clipboard: UnboundedSender<clipboard::Command>,
-    pub sleep: UnboundedSender<sleep::Command>,
+/// Every applet that takes commands, as `Variant(module)`, handed to `$then`: the one list the
+/// [`Command`] enum and the live system's router are both made from.
+macro_rules! applets {
+    ($then:ident) => {
+        $then! {
+            Host(host),
+            Windows(windows),
+            Keyboard(keyboard),
+            Privacy(privacy),
+            Color(color),
+            Wifi(wifi),
+            Bluetooth(bluetooth),
+            Audio(audio),
+            Brightness(brightness),
+            Notifications(notifications),
+            Tray(tray),
+            Media(media),
+            Power(power),
+            Session(session),
+            Drives(drives),
+            Phones(phones),
+            Weather(weather),
+            NightLight(night_light),
+            Mascot(mascot),
+            Clipboard(clipboard),
+            Sleep(sleep),
+        }
+    };
+}
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) use applets;
+
+macro_rules! commands {
+    ($($variant:ident($module:ident)),* $(,)?) => {
+        /// What the dashboard asks of the system, of whichever applet. Each applet's commands keep
+        /// their order, and so do all of them together.
+        #[derive(Debug)]
+        pub enum Command {
+            $($variant($module::Command),)*
+        }
+
+        $(impl From<$module::Command> for Command {
+            fn from(c: $module::Command) -> Self {
+                Command::$variant(c)
+            }
+        }
+
+        /// The applet's command, or the command back if it is another applet's.
+        impl TryFrom<Command> for $module::Command {
+            type Error = Command;
+
+            fn try_from(c: Command) -> Result<Self, Command> {
+                match c {
+                    Command::$variant(c) => Ok(c),
+                    other => Err(other),
+                }
+            }
+        })*
+    };
 }
 
-/// The receiving ends of [`Senders`]: what the actors (or a test standing in for them) read.
-pub struct Inboxes {
-    pub host: UnboundedReceiver<host::Command>,
-    pub windows: UnboundedReceiver<windows::Command>,
-    pub keyboard: UnboundedReceiver<keyboard::Command>,
-    pub privacy: UnboundedReceiver<privacy::Command>,
-    pub color: UnboundedReceiver<color::Command>,
-    pub wifi: UnboundedReceiver<wifi::Command>,
-    pub bluetooth: UnboundedReceiver<bluetooth::Command>,
-    pub audio: UnboundedReceiver<audio::Command>,
-    pub brightness: UnboundedReceiver<brightness::Command>,
-    pub notifications: UnboundedReceiver<notifications::Command>,
-    pub tray: UnboundedReceiver<tray::Command>,
-    pub media: UnboundedReceiver<media::Command>,
-    pub power: UnboundedReceiver<power::Command>,
-    pub session: UnboundedReceiver<session::Command>,
-    pub drives: UnboundedReceiver<drives::Command>,
-    pub phones: UnboundedReceiver<phones::Command>,
-    pub weather: UnboundedReceiver<weather::Command>,
-    pub night_light: UnboundedReceiver<night_light::Command>,
-    pub mascot: UnboundedReceiver<mascot::Command>,
-    pub clipboard: UnboundedReceiver<clipboard::Command>,
-    pub sleep: UnboundedReceiver<sleep::Command>,
-}
+applets!(commands);
 
-/// A sender for every applet, and where each one's commands arrive.
-pub fn channels() -> (Senders, Inboxes) {
-    macro_rules! pairs {
-        ($($name:ident),*) => {{
-            $(let $name = unbounded_channel();)*
-            (Senders { $($name: $name.0,)* }, Inboxes { $($name: $name.1,)* })
-        }};
-    }
-    pairs!(
-        host,
-        windows,
-        keyboard,
-        privacy,
-        color,
-        wifi,
-        bluetooth,
-        audio,
-        brightness,
-        notifications,
-        tray,
-        media,
-        power,
-        session,
-        drives,
-        phones,
-        weather,
-        night_light,
-        mascot,
-        clipboard,
-        sleep
-    )
-}
-
-/// A running system: where to send commands, and what it can do here.
-pub struct Started {
-    pub senders: Senders,
+/// A running system: an actor that takes [`Command`]s and reports [`Event`]s, and what it can do
+/// here.
+pub struct System {
+    /// Where to send it commands. It stops when the last clone of this is dropped.
+    pub commands: Sink<Command>,
     pub caps: Capabilities,
+}
+
+impl System {
+    /// A system's inbox: a sink for the dashboard to send to, and where the commands arrive.
+    pub fn inbox() -> (Sink<Command>, Receiver<Command>) {
+        Sink::queue("the system's commands", COMMAND_QUEUE)
+    }
 }
 
 /// What the system can do here, decided once when it starts.

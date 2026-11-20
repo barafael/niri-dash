@@ -6,6 +6,7 @@
 //! Plasma as notifications. The history is a copy kept by listening in on the session bus (a bus
 //! monitor), from the time we start: Plasma doesn't give its own out.
 
+use super::Post;
 use super::icons::IconThread;
 use super::osd::{self, Burst};
 use super::{Ctx, IconSrc, Mailbox, prop, unescape_entities};
@@ -15,7 +16,6 @@ use chrono::{DateTime, Local};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{oneshot, watch};
 use zbus::fdo::RequestNameFlags;
 use zbus::object_server::{InterfaceRef, SignalEmitter};
@@ -156,7 +156,7 @@ pub enum Inner {
 /// The server on the bus. Its methods run at the same time, so they only prepare what came in and
 /// ask the actor, which owns the notifications.
 struct Server {
-    actor: UnboundedSender<Inner>,
+    actor: Post<Inner>,
     icons: IconThread,
 }
 
@@ -282,7 +282,10 @@ impl Server {
             urgent,
             popup_icon,
         };
-        let _ = self.actor.send(Inner::Notify(Box::new(incoming), reply));
+        let _ = self
+            .actor
+            .put(Inner::Notify(Box::new(incoming), reply))
+            .await;
         id.await.unwrap_or(0)
     }
 
@@ -292,7 +295,7 @@ impl Server {
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> zbus::fdo::Result<()> {
         let (reply, done) = oneshot::channel();
-        let _ = self.actor.send(Inner::Close(id, reply));
+        let _ = self.actor.put(Inner::Close(id, reply)).await;
         let _ = done.await;
         Self::notification_closed(&emitter, id, 3).await?;
         Ok(())
@@ -371,14 +374,14 @@ impl Notifications {
                     Ok(()) => log::warn!("notification monitor: the bus closed it"),
                     Err(e) => log::warn!("notification history: {e}"),
                 }
-                let _ = watcher.send(Inner::Unwatched);
+                let _ = watcher.put(Inner::Unwatched).await;
             });
             return me;
         }
         me.mailbox.spawn(&ctx, async move {
             match serve(found.clone()).await {
                 Ok((owned, conn)) => {
-                    let _ = found.send(Inner::Served { owned, conn });
+                    let _ = found.put(Inner::Served { owned, conn }).await;
                 }
                 Err(e) => log::warn!("notification server: {e}"),
             }
@@ -403,7 +406,7 @@ impl Notifications {
         self.mailbox.spawn(&self.ctx, async move {
             loop {
                 tokio::time::sleep(EXPIRY_CHECK).await;
-                let _ = found.send(Inner::CheckExpiry);
+                let _ = found.put(Inner::CheckExpiry).await;
             }
         });
     }
@@ -418,7 +421,7 @@ impl Notifications {
         let found = self.mailbox.sender();
         self.mailbox.spawn(&self.osd_ctx, async move {
             tokio::time::sleep(osd::BURST).await;
-            let _ = found.send(Inner::BurstOver);
+            let _ = found.put(Inner::BurstOver).await;
         });
     }
 
@@ -502,7 +505,7 @@ impl Notifications {
             if let Err(e) = emit_invoked(conn.as_ref(), id, "default").await {
                 log::warn!("invoke: {e}");
             }
-            let _ = found.send(Inner::Invoked(id));
+            let _ = found.put(Inner::Invoked(id)).await;
         });
     }
 }
@@ -609,7 +612,7 @@ impl Stateful for Notifications {
 }
 
 /// Try to be the notification server: whether we got the name, and the connection.
-async fn serve(actor: UnboundedSender<Inner>) -> zbus::Result<(bool, zbus::Connection)> {
+async fn serve(actor: Post<Inner>) -> zbus::Result<(bool, zbus::Connection)> {
     let conn = zbus::Connection::session().await?;
     conn.object_server()
         .at(
@@ -633,7 +636,7 @@ async fn serve(actor: UnboundedSender<Inner>) -> zbus::Result<(bool, zbus::Conne
 /// On Plasma: keep a history by listening in on the notifications other programs send to Plasma.
 /// A bus monitor sees every `Notify` call and its reply (which holds the id Plasma gave it) and
 /// every `NotificationClosed`, without owning the name.
-async fn watch_plasma(actor: &UnboundedSender<Inner>) -> zbus::Result<()> {
+async fn watch_plasma(actor: &Post<Inner>) -> zbus::Result<()> {
     use futures_util::StreamExt;
     use zbus::message::Type;
     // A monitor can't send, so it has a connection of its own.
@@ -650,7 +653,7 @@ async fn watch_plasma(actor: &UnboundedSender<Inner>) -> zbus::Result<()> {
         .become_monitor(&rules, 0)
         .await?;
     log::info!("keeping Plasma's notifications in the history");
-    let _ = actor.send(Inner::Watching);
+    let _ = actor.put(Inner::Watching).await;
     let icons = IconThread::start();
 
     /// A `Notify` call whose reply we are waiting for: (its serial, who called, the id it
@@ -719,7 +722,7 @@ async fn watch_plasma(actor: &UnboundedSender<Inner>) -> zbus::Result<()> {
                     item.app,
                     item.summary
                 );
-                let _ = actor.send(Inner::Mirrored(Box::new(item), replaces));
+                let _ = actor.put(Inner::Mirrored(Box::new(item), replaces)).await;
             }
             Type::Signal => {
                 let Ok((id, reason)) = msg.body().deserialize::<(u32, u32)>() else {
@@ -728,7 +731,7 @@ async fn watch_plasma(actor: &UnboundedSender<Inner>) -> zbus::Result<()> {
                 // Expiring or being cut short leaves it in Plasma's history; dismissing it or the
                 // program withdrawing it takes it out.
                 if matches!(reason, 2 | 3) {
-                    let _ = actor.send(Inner::Withdrawn(id));
+                    let _ = actor.put(Inner::Withdrawn(id)).await;
                 }
             }
             Type::Error => {
@@ -744,7 +747,7 @@ async fn watch_plasma(actor: &UnboundedSender<Inner>) -> zbus::Result<()> {
 
 /// On Plasma: hold an inhibition of Plasma's pop-ups while do not disturb is on. Plasma lets go of
 /// it by itself when our bus connection closes.
-async fn pause_plasma(ctx: Ctx, mut want: watch::Receiver<bool>, actor: UnboundedSender<Inner>) {
+async fn pause_plasma(ctx: Ctx, mut want: watch::Receiver<bool>, actor: Post<Inner>) {
     let conn = match ctx.bus(false).await {
         Ok(c) => c,
         Err(e) => {
@@ -753,7 +756,7 @@ async fn pause_plasma(ctx: Ctx, mut want: watch::Receiver<bool>, actor: Unbounde
         }
     };
     let can_pause = supports_inhibit(&conn).await;
-    let _ = actor.send(Inner::PlasmaReady { can_pause });
+    let _ = actor.put(Inner::PlasmaReady { can_pause }).await;
     if !can_pause {
         return;
     }
@@ -844,8 +847,8 @@ mod tests {
     use crate::live::Actor;
     use crate::notifications::{Command, next_hour};
     use crate::sources::testing::{ctx, reported};
+    use crate::{COMMAND_QUEUE, channel};
     use chrono::TimeZone;
-    use tokio::sync::mpsc::unbounded_channel;
 
     fn incoming(summary: &str) -> Incoming {
         Incoming {
@@ -963,8 +966,9 @@ mod tests {
         let _ = me
             .mailbox
             .sender()
-            .send(Inner::Notify(Box::new(incoming("hi")), reply));
-        let (commands, inbox) = unbounded_channel::<Command>();
+            .put(Inner::Notify(Box::new(incoming("hi")), reply))
+            .await;
+        let (commands, inbox) = channel::<Command>(COMMAND_QUEUE);
         drop(commands);
         let me = me.event_loop(inbox).await;
         assert_eq!(id.await, Ok(1));
@@ -987,18 +991,18 @@ mod tests {
     async fn dismiss_and_clear_empty_the_list() {
         let (ctx, events) = ctx();
         let me = Notifications::start(ctx.clone(), ctx);
-        let (commands, inbox) = unbounded_channel();
-        let _ = commands.send(Command::AddLocal {
+        let (commands, inbox) = channel(COMMAND_QUEUE);
+        let _ = commands.try_send(Command::AddLocal {
             app: "Timer".into(),
             summary: "one".into(),
             body: String::new(),
         });
-        let _ = commands.send(Command::AddLocal {
+        let _ = commands.try_send(Command::AddLocal {
             app: "Timer".into(),
             summary: "two".into(),
             body: String::new(),
         });
-        let _ = commands.send(Command::Dismiss(1));
+        let _ = commands.try_send(Command::Dismiss(1));
         drop(commands);
         let mut me = me.event_loop(inbox).await;
         assert_eq!(me.store.items.len(), 1);

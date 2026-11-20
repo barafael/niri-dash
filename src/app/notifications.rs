@@ -68,7 +68,6 @@ impl App {
     pub(super) fn toggle_dnd(&self) {
         let on = Dnd::from_saved(self.state.borrow().dnd_until).active(chrono::Local::now());
         self.tx
-            .notifications
             .tell(Command::SetDnd(if on { Dnd::Off } else { Dnd::Forever }));
         self.osd(
             if on {
@@ -85,7 +84,7 @@ impl App {
     }
 
     pub(super) fn osd(&self, text: &str, icon: &str) {
-        self.tx.notifications.tell(Command::Osd {
+        self.tx.tell(Command::Osd {
             text: text.into(),
             icon: icon.into(),
         });
@@ -104,19 +103,19 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
             3 => Dnd::Forever,
             _ => Dnd::Off,
         };
-        a.tx.notifications.tell(Command::SetDnd(dnd));
+        a.tx.tell(Command::SetDnd(dnd));
     });
     // Notifications.
     let n = ui.global::<UiNotifications>();
     let a = app.clone();
-    n.on_dismiss(move |id| a.tx.notifications.tell(Command::Dismiss(id as u32)));
+    n.on_dismiss(move |id| a.tx.tell(Command::Dismiss(id as u32)));
     let a = app.clone();
-    n.on_clear(move || a.tx.notifications.tell(Command::Clear));
+    n.on_clear(move || a.tx.tell(Command::Clear));
     let a = app.clone();
-    n.on_invoke(move |id| a.tx.notifications.tell(Command::Invoke(id as u32)));
+    n.on_invoke(move |id| a.tx.tell(Command::Invoke(id as u32)));
     // Do not disturb survives a restart.
     let saved = Dnd::from_saved(app.state.borrow().dnd_until);
     if saved != Dnd::Off {
-        app.tx.notifications.tell(Command::SetDnd(saved));
+        app.tx.tell(Command::SetDnd(saved));
     }
 }

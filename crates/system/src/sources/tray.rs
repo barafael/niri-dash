@@ -17,7 +17,7 @@ enum Cmd {
 
 #[derive(Clone)]
 pub struct Tray {
-    tx: mpsc::UnboundedSender<Cmd>,
+    tx: mpsc::Sender<Cmd>,
 }
 
 /// SNI pixmaps are ARGB32 in network byte order; pick the one closest to 48px.
@@ -130,7 +130,7 @@ fn snapshot(client: &Client, icons: &mut Icons) -> Vec<Item> {
 
 impl Tray {
     pub fn start(ctx: Ctx) -> Self {
-        let (tx, mut rx) = mpsc::unbounded_channel::<Cmd>();
+        let (tx, mut rx) = mpsc::channel::<Cmd>(crate::COMMAND_QUEUE);
         let c = ctx.clone();
         ctx.spawn(async move {
             let client = match Client::new().await {
@@ -234,15 +234,23 @@ impl Tray {
     }
 
     pub fn activate(&self, address: String, x: i32, y: i32) {
-        let _ = self.tx.send(Cmd::Activate { address, x, y });
+        self.tell(Cmd::Activate { address, x, y });
     }
 
     pub fn open_menu(&self, address: String, x: f32, y: f32) {
-        let _ = self.tx.send(Cmd::OpenMenu { address, x, y });
+        self.tell(Cmd::OpenMenu { address, x, y });
     }
 
     pub fn menu_item(&self, address: String, id: i32) {
-        let _ = self.tx.send(Cmd::MenuItem { address, id });
+        self.tell(Cmd::MenuItem { address, id });
+    }
+
+    /// Hand `cmd` to the tray's task without waiting: a click on a tray that has stopped
+    /// answering is dropped (and logged).
+    fn tell(&self, cmd: Cmd) {
+        if let Err(mpsc::error::TrySendError::Full(_)) = self.tx.try_send(cmd) {
+            log::warn!("the tray is backed up: dropped a click");
+        }
     }
 }
 

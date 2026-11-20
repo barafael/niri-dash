@@ -84,7 +84,7 @@ impl App {
         if self.clipboard.recording.replace(want) == want {
             return;
         }
-        self.tx.clipboard.tell(Command::Record(want));
+        self.tx.tell(Command::Record(want));
         if !want {
             self.clipboard.entries.borrow_mut().clear();
             self.clip_items();
@@ -146,7 +146,7 @@ impl App {
 
     /// Put `clip` on the clipboard and say so in a toast.
     fn copy(&self, clip: Clip, toast: &str) {
-        self.tx.clipboard.tell(Command::Set(clip));
+        self.tx.tell(Command::Set(clip));
         self.toast(toast);
     }
 }

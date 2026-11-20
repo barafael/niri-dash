@@ -33,7 +33,7 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::Duration;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::sync::watch;
 use tokio::task::JoinSet;
 use zbus::zvariant::{OwnedValue, Value};
@@ -124,25 +124,45 @@ pub enum Next<I, C> {
 /// The private side of a stateful actor (see `Stateful` in `live.rs`): where the tasks it started
 /// send what they find, and those tasks, which end with it.
 pub struct Mailbox<I> {
-    tx: UnboundedSender<I>,
-    rx: UnboundedReceiver<I>,
+    tx: Post<I>,
+    rx: Receiver<I>,
     tasks: JoinSet<()>,
 }
 
+/// How many findings may wait for an actor. It handles each without waiting on anything, so its
+/// tasks only wait for room when it is far behind.
+const MAILBOX: usize = 64;
+
 impl<I> Default for Mailbox<I> {
     fn default() -> Self {
-        let (tx, rx) = unbounded_channel();
+        let (tx, rx) = channel(MAILBOX);
         Self {
-            tx,
+            tx: Post(tx),
             rx,
             tasks: JoinSet::new(),
         }
     }
 }
 
+/// Where an actor's tasks send what they find, through its mailbox (of [`MAILBOX`]).
+pub struct Post<I>(Sender<I>);
+
+impl<I> Clone for Post<I> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl<I> Post<I> {
+    /// Hand `found` to the actor, waiting for room; false when the actor is gone.
+    pub async fn put(&self, found: I) -> bool {
+        self.0.send(found).await.is_ok()
+    }
+}
+
 impl<I: Send + 'static> Mailbox<I> {
     /// Where a task sends what it found.
-    pub fn sender(&self) -> UnboundedSender<I> {
+    pub fn sender(&self) -> Post<I> {
         self.tx.clone()
     }
 
@@ -159,7 +179,7 @@ impl<I: Send + 'static> Mailbox<I> {
     /// The next thing to do; `None` when the last command sender is gone. What the actor's tasks
     /// found comes first, so a command acts on what was found before it: it can't overtake a state
     /// already on its way and find nothing to act on.
-    pub async fn next<C>(&mut self, commands: &mut UnboundedReceiver<C>) -> Option<Next<I, C>> {
+    pub async fn next<C>(&mut self, commands: &mut Receiver<C>) -> Option<Next<I, C>> {
         loop {
             tokio::select! {
                 biased;

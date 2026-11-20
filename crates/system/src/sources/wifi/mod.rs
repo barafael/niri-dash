@@ -824,7 +824,7 @@ impl Wifi {
             ticks.ready().await;
             loop {
                 let looked = look(&c, &mut cache, &mut forgotten).await;
-                let _ = found.send(Found::Fetched(looked.map(Box::new)).into());
+                let _ = found.put(Found::Fetched(looked.map(Box::new)).into()).await;
                 ticks.next(SCAN_EVERY).await;
             }
         });
@@ -836,7 +836,7 @@ impl Wifi {
             loop {
                 c.until_visible(true).await;
                 c.until_visible(false).await;
-                let _ = found.send(Found::Hidden.into());
+                let _ = found.put(Found::Hidden.into()).await;
             }
         });
         me
@@ -891,7 +891,9 @@ impl Wifi {
                     let ended = run_activation(&ctx, &ssid, &device, how, forget)
                         .await
                         .unwrap_or_else(|e| Ended::Error(e.to_string()));
-                    let _ = found.send(Found::ActivationEnded { ssid, ended }.into());
+                    let _ = found
+                        .put(Found::ActivationEnded { ssid, ended }.into())
+                        .await;
                 });
             }
             Effect::StoreSecret {
@@ -911,7 +913,7 @@ impl Wifi {
                         }
                         Err(e) => Found::Failed(e.to_string()),
                     };
-                    let _ = found.send(message.into());
+                    let _ = found.put(message.into()).await;
                 });
             }
             Effect::Disconnect { device } => {
@@ -948,7 +950,9 @@ impl Wifi {
             } => {
                 self.ctx.act("Show password", async move {
                     let secret = read_secret(&ctx, &profile).await?;
-                    let _ = found.send(Found::Revealed { generation, secret }.into());
+                    let _ = found
+                        .put(Found::Revealed { generation, secret }.into())
+                        .await;
                     Ok::<_, Error>(())
                 });
             }
@@ -960,7 +964,7 @@ impl Wifi {
             Effect::EndFailure(why) => {
                 self.mailbox.spawn(&self.ctx, async move {
                     tokio::time::sleep(Duration::from_secs(8)).await;
-                    let _ = found.send(Found::FailureOver(why).into());
+                    let _ = found.put(Found::FailureOver(why).into()).await;
                 });
             }
         }
@@ -1927,13 +1931,17 @@ mod tests {
     async fn the_actor_handles_what_it_finds_before_commands() {
         let (ctx, events) = crate::sources::testing::ctx();
         let me = Wifi::start(ctx);
-        let (commands, inbox) = tokio::sync::mpsc::unbounded_channel();
+        let (commands, inbox) = crate::channel(crate::COMMAND_QUEUE);
         // Queued first, but it needs the profile found below.
         let key = profile("/p/1", "Home", "u1").key();
-        let _ = commands.send(Command::Connect { key });
-        let _ = me.mailbox.sender().send(
-            Found::Fetched(Ok(Box::new(look_with(vec![profile("/p/1", "Home", "u1")])))).into(),
-        );
+        let _ = commands.try_send(Command::Connect { key });
+        let _ = me
+            .mailbox
+            .sender()
+            .put(
+                Found::Fetched(Ok(Box::new(look_with(vec![profile("/p/1", "Home", "u1")])))).into(),
+            )
+            .await;
         drop(commands);
         let me = me.event_loop(inbox).await;
         assert_eq!(me.core.activity, Activity::Connecting("Home".into()));

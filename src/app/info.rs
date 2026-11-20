@@ -41,13 +41,12 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     // What opens shows up behind the dashboard: it gets out of the way.
     let a = app.clone();
     b.on_open_url(move |url| {
-        a.tx.host.tell(host::Command::OpenUrl(url.into()));
+        a.tx.tell(host::Command::OpenUrl(url.into()));
         a.pending.borrow_mut().push(Control::Hide);
     });
     let a = app.clone();
     b.on_open_dir(move |dir| {
-        a.tx.host
-            .tell(host::Command::Open(PathBuf::from(dir.as_str())));
+        a.tx.tell(host::Command::Open(PathBuf::from(dir.as_str())));
         a.pending.borrow_mut().push(Control::Hide);
     });
     let a = app.clone();

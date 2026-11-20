@@ -82,27 +82,27 @@ pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     let a = app.clone();
     au.on_set_volume(move |v| {
         a.mixer.touched.set(Some(Instant::now()));
-        a.tx.audio.tell(Command::SetVolume(v));
+        a.tx.tell(Command::SetVolume(v));
     });
     let a = app.clone();
     au.on_set_mic_volume(move |v| {
         a.mixer.touched.set(Some(Instant::now()));
-        a.tx.audio.tell(Command::SetMicVolume(v));
+        a.tx.tell(Command::SetMicVolume(v));
     });
     let a = app.clone();
-    au.on_toggle_mute(move || a.tx.audio.tell(Command::ToggleMute));
+    au.on_toggle_mute(move || a.tx.tell(Command::ToggleMute));
     let a = app.clone();
-    au.on_toggle_mic_mute(move || a.tx.audio.tell(Command::ToggleMicMute));
+    au.on_toggle_mic_mute(move || a.tx.tell(Command::ToggleMicMute));
     au.set_streams(ModelRc::from(app.mixer.streams.clone()));
     let a = app.clone();
     au.on_set_stream_volume(move |id, v| {
         a.mixer
             .stream_touched
             .set(Some((id as u32, Instant::now())));
-        a.tx.audio.tell(Command::SetStreamVolume(id as u32, v));
+        a.tx.tell(Command::SetStreamVolume(id as u32, v));
     });
     let a = app.clone();
-    au.on_toggle_stream_mute(move |id| a.tx.audio.tell(Command::ToggleStreamMute(id as u32)));
+    au.on_toggle_stream_mute(move |id| a.tx.tell(Command::ToggleStreamMute(id as u32)));
     let a = app.clone();
-    au.on_set_default_sink(move |id| a.tx.audio.tell(Command::SetDefaultSink(id as u32)));
+    au.on_set_default_sink(move |id| a.tx.tell(Command::SetDefaultSink(id as u32)));
 }

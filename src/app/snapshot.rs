@@ -81,13 +81,13 @@ pub struct Args {
 
 /// Render the snapshot `args` describe, of the dashboard or of the standalone app `solo`.
 pub fn run(args: &Args, solo: Option<Kind>) -> Result<()> {
-    let (events_tx, events) = super::loop_channel::<Event>();
+    let (events_tx, events) = super::loop_channel::<Event>("the dashboard's events");
     let system = if args.mock {
         niri_dash_system::mock(events_tx)?
     } else {
         start_system(events_tx, solo, None)?
     };
-    system.senders.host.tell(host::Command::Visible(true));
+    system.commands.tell(host::Command::Visible(true));
     // NIRI_DASH_RENDERER=gpu: draw with FemtoVG/OpenGL ES into an offscreen texture instead.
     let gpu = match renderer_override() {
         Some(RendererChoice::Gpu) => {
@@ -162,7 +162,7 @@ pub fn run(args: &Args, solo: Option<Kind>) -> Result<()> {
     }
     let mut event_loop: EventLoop<'static, ()> = EventLoop::try_new()?;
     // Only the config watcher sends inputs: there is no control socket.
-    let (input_tx, inputs) = super::loop_channel::<Input>();
+    let (input_tx, inputs) = super::loop_channel::<Input>("the dashboard's inputs");
     let app = build(&ui, system, input_tx, solo, Layout::load(), true);
     let a = app.clone();
     // With --bench: how long each system event took to handle, and what it was.
@@ -230,7 +230,7 @@ pub fn run(args: &Args, solo: Option<Kind>) -> Result<()> {
         if first {
             // Let layouts settle once before the grid size is read.
             first = false;
-            app.tx.host.tell(host::Command::Refresh);
+            app.tx.tell(host::Command::Refresh);
         }
         app.sync_grid();
         if args.incremental {
@@ -363,7 +363,7 @@ pub fn run(args: &Args, solo: Option<Kind>) -> Result<()> {
             slow_events.borrow_mut().clear();
             for _ in 0..6 {
                 ui.set_shown(false);
-                app.tx.host.tell(host::Command::Visible(false));
+                app.tx.tell(host::Command::Visible(false));
                 let t = Instant::now();
                 while t.elapsed() < Duration::from_millis(700) {
                     let _ = event_loop.dispatch(Some(Duration::from_millis(5)), &mut ());
@@ -373,7 +373,7 @@ pub fn run(args: &Args, solo: Option<Kind>) -> Result<()> {
                 }
                 app.come_up();
                 ui.set_shown(true);
-                app.tx.host.tell(host::Command::Visible(true));
+                app.tx.tell(host::Command::Visible(true));
                 let t = Instant::now();
                 while t.elapsed() < Duration::from_millis(1200) {
                     let turn = Instant::now();

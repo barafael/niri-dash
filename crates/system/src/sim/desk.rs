@@ -902,7 +902,7 @@ const COPIES: [&str; 9] = [
     "Mod+N { spawn \"niri-dash\" \"toggle\"; }",
     "git log --oneline --graph --all",
     "#d79921",
-    "impl Actor for Simulation { type Command = Received; }",
+    "impl Actor for Simulation { type Command = Command; }",
     "Hafenstraße 12, 20457 Hamburg",
     "rustup target add wasm32-unknown-unknown",
     "SELECT name, count(*) FROM widgets GROUP BY name;",

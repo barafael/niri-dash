@@ -64,7 +64,7 @@ impl App {
     }
 
     fn run_pick(&self) {
-        self.tx.color.tell(color::Command::Pick);
+        self.tx.tell(color::Command::Pick);
     }
 
     fn push_colors(&self) {

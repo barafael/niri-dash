@@ -1,6 +1,6 @@
 //! Driving the dashboard headlessly, for the UI tests (`tests/ui.rs`): the real dashboard on a
 //! window that only exists in memory, with channels standing in for the system. A test reads what
-//! the dashboard sent from the [`Inboxes`], hands it [`Event`]s as the system would, and uses the
+//! the dashboard sent from its [`Inbox`], hands it [`Event`]s as the system would, and uses the
 //! UI through its globals or through key and pointer events.
 //!
 //! Slint allows one platform per process and its objects stay on the thread that made them, so a
@@ -12,7 +12,7 @@ use super::a11y::bridge::{Request, TreeSink};
 use super::{App, Input, build};
 use crate::layout::{Layout, Loaded};
 use crate::{Control, Dash};
-use niri_dash_system::{Demo, Event, Inboxes, MockSystem, Started, channels};
+use niri_dash_system::{Command, Demo, Event, MockSystem, Receiver, System};
 use slint::platform::software_renderer::PremultipliedRgbaColor;
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
 use slint::platform::{Key, Platform, PointerEventButton, WindowAdapter, WindowEvent};
@@ -75,12 +75,53 @@ impl TreeSink for Recorder {
     }
 }
 
+/// Where the dashboard's commands arrive in a test, to be taken one applet at a time.
+pub struct Inbox {
+    rx: Receiver<Command>,
+    /// Commands that came while a test looked for another applet's, in order.
+    waiting: std::collections::VecDeque<Command>,
+}
+
+/// No command of that applet is waiting.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Empty;
+
+impl Inbox {
+    fn new(rx: Receiver<Command>) -> Self {
+        Self {
+            rx,
+            waiting: Default::default(),
+        }
+    }
+
+    /// The oldest waiting command of the applet `C` (`wifi::Command`, …); the other applets'
+    /// stay for later, in order.
+    pub fn take<C: TryFrom<Command, Error = Command>>(&mut self) -> Result<C, Empty> {
+        while let Ok(c) = self.rx.try_recv() {
+            self.waiting.push_back(c);
+        }
+        let mut found = None;
+        let mut kept = std::collections::VecDeque::with_capacity(self.waiting.len());
+        for c in self.waiting.drain(..) {
+            match found {
+                None => match C::try_from(c) {
+                    Ok(mine) => found = Some(mine),
+                    Err(other) => kept.push_back(other),
+                },
+                Some(_) => kept.push_back(c),
+            }
+        }
+        self.waiting = kept;
+        found.ok_or(Empty)
+    }
+}
+
 /// The dashboard, built as the daemon builds it, on channels instead of the system.
 pub struct Harness {
     ui: Dash,
     app: Rc<App>,
     /// Where the dashboard's commands arrive.
-    pub inbox: Inboxes,
+    pub inbox: Inbox,
     events: niri_dash_system::EventSender,
     event_loop: EventLoop<'static, Vec<Control>>,
     /// Controls (show, hide) the dashboard asked for, in answer to events.
@@ -98,7 +139,7 @@ pub struct Harness {
     /// The mock system of [`Harness::with_mock`] and where its commands wait. It answers here, on
     /// the harness's own thread, whenever the dashboard takes a turn: on a thread of its own it
     /// would answer when the machine let it, and the same keys wouldn't give the same run.
-    mock: Option<(MockSystem, Inboxes)>,
+    mock: Option<(MockSystem, Receiver<Command>)>,
 }
 
 /// The time Slint's timers and animations run on.
@@ -118,9 +159,9 @@ impl Harness {
     /// The dashboard with the widgets `config` (config.kdl's text) lays out, up and on screen as
     /// far as it can tell, under niri with everything available.
     pub fn new(config: &str) -> Self {
-        let (senders, inbox) = channels();
-        let system = Started {
-            senders,
+        let (commands, inbox) = System::inbox();
+        let system = System {
+            commands,
             caps: MockSystem::CAPS,
         };
         Self::on(config, system, inbox, SIZE)
@@ -136,13 +177,13 @@ impl Harness {
     /// [`Harness::with_mock`] on a window of `size` pixels. A small one has small cells, so
     /// every widget at its minimum has little room.
     pub fn with_mock_sized(config: &str, size: (u32, u32)) -> Self {
-        let (events, events_rx) = super::loop_channel::<Event>();
-        let (senders, commands) = channels();
-        let system = Started {
-            senders,
+        let (events, events_rx) = super::loop_channel::<Event>("the dashboard's events");
+        let (sink, commands) = System::inbox();
+        let system = System {
+            commands: sink,
             caps: MockSystem::CAPS,
         };
-        let mut me = Self::on(config, system, channels().1, size);
+        let mut me = Self::on(config, system, System::inbox().1, size);
         me.mock = Some((MockSystem::new(Demo::new(), events), commands));
         me.listen(events_rx);
         // The mock sends what it has once the dashboard is up.
@@ -154,16 +195,16 @@ impl Harness {
     /// The dashboard on the simulated system (`NIRI_DASH_SIM=1`): a made-up machine that keeps
     /// moving, as the web version runs on. For soak runs and measuring.
     pub fn with_sim(config: &str, size: (u32, u32)) -> Self {
-        let (events, events_rx) = super::loop_channel::<Event>();
+        let (events, events_rx) = super::loop_channel::<Event>("the dashboard's events");
         let system = niri_dash_system::simulated(events).expect("the simulated system");
-        let mut me = Self::on(config, system, channels().1, size);
+        let mut me = Self::on(config, system, System::inbox().1, size);
         me.listen(events_rx);
         me.app.set_visible(true);
         me.pump();
         me
     }
 
-    fn on(config: &str, system: Started, inbox: Inboxes, size: (u32, u32)) -> Self {
+    fn on(config: &str, system: System, inbox: Receiver<Command>, size: (u32, u32)) -> Self {
         // Already set by an earlier harness, which is fine.
         let _ = slint::platform::set_platform(Box::new(TestPlatform));
         let ui = Dash::new().expect("creating the UI");
@@ -179,8 +220,8 @@ impl Harness {
             broken: false,
             text: config.to_string(),
         };
-        let (events, events_rx) = super::loop_channel::<Event>();
-        let (input_tx, inputs) = super::loop_channel::<Input>();
+        let (events, events_rx) = super::loop_channel::<Event>("the dashboard's events");
+        let (input_tx, inputs) = super::loop_channel::<Input>("the dashboard's inputs");
         let app = build(&ui, system, input_tx.clone(), None, loaded, true);
         // As on show: the keyboard goes to the dashboard, nothing entered.
         ui.window()
@@ -190,7 +231,7 @@ impl Harness {
         let mut me = Self {
             ui,
             app,
-            inbox,
+            inbox: Inbox::new(inbox),
             events,
             event_loop: EventLoop::try_new().expect("an event loop"),
             controls: Vec::new(),
@@ -467,7 +508,7 @@ impl Harness {
     /// The mock system takes the commands that wait for it.
     fn answer_mock(&mut self) {
         if let Some((mock, commands)) = &mut self.mock {
-            while let Some(command) = commands.try_next() {
+            while let Ok(command) = commands.try_recv() {
                 let kept = mock.handle(command);
                 mock.received.push(kept);
             }

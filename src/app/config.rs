@@ -4,8 +4,8 @@ use super::App;
 use niri_dash_system::{Tell, weather};
 #[cfg(not(target_arch = "wasm32"))]
 use {
-    super::wayland::Input, crate::layout::Layout, niri_dash_system::Sink, std::path::PathBuf,
-    std::sync::mpsc::Receiver, std::time::Duration,
+    super::Watched, super::wayland::Input, crate::layout::Layout, niri_dash_system::Sink,
+    std::path::PathBuf, std::time::Duration,
 };
 
 impl App {
@@ -25,7 +25,7 @@ impl App {
     pub(super) fn apply_settings(&self) {
         let weather = self.layout.borrow().weather_config(self.locale.us);
         self.apply_look(self.visible.get());
-        self.tx.weather.tell(weather::Command::Configure(weather));
+        self.tx.tell(weather::Command::Configure(weather));
         self.apply_grid();
     }
 
@@ -81,7 +81,7 @@ impl App {
 /// symlinks, so a symlinked dotfile counts as its target). The list of files changes with the
 /// theme, which goes through config.kdl, so the watches are re-synced after every event.
 #[cfg(not(target_arch = "wasm32"))]
-pub(super) fn watch_config(paths: Receiver<Vec<PathBuf>>, input: Sink<Input>) {
+pub(super) fn watch_config(paths: Watched, input: Sink<Input>) {
     use notify::{RecursiveMode, Watcher};
     use std::collections::HashSet;
     fn resolve(p: &std::path::Path) -> PathBuf {
@@ -98,8 +98,11 @@ pub(super) fn watch_config(paths: Receiver<Vec<PathBuf>>, input: Sink<Input>) {
     std::thread::Builder::new()
         .name("config-watch".into())
         .spawn(move || {
-            let (tx, rx) = std::sync::mpsc::channel::<notify::Result<notify::Event>>();
-            let mut watcher = match notify::recommended_watcher(tx) {
+            // notify's thread waits for room: a change is never lost, and a burst only holds it up.
+            let (tx, rx) = std::sync::mpsc::sync_channel::<notify::Result<notify::Event>>(64);
+            let mut watcher = match notify::recommended_watcher(move |ev| {
+                let _ = tx.send(ev);
+            }) {
                 Ok(w) => w,
                 Err(e) => {
                     log::warn!("not watching the config for changes: {e}");
@@ -110,7 +113,7 @@ pub(super) fn watch_config(paths: Receiver<Vec<PathBuf>>, input: Sink<Input>) {
             let mut list: Vec<PathBuf> = Vec::new();
             loop {
                 // The newest list counts.
-                while let Ok(newer) = paths.try_recv() {
+                if let Some(newer) = paths.lock().ok().and_then(|mut p| p.take()) {
                     list = newer;
                 }
                 let targets: Vec<PathBuf> = list.iter().map(|p| resolve(p)).collect();

@@ -35,9 +35,12 @@ fn wifi_commands() {
     let w = h.ui().global::<niri_dash::Wifi>();
     w.invoke_rescan();
     w.invoke_connect("Harbour Café".into());
-    assert!(matches!(h.inbox.wifi.try_recv(), Ok(wifi::Command::Rescan)));
     assert!(matches!(
-        h.inbox.wifi.try_recv(),
+        h.inbox.take::<wifi::Command>(),
+        Ok(wifi::Command::Rescan)
+    ));
+    assert!(matches!(
+        h.inbox.take::<wifi::Command>(),
         Ok(wifi::Command::Connect { key }) if key == "Harbour Café"
     ));
 }
@@ -66,7 +69,7 @@ fn wifi_password_prompt() {
     assert_eq!(w.get_prompt().ssid, "Lighthouse");
     w.invoke_answer(7, "".into(), "hunter2".into(), 0, "".into(), false);
     assert!(matches!(
-        h.inbox.wifi.try_recv(),
+        h.inbox.take::<wifi::Command>(),
         Ok(wifi::Command::Answer { serial: 7, answer }) if answer.password == "hunter2"
     ));
 }
@@ -87,14 +90,14 @@ fn bluetooth_pairing() {
     b.invoke_answer(3, true, "0000".into());
     b.invoke_answer(3, false, "".into());
     assert!(matches!(
-        h.inbox.bluetooth.try_recv(),
+        h.inbox.take::<bluetooth::Command>(),
         Ok(bluetooth::Command::Answer {
             serial: 3,
             answer: bluetooth::Answer::Code(code),
         }) if code == "0000"
     ));
     assert!(matches!(
-        h.inbox.bluetooth.try_recv(),
+        h.inbox.take::<bluetooth::Command>(),
         Ok(bluetooth::Command::Decline)
     ));
 }
@@ -105,7 +108,7 @@ fn brightness_drag_outlasts_stale_level() {
     let b = h.ui().global::<niri_dash::Brightness>();
     b.invoke_set(0.3);
     assert!(matches!(
-        h.inbox.brightness.try_recv(),
+        h.inbox.take::<brightness::Command>(),
         Ok(brightness::Command::Set(v)) if v == 0.3
     ));
     h.send(brightness::Event::Level(Some(0.9)));
@@ -120,7 +123,7 @@ fn session_lock_hides_first() {
     h.ui().global::<niri_dash::Session>().invoke_lock();
     assert_eq!(h.controls(), [Control::Hide]);
     assert!(matches!(
-        h.inbox.session.try_recv(),
+        h.inbox.take::<session::Command>(),
         Ok(session::Command::Lock)
     ));
 }
@@ -134,7 +137,7 @@ fn tray_activate() {
         .global::<niri_dash::Tray>()
         .invoke_activate(address.into(), 10.0, 20.0);
     assert!(matches!(
-        h.inbox.tray.try_recv(),
+        h.inbox.take::<tray::Command>(),
         Ok(tray::Command::Activate { address: a, x: 10, y: 20 }) if a == address
     ));
     assert_eq!(h.controls(), [Control::Hide]);
@@ -148,7 +151,7 @@ fn color_pick() {
     h.ui().global::<niri_dash::ColorPicker>().invoke_pick();
     assert_eq!(h.controls(), [Control::Hide]);
     assert!(
-        h.inbox.color.try_recv().is_err(),
+        h.inbox.take::<color::Command>().is_err(),
         "picked while still shown"
     );
     h.send(color::Event::Picked(Some([1.0, 0.5, 0.0])));
@@ -156,7 +159,7 @@ fn color_pick() {
     let colors = h.ui().global::<niri_dash::ColorPicker>().get_colors();
     assert_eq!(colors.row_count(), 1);
     assert!(matches!(
-        h.inbox.clipboard.try_recv(),
+        h.inbox.take::<clipboard::Command>(),
         Ok(niri_dash_system::clipboard::Command::Set(_))
     ));
 }
@@ -178,7 +181,7 @@ fn clips(h: &Harness) -> usize {
 /// Out of the box nothing is recorded: the system isn't asked to, and a stray copy isn't kept.
 fn clipboard_history_off_by_default() {
     let mut h = testing::Harness::new(&testing::default_config());
-    assert!(h.inbox.clipboard.try_recv().is_err());
+    assert!(h.inbox.take::<clipboard::Command>().is_err());
     h.send(copied("hunter2"));
     assert_eq!(clips(&h), 0);
 }
@@ -188,7 +191,7 @@ fn clipboard_history_off_by_default() {
 fn clipboard_history_follows_the_widget() {
     let mut h = testing::Harness::new("layout {\n  clipboard col=0 row=0 width=4 height=4\n}");
     assert!(matches!(
-        h.inbox.clipboard.try_recv(),
+        h.inbox.take::<clipboard::Command>(),
         Ok(clipboard::Command::Record(true))
     ));
     h.send(copied("kept"));
@@ -198,7 +201,7 @@ fn clipboard_history_follows_the_widget() {
     h.ui().invoke_remove_widget(id);
     h.pump();
     assert!(matches!(
-        h.inbox.clipboard.try_recv(),
+        h.inbox.take::<clipboard::Command>(),
         Ok(clipboard::Command::Record(false))
     ));
     assert_eq!(clips(&h), 0, "the history outlived its widget");
@@ -209,7 +212,7 @@ fn clipboard_history_follows_the_widget() {
         .invoke_add_widget_at(testing::ui_kind("clipboard"), 0, 0);
     h.pump();
     assert!(matches!(
-        h.inbox.clipboard.try_recv(),
+        h.inbox.take::<clipboard::Command>(),
         Ok(clipboard::Command::Record(true))
     ));
 }
@@ -255,7 +258,7 @@ fn a11y_wifi_rows() {
     element(&h, "Harbour Café", "listitem").activate();
     // A network's key is its SSID after a letter for its kind of security: o for open.
     assert!(matches!(
-        h.inbox.wifi.try_recv(),
+        h.inbox.take::<wifi::Command>(),
         Ok(wifi::Command::Connect { key }) if key == "oHarbour Café"
     ));
 }
@@ -267,7 +270,10 @@ fn a11y_wifi_switch() {
     let switch = element(&h, "Wi-Fi", "switch");
     assert_eq!(switch.spoken().checked, Some(true));
     switch.activate();
-    assert!(matches!(h.inbox.wifi.try_recv(), Ok(wifi::Command::Toggle)));
+    assert!(matches!(
+        h.inbox.take::<wifi::Command>(),
+        Ok(wifi::Command::Toggle)
+    ));
 }
 
 /// A slider reads out its value, and can be stepped without a pointer.
@@ -278,7 +284,7 @@ fn a11y_brightness_knob() {
     assert_eq!(knob.spoken().value, "70%");
     knob.increment();
     assert!(matches!(
-        h.inbox.brightness.try_recv(),
+        h.inbox.take::<brightness::Command>(),
         Ok(brightness::Command::Set(v)) if (v - 0.75).abs() < 0.001
     ));
 }
@@ -289,7 +295,7 @@ fn a11y_lock_button() {
     element(&h, "Lock", "button").activate();
     assert_eq!(h.controls(), [Control::Hide]);
     assert!(matches!(
-        h.inbox.session.try_recv(),
+        h.inbox.take::<session::Command>(),
         Ok(session::Command::Lock)
     ));
 }
@@ -319,7 +325,7 @@ fn a11y_password_stays_secret() {
     }
     h.press("enter");
     assert!(matches!(
-        h.inbox.wifi.try_recv(),
+        h.inbox.take::<wifi::Command>(),
         Ok(wifi::Command::Answer { serial: 7, answer }) if answer.password == "hunter2"
     ));
 }
@@ -355,7 +361,12 @@ fn tab_stays_in_the_widget_from_a_field() {
         nav.get_mode() == niri_dash::NavMode::Widget && nav.get_active_id() == wifi_id
     };
     let nav = h.ui().global::<niri_dash::Nav>();
-    assert!(inside(&h), "the prompt didn't enter the Wi-Fi widget: {:?} {} vs {wifi_id}", nav.get_mode(), nav.get_active_id());
+    assert!(
+        inside(&h),
+        "the prompt didn't enter the Wi-Fi widget: {:?} {} vs {wifi_id}",
+        nav.get_mode(),
+        nav.get_active_id()
+    );
     for c in "ann".chars() {
         h.press(&c.to_string());
     }
@@ -368,11 +379,15 @@ fn tab_stays_in_the_widget_from_a_field() {
     h.press("9");
     h.press("shift+tab");
     assert!(inside(&h), "Tab left the Wi-Fi widget");
-    assert_eq!(sl(&h).get_when(), when, "Tab put the keyboard in the sleep timer");
+    assert_eq!(
+        sl(&h).get_when(),
+        when,
+        "Tab put the keyboard in the sleep timer"
+    );
     h.press("enter");
     h.press("enter");
     assert!(matches!(
-        h.inbox.wifi.try_recv(),
+        h.inbox.take::<wifi::Command>(),
         Ok(wifi::Command::Answer { serial: 3, answer })
             if answer.identity == "ann" && answer.password == "pw9"
     ));
@@ -397,7 +412,7 @@ fn keyboard_survives_its_field_going_away() {
     h.press("enter");
     h.settle(20);
     assert!(matches!(
-        h.inbox.wifi.try_recv(),
+        h.inbox.take::<wifi::Command>(),
         Ok(wifi::Command::JoinHidden { ssid, .. }) if ssid == "Attic"
     ));
     let said = h
@@ -636,7 +651,7 @@ fn sleep_timer_keys() {
         "grid columns=16 rows=9\nlayout {\n    sleep-timer col=0 row=0 width=4 height=3\n}\n",
     );
     assert!(matches!(
-        h.inbox.sleep.try_recv(),
+        h.inbox.take::<sleep::Command>(),
         Ok(sleep::Command::Detect { script }) if script.ends_with("niri-dash/sleep.sh")
     ));
     h.send(sleep::Event::Modes(vec![
@@ -676,7 +691,7 @@ fn sleep_timer_keys() {
     );
     // Holding the screen is the system's to do, while it counts.
     assert!(matches!(
-        h.inbox.sleep.try_recv(),
+        h.inbox.take::<sleep::Command>(),
         Ok(sleep::Command::KeepAwake(true))
     ));
     h.key("-");
@@ -701,10 +716,10 @@ fn sleep_timer_keys() {
     h.special(slint::platform::Key::Escape);
     assert_eq!(status(&h), niri_dash::SleepStatus::Idle);
     assert!(matches!(
-        h.inbox.sleep.try_recv(),
+        h.inbox.take::<sleep::Command>(),
         Ok(sleep::Command::KeepAwake(false))
     ));
-    assert!(h.inbox.sleep.try_recv().is_err(), "nothing was run");
+    assert!(h.inbox.take::<sleep::Command>().is_err(), "nothing was run");
 }
 
 /// Tall enough, the modes are a list, and the highlight follows the cursor down it.
@@ -742,7 +757,7 @@ fn sleep_timer_fires() {
     // The countdown is counted on real time, a quarter second at a time.
     for _ in 0..40 {
         h.settle(100);
-        while let Ok(c) = h.inbox.sleep.try_recv() {
+        while let Ok(c) = h.inbox.take::<sleep::Command>() {
             if let sleep::Command::Run { mode, .. } = c {
                 asked = Some(mode);
             }
@@ -774,7 +789,7 @@ fn sleep_timer_fires() {
         sl(&h).get_outcome(),
         "dry run: would have run systemctl suspend"
     );
-    while let Ok(c) = h.inbox.sleep.try_recv() {
+    while let Ok(c) = h.inbox.take::<sleep::Command>() {
         assert!(!matches!(c, sleep::Command::Run { .. }), "a dry run ran it");
     }
 }
@@ -875,7 +890,10 @@ fn server_check_keeps_the_cursor_in_the_prompt() {
     assert!(now.contains("Don't check"), "on: {now}");
     h.press("enter");
     assert!(
-        !matches!(h.inbox.wifi.try_recv(), Ok(wifi::Command::CancelPrompt)),
+        !matches!(
+            h.inbox.take::<wifi::Command>(),
+            Ok(wifi::Command::CancelPrompt)
+        ),
         "cancelled the prompt"
     );
 }
@@ -892,7 +910,7 @@ fn server_check_keeps_the_cursor_in_the_form() {
     h.press("enter");
     assert!(
         !matches!(
-            h.inbox.wifi.try_recv(),
+            h.inbox.take::<wifi::Command>(),
             Ok(wifi::Command::JoinHidden { .. })
         ),
         "joined with the check off"
@@ -1144,7 +1162,7 @@ fn battery_without_a_current_profile() {
     assert!(now.contains("Saver"), "on: {now}");
     h.press("enter");
     assert!(matches!(
-        h.inbox.power.try_recv(),
+        h.inbox.take::<power::Command>(),
         Ok(power::Command::SetProfile(power::Profile::PowerSaver))
     ));
 }
@@ -1289,10 +1307,10 @@ fn calendar_cursor_goes_home_on_t() {
 /// Ctrl+C copies the day under the cursor as a date, and leaves it there.
 fn calendar_copies_the_picked_day() {
     let (mut h, on) = calendar_with_a_day_picked();
-    while h.inbox.clipboard.try_recv().is_ok() {}
+    while h.inbox.take::<clipboard::Command>().is_ok() {}
     h.press("ctrl+c");
     let picked = chrono::Local::now().date_naive() + chrono::Days::new(2);
-    let Ok(clipboard::Command::Set(clip)) = h.inbox.clipboard.try_recv() else {
+    let Ok(clipboard::Command::Set(clip)) = h.inbox.take::<clipboard::Command>() else {
         panic!("nothing copied");
     };
     assert_eq!(
@@ -1352,16 +1370,19 @@ fn claude_session_enter() {
     let mut h = claude_sessions(1);
     h.press("j");
     h.press("enter");
-    assert!(h.inbox.windows.try_recv().is_err(), "focused nothing");
+    assert!(
+        h.inbox.take::<windows::Command>().is_err(),
+        "focused nothing"
+    );
     assert_eq!(h.controls(), [], "hid the dashboard for nothing");
     h.press("k");
     h.press("enter");
     assert!(matches!(
-        h.inbox.windows.try_recv(),
+        h.inbox.take::<windows::Command>(),
         Ok(windows::Command::ShowTab(4101))
     ));
     assert!(matches!(
-        h.inbox.windows.try_recv(),
+        h.inbox.take::<windows::Command>(),
         Ok(windows::Command::Focus(4101))
     ));
     assert_eq!(h.controls(), [Control::Hide]);

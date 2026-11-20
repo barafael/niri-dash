@@ -9,13 +9,13 @@
 mod inside;
 
 use niri_dash_system::{
-    Event, EventSender, Feed, Options, Started, Tell, bluetooth, live, notifications, power, wifi,
+    Event, EventSender, Feed, Options, Tell, bluetooth, live, notifications, power, wifi,
 };
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
 struct System {
-    started: Started,
+    system: niri_dash_system::System,
     events: Receiver<Event>,
     seen: std::cell::RefCell<Seen>,
 }
@@ -34,11 +34,10 @@ impl System {
         .expect("the live system starts");
         // Sources only watch and poll while the dashboard is up.
         started
-            .senders
-            .host
+            .commands
             .tell(niri_dash_system::host::Command::Visible(true));
         Self {
-            started,
+            system: started,
             events,
             seen: Default::default(),
         }
@@ -458,10 +457,10 @@ fn wifi_toggles() -> Result<(), String> {
     if !first.enabled {
         return Err("Wi-Fi starts off in the mock".into());
     }
-    sys.started.senders.wifi.tell(wifi::Command::Toggle);
+    sys.system.commands.tell(wifi::Command::Toggle);
     sys.wifi(WAIT, |s| !s.enabled)
         .ok_or("Wi-Fi never reported being off after Toggle")?;
-    sys.started.senders.wifi.tell(wifi::Command::Toggle);
+    sys.system.commands.tell(wifi::Command::Toggle);
     sys.wifi(WAIT, |s| s.enabled)
         .ok_or("Wi-Fi never reported being on after the second Toggle")?;
     Ok(())
@@ -476,16 +475,10 @@ fn bluetooth_toggles() -> Result<(), String> {
     if !first.powered {
         return Err("the Bluetooth adapter starts off in the mock".into());
     }
-    sys.started
-        .senders
-        .bluetooth
-        .tell(bluetooth::Command::Toggle);
+    sys.system.commands.tell(bluetooth::Command::Toggle);
     sys.bluetooth(WAIT, |s| !s.powered)
         .ok_or("Bluetooth never reported being off after Toggle")?;
-    sys.started
-        .senders
-        .bluetooth
-        .tell(bluetooth::Command::Toggle);
+    sys.system.commands.tell(bluetooth::Command::Toggle);
     sys.bluetooth(WAIT, |s| s.powered)
         .ok_or("Bluetooth never reported being on after the second Toggle")?;
     Ok(())
@@ -564,9 +557,8 @@ fn notification_is_kept_and_dismissed() -> Result<(), String> {
             (&note.app, &note.summary, &note.body)
         ));
     }
-    sys.started
-        .senders
-        .notifications
+    sys.system
+        .commands
         .tell(notifications::Command::Dismiss(id));
     notes(&sys, &|s| !s.items.iter().any(|n| n.id == id))
         .ok_or("the notification stayed after Dismiss")?;
@@ -673,9 +665,8 @@ fn wifi_follows_the_air() -> Result<(), String> {
 
     // Joining an open network through the dashboard's command; NetworkManager makes the profile.
     let harbour = net(&sys.seen.borrow(), "Harbour Cafe").ok_or("Harbour Cafe went missing")?;
-    sys.started
-        .senders
-        .wifi
+    sys.system
+        .commands
         .tell(wifi::Command::Connect { key: harbour.key() });
     sys.until("being joined to Harbour Cafe", |s| {
         let w = s.wifi.as_ref()?;
@@ -696,7 +687,7 @@ fn wifi_follows_the_air() -> Result<(), String> {
     let key = net(&sys.seen.borrow(), "Neighbour")
         .ok_or("Neighbour went missing")?
         .key();
-    sys.started.senders.wifi.tell(wifi::Command::Select { key });
+    sys.system.commands.tell(wifi::Command::Select { key });
     sys.until("Neighbour's details", |s| {
         s.wifi
             .as_ref()?
@@ -705,9 +696,8 @@ fn wifi_follows_the_air() -> Result<(), String> {
             .filter(|d| d.ssid == "Neighbour")
             .map(|_| ())
     })?;
-    sys.started
-        .senders
-        .wifi
+    sys.system
+        .commands
         .tell(wifi::Command::Select { key: String::new() });
     sys.until("the details closed", |s| {
         s.wifi.as_ref().filter(|w| w.detail.is_none()).map(|_| ())
@@ -727,7 +717,7 @@ fn wifi_follows_the_air() -> Result<(), String> {
     })?;
 
     // The radio off: nothing is on offer. On again: the air is back.
-    sys.started.senders.wifi.tell(wifi::Command::Toggle);
+    sys.system.commands.tell(wifi::Command::Toggle);
     sys.until("the radio off", |s| {
         s.wifi.as_ref().filter(|w| !w.enabled).cloned()
     })
@@ -739,7 +729,7 @@ fn wifi_follows_the_air() -> Result<(), String> {
             )
         })
     })?;
-    sys.started.senders.wifi.tell(wifi::Command::Toggle);
+    sys.system.commands.tell(wifi::Command::Toggle);
     sys.until("the radio on, and the air back", |s| {
         s.wifi
             .as_ref()
@@ -773,10 +763,7 @@ fn bluetooth_session() -> Result<(), String> {
     })?;
 
     // A scan: the keyboard of the box is found, and not paired.
-    sys.started
-        .senders
-        .bluetooth
-        .tell(bluetooth::Command::Scan(true));
+    sys.system.commands.tell(bluetooth::Command::Scan(true));
     sys.until("scanning", |s| {
         s.bluetooth.as_ref().filter(|b| b.discovering).map(|_| ())
     })?;
@@ -797,9 +784,8 @@ fn bluetooth_session() -> Result<(), String> {
     sys.until("Mock Buds found while scanning", |s| find(s, BUDS))?;
 
     // Pairing pairs, trusts and connects: what the person wants of a new device.
-    sys.started
-        .senders
-        .bluetooth
+    sys.system
+        .commands
         .tell(bluetooth::Command::Pair(BUDS.into()));
     let paired = sys.until("Mock Buds paired", |s| find(s, BUDS).filter(|d| d.paired))?;
     check(
@@ -816,16 +802,14 @@ fn bluetooth_session() -> Result<(), String> {
     .map_err(|e| format!("pairing should also trust and connect: {e}"))?;
 
     // The person disconnects it, and connects it again.
-    sys.started
-        .senders
-        .bluetooth
+    sys.system
+        .commands
         .tell(bluetooth::Command::Disconnect(BUDS.into()));
     sys.until("disconnected on request", |s| {
         find(s, BUDS).filter(|d| !d.connected)
     })?;
-    sys.started
-        .senders
-        .bluetooth
+    sys.system
+        .commands
         .tell(bluetooth::Command::Connect(BUDS.into()));
     sys.until("connected on request", |s| {
         find(s, BUDS).filter(|d| d.connected)
@@ -837,14 +821,12 @@ fn bluetooth_session() -> Result<(), String> {
         .map_err(|e| format!("a device that drops its link still shows as connected: {e}"))?;
 
     // Trusted, renamed.
-    sys.started
-        .senders
-        .bluetooth
+    sys.system
+        .commands
         .tell(bluetooth::Command::SetTrusted(BUDS.into(), true));
     sys.until("trusted", |s| find(s, BUDS).filter(|d| d.trusted))?;
-    sys.started
-        .senders
-        .bluetooth
+    sys.system
+        .commands
         .tell(bluetooth::Command::Rename(BUDS.into(), "Desk Buds".into()));
     sys.until("renamed", |s| {
         find(s, BUDS).filter(|d| d.name == "Desk Buds")
@@ -852,9 +834,8 @@ fn bluetooth_session() -> Result<(), String> {
     .map_err(|e| format!("a rename doesn't show: {e}"))?;
 
     // The details page.
-    sys.started
-        .senders
-        .bluetooth
+    sys.system
+        .commands
         .tell(bluetooth::Command::Select(BUDS.into()));
     sys.until("the details", |s| {
         s.bluetooth
@@ -866,9 +847,8 @@ fn bluetooth_session() -> Result<(), String> {
     })?;
 
     // Forget it: gone from the paired devices (it may still be seen by the scan).
-    sys.started
-        .senders
-        .bluetooth
+    sys.system
+        .commands
         .tell(bluetooth::Command::Forget(BUDS.into()));
     sys.until("Mock Buds forgotten", |s| {
         let b = s.bluetooth.as_ref()?;
@@ -884,20 +864,14 @@ fn bluetooth_session() -> Result<(), String> {
     )?;
 
     // The adapter off: nothing connected, no scan. On again.
-    sys.started
-        .senders
-        .bluetooth
-        .tell(bluetooth::Command::Toggle);
+    sys.system.commands.tell(bluetooth::Command::Toggle);
     let off = sys.until("the adapter off", |s| {
         s.bluetooth.as_ref().filter(|b| !b.powered).cloned()
     })?;
     check(!off.discovering, || {
         "the adapter is off and still scanning".into()
     })?;
-    sys.started
-        .senders
-        .bluetooth
-        .tell(bluetooth::Command::Toggle);
+    sys.system.commands.tell(bluetooth::Command::Toggle);
     sys.until("the adapter on", |s| {
         s.bluetooth.as_ref().filter(|b| b.powered).map(|_| ())
     })?;
@@ -1057,9 +1031,8 @@ fn notifications_busy_session() -> Result<(), String> {
     .map_err(|e| format!("CloseNotification doesn't remove it: {e}"))?;
 
     // Do not disturb: kept, counted as missed.
-    sys.started
-        .senders
-        .notifications
+    sys.system
+        .commands
         .tell(notifications::Command::SetDnd(notifications::Dnd::Forever));
     sys.until("do not disturb on", |s| {
         s.notes
@@ -1077,9 +1050,8 @@ fn notifications_busy_session() -> Result<(), String> {
     check(n.missed >= 1, || {
         format!("{} missed during do not disturb", n.missed)
     })?;
-    sys.started
-        .senders
-        .notifications
+    sys.system
+        .commands
         .tell(notifications::Command::SetDnd(notifications::Dnd::Off));
     sys.until("do not disturb off", |s| {
         s.notes
@@ -1089,9 +1061,8 @@ fn notifications_busy_session() -> Result<(), String> {
     })?;
 
     // Dismiss one; clear the rest.
-    sys.started
-        .senders
-        .notifications
+    sys.system
+        .commands
         .tell(notifications::Command::Dismiss(mail));
     sys.until("the mail dismissed", |s| {
         s.notes
@@ -1099,10 +1070,7 @@ fn notifications_busy_session() -> Result<(), String> {
             .filter(|_| with(s, mail).is_none())
             .map(|_| ())
     })?;
-    sys.started
-        .senders
-        .notifications
-        .tell(notifications::Command::Clear);
+    sys.system.commands.tell(notifications::Command::Clear);
     sys.until("everything cleared", |s| {
         s.notes.as_ref().filter(|n| n.items.is_empty()).map(|_| ())
     })?;
@@ -1124,11 +1092,10 @@ fn the_whole_system_under_strain() -> Result<(), String> {
     )
     .map_err(|e| format!("the system doesn't start: {e}"))?;
     started
-        .senders
-        .host
+        .commands
         .tell(niri_dash_system::host::Command::Visible(true));
     let sys = System {
-        started,
+        system: started,
         events,
         seen: Default::default(),
     };
@@ -1143,24 +1110,17 @@ fn the_whole_system_under_strain() -> Result<(), String> {
 
     // A flood of commands, while the air and the batteries change underneath.
     for round in 0..60u32 {
-        sys.started.senders.wifi.tell(wifi::Command::Toggle);
-        sys.started
-            .senders
-            .bluetooth
-            .tell(bluetooth::Command::Toggle);
-        sys.started.senders.wifi.tell(wifi::Command::Rescan);
-        sys.started
-            .senders
-            .power
+        sys.system.commands.tell(wifi::Command::Toggle);
+        sys.system.commands.tell(bluetooth::Command::Toggle);
+        sys.system.commands.tell(wifi::Command::Rescan);
+        sys.system
+            .commands
             .tell(power::Command::SetProfile(power::Profile::Balanced));
-        sys.started
-            .senders
-            .notifications
-            .tell(notifications::Command::AddLocal {
-                app: "strain".into(),
-                summary: format!("round {round}"),
-                body: String::new(),
-            });
+        sys.system.commands.tell(notifications::Command::AddLocal {
+            app: "strain".into(),
+            summary: format!("round {round}"),
+            body: String::new(),
+        });
         if round % 10 == 0 {
             let name = format!("strain_ap{round}");
             world.add_ap(
@@ -1224,13 +1184,10 @@ fn the_whole_system_under_strain() -> Result<(), String> {
 
     // The system still answers: bring the radios up if the flood left them down.
     if !truth_wifi {
-        sys.started.senders.wifi.tell(wifi::Command::Toggle);
+        sys.system.commands.tell(wifi::Command::Toggle);
     }
     if !truth_bluetooth {
-        sys.started
-            .senders
-            .bluetooth
-            .tell(bluetooth::Command::Toggle);
+        sys.system.commands.tell(bluetooth::Command::Toggle);
     }
     let air = sys.until("the radios on, and the networks the strain made", |s| {
         let w = s.wifi.as_ref()?;
@@ -1285,11 +1242,8 @@ fn quick_taps_on_a_radio() -> Result<(), String> {
     };
     for taps in 1..=4 {
         for _ in 0..taps {
-            sys.started.senders.wifi.tell(wifi::Command::Toggle);
-            sys.started
-                .senders
-                .bluetooth
-                .tell(bluetooth::Command::Toggle);
+            sys.system.commands.tell(wifi::Command::Toggle);
+            sys.system.commands.tell(bluetooth::Command::Toggle);
         }
         std::thread::sleep(Duration::from_secs(3));
         let truth = radios()?;
@@ -1304,13 +1258,10 @@ fn quick_taps_on_a_radio() -> Result<(), String> {
                 break;
             }
             if !w {
-                sys.started.senders.wifi.tell(wifi::Command::Toggle);
+                sys.system.commands.tell(wifi::Command::Toggle);
             }
             if !b {
-                sys.started
-                    .senders
-                    .bluetooth
-                    .tell(bluetooth::Command::Toggle);
+                sys.system.commands.tell(bluetooth::Command::Toggle);
             }
             std::thread::sleep(Duration::from_secs(2));
         }

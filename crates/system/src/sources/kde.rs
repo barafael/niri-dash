@@ -2,11 +2,11 @@
 //! (KWin's `org.kde.keyboard`), the logout prompt, KWin's color picker and night light, its windows
 //! (through short-lived scripts), and Plasma's on-screen messages.
 
+use super::Post;
 use super::{Ctx, Dedup, Mailbox, Trigger, keyboard, prop};
 pub use crate::night_light::NightLightState;
 use std::collections::HashMap;
 use std::time::Duration;
-use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{oneshot, watch};
 use zbus::zvariant::OwnedValue;
 
@@ -492,7 +492,7 @@ async fn read_props(ctx: &Ctx) -> Result<Props> {
 pub struct NightLight {
     ctx: Ctx,
     /// Where tasks send what they found.
-    found: UnboundedSender<NightLightInner>,
+    found: Post<NightLightInner>,
     /// Whether we want KWin's night light paused.
     pause: watch::Sender<bool>,
     /// Whether we hold a pause right now.
@@ -522,7 +522,7 @@ impl NightLight {
         mailbox.spawn(&ctx, async move {
             ticks.ready().await;
             loop {
-                let _ = found.send(NightLightInner::Read(read_props(&c).await));
+                let _ = found.put(NightLightInner::Read(read_props(&c).await)).await;
                 ticks.next(Duration::from_secs(60)).await;
             }
         });
@@ -546,7 +546,7 @@ impl NightLight {
                     c.toast(format!("Night light: {e}"));
                 }
                 // Before the fetch this sets off, so that fetch reads as ours.
-                let _ = found.send(NightLightInner::Held(held.is_some()));
+                let _ = found.put(NightLightInner::Held(held.is_some())).await;
                 trigger.fire();
                 if rx.changed().await.is_err() {
                     return;
@@ -562,11 +562,13 @@ impl NightLight {
         let (c, found) = (self.ctx.clone(), self.found.clone());
         self.ctx.spawn(async move {
             let read = read_props(&c).await;
-            let _ = found.send(NightLightInner::Decide {
-                cmd,
-                announce,
-                read,
-            });
+            let _ = found
+                .put(NightLightInner::Decide {
+                    cmd,
+                    announce,
+                    read,
+                })
+                .await;
         });
     }
 

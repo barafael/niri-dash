@@ -101,16 +101,16 @@ enum Ask {
 /// For who can't own [`Icons`] (a D-Bus server's methods only get `&self`): a thread that does, and
 /// answers. It ends with the last clone of this.
 #[derive(Clone)]
-pub struct IconThread(std::sync::mpsc::Sender<Ask>);
+pub struct IconThread(tokio::sync::mpsc::Sender<Ask>);
 
 impl IconThread {
     pub fn start() -> Self {
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, mut rx) = tokio::sync::mpsc::channel(crate::COMMAND_QUEUE);
         std::thread::Builder::new()
             .name("niri-dash-icons".into())
             .spawn(move || {
                 let mut icons = Icons::default();
-                while let Ok(ask) = rx.recv() {
+                while let Some(ask) = rx.blocking_recv() {
                     match ask {
                         Ask::Lookup(name, size, reply) => {
                             let _ = reply.send(icons.lookup(&name, size));
@@ -128,14 +128,17 @@ impl IconThread {
     /// See [`Icons::lookup`].
     pub async fn lookup(&self, name: &str, size: u16) -> Option<PathBuf> {
         let (reply, answer) = oneshot::channel();
-        self.0.send(Ask::Lookup(name.into(), size, reply)).ok()?;
+        self.0
+            .send(Ask::Lookup(name.into(), size, reply))
+            .await
+            .ok()?;
         answer.await.ok()?
     }
 
     /// See [`Icons::app_icon`].
     pub async fn app_icon(&self, app_id: &str) -> Option<PathBuf> {
         let (reply, answer) = oneshot::channel();
-        self.0.send(Ask::AppIcon(app_id.into(), reply)).ok()?;
+        self.0.send(Ask::AppIcon(app_id.into(), reply)).await.ok()?;
         answer.await.ok()?
     }
 }

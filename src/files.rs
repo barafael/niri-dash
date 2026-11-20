@@ -71,7 +71,8 @@ mod disk {
     /// Write `path` as [`write_atomic`] does, on a thread of its own: the UI doesn't wait for the
     /// disk, which now and then takes tens of milliseconds, right as an animation starts (a drop,
     /// a theme picked). Writes happen in the order asked; [`flush`] waits for them. A write that
-    /// fails is logged.
+    /// fails is logged. The UI only waits with [`WRITES`] writes already waiting, when the disk
+    /// has stopped keeping up; it never drops one.
     pub fn write_later(path: PathBuf, contents: Vec<u8>) {
         if writer()
             .send(Job::Write(path.clone(), contents.clone()))
@@ -86,7 +87,7 @@ mod disk {
 
     /// Wait until everything [`write_later`] was given is on disk.
     pub fn flush() {
-        let (done, wait) = std::sync::mpsc::channel();
+        let (done, wait) = std::sync::mpsc::sync_channel(1);
         if writer().send(Job::Flush(done)).is_ok() {
             let _ = wait.recv();
         }
@@ -94,15 +95,18 @@ mod disk {
 
     enum Job {
         Write(PathBuf, Vec<u8>),
-        Flush(std::sync::mpsc::Sender<()>),
+        Flush(std::sync::mpsc::SyncSender<()>),
     }
 
+    /// How many writes may wait for the disk.
+    const WRITES: usize = 64;
+
     /// The writer: a thread that owns the writing, fed through a channel.
-    fn writer() -> &'static std::sync::mpsc::Sender<Job> {
-        static WRITER: std::sync::OnceLock<std::sync::mpsc::Sender<Job>> =
+    fn writer() -> &'static std::sync::mpsc::SyncSender<Job> {
+        static WRITER: std::sync::OnceLock<std::sync::mpsc::SyncSender<Job>> =
             std::sync::OnceLock::new();
         WRITER.get_or_init(|| {
-            let (tx, rx) = std::sync::mpsc::channel::<Job>();
+            let (tx, rx) = std::sync::mpsc::sync_channel::<Job>(WRITES);
             std::thread::Builder::new()
                 .name("niri-dash-files".into())
                 .spawn(move || {

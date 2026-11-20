@@ -730,7 +730,6 @@ impl App {
             Control::Quit => log::info!("not quitting during a stress run"),
             Control::Inhibit => self
                 .tx
-                .power
                 .tell(niri_dash_system::power::Command::ToggleInhibit),
             Control::Dnd => self.toggle_dnd(),
         }

@@ -101,16 +101,12 @@ impl App {
         if self.caps.notifications_server {
             self.osd(&text, "alarm-symbolic");
         }
-        self.tx
-            .notifications
-            .tell(notifications::Command::AddLocal {
-                app: "Timer".into(),
-                summary: text,
-                body: String::new(),
-            });
-        self.tx
-            .host
-            .tell(host::Command::PlaySound(host::Sound::Alarm));
+        self.tx.tell(notifications::Command::AddLocal {
+            app: "Timer".into(),
+            summary: text,
+            body: String::new(),
+        });
+        self.tx.tell(host::Command::PlaySound(host::Sound::Alarm));
         let w = self.ui.clone();
         self.timers
             .done

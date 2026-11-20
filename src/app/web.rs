@@ -614,8 +614,8 @@ fn run() -> Result<(), String> {
     .map_err(|e| e.to_string())?;
     let ui = new_ui().map_err(|e| e.to_string())?;
 
-    let (events_tx, mut events) = sys::unbounded_channel::<sys::Event>();
-    let events_tx = sys::EventSender::new(move |e| events_tx.send(e).map_err(|_| sys::Closed));
+    let (events_tx, mut events) =
+        sys::EventSender::queue("the dashboard's events", sys::EVENT_QUEUE);
     let system = sys::simulated(events_tx).map_err(|e| e.to_string())?;
     let has_clipboard = system.caps.clipboard;
     let app = build(&ui, system, None, Layout::load(), false);

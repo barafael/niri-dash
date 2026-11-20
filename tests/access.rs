@@ -254,14 +254,17 @@ fn actions() {
 
     let switch = r.find(Role::Switch, "Wi-Fi").expect("the Wi-Fi switch");
     h.access_do(request(Action::Click, switch));
-    assert!(matches!(h.inbox.wifi.try_recv(), Ok(wifi::Command::Toggle)));
+    assert!(matches!(
+        h.inbox.take::<wifi::Command>(),
+        Ok(wifi::Command::Toggle)
+    ));
 
     let knob = r
         .find(Role::Slider, "Brightness")
         .expect("the brightness knob");
     h.access_do(request(Action::Increment, knob));
     assert!(matches!(
-        h.inbox.brightness.try_recv(),
+        h.inbox.take::<brightness::Command>(),
         Ok(brightness::Command::Set(v)) if (v - 0.75).abs() < 0.001
     ));
 

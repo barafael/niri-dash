@@ -10,9 +10,9 @@ pub mod gamma;
 mod windows;
 pub use windows::ByPid;
 
-use super::{EventSender, clipboard as vocab};
+use super::{COMMAND_QUEUE, EventSender, Refused, Sink, clipboard as vocab};
 use smithay_client_toolkit::reexports::calloop::EventLoop;
-use smithay_client_toolkit::reexports::calloop::channel::{self, Channel, Sender};
+use smithay_client_toolkit::reexports::calloop::channel::{self, Channel};
 use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
 use smithay_client_toolkit::reexports::client::{
     Connection, QueueHandle, globals::registry_queue_init, protocol::wl_output, protocol::wl_seat,
@@ -27,15 +27,15 @@ use smithay_client_toolkit::{
 
 /// The Wayland side of the system, as the dashboard and the other actors see it.
 pub struct Handles {
-    pub clipboard: Sender<vocab::Command>,
+    pub clipboard: Sink<vocab::Command>,
     /// The temperature to warm the screen to; None turns night light off.
-    pub gamma: Sender<Option<u32>>,
+    pub gamma: Sink<Option<u32>>,
     /// The compositor offers ext- or wlr-data-control.
     pub has_clipboard: bool,
     /// The compositor offers wlr-gamma-control (and we asked for it).
     pub has_gamma: bool,
     /// Focus and close the windows KWin lists.
-    pub windows: Sender<crate::windows::Command>,
+    pub windows: Sink<crate::windows::Command>,
     /// KWin gives us its window list.
     pub has_windows: bool,
     /// The windows KWin lists, by the process they belong to.
@@ -66,7 +66,7 @@ pub fn start(
     with_gamma: bool,
     kwin: bool,
 ) -> std::io::Result<Handles> {
-    let (handles_tx, handles_rx) = std::sync::mpsc::channel();
+    let (handles_tx, handles_rx) = std::sync::mpsc::sync_channel(1);
     std::thread::Builder::new()
         .name("niri-dash-wayland".into())
         .spawn(move || {
@@ -92,6 +92,19 @@ pub fn start(
     handles_rx
         .recv()
         .unwrap_or_else(|_| Err(std::io::Error::other("the wayland thread died starting up")))
+}
+
+/// A queue of [`COMMAND_QUEUE`] into this thread's event loop: a sink for an actor to send to,
+/// and the source for the loop.
+fn inbox<T: Send + 'static>(name: &'static str) -> (Sink<T>, Channel<T>) {
+    let (tx, rx) = channel::sync_channel(COMMAND_QUEUE);
+    let sink = Sink::new(name, move |v| {
+        tx.try_send(v).map_err(|e| match e {
+            std::sync::mpsc::TrySendError::Full(_) => Refused::Full,
+            std::sync::mpsc::TrySendError::Disconnected(_) => Refused::Closed,
+        })
+    });
+    (sink, rx)
 }
 
 fn setup(
@@ -124,7 +137,7 @@ fn setup(
     WaylandSource::new(conn, queue)
         .insert(event_loop.handle())
         .map_err(|e| err(&e))?;
-    let (clipboard_tx, clipboard_rx): (_, Channel<vocab::Command>) = channel::channel();
+    let (clipboard_tx, clipboard_rx) = inbox::<vocab::Command>("the clipboard's commands");
     event_loop
         .handle()
         .insert_source(clipboard_rx, |ev, _, me| match ev {
@@ -133,7 +146,7 @@ fn setup(
             channel::Event::Closed => me.open -= 1,
         })
         .map_err(|e| err(&e))?;
-    let (gamma_tx, gamma_rx): (_, Channel<Option<u32>>) = channel::channel();
+    let (gamma_tx, gamma_rx) = inbox::<Option<u32>>("the gamma control's commands");
     event_loop
         .handle()
         .insert_source(gamma_rx, |ev, _, me| match ev {
@@ -145,7 +158,7 @@ fn setup(
             channel::Event::Closed => me.open -= 1,
         })
         .map_err(|e| err(&e))?;
-    let (windows_tx, windows_rx): (_, Channel<crate::windows::Command>) = channel::channel();
+    let (windows_tx, windows_rx) = inbox::<crate::windows::Command>("KWin's window commands");
     event_loop
         .handle()
         .insert_source(windows_rx, |ev, _, me| match ev {

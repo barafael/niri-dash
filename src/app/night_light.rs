@@ -57,7 +57,7 @@ impl App {
 
     /// Warm the screen to `want` through the gamma tables (None: neutral).
     fn set_gamma(&self, want: Option<u32>) {
-        self.tx.night_light.tell(gamma::Command::Gamma(want));
+        self.tx.tell(gamma::Command::Gamma(want));
     }
 
     /// Apply a request from the widget, a standalone app or the command line; `announce` shows
@@ -67,9 +67,7 @@ impl App {
             if self.solo.is_some() {
                 self.forward_night_light(cmd);
             } else {
-                self.tx
-                    .night_light
-                    .tell(gamma::Command::Kwin { cmd, announce });
+                self.tx.tell(gamma::Command::Kwin { cmd, announce });
             }
             return;
         }

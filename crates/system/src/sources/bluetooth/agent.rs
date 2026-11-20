@@ -7,10 +7,10 @@
 //! so it doesn't take over from a desktop's own.
 
 use super::{Answer, Asked, BLUEZ, Error, Inner, PromptKind};
+use crate::sources::Post;
 use crate::sources::connector::Connector;
 use futures_util::StreamExt;
 use std::time::Duration;
-use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::oneshot;
 use zbus::Connection;
 use zbus::zvariant::{ObjectPath, OwnedObjectPath};
@@ -31,7 +31,7 @@ enum AgentError {
 /// The agent's methods run at the same time, and wait for the user: they only ask the actor, which
 /// owns the prompt and knows what is being paired.
 struct Agent {
-    actor: UnboundedSender<Inner>,
+    actor: Post<Inner>,
 }
 
 fn not_ours() -> AgentError {
@@ -42,10 +42,13 @@ impl Agent {
     /// Only the device being paired from the widget gets an answer.
     async fn ours(&self, device: &ObjectPath<'_>) -> Result<(), AgentError> {
         let (reply, ours) = oneshot::channel();
-        let _ = self.actor.send(Inner::IsOurs {
-            device: device.to_string(),
-            reply,
-        });
+        let _ = self
+            .actor
+            .put(Inner::IsOurs {
+                device: device.to_string(),
+                reply,
+            })
+            .await;
         if ours.await == Ok(true) {
             Ok(())
         } else {
@@ -56,11 +59,14 @@ impl Agent {
     /// Show a code to type on the device, if it is ours; there is nothing to wait for.
     async fn show(&self, device: &ObjectPath<'_>, kind: PromptKind) -> Result<(), AgentError> {
         let (reply, ours) = oneshot::channel();
-        let _ = self.actor.send(Inner::Show {
-            device: device.to_string(),
-            kind,
-            reply,
-        });
+        let _ = self
+            .actor
+            .put(Inner::Show {
+                device: device.to_string(),
+                kind,
+                reply,
+            })
+            .await;
         if ours.await == Ok(true) {
             Ok(())
         } else {
@@ -72,17 +78,20 @@ impl Agent {
     /// what is being paired can't change between the check and the prompt.
     async fn wait(&self, device: &ObjectPath<'_>, kind: PromptKind) -> Result<Answer, AgentError> {
         let (reply, answer) = oneshot::channel();
-        let _ = self.actor.send(Inner::Ask {
-            device: device.to_string(),
-            kind,
-            reply,
-        });
+        let _ = self
+            .actor
+            .put(Inner::Ask {
+                device: device.to_string(),
+                kind,
+                reply,
+            })
+            .await;
         match tokio::time::timeout(WAIT, answer).await {
             Ok(Ok(Asked::Answer(answer))) => Ok(answer),
             Ok(Ok(Asked::NotOurs)) => Err(not_ours()),
             Ok(_) => Err(AgentError::Rejected("declined".into())),
             Err(_) => {
-                let _ = self.actor.send(Inner::PromptGone);
+                let _ = self.actor.put(Inner::PromptGone).await;
                 Err(AgentError::Canceled("nobody answered".into()))
             }
         }
@@ -159,16 +168,13 @@ impl Agent {
         self.ours(&device).await
     }
 
-    fn cancel(&self) {
-        let _ = self.actor.send(Inner::PromptGone);
+    async fn cancel(&self) {
+        let _ = self.actor.put(Inner::PromptGone).await;
     }
 }
 
 /// Serve the agent and register it, again whenever BlueZ restarts.
-pub async fn serve_forever(
-    agent_conn: Connector<Connection, zbus::Error>,
-    actor: UnboundedSender<Inner>,
-) {
+pub async fn serve_forever(agent_conn: Connector<Connection, zbus::Error>, actor: Post<Inner>) {
     loop {
         if let Err(e) = serve(&agent_conn, &actor).await {
             log::debug!("bluetooth agent: {e}");
@@ -198,7 +204,7 @@ async fn register(conn: &zbus::Connection) {
 
 async fn serve(
     agent_conn: &Connector<Connection, zbus::Error>,
-    actor: &UnboundedSender<Inner>,
+    actor: &Post<Inner>,
 ) -> Result<(), Error> {
     let conn = agent_conn.get().await?;
     conn.object_server()

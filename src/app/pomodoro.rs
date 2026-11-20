@@ -111,16 +111,12 @@ impl App {
         if self.caps.notifications_server {
             self.osd(&text, "appointment-soon");
         }
-        self.tx
-            .notifications
-            .tell(notifications::Command::AddLocal {
-                app: "Pomodoro".into(),
-                summary: text,
-                body: String::new(),
-            });
-        self.tx
-            .host
-            .tell(host::Command::PlaySound(host::Sound::Alarm));
+        self.tx.tell(notifications::Command::AddLocal {
+            app: "Pomodoro".into(),
+            summary: text,
+            body: String::new(),
+        });
+        self.tx.tell(host::Command::PlaySound(host::Sound::Alarm));
     }
 
     /// Run the ticker only while it shows anything.

@@ -274,7 +274,7 @@ impl Drives {
                         State::default()
                     }
                 };
-                let _ = found.send(state);
+                let _ = found.put(state).await;
                 ticks.next(Duration::from_secs(30)).await;
             }
         });
@@ -369,7 +369,7 @@ mod tests {
     use super::*;
     use crate::live::Actor;
     use crate::sources::testing::{ctx, reported, settle};
-    use tokio::sync::mpsc::unbounded_channel;
+    use crate::{COMMAND_QUEUE, channel};
 
     fn found(available: bool) -> State {
         State {
@@ -383,9 +383,9 @@ mod tests {
         let (ctx, events) = ctx();
         let me = Drives::start(ctx);
         let tx = me.mailbox.sender();
-        let _ = tx.send(found(true));
-        let _ = tx.send(found(true));
-        let (commands, inbox) = unbounded_channel();
+        let _ = tx.put(found(true)).await;
+        let _ = tx.put(found(true)).await;
+        let (commands, inbox) = channel(COMMAND_QUEUE);
         drop(commands);
         let me = me.event_loop(inbox).await;
         assert!(me.last.available);
@@ -397,9 +397,9 @@ mod tests {
     async fn ejecting_an_unknown_drive_does_nothing() {
         let (ctx, events) = ctx();
         let me = Drives::start(ctx);
-        let (commands, inbox) = unbounded_channel();
-        let _ = commands.send(crate::drives::Command::Eject("/no/such/drive".into()));
-        let _ = commands.send(crate::drives::Command::EjectAll);
+        let (commands, inbox) = channel(COMMAND_QUEUE);
+        let _ = commands.try_send(crate::drives::Command::Eject("/no/such/drive".into()));
+        let _ = commands.try_send(crate::drives::Command::EjectAll);
         drop(commands);
         me.event_loop(inbox).await;
         settle().await;

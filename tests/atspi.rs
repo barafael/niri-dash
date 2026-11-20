@@ -118,7 +118,7 @@ fn inner() {
         problems.push(format!("the switch's action: {}", found["did_action"]));
     }
     // What libatspi did arrived as what a click does.
-    if !matches!(h.inbox.wifi.try_recv(), Ok(wifi::Command::Toggle)) {
+    if !matches!(h.inbox.take::<wifi::Command>(), Ok(wifi::Command::Toggle)) {
         problems.push("the action on the switch didn't toggle Wi-Fi".into());
     }
     let slider = &found["slider"];

@@ -706,7 +706,7 @@ impl Bluetooth {
             ticks.ready().await;
             loop {
                 let result = async { fetch(&c.bus(true).await?).await }.await;
-                let _ = found.send(Inner::Fetched(result.map(Box::new)));
+                let _ = found.put(Inner::Fetched(result.map(Box::new))).await;
                 ticks.next(Duration::from_secs(60)).await;
             }
         });
@@ -718,7 +718,7 @@ impl Bluetooth {
             loop {
                 c.until_visible(true).await;
                 c.until_visible(false).await;
-                let _ = found.send(Inner::Hidden);
+                let _ = found.put(Inner::Hidden).await;
             }
         });
         me
@@ -748,12 +748,14 @@ impl Bluetooth {
                     if let Err(e) = start_discovery(&agent_conn, &adapter).await
                         && e.name() != Some("org.bluez.Error.InProgress")
                     {
-                        let _ = found.send(Inner::ScanFailed(format!("Couldn't scan: {e}")));
+                        let _ = found
+                            .put(Inner::ScanFailed(format!("Couldn't scan: {e}")))
+                            .await;
                         return;
                     }
                     ctx.refresh();
                     tokio::time::sleep(SCAN_FOR).await;
-                    let _ = found.send(Inner::ScanTimeUp(until));
+                    let _ = found.put(Inner::ScanTimeUp(until)).await;
                 });
             }
             Effect::StopScan { adapter } => {
@@ -772,7 +774,7 @@ impl Bluetooth {
                         .await
                         .err()
                         .map(|e: Error| e.to_string());
-                    let _ = found.send(Inner::DeviceDone { address, error });
+                    let _ = found.put(Inner::DeviceDone { address, error }).await;
                 });
             }
             Effect::Pair {
@@ -794,7 +796,7 @@ impl Bluetooth {
                     }
                     .await;
                     // Before connecting: the prompt goes, and the agent stops answering for it.
-                    let _ = found.send(Inner::PairReturned { address });
+                    let _ = found.put(Inner::PairReturned { address }).await;
                     let done = match paired {
                         Ok(()) => set_up_paired(&ctx, &path, &name).await,
                         Err(e) if e.name() == Some("org.bluez.Error.AuthenticationCanceled") => {
@@ -802,7 +804,7 @@ impl Bluetooth {
                         }
                         Err(e) => Err(format!("Couldn't pair with {name}: {e}")),
                     };
-                    let _ = found.send(Inner::PairDone(done));
+                    let _ = found.put(Inner::PairDone(done)).await;
                 });
             }
             Effect::CancelPairing { path } => {
@@ -823,7 +825,7 @@ impl Bluetooth {
             Effect::EndFailure(why) => {
                 self.mailbox.spawn(&self.ctx, async move {
                     tokio::time::sleep(Duration::from_secs(8)).await;
-                    let _ = found.send(Inner::FailureOver(why));
+                    let _ = found.put(Inner::FailureOver(why)).await;
                 });
             }
         }
@@ -1312,13 +1314,17 @@ mod tests {
     async fn the_actor_handles_what_it_finds_before_commands() {
         let (ctx, events) = crate::sources::testing::ctx();
         let me = Bluetooth::start(ctx);
-        let (commands, inbox) = tokio::sync::mpsc::unbounded_channel();
+        let (commands, inbox) = crate::channel(crate::COMMAND_QUEUE);
         // Queued first, but it needs the adapter that's found below.
-        let _ = commands.send(Command::Scan(true));
-        let _ = me.mailbox.sender().send(Inner::Fetched(Ok(Box::new(State {
-            adapter: "/org/bluez/hci0".into(),
-            ..Default::default()
-        }))));
+        let _ = commands.try_send(Command::Scan(true));
+        let _ = me
+            .mailbox
+            .sender()
+            .put(Inner::Fetched(Ok(Box::new(State {
+                adapter: "/org/bluez/hci0".into(),
+                ..Default::default()
+            }))))
+            .await;
         drop(commands);
         let me = me.event_loop(inbox).await;
         assert!(me.core.scan_until.is_some());

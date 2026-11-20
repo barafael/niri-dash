@@ -4,7 +4,7 @@
 
 use crate::layout::{Kind, Layout, Loaded};
 use crate::{Control, Dash, Power as UiPower, Shell as UiShell, Tray as UiTray, WidgetInst, theme};
-use niri_dash_system::{self as sys, Capabilities, Event, IconSrc, Senders, Started, Tell};
+use niri_dash_system::{self as sys, Capabilities, Command, Event, IconSrc, System, Tell};
 use slint::{
     ComponentHandle, Image, Model, ModelRc, Rgba8Pixel, SharedPixelBuffer, Timer, TimerMode,
     VecModel,
@@ -60,18 +60,25 @@ use wayland::{Input, renderer_override, set_platform, start_system, stress_windo
 #[cfg(not(target_arch = "wasm32"))]
 pub use wayland::{run, run_app};
 
-/// A channel into a calloop event loop: the sink to send to, and the source to insert in the loop.
-/// The loop wakes when something is sent.
+/// A channel of [`sys::EVENT_QUEUE`] into a calloop event loop: the sink to send to, and the
+/// source to insert in the loop. The loop wakes when something is sent. `name`: what the queue
+/// holds, for the log.
 #[cfg(not(target_arch = "wasm32"))]
-fn loop_channel<T: Send + 'static>() -> (
+fn loop_channel<T: Send + 'static>(
+    name: &'static str,
+) -> (
     sys::Sink<T>,
     smithay_client_toolkit::reexports::calloop::channel::Channel<T>,
 ) {
-    let (tx, rx) = smithay_client_toolkit::reexports::calloop::channel::channel();
-    (
-        sys::Sink::new(move |value| tx.send(value).map_err(|_| sys::Closed)),
-        rx,
-    )
+    let (tx, rx) =
+        smithay_client_toolkit::reexports::calloop::channel::sync_channel(sys::EVENT_QUEUE);
+    let sink = sys::Sink::new(name, move |value| {
+        tx.try_send(value).map_err(|e| match e {
+            std::sync::mpsc::TrySendError::Full(_) => sys::Refused::Full,
+            std::sync::mpsc::TrySendError::Disconnected(_) => sys::Refused::Closed,
+        })
+    });
+    (sink, rx)
 }
 
 /// Where the dashboard appears: a layer surface or a window on Wayland, a canvas in a browser. It
@@ -167,6 +174,10 @@ fn set_if_changed<T: Clone + 'static>(
     }
 }
 
+/// A list of files handed to the config watcher: only the newest counts, so it is a slot rather
+/// than a queue.
+type Watched = std::sync::Arc<std::sync::Mutex<Option<Vec<PathBuf>>>>;
+
 /// How long a slider the user dragged keeps its value against what the source reports, which
 /// lags behind.
 const TOUCH_HOLD: Duration = Duration::from_millis(1500);
@@ -210,7 +221,7 @@ struct App {
     /// Set in a standalone app: the one widget it shows.
     solo: Option<Kind>,
     /// Where to send the system's commands.
-    tx: Senders,
+    tx: sys::Sink<Command>,
     /// What the system can do here.
     caps: Capabilities,
     /// Whether the dashboard is up, as last told to the system.
@@ -264,9 +275,9 @@ struct App {
     written: RefCell<std::collections::VecDeque<String>>,
     /// config.kdl doesn't parse, so edits aren't saved over it.
     config_broken: Cell<bool>,
-    /// Files the watcher checks for changes (config.kdl and the active theme).
-    /// Tells the config watcher which files to watch.
-    watched: std::sync::mpsc::Sender<Vec<PathBuf>>,
+    /// The files the config watcher checks for changes (config.kdl and the active theme): the
+    /// newest list, until the watcher takes it.
+    watched: Watched,
     /// What the daemon keeps across restarts (do not disturb, the timer, picked colors).
     state: RefCell<crate::state::State>,
     clock: clock::ClockState,
@@ -391,7 +402,7 @@ impl App {
     /// Tell the system whether the dashboard is up: sources only watch and poll while it is.
     fn set_visible(&self, on: bool) {
         self.visible.set(on);
-        self.tx.host.tell(sys::host::Command::Visible(on));
+        self.tx.tell(sys::host::Command::Visible(on));
     }
 
     fn is_open(&self, shell: &impl Surface) -> bool {
@@ -418,7 +429,6 @@ impl App {
         } else if self.solo.is_some() {
             // Already open: bring the window to the front.
             self.tx
-                .windows
                 .tell(sys::windows::Command::FocusPid(crate::own_pid() as i32));
         }
         if edit && self.solo.is_none() {
@@ -496,7 +506,7 @@ impl App {
                 }
                 std::process::exit(0);
             }
-            Control::Inhibit => self.tx.power.tell(sys::power::Command::ToggleInhibit),
+            Control::Inhibit => self.tx.tell(sys::power::Command::ToggleInhibit),
             Control::Dnd => self.toggle_dnd(),
         }
     }
@@ -577,13 +587,13 @@ fn wire(app: &Rc<App>, ui: &Dash) {
 /// The dashboard on `system`. `visible`: it is up already (a snapshot renders without `show`).
 fn build(
     ui: &Dash,
-    system: Started,
+    system: System,
     #[cfg(not(target_arch = "wasm32"))] input: sys::Sink<Input>,
     solo: Option<Kind>,
     config: Loaded,
     visible: bool,
 ) -> Rc<App> {
-    let Started { senders, caps } = system;
+    let System { commands, caps } = system;
     theme::install_bundled();
     ui.set_solo(solo.is_some());
     // Software until the surface says otherwise (`Backend`), as in snapshots and tests.
@@ -610,12 +620,13 @@ fn build(
     ui.set_grid_controls(ModelRc::from(grid_controls.clone()));
     let state = crate::state::load();
     let arrange = arrange::Arrange::new(layout.autolayout.clone());
-    #[cfg_attr(target_arch = "wasm32", allow(unused_variables))]
-    let (watched, watched_paths) = std::sync::mpsc::channel();
+    let watched = Watched::default();
+    #[cfg(not(target_arch = "wasm32"))]
+    let watched_paths = watched.clone();
     let app = Rc::new(App {
         ui: ui.as_weak(),
         solo,
-        tx: senders,
+        tx: commands,
         caps,
         visible: Cell::new(visible),
         layout: RefCell::new(layout),

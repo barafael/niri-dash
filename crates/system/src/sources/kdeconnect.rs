@@ -191,7 +191,7 @@ impl KdeConnect {
                         State::default()
                     }
                 };
-                let _ = found.send(state);
+                let _ = found.put(state).await;
                 ticks.next(Duration::from_secs(60)).await;
             }
         });
@@ -295,7 +295,7 @@ mod tests {
     use crate::Event;
     use crate::live::Actor;
     use crate::sources::testing::{ctx, reported, settle};
-    use tokio::sync::mpsc::unbounded_channel;
+    use crate::{COMMAND_QUEUE, channel};
 
     fn with_phone() -> State {
         State {
@@ -315,9 +315,9 @@ mod tests {
     async fn a_command_cant_overtake_what_was_found() {
         let (ctx, events) = ctx();
         let me = KdeConnect::start(ctx);
-        let (commands, inbox) = unbounded_channel();
-        let _ = commands.send(crate::phones::Command::Ring("p1".into()));
-        let _ = me.mailbox.sender().send(with_phone());
+        let (commands, inbox) = channel(COMMAND_QUEUE);
+        let _ = commands.try_send(crate::phones::Command::Ring("p1".into()));
+        let _ = me.mailbox.sender().put(with_phone()).await;
         drop(commands);
         me.event_loop(inbox).await;
         settle().await;
@@ -333,8 +333,8 @@ mod tests {
     async fn an_unknown_phone_says_so() {
         let (ctx, events) = ctx();
         let me = KdeConnect::start(ctx);
-        let (commands, inbox) = unbounded_channel();
-        let _ = commands.send(crate::phones::Command::Ring("p1".into()));
+        let (commands, inbox) = channel(COMMAND_QUEUE);
+        let _ = commands.try_send(crate::phones::Command::Ring("p1".into()));
         drop(commands);
         me.event_loop(inbox).await;
         settle().await;

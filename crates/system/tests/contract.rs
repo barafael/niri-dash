@@ -7,13 +7,13 @@
 mod inside;
 
 use niri_dash_system::{
-    Event, EventSender, Options, Started, Tell, audio, brightness, host, live, mock, power,
+    Event, EventSender, Options, Refused, System, Tell, audio, brightness, host, live, mock, power,
     session, simulated, wifi,
 };
 use std::collections::BTreeSet;
 use std::time::{Duration, Instant};
 
-type Start = fn(EventSender) -> std::io::Result<Started>;
+type Start = fn(EventSender) -> std::io::Result<System>;
 
 /// The systems to check: all of them, as the dashboard runs them.
 fn systems() -> Vec<(&'static str, Start)> {
@@ -42,8 +42,8 @@ fn applet(e: &Event) -> String {
 /// The applets heard from within `wait` of coming up.
 fn heard_from(start: Start, wait: Duration) -> (niri_dash_system::Capabilities, BTreeSet<String>) {
     let (events, rx) = EventSender::channel();
-    let Started { senders, caps } = start(events).expect("the system starts");
-    senders.host.tell(host::Command::Visible(true));
+    let System { commands, caps } = start(events).expect("the system starts");
+    commands.tell(host::Command::Visible(true));
     let deadline = Instant::now() + wait;
     let mut heard = BTreeSet::new();
     while let Some(left) = deadline.checked_duration_since(Instant::now()) {
@@ -86,21 +86,19 @@ fn a_system_reports_what_its_capabilities_say_it_can() {
 fn a_system_keeps_running_under_commands() {
     for (name, start) in systems() {
         let (events, _rx) = EventSender::channel();
-        let Started { senders, .. } = start(events).expect("the system starts");
-        // Commands are never refused: telling a system that is running never fails or panics,
-        // however often.
+        let System { commands, .. } = start(events).expect("the system starts");
+        // Telling a system that is running never fails or panics, however often.
         for _ in 0..3 {
-            senders.host.tell(host::Command::Refresh);
-            senders.brightness.tell(brightness::Command::Set(0.5));
-            senders.audio.tell(audio::Command::ToggleMute);
-            senders.wifi.tell(wifi::Command::Toggle);
-            senders
-                .power
-                .tell(power::Command::SetProfile(power::Profile::Balanced));
-            senders.session.tell(session::Command::Lock);
+            commands.tell(host::Command::Refresh);
+            commands.tell(brightness::Command::Set(0.5));
+            commands.tell(audio::Command::ToggleMute);
+            commands.tell(wifi::Command::Toggle);
+            commands.tell(power::Command::SetProfile(power::Profile::Balanced));
+            commands.tell(session::Command::Lock);
         }
         std::thread::sleep(Duration::from_millis(100));
-        assert!(!senders.host.is_closed(), "{name} stopped on commands");
+        let still = commands.send(host::Command::Refresh.into());
+        assert_ne!(still, Err(Refused::Closed), "{name} stopped on commands");
     }
 }
 
@@ -108,7 +106,7 @@ fn a_system_keeps_running_under_commands() {
 fn simulated_means_nothing_is_real() {
     for (name, start) in systems() {
         let (events, _rx) = EventSender::channel();
-        let Started { caps, .. } = start(events).expect("the system starts");
+        let System { caps, .. } = start(events).expect("the system starts");
         assert_eq!(caps.simulated, name == "simulated", "{name}");
     }
 }

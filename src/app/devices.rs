@@ -80,26 +80,26 @@ impl App {
 pub(super) fn wire(app: &Rc<App>, ui: &Dash) {
     let d = ui.global::<UiDrives>();
     let a = app.clone();
-    d.on_mount(move |block| a.tx.drives.tell(drives::Command::Mount(block.into())));
+    d.on_mount(move |block| a.tx.tell(drives::Command::Mount(block.into())));
     let a = app.clone();
-    d.on_unmount(move |block| a.tx.drives.tell(drives::Command::Unmount(block.into())));
+    d.on_unmount(move |block| a.tx.tell(drives::Command::Unmount(block.into())));
     let a = app.clone();
-    d.on_eject(move |drive| a.tx.drives.tell(drives::Command::Eject(drive.into())));
+    d.on_eject(move |drive| a.tx.tell(drives::Command::Eject(drive.into())));
     let a = app.clone();
-    d.on_eject_all(move || a.tx.drives.tell(drives::Command::EjectAll));
+    d.on_eject_all(move || a.tx.tell(drives::Command::EjectAll));
     let a = app.clone();
     d.on_open(move |mount| {
-        a.tx.drives.tell(drives::Command::Open(mount.into()));
+        a.tx.tell(drives::Command::Open(mount.into()));
         a.pending.borrow_mut().push(Control::Hide);
     });
 
     let p = ui.global::<UiPhones>();
     let a = app.clone();
-    p.on_ring(move |id| a.tx.phones.tell(phones::Command::Ring(id.into())));
+    p.on_ring(move |id| a.tx.tell(phones::Command::Ring(id.into())));
     let a = app.clone();
     p.on_send(move |id| {
         // The file chooser would be behind the dashboard.
         a.pending.borrow_mut().push(Control::Hide);
-        a.tx.phones.tell(phones::Command::SendFiles(id.into()));
+        a.tx.tell(phones::Command::SendFiles(id.into()));
     });
 }

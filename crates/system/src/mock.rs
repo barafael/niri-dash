@@ -3,160 +3,49 @@
 //! moves, a device connects, a picked color comes back). For screenshots and for trying the
 //! dashboard without the services behind it.
 
-use crate::{
-    Capabilities, Compositor, Event, EventSender, IconSrc, Inboxes, audio, bluetooth, brightness,
-    claude, clipboard, color, drives, host, keyboard, mascot, media, night_light, notifications,
-    perf, phones, power, privacy, session, sleep, tray, weather, wifi, windows,
-};
 #[cfg(not(target_arch = "wasm32"))]
-use crate::{Started, channels};
+use crate::System;
+use crate::{
+    Capabilities, Command, Compositor, Event, EventSender, IconSrc, Receiver, audio, bluetooth,
+    brightness, claude, color, drives, host, keyboard, mascot, media, notifications, perf, phones,
+    power, privacy, sleep, tray, weather, wifi, windows,
+};
 
 /// Start a mock system on a thread of its own, reporting to `events`.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn mock(events: EventSender) -> std::io::Result<Started> {
-    let (senders, inboxes) = channels();
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?;
-    std::thread::Builder::new()
-        .name("niri-dash-mock".into())
-        .spawn(move || rt.block_on(MockSystem::new(Demo::new(), events).event_loop(inboxes)))?;
-    Ok(Started {
-        senders,
+pub fn mock(events: EventSender) -> std::io::Result<System> {
+    let (commands, inbox) = System::inbox();
+    on_thread("niri-dash-mock", move || {
+        MockSystem::new(Demo::new(), events).event_loop(inbox)
+    })?;
+    Ok(System {
+        commands,
         caps: MockSystem::CAPS,
     })
 }
 
-/// A command the mock received, of whichever applet.
-#[derive(Debug)]
-pub enum Received {
-    Host(host::Command),
-    Windows(windows::Command),
-    Keyboard(keyboard::Command),
-    Privacy(privacy::Command),
-    Color(color::Command),
-    Wifi(wifi::Command),
-    Bluetooth(bluetooth::Command),
-    Audio(audio::Command),
-    Brightness(brightness::Command),
-    Notifications(notifications::Command),
-    Tray(tray::Command),
-    Media(media::Command),
-    Power(power::Command),
-    Session(session::Command),
-    Drives(drives::Command),
-    Phones(phones::Command),
-    Weather(weather::Command),
-    NightLight(night_light::Command),
-    Mascot(mascot::Command),
-    Clipboard(clipboard::Command),
-    Sleep(sleep::Command),
-}
-
-impl Inboxes {
-    /// A command that is waiting, of whichever applet, without waiting for one. For a test that
-    /// answers on its own thread, in step with what it does.
-    pub fn try_next(&mut self) -> Option<Received> {
-        if let Ok(c) = self.host.try_recv() {
-            return Some(Received::Host(c));
-        }
-        if let Ok(c) = self.windows.try_recv() {
-            return Some(Received::Windows(c));
-        }
-        if let Ok(c) = self.keyboard.try_recv() {
-            return Some(Received::Keyboard(c));
-        }
-        if let Ok(c) = self.privacy.try_recv() {
-            return Some(Received::Privacy(c));
-        }
-        if let Ok(c) = self.color.try_recv() {
-            return Some(Received::Color(c));
-        }
-        if let Ok(c) = self.wifi.try_recv() {
-            return Some(Received::Wifi(c));
-        }
-        if let Ok(c) = self.bluetooth.try_recv() {
-            return Some(Received::Bluetooth(c));
-        }
-        if let Ok(c) = self.audio.try_recv() {
-            return Some(Received::Audio(c));
-        }
-        if let Ok(c) = self.brightness.try_recv() {
-            return Some(Received::Brightness(c));
-        }
-        if let Ok(c) = self.notifications.try_recv() {
-            return Some(Received::Notifications(c));
-        }
-        if let Ok(c) = self.tray.try_recv() {
-            return Some(Received::Tray(c));
-        }
-        if let Ok(c) = self.media.try_recv() {
-            return Some(Received::Media(c));
-        }
-        if let Ok(c) = self.power.try_recv() {
-            return Some(Received::Power(c));
-        }
-        if let Ok(c) = self.session.try_recv() {
-            return Some(Received::Session(c));
-        }
-        if let Ok(c) = self.drives.try_recv() {
-            return Some(Received::Drives(c));
-        }
-        if let Ok(c) = self.phones.try_recv() {
-            return Some(Received::Phones(c));
-        }
-        if let Ok(c) = self.weather.try_recv() {
-            return Some(Received::Weather(c));
-        }
-        if let Ok(c) = self.night_light.try_recv() {
-            return Some(Received::NightLight(c));
-        }
-        if let Ok(c) = self.mascot.try_recv() {
-            return Some(Received::Mascot(c));
-        }
-        if let Ok(c) = self.clipboard.try_recv() {
-            return Some(Received::Clipboard(c));
-        }
-        if let Ok(c) = self.sleep.try_recv() {
-            return Some(Received::Sleep(c));
-        }
-        None
-    }
-
-    /// The next command of any applet; None when every sender is gone. Each applet's commands
-    /// keep their order; between applets there is none.
-    pub async fn next(&mut self) -> Option<Received> {
-        Some(tokio::select! {
-            Some(c) = self.host.recv() => Received::Host(c),
-            Some(c) = self.windows.recv() => Received::Windows(c),
-            Some(c) = self.keyboard.recv() => Received::Keyboard(c),
-            Some(c) = self.privacy.recv() => Received::Privacy(c),
-            Some(c) = self.color.recv() => Received::Color(c),
-            Some(c) = self.wifi.recv() => Received::Wifi(c),
-            Some(c) = self.bluetooth.recv() => Received::Bluetooth(c),
-            Some(c) = self.audio.recv() => Received::Audio(c),
-            Some(c) = self.brightness.recv() => Received::Brightness(c),
-            Some(c) = self.notifications.recv() => Received::Notifications(c),
-            Some(c) = self.tray.recv() => Received::Tray(c),
-            Some(c) = self.media.recv() => Received::Media(c),
-            Some(c) = self.power.recv() => Received::Power(c),
-            Some(c) = self.session.recv() => Received::Session(c),
-            Some(c) = self.drives.recv() => Received::Drives(c),
-            Some(c) = self.phones.recv() => Received::Phones(c),
-            Some(c) = self.weather.recv() => Received::Weather(c),
-            Some(c) = self.night_light.recv() => Received::NightLight(c),
-            Some(c) = self.mascot.recv() => Received::Mascot(c),
-            Some(c) = self.clipboard.recv() => Received::Clipboard(c),
-            Some(c) = self.sleep.recv() => Received::Sleep(c),
-            else => return None,
-        })
-    }
+/// Run the future `start` makes on a thread of its own, with a runtime of its own: a system that
+/// is one actor.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn on_thread<F: Future>(
+    name: &str,
+    start: impl FnOnce() -> F + Send + 'static,
+) -> std::io::Result<()> {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    std::thread::Builder::new()
+        .name(name.into())
+        .spawn(move || {
+            rt.block_on(start());
+        })?;
+    Ok(())
 }
 
 /// The mock: what every applet shows, and every command it got, in order.
 pub struct MockSystem {
     pub demo: Demo,
-    pub received: Vec<Received>,
+    pub received: Vec<Command>,
     events: EventSender,
 }
 
@@ -173,8 +62,8 @@ impl MockSystem {
     }
 
     /// Answer commands until every sender is gone; hands back what it saw.
-    pub async fn event_loop(mut self, mut inbox: Inboxes) -> Self {
-        while let Some(cmd) = inbox.next().await {
+    pub async fn event_loop(mut self, mut inbox: Receiver<Command>) -> Self {
+        while let Some(cmd) = inbox.recv().await {
             let cmd = self.handle(cmd);
             self.received.push(cmd);
         }
@@ -211,8 +100,8 @@ impl MockSystem {
 
     /// Do what the real system would, as far as the dashboard can tell; returns the command to
     /// keep.
-    pub fn handle(&mut self, cmd: Received) -> Received {
-        use Received as R;
+    pub fn handle(&mut self, cmd: Command) -> Command {
+        use Command as R;
         let d = &mut self.demo;
         match cmd {
             R::Host(host::Command::FocusedOutput { reply }) => {
@@ -739,19 +628,18 @@ fn demo_weather() -> weather::State {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{EventSender, Tell, channels};
+    use crate::{EventSender, System, Tell};
 
-    /// Commands queued before the loop runs, then the senders dropped: the loop answers them
-    /// all and stops. Each applet's commands keep their order; between applets there is none
-    /// (they are separate channels, as with the live system's actors).
+    /// Commands queued before the loop runs, then the sender dropped: the loop answers them all,
+    /// in order, and stops.
     #[tokio::test]
     async fn answers_and_records() {
         let (events_tx, events_rx) = EventSender::channel();
-        let (tx, inbox) = channels();
-        tx.brightness.tell(brightness::Command::Set(0.3));
-        tx.brightness.tell(brightness::Command::Set(0.6));
-        tx.audio.tell(audio::Command::ToggleMute);
-        tx.color.tell(color::Command::Pick);
+        let (tx, inbox) = System::inbox();
+        tx.tell(brightness::Command::Set(0.3));
+        tx.tell(brightness::Command::Set(0.6));
+        tx.tell(audio::Command::ToggleMute);
+        tx.tell(color::Command::Pick);
         drop(tx);
         let mock = MockSystem::new(Demo::new(), events_tx)
             .event_loop(inbox)

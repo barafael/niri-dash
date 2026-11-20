@@ -134,7 +134,7 @@ impl Media {
                     None
                 });
                 let playing = state.as_ref().is_some_and(|s| s.playing);
-                let _ = found.send(state);
+                let _ = found.put(state).await;
                 ticks
                     .next(if playing {
                         Duration::from_secs(1)
@@ -197,8 +197,8 @@ mod tests {
     use super::*;
     use crate::live::Actor;
     use crate::sources::testing::{ctx, reported, settle};
+    use crate::{COMMAND_QUEUE, channel};
     use crate::{Event, media};
-    use tokio::sync::mpsc::unbounded_channel;
 
     fn player(name: &str) -> Option<State> {
         Some(State {
@@ -213,9 +213,9 @@ mod tests {
         let (ctx, events) = ctx();
         let me = Media::start(ctx);
         let found = me.mailbox.sender();
-        let _ = found.send(player("org.mpris.MediaPlayer2.a"));
-        let _ = found.send(player("org.mpris.MediaPlayer2.a"));
-        let (commands, inbox) = unbounded_channel();
+        let _ = found.put(player("org.mpris.MediaPlayer2.a")).await;
+        let _ = found.put(player("org.mpris.MediaPlayer2.a")).await;
+        let (commands, inbox) = channel(COMMAND_QUEUE);
         drop(commands);
         let me = me.event_loop(inbox).await;
         assert_eq!(me.current, "org.mpris.MediaPlayer2.a");
@@ -240,8 +240,8 @@ mod tests {
     async fn the_buttons_say_so_when_there_is_no_player() {
         let (ctx, events) = ctx();
         let me = Media::start(ctx);
-        let (commands, inbox) = unbounded_channel();
-        let _ = commands.send(media::Command::PlayPause);
+        let (commands, inbox) = channel(COMMAND_QUEUE);
+        let _ = commands.try_send(media::Command::PlayPause);
         drop(commands);
         me.event_loop(inbox).await;
         settle().await;
