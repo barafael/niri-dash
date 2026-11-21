@@ -847,7 +847,7 @@ mod tests {
     use super::*;
 
     fn said(compositor: Compositor, kind: Kind) -> Option<(String, bool)> {
-        caveat(Capabilities::for_compositor(compositor, true, true), kind)
+        caveat(Capabilities::for_compositor(compositor, true), kind)
     }
 
     /// Where a widget can't work, it says so the same way, naming the platform.
@@ -869,7 +869,7 @@ mod tests {
             ))
         );
         // Once KWin has let us bind the list.
-        let mut granted = Capabilities::for_compositor(Compositor::Kwin, true, true);
+        let mut granted = Capabilities::for_compositor(Compositor::Kwin, true);
         granted.windows = true;
         assert_eq!(
             caveat(granted, Kind::Windows),

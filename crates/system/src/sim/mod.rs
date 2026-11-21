@@ -183,6 +183,8 @@ pub struct Sim {
     picks: u64,
     /// When a picked color comes back.
     picking: Option<f64>,
+    /// Night light: on, and how warm.
+    night_light: (bool, u32),
 }
 
 impl Sim {
@@ -227,6 +229,7 @@ impl Sim {
             fahrenheit: false,
             picks: 0,
             picking: None,
+            night_light: (false, night_light::NEUTRAL),
             icons,
         }
     }
@@ -403,9 +406,6 @@ impl Sim {
         use Command as R;
         let t = self.t;
         match cmd {
-            R::Host(host::Command::FocusedOutput { reply }) => {
-                let _ = reply.send(None);
-            }
             R::Host(host::Command::Visible(on)) => {
                 self.visible = on;
                 if on {
@@ -488,8 +488,21 @@ impl Sim {
                 }
                 self.fahrenheit = c.fahrenheit;
             }
-            R::NightLight(night_light::Command::Gamma(kelvin)) => tint(kelvin),
-            R::NightLight(night_light::Command::Kwin { .. }) => {}
+            R::NightLight(c) => {
+                let (on, kelvin) = self.night_light;
+                self.night_light = match c {
+                    night_light::Command::Restore { on, kelvin } => (on, kelvin),
+                    night_light::Command::Apply { cmd, .. } => cmd.apply(on, kelvin),
+                };
+                let (on, kelvin) = self.night_light;
+                tint(on.then_some(kelvin));
+                self.send(night_light::Event::State(night_light::State {
+                    available: true,
+                    on,
+                    kelvin,
+                    schedule: None,
+                }));
+            }
             R::Mascot(mascot::Command::Run { id, .. }) => {
                 // Nothing printed: the mascot says something of its own.
                 self.send(mascot::Event::Output { id, stdout: None });

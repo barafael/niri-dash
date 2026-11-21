@@ -24,8 +24,8 @@ fn systems() -> Vec<(&'static str, Start)> {
                 events,
                 Options {
                     feeds: None,
-                    wayland: None,
-                    gamma: false,
+                    wayland: false,
+                    hold_night_light: false,
                 },
             )
         }));

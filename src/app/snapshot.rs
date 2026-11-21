@@ -85,7 +85,7 @@ pub fn run(args: &Args, solo: Option<Kind>) -> Result<()> {
     let system = if args.mock {
         niri_dash_system::mock(events_tx)?
     } else {
-        start_system(events_tx, solo, None)?
+        start_system(events_tx, solo, false)?
     };
     system.commands.tell(host::Command::Visible(true));
     // NIRI_DASH_RENDERER=gpu: draw with FemtoVG/OpenGL ES into an offscreen texture instead.

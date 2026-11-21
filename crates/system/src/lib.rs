@@ -57,7 +57,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 pub use text::{Locale, clean_label, locale, one_line, strip_spinner, unescape_entities};
 pub use tokio::sync::mpsc::{Receiver, Sender, channel};
-pub use tokio::sync::oneshot;
 
 /// How many commands may wait for the system, and for each of its actors. Actors handle a command
 /// without waiting on anything, so a full queue means the system has stopped reading; the UI
@@ -163,8 +162,9 @@ pub enum IconSrc {
     },
 }
 
-/// Which compositor we run under.
+/// Which compositor we run under. More may come, so a `match` on it needs a `_` arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Compositor {
     Niri,
     /// KDE Plasma's KWin.
@@ -282,16 +282,16 @@ impl System {
     }
 }
 
-/// What the system can do here, decided once when it starts.
+/// What the system can do here, decided once when it starts. More may come, so it is made by
+/// [`Capabilities::for_compositor`] rather than written out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Capabilities {
     /// Which compositor this is, for wording ("Plasma's night light"); what the system can do is
     /// in the fields below.
     pub compositor: Compositor,
     /// The compositor offers clipboard access (ext- or wlr-data-control).
     pub clipboard: bool,
-    /// We hold the gamma control (wlr-gamma-control) for night light.
-    pub gamma: bool,
     /// The window list works, and focusing and closing windows. On niri always; on KWin only when
     /// it let us bind its window management (see `niri-dash desktop-entries`).
     pub windows: bool,
@@ -304,7 +304,8 @@ pub struct Capabilities {
     /// We are the notification server, so our own messages land in our history. Where another
     /// one is (Plasma's), they go to it and it pops them up by itself.
     pub notifications_server: bool,
-    /// Night light is the compositor's own rather than our gamma control.
+    /// Night light is the desktop's own, on its schedule (the dashboard can pause it), rather than
+    /// the system's. Either way it goes through the same commands; this is for wording.
     pub night_light_native: bool,
     /// None of it is real (the demo in a browser): opening something by clicking it opens nothing.
     pub simulated: bool,
@@ -318,15 +319,14 @@ impl Capabilities {
         format!("not available on {}", self.compositor)
     }
 
-    /// What `compositor` offers, with clipboard and gamma as found (those are protocols, not
-    /// compositors).
-    pub const fn for_compositor(compositor: Compositor, clipboard: bool, gamma: bool) -> Self {
+    /// What `compositor` offers, with the clipboard as found (that is a protocol, not a
+    /// compositor).
+    pub const fn for_compositor(compositor: Compositor, clipboard: bool) -> Self {
         let niri = matches!(compositor, Compositor::Niri);
         let kwin = matches!(compositor, Compositor::Kwin);
         Self {
             compositor,
             clipboard,
-            gamma,
             windows: niri,
             keyboard_layouts: niri || kwin,
             color_picker: niri || kwin,
@@ -345,7 +345,7 @@ pub enum Feed {
     Perf,
     /// What the compositor reports: windows, keyboard layouts, screencasts.
     Compositor,
-    /// KWin's night light (on Plasma; elsewhere the daemon holds the gamma control).
+    /// The desktop's own night light (KWin's), to show it; the system's own needs no watching.
     NightLight,
     Power,
     Claude,
@@ -383,6 +383,7 @@ macro_rules! events {
 }
 
 events! {
+    Host(host),
     Perf(perf),
     Claude(claude),
     Windows(windows),

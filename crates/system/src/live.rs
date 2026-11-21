@@ -21,17 +21,19 @@ use std::time::Duration;
 pub struct Options {
     /// The feeds to run; None runs all of them (the dashboard).
     pub feeds: Option<&'static [Feed]>,
-    /// The dashboard's Wayland connection, for the clipboard and night light (None: neither, as
-    /// in an offscreen snapshot).
-    pub wayland: Option<Connection>,
-    /// Hold the gamma control for night light (the dashboard does; a standalone app leaves it to
-    /// the dashboard).
-    pub gamma: bool,
+    /// Use Wayland, on a connection of the system's own (to `WAYLAND_DISPLAY`): for the
+    /// clipboard, night light's gamma tables and, on KWin, the window list. false: none of these,
+    /// as in an offscreen snapshot.
+    pub wayland: bool,
+    /// Run night light: warm the screen, or pause the desktop's own. The dashboard does (two
+    /// clients can't both hold the gamma tables, and a pause lasts as long as whoever took it); a
+    /// standalone app leaves it to the dashboard, and only shows it.
+    pub hold_night_light: bool,
 }
 
 /// Start the real system on a thread of its own, reporting to `events`. Returns once it is
-/// running and knows which compositor this is. It stops when every clone of
-/// [`System::commands`] is dropped.
+/// running, knows which compositor this is, and has reported where the dashboard would appear
+/// ([`host::Event::Output`]). It stops when every clone of [`System::commands`] is dropped.
 pub fn live(events: EventSender, opts: Options) -> std::io::Result<System> {
     let (started_tx, started_rx) = std::sync::mpsc::sync_channel(1);
     std::thread::Builder::new()
@@ -46,20 +48,27 @@ pub fn live(events: EventSender, opts: Options) -> std::io::Result<System> {
             };
             let compositor = compositor::detect(rt.handle());
             let ctx = Ctx::new(events.clone(), rt.handle().clone(), compositor);
-            let wayland = match opts.wayland {
-                Some(conn) => match wayland::start(conn, events, opts.gamma, ctx.is_kwin()) {
-                    Ok(w) => Some(w),
-                    Err(e) => {
-                        let _ = started_tx.send(Err(e));
-                        return;
+            // A connection of our own: reading Wayland events on the dashboard's would hand it
+            // its own (a surface's size, frame callbacks) without waking its loop.
+            let conn = opts.wayland.then(Connection::connect_to_env).and_then(|c| {
+                c.map_err(|e| log::warn!("no Wayland for the clipboard and night light: {e}"))
+                    .ok()
+            });
+            let wayland = match conn {
+                Some(conn) => {
+                    match wayland::start(conn, events, opts.hold_night_light, ctx.is_kwin()) {
+                        Ok(w) => Some(w),
+                        Err(e) => {
+                            let _ = started_tx.send(Err(e));
+                            return;
+                        }
                     }
-                },
+                }
                 None => None,
             };
             let mut caps = Capabilities::for_compositor(
                 compositor,
                 wayland.as_ref().is_some_and(|w| w.has_clipboard),
-                wayland.as_ref().is_some_and(|w| w.has_gamma),
             );
             // KWin's window list is there only if it let us bind it.
             caps.windows |= wayland.as_ref().is_some_and(|w| w.has_windows);
@@ -70,8 +79,10 @@ pub fn live(events: EventSender, opts: Options) -> std::io::Result<System> {
             let (commands, inbox) = System::inbox();
             let router = {
                 let _in_runtime = rt.enter();
-                start(&ctx, opts.feeds, wayland)
+                start(&ctx, opts.feeds, opts.hold_night_light, wayland)
             };
+            // Before the dashboard first shows, which lays out for it.
+            compositor::report_output(&ctx);
             if started_tx.send(Ok(System { commands, caps })).is_err() {
                 return;
             }
@@ -93,7 +104,12 @@ fn runtime() -> std::io::Result<tokio::runtime::Runtime> {
 
 /// Start every source (those a standalone app doesn't show get a dormant context: they exist but
 /// stay idle) and the actors in front of them.
-fn start(ctx: &Ctx, feeds: Option<&'static [Feed]>, wayland: Option<wayland::Handles>) -> Router {
+fn start(
+    ctx: &Ctx,
+    feeds: Option<&'static [Feed]>,
+    hold_night_light: bool,
+    wayland: Option<wayland::Handles>,
+) -> Router {
     let wants = |f: Feed| feeds.is_none_or(|fs| fs.contains(&f));
     let feed = |f: Feed| ctx.live_if(wants(f));
     sources::perf::start(feed(Feed::Perf));
@@ -137,10 +153,28 @@ fn start(ctx: &Ctx, feeds: Option<&'static [Feed]>, wayland: Option<wayland::Han
         ))),
         night_light: run({
             let mut mailbox = Mailbox::default();
+            let warmth = if kwin {
+                Warmth::Desktop(sources::kde::NightLight::start(
+                    feed(Feed::NightLight),
+                    &mut mailbox,
+                ))
+            } else {
+                // A standalone app trusts the dashboard to hold the tables.
+                let tables = wayland
+                    .as_ref()
+                    .filter(|w| w.has_gamma)
+                    .map(|w| w.gamma.clone());
+                Warmth::Ours {
+                    available: tables.is_some() || !hold_night_light,
+                    tables,
+                    on: false,
+                    kelvin: night_light::NEUTRAL,
+                }
+            };
             NightLightActor {
-                kwin: kwin
-                    .then(|| sources::kde::NightLight::start(feed(Feed::NightLight), &mut mailbox)),
-                gamma: wayland.as_ref().map(|w| w.gamma.clone()),
+                warmth,
+                hold: hold_night_light,
+                ctx: base(),
                 mailbox,
             }
         }),
@@ -265,13 +299,6 @@ impl Actor for Host {
                 if std::path::Path::new(path).exists() {
                     let _ = sources::spawn_detached("pw-play", &[path]);
                 }
-            }
-            FocusedOutput { reply } => {
-                let compositor = self.ctx.compositor();
-                // niri's socket is synchronous.
-                self.ctx.runtime().spawn_blocking(move || {
-                    let _ = reply.send(compositor::focused_output(compositor));
-                });
             }
         }
     }
@@ -449,12 +476,55 @@ impl Actor for WeatherActor {
     }
 }
 
+/// Night light, whoever warms the screen: the same commands in, the same state out.
 struct NightLightActor {
-    /// KWin's night light; None where it isn't KWin's.
-    kwin: Option<sources::kde::NightLight>,
-    /// The Wayland side's gamma tables; None without Wayland.
-    gamma: Option<Sink<Option<u32>>>,
+    warmth: Warmth,
+    /// Whether this system runs night light (the dashboard's does), or only shows it (a
+    /// standalone app's, whose dashboard runs it).
+    hold: bool,
+    ctx: Ctx,
     mailbox: Mailbox<sources::kde::NightLightInner>,
+}
+
+/// Who warms the screen.
+enum Warmth {
+    /// The system, through the Wayland side's gamma tables (None without them, or where the
+    /// dashboard holds them), as set here.
+    Ours {
+        tables: Option<Sink<Option<u32>>>,
+        available: bool,
+        on: bool,
+        kelvin: u32,
+    },
+    /// The desktop, on its own schedule (KWin's); the system pauses it.
+    Desktop(sources::kde::NightLight),
+}
+
+impl NightLightActor {
+    /// Set our own night light to (`on`, `kelvin`) and report it.
+    fn set(&mut self, to: (bool, u32)) {
+        let Warmth::Ours {
+            tables,
+            available,
+            on,
+            kelvin,
+        } = &mut self.warmth
+        else {
+            return;
+        };
+        (*on, *kelvin) = to;
+        if self.hold
+            && let Some(tables) = tables
+        {
+            let _ = tables.send(on.then_some(*kelvin));
+        }
+        self.ctx.send(night_light::Event::State(night_light::State {
+            available: *available,
+            on: *on,
+            kelvin: *kelvin,
+            schedule: None,
+        }));
+    }
 }
 
 impl Stateful for NightLightActor {
@@ -466,20 +536,33 @@ impl Stateful for NightLightActor {
     }
 
     fn on_inner(&mut self, inner: Self::Inner) {
-        if let Some(kwin) = &mut self.kwin {
+        if let Warmth::Desktop(kwin) = &mut self.warmth {
             kwin.on_inner(inner);
         }
     }
 
     fn on_command(&mut self, cmd: night_light::Command) {
-        match cmd {
-            night_light::Command::Gamma(want) => {
-                if let Some(gamma) = &self.gamma {
-                    let _ = gamma.send(want);
+        use night_light::Command::*;
+        match (cmd, &self.warmth) {
+            (Restore { on, kelvin }, Warmth::Ours { .. }) => self.set((on, kelvin)),
+            // The desktop keeps its own, and a pause ended with whoever held it.
+            (Restore { .. }, Warmth::Desktop(_)) => {}
+            (Apply { cmd, announce }, Warmth::Ours { on, kelvin, .. }) => {
+                let (on, kelvin) = cmd.apply(*on, *kelvin);
+                self.set((on, kelvin));
+                if announce {
+                    let text = if on {
+                        format!("Night light on · {kelvin} K")
+                    } else {
+                        "Night light off".to_string()
+                    };
+                    sources::osd::send(&self.ctx, text, "weather-clear-night".into());
                 }
             }
-            night_light::Command::Kwin { cmd, announce } => {
-                if let Some(kwin) = &self.kwin {
+            // Pausing is for the one who holds night light; a standalone app's dashboard does,
+            // and this one sees it in what the desktop reports.
+            (Apply { cmd, announce }, Warmth::Desktop(kwin)) => {
+                if self.hold {
                     kwin.apply(cmd, announce);
                 }
             }
@@ -543,5 +626,92 @@ impl Actor for SleepActor {
             }
             sleep::Command::KeepAwake(on) => self.awake.set(on),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::night_light::{Cmd, Command::*, State};
+    use crate::sources::testing::{ctx, reported};
+
+    /// Night light that is the system's own, with gamma tables if given.
+    fn ours(ctx: Ctx, hold: bool, tables: Option<Sink<Option<u32>>>) -> NightLightActor {
+        NightLightActor {
+            warmth: Warmth::Ours {
+                available: tables.is_some() || !hold,
+                tables,
+                on: false,
+                kelvin: night_light::NEUTRAL,
+            },
+            hold,
+            ctx,
+            mailbox: Mailbox::default(),
+        }
+    }
+
+    fn states(events: std::sync::mpsc::Receiver<crate::Event>) -> Vec<State> {
+        reported(events)
+            .into_iter()
+            .filter_map(|e| match e {
+                crate::Event::NightLight(night_light::Event::State(s)) => Some(s),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn warmed(rx: &mut Receiver<Option<u32>>) -> Vec<Option<u32>> {
+        std::iter::from_fn(|| rx.try_recv().ok()).collect()
+    }
+
+    /// What was set before a restart comes back, and every command shows in the state reported.
+    #[tokio::test]
+    async fn our_night_light_warms_the_screen_and_says_how() {
+        let (ctx, events) = ctx();
+        let (tables, mut rx) = Sink::queue("gamma", 8);
+        let mut me = ours(ctx, true, Some(tables));
+        me.on_command(Restore {
+            on: true,
+            kelvin: 4000,
+        });
+        let quiet = |cmd| Apply {
+            cmd,
+            announce: false,
+        };
+        me.on_command(quiet(Cmd::Toggle));
+        me.on_command(quiet(Cmd::Kelvin(3000)));
+        assert_eq!(warmed(&mut rx), [Some(4000), None, Some(3000)]);
+        let seen = states(events);
+        let set: Vec<_> = seen.iter().map(|s| (s.on, s.kelvin)).collect();
+        assert_eq!(set, [(true, 4000), (false, 4000), (true, 3000)]);
+        assert!(seen.iter().all(|s| s.available && s.schedule.is_none()));
+    }
+
+    /// A standalone app's system shows what it is told but leaves the screen to the dashboard.
+    #[tokio::test]
+    async fn only_the_one_holding_night_light_warms_the_screen() {
+        let (ctx, events) = ctx();
+        let (tables, mut rx) = Sink::queue("gamma", 8);
+        let mut me = ours(ctx, false, Some(tables));
+        me.on_command(Apply {
+            cmd: Cmd::On,
+            announce: false,
+        });
+        assert_eq!(warmed(&mut rx), []);
+        let seen = states(events);
+        assert_eq!(seen.len(), 1);
+        assert!(seen[0].available && seen[0].on);
+    }
+
+    /// Without gamma tables, the dashboard's night light says it can't.
+    #[tokio::test]
+    async fn without_gamma_tables_night_light_is_unavailable() {
+        let (ctx, events) = ctx();
+        let mut me = ours(ctx, true, None);
+        me.on_command(Restore {
+            on: true,
+            kelvin: 4000,
+        });
+        assert!(!states(events)[0].available);
     }
 }

@@ -24,6 +24,25 @@ All notable changes to niri-dash and niri-dash-system. The format follows
     waits; what can't (the UI thread, a source reporting an event) drops the value and logs a
     warning.
   - Commands of different applets now arrive in the order they were sent.
+- **niri-dash-system: the protocol names no desktop.** Commands go one way and results come
+  back as events; nothing in it says which desktop does the work. Breaking for anyone using the
+  crate:
+  - Night light is one set of commands wherever it runs: `night_light::Command::Apply { cmd,
+    announce }` and `Restore { on, kelvin }` replace `Gamma` and `Kwin`, and
+    `night_light::Event::State(State)` replaces `Event::Kwin(NightLightState)`. The system warms
+    the screen itself or pauses the desktop's own; `State::schedule` is set where it is the
+    desktop's. `NightLightState` is gone, and so is `Capabilities::gamma` (`State::available`
+    says it).
+  - `host::Command::FocusedOutput { reply }` is gone. The system reports where the dashboard
+    would appear as `host::Event::Output(Option<Output>)` (new: `Event::Host`), once before
+    `live()` returns and again when it changes. With it goes the `oneshot` re-export.
+  - `Options::wayland` is a `bool`: the system opens its own Wayland connection, so no
+    smithay-client-toolkit type is in the API. `Options::gamma` is `hold_night_light`.
+  - `Compositor` and `Capabilities` are `#[non_exhaustive]`, so another desktop or capability
+    isn't a breaking change. `Capabilities::for_compositor` takes the compositor and the
+    clipboard.
+  - The mock's `Demo` has a `night_light`.
+- On Plasma, the night-light widget says "the system settings" where it said "System Settings".
 - Resize mode: Shift pulls the opposite side in, so an edge moves the way of the key (Shift+l
   pulls the left side in, Shift+h the right, Shift+j the top, Shift+k the bottom).
 - The Wi-Fi password prompt is one line tall, and the network list gets the rest of the tile.

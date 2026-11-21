@@ -27,8 +27,8 @@ impl System {
             sink,
             Options {
                 feeds: Some(feeds),
-                wayland: None,
-                gamma: false,
+                wayland: false,
+                hold_night_light: false,
             },
         )
         .expect("the live system starts");
@@ -1086,8 +1086,8 @@ fn the_whole_system_under_strain() -> Result<(), String> {
         sink,
         Options {
             feeds: None,
-            wayland: None,
-            gamma: false,
+            wayland: false,
+            hold_night_light: false,
         },
     )
     .map_err(|e| format!("the system doesn't start: {e}"))?;

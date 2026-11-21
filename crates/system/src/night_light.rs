@@ -1,4 +1,7 @@
-//! Night light: our own gamma tables (wlr-gamma-control), or on Plasma, KWin's own night light.
+//! Night light: warmer screen colors. Where the desktop has no night light of its own, the system
+//! warms the screen itself (through wlr-gamma-control on Wayland); where it has one (KWin's), the
+//! system shows that one and pauses it. The dashboard sends the same commands and gets the same
+//! state either way.
 
 /// The temperature that leaves colors as they are.
 pub const NEUTRAL: u32 = 6500;
@@ -126,38 +129,42 @@ fn planckian_locus(t: f64) -> (f64, f64) {
     }
 }
 
-/// KWin's night light as the widget shows it. Its schedule and temperatures are set in System
-/// Settings; the dashboard can only pause it.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct NightLightState {
-    /// KWin can change the screen colors at all.
+/// Night light as the widget shows it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct State {
+    /// The screen's colors can be changed here.
     pub available: bool,
-    /// Turned on in System Settings.
-    pub enabled: bool,
-    /// Paused by someone (us included).
-    pub inhibited: bool,
-    /// We hold a pause.
-    pub paused_by_us: bool,
-    /// The screen's temperature right now, in kelvin.
-    pub temperature: u32,
+    /// Warming the screen, or with a schedule, following it (it may be daytime).
+    pub on: bool,
+    /// The temperature it is set to, in kelvin; with a schedule, the screen's right now.
+    pub kelvin: u32,
+    /// The desktop's own night light, on the schedule and warmth set in its settings: the
+    /// dashboard can pause and resume it but not set its warmth. None where the system's own.
+    pub schedule: Option<Schedule>,
 }
 
-impl NightLightState {
-    /// Whether night light follows its schedule (it may still be daytime).
-    pub fn on(self) -> bool {
-        self.available && self.enabled && !self.inhibited
-    }
+/// A desktop's own night light.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Schedule {
+    /// Turned on in the desktop's settings.
+    pub enabled: bool,
+    /// Paused, by us or another program.
+    pub paused: bool,
+    /// The pause is ours.
+    pub paused_by_us: bool,
 }
 
 #[derive(Debug)]
 pub enum Command {
-    /// Warm the screen to this temperature through the gamma tables; None turns it off.
-    Gamma(Option<u32>),
-    /// Apply `cmd` to KWin's night light; `announce` shows the result on screen.
-    Kwin { cmd: Cmd, announce: bool },
+    /// Do `cmd`. `announce` shows the result on screen (a keybinding has no other feedback);
+    /// what gets in the way shows as a toast either way.
+    Apply { cmd: Cmd, announce: bool },
+    /// How night light was set when the dashboard last ran, to bring back where the setting is
+    /// the system's (a desktop's own keeps its own).
+    Restore { on: bool, kelvin: u32 },
 }
 
 #[derive(Debug)]
 pub enum Event {
-    Kwin(NightLightState),
+    State(State),
 }

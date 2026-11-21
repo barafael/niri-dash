@@ -7,8 +7,8 @@
 use crate::System;
 use crate::{
     Capabilities, Command, Compositor, Event, EventSender, IconSrc, Receiver, audio, bluetooth,
-    brightness, claude, color, drives, host, keyboard, mascot, media, notifications, perf, phones,
-    power, privacy, sleep, tray, weather, wifi, windows,
+    brightness, claude, color, drives, host, keyboard, mascot, media, night_light, notifications,
+    perf, phones, power, privacy, sleep, tray, weather, wifi, windows,
 };
 
 /// Start a mock system on a thread of its own, reporting to `events`.
@@ -51,7 +51,7 @@ pub struct MockSystem {
 
 impl MockSystem {
     /// It runs under niri, with everything there is.
-    pub const CAPS: Capabilities = Capabilities::for_compositor(Compositor::Niri, true, true);
+    pub const CAPS: Capabilities = Capabilities::for_compositor(Compositor::Niri, true);
 
     pub fn new(demo: Demo, events: EventSender) -> Self {
         Self {
@@ -104,11 +104,6 @@ impl MockSystem {
         use Command as R;
         let d = &mut self.demo;
         match cmd {
-            R::Host(host::Command::FocusedOutput { reply }) => {
-                let _ = reply.send(None);
-                // The reply is spent; keep a record of the question.
-                return R::Host(host::Command::Refresh);
-            }
             R::Host(host::Command::Visible(true) | host::Command::Refresh) => self.send_all(),
             R::Color(color::Command::Pick) => {
                 self.send(color::Event::Picked(Some([0.96, 0.62, 0.04])));
@@ -247,6 +242,16 @@ impl MockSystem {
                 // The mock sleeps through nothing: it only says it did.
                 self.send(sleep::Event::Done { mode, error: None });
             }
+            // Night light is the system's own here, as on niri.
+            R::NightLight(ref c) => {
+                let nl = &mut d.night_light;
+                (nl.on, nl.kelvin) = match *c {
+                    night_light::Command::Restore { on, kelvin } => (on, kelvin),
+                    night_light::Command::Apply { cmd, .. } => cmd.apply(nl.on, nl.kelvin),
+                };
+                let state = *nl;
+                self.send(night_light::Event::State(state));
+            }
             _ => {}
         }
         cmd
@@ -273,6 +278,7 @@ pub struct Demo {
     pub drives: drives::State,
     pub phones: phones::State,
     pub weather: weather::State,
+    pub night_light: night_light::State,
 }
 
 impl Default for Demo {
@@ -334,6 +340,12 @@ impl Demo {
                 }],
             },
             weather: demo_weather(),
+            night_light: night_light::State {
+                available: true,
+                on: false,
+                kelvin: 4500,
+                schedule: None,
+            },
         }
     }
 }

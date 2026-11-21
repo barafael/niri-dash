@@ -86,18 +86,12 @@ pub fn start(ctx: Ctx) {
     }
 }
 
-/// The size and scale of the output the dashboard is about to appear on, if the compositor says.
-/// Blocks (niri's socket is synchronous).
-pub fn focused_output(compositor: Compositor) -> Option<(u32, u32, f64)> {
-    if compositor != Compositor::Niri {
-        return None;
-    }
-    match niri::request(niri_ipc::Request::FocusedOutput) {
-        Ok(niri_ipc::Response::FocusedOutput(Some(out))) => {
-            let l = out.logical?;
-            Some((l.width, l.height, l.scale))
-        }
-        _ => None,
+/// Where the dashboard would appear, for a surface to lay out for before its first frame: told
+/// once as the system starts (and then by niri's event stream when it changes). Blocks (niri's
+/// socket is synchronous); elsewhere nobody says, and nothing is sent.
+pub fn report_output(ctx: &Ctx) {
+    if ctx.compositor() == Compositor::Niri {
+        ctx.send(crate::host::Event::Output(niri::focused_output()));
     }
 }
 
@@ -237,7 +231,7 @@ mod tests {
             (Kwin, "KDE Plasma"),
             (Other, "this desktop"),
         ] {
-            let caps = Capabilities::for_compositor(platform, false, false);
+            let caps = Capabilities::for_compositor(platform, false);
             assert_eq!(caps.unavailable(), format!("not available on {name}"));
         }
         let e = Error::Unsupported {

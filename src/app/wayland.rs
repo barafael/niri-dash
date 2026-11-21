@@ -5,7 +5,7 @@ use super::{App, Error, Result, Surface, build, new_ui, stress};
 use crate::layout::{Kind, Layout, Loaded, RendererChoice};
 use crate::shell::{Mode, Shell};
 use crate::{Clipboard as UiClipboard, Control, named_socket_path, socket_path};
-use niri_dash_system::{self as sys, Event, Feed, System, Tell};
+use niri_dash_system::{self as sys, Event, Feed, System};
 use slint::ComponentHandle;
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
 use slint::platform::{Platform, WindowAdapter};
@@ -96,7 +96,10 @@ impl Surface for Shell {
     }
 
     fn prepare(&mut self, app: &App) {
-        app.prepare_for_output(self);
+        if let Some(o) = app.output.get() {
+            Shell::prepare(self, o.width, o.height, o.scale);
+            app.sync_grid();
+        }
     }
 }
 
@@ -136,16 +139,6 @@ impl App {
             Input::Access(request) => self.access_request(request),
         }
         None
-    }
-
-    fn prepare_for_output(&self, shell: &mut Shell) {
-        let (reply, output) = sys::oneshot::channel();
-        self.tx.tell(sys::host::Command::FocusedOutput { reply });
-        // Blocks until the compositor answers, as the first frame needs the size.
-        if let Ok(Some((width, height, scale))) = output.blocking_recv() {
-            shell.prepare(width, height, scale);
-            self.sync_grid();
-        }
     }
 }
 
@@ -246,14 +239,14 @@ pub fn run_app(kind: Kind) -> Result<()> {
 }
 
 /// The real system, with the sources `solo`'s widget needs (all of them for the dashboard),
-/// reporting to `events`; with the clipboard and night light if it gets the Wayland connection.
+/// reporting to `events`; with the clipboard and night light if it may use `wayland`.
 /// Also decides which compositor this is, before anything asks. For development, `NIRI_DASH_MOCK=1`
 /// runs on the mock system's made-up data instead, and `NIRI_DASH_SIM=1` on the web version's
 /// simulated system.
 pub(super) fn start_system(
     events: sys::EventSender,
     solo: Option<Kind>,
-    wayland: Option<Connection>,
+    wayland: bool,
 ) -> Result<System> {
     if std::env::var_os("NIRI_DASH_SIM").is_some() {
         log::info!("running on the simulated system");
@@ -268,8 +261,8 @@ pub(super) fn start_system(
         sys::Options {
             feeds: solo.map(feeds),
             wayland,
-            // Only the dashboard holds the gamma tables; a standalone app asks it.
-            gamma: solo.is_none(),
+            // Only the dashboard runs night light; a standalone app asks it.
+            hold_night_light: solo.is_none(),
         },
     )?)
 }
@@ -327,15 +320,7 @@ fn serve(
     let system = if keep {
         sys::mock(events_tx)?
     } else {
-        // A connection of the system's own: its thread reads Wayland events on it, and on a
-        // shared one that read hands the UI's events (a surface's size, frame callbacks) to the
-        // UI's queue without waking the UI's loop, so a show waited for the next mouse move.
-        let services = Connection::connect_to_env()
-            .map_err(|e| {
-                log::warn!("a second Wayland connection for the clipboard and night light: {e}")
-            })
-            .ok();
-        start_system(events_tx, solo, services)?
+        start_system(events_tx, solo, true)?
     };
     // A stress run's window stays up when the dashboard hides.
     let route = move |a: &App, shell: &mut Shell, c: Control| {
@@ -407,9 +392,11 @@ fn serve(
         control_server(listener, input_tx);
     }
 
+    // What the system reported while starting: where the dashboard would appear, among others.
+    event_loop.dispatch(Some(Duration::ZERO), &mut shell)?;
     if solo.is_none() {
-        // Size the UI for the current output right away, so the first show is already laid out.
-        app.prepare_for_output(&mut shell);
+        // Size the UI for that output right away, so the first show is already laid out.
+        Surface::prepare(&mut shell, &app);
     }
     if let Some(c) = initial {
         // A cold start: the request is as old as the process.

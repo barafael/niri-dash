@@ -4,7 +4,6 @@
 
 use super::Post;
 use super::{Ctx, Dedup, Mailbox, Trigger, keyboard, prop};
-pub use crate::night_light::NightLightState;
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio::sync::{oneshot, watch};
@@ -396,6 +395,43 @@ const NIGHT_LIGHT: (&str, &str, &str) = (
     "org.kde.KWin.NightLight",
 );
 
+/// KWin's night light, as read from its properties. Its schedule and temperatures are set in
+/// System Settings; the dashboard can only pause it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct NightLightState {
+    /// KWin can change the screen colors at all.
+    available: bool,
+    /// Turned on in System Settings.
+    enabled: bool,
+    /// Paused by someone (us included).
+    inhibited: bool,
+    /// We hold a pause.
+    paused_by_us: bool,
+    /// The screen's temperature right now, in kelvin.
+    temperature: u32,
+}
+
+impl NightLightState {
+    /// Whether night light follows its schedule (it may still be daytime).
+    fn on(self) -> bool {
+        self.available && self.enabled && !self.inhibited
+    }
+
+    /// As the widget shows it.
+    fn shown(self) -> crate::night_light::State {
+        crate::night_light::State {
+            available: self.available,
+            on: self.on(),
+            kelvin: self.temperature,
+            schedule: Some(crate::night_light::Schedule {
+                enabled: self.enabled,
+                paused: self.inhibited,
+                paused_by_us: self.paused_by_us,
+            }),
+        }
+    }
+}
+
 fn night_light_state(props: &HashMap<String, OwnedValue>, ours: bool) -> NightLightState {
     let flag = |k| prop::<bool>(props, k).unwrap_or(false);
     NightLightState {
@@ -589,7 +625,8 @@ impl NightLight {
                     |props| self.state(&props),
                 );
                 if self.sent.changed(&state) {
-                    self.ctx.send(crate::night_light::Event::Kwin(state));
+                    self.ctx
+                        .send(crate::night_light::Event::State(state.shown()));
                 }
             }
             NightLightInner::Decide {
@@ -854,10 +891,10 @@ mod tests {
         me.on_inner(NightLightInner::Read(Ok(props(true))));
         let seen = crate::sources::testing::reported(events);
         assert_eq!(seen.len(), 1);
-        let crate::Event::NightLight(crate::night_light::Event::Kwin(s)) = seen[0] else {
+        let crate::Event::NightLight(crate::night_light::Event::State(s)) = seen[0] else {
             panic!("reported something else");
         };
-        assert!(s.paused_by_us);
+        assert!(s.schedule.is_some_and(|s| s.paused_by_us));
     }
 
     /// A pause asked for but not taken yet counts as ours: the switch doesn't flicker.

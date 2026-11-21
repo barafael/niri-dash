@@ -92,7 +92,8 @@ trait Surface {
     fn presented(&self) -> u32;
     fn show(&mut self);
     fn hide(&mut self);
-    /// About to `show`: get the sizes right, if that takes doing first.
+    /// About to `show`: get the sizes right, if that takes doing first (for the output the
+    /// system says the dashboard would appear on, `App::output`).
     fn prepare(&mut self, _: &App) {}
     /// Whether the first frame with everything in it is costly enough to draw once offscreen
     /// before the entrance starts (the GPU renderer: glyphs, textures and caches are made then).
@@ -294,6 +295,9 @@ struct App {
     mixer: audio::Mixer,
     /// The media player's cover as last shown, and its image.
     media_art: RefCell<Option<(IconSrc, Option<Image>)>>,
+    /// Where the dashboard would appear, as the system last said: the surface lays out for it
+    /// before showing ([`Surface::prepare`]).
+    output: Cell<Option<sys::host::Output>>,
 }
 
 impl App {
@@ -515,6 +519,7 @@ impl App {
     fn handle_event(&self, event: Event) -> Option<Control> {
         match event {
             Event::Toast(t) => self.toast(&t),
+            Event::Host(sys::host::Event::Output(o)) => self.output.set(o),
             Event::Perf(sys::perf::Event::Snapshot(s)) => self.show_perf(s),
             Event::Claude(sys::claude::Event::Usage(u)) => self.show_claude_usage(*u),
             Event::Claude(sys::claude::Event::Sessions(s)) => self.show_claude(s),
@@ -537,7 +542,7 @@ impl App {
             Event::Clipboard(sys::clipboard::Event::Copied(clip)) => self.add_clip(clip),
             Event::Privacy(sys::privacy::Event::Casts(casts)) => self.set_casts(casts),
             Event::Privacy(sys::privacy::Event::Usage(usage)) => self.set_privacy_usage(usage),
-            Event::NightLight(sys::night_light::Event::Kwin(s)) => self.show_kwin_night_light(s),
+            Event::NightLight(sys::night_light::Event::State(s)) => self.show_night_light(s),
             Event::Drives(sys::drives::Event::State(s)) => self.show_drives(s),
             Event::Phones(sys::phones::Event::State(s)) => self.show_phones(s),
             Event::Color(sys::color::Event::Picked(rgb)) => return self.color_picked(rgb),
@@ -658,6 +663,7 @@ fn build(
         watched,
         mixer: Default::default(),
         media_art: Default::default(),
+        output: Cell::new(None),
         clock: Default::default(),
         timers: timer::Timers::restored(&state),
         pomo: pomodoro::Pomo::restored(&state),

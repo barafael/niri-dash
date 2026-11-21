@@ -134,6 +134,9 @@ struct Sent {
     windows: Dedup<WindowsState>,
     layouts: Dedup<Option<keyboard::Layouts>>,
     casts: Dedup<Vec<ScreenCast>>,
+    /// The name of the output with the focus, when its size was last looked up.
+    output_name: Option<String>,
+    output: Dedup<Option<crate::host::Output>>,
 }
 
 impl Sent {
@@ -194,9 +197,48 @@ fn stream(ctx: &Ctx, sent: &mut Sent, icons: &mut Icons) -> Result<()> {
         if sent.casts.changed(&casts) {
             ctx.send(crate::privacy::Event::Casts(casts));
         }
+        // Where the dashboard would appear: looked up again when the focus moves to another
+        // output and when the config (which sets sizes and scales) is reloaded. A scale changed
+        // only by `niri msg output` shows with the next of those; the surface takes the right
+        // one from the compositor anyway, a frame later.
+        if let Some(name) = focused_output_name(&state)
+            && (config_changed || sent.output_name.as_ref() != Some(&name))
+        {
+            sent.output_name = Some(name);
+            let output = focused_output();
+            if sent.output.changed(&output) {
+                ctx.send(crate::host::Event::Output(output));
+            }
+        }
         if config_changed {
             ctx.refresh();
         }
+    }
+}
+
+/// The name of the output whose workspace has the focus.
+fn focused_output_name(state: &EventStreamState) -> Option<String> {
+    let ws = state
+        .workspaces
+        .workspaces
+        .values()
+        .find(|w| w.is_focused)?;
+    ws.output.clone()
+}
+
+/// The size and scale of the output with the focus, if niri says. Blocks (the socket is
+/// synchronous).
+pub fn focused_output() -> Option<crate::host::Output> {
+    match request(Request::FocusedOutput) {
+        Ok(Response::FocusedOutput(Some(out))) => {
+            let l = out.logical?;
+            Some(crate::host::Output {
+                width: l.width,
+                height: l.height,
+                scale: l.scale,
+            })
+        }
+        _ => None,
     }
 }
 
@@ -288,4 +330,39 @@ pub fn close(ctx: &Ctx, id: u64) {
     ctx.act("Close window", async move {
         action_async(Action::CloseWindow { id: Some(id) }).await
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use niri_ipc::{Event, Workspace};
+
+    fn workspace(id: u64, output: &str, focused: bool) -> Workspace {
+        Workspace {
+            id,
+            idx: 1,
+            name: None,
+            output: Some(output.into()),
+            is_urgent: false,
+            is_active: true,
+            is_focused: focused,
+            active_window_id: None,
+        }
+    }
+
+    /// The output with the focus is the one whose workspace has it, and it follows the focus.
+    #[test]
+    fn the_focused_output_follows_the_focus() {
+        let mut state = EventStreamState::default();
+        assert_eq!(focused_output_name(&state), None);
+        state.apply(Event::WorkspacesChanged {
+            workspaces: vec![workspace(1, "eDP-1", true), workspace(2, "DP-2", false)],
+        });
+        assert_eq!(focused_output_name(&state).as_deref(), Some("eDP-1"));
+        state.apply(Event::WorkspaceActivated {
+            id: 2,
+            focused: true,
+        });
+        assert_eq!(focused_output_name(&state).as_deref(), Some("DP-2"));
+    }
 }
