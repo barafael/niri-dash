@@ -1,6 +1,6 @@
 import { Theme, Icons } from "../theme.slint";
 import { Nav, NavMode } from "../data.slint";
-import { SilentTextField, Icon, IconButton, TextButton, Switch, Header, Row, Muted, Bar, Ring, NavScope } from "../common.slint";
+import { SegmentColumn, Segment, SilentTextField, Icon, IconButton, TextButton, Switch, Header, Row, Muted, Bar, Ring, NavScope } from "../common.slint";
 
 export enum SleepStatus { idle, armed, paused, fired }
 
@@ -342,24 +342,26 @@ component SleepBody inherits Rectangle {
                     }
                 }
                 if root.list: VerticalLayout {
-                    spacing: 2px;
-                    for m[i] in Sleep.modes: Row {
-                        height: 28px;
-                        selected: i == Sleep.selected;
-                        accessible-label: m.label;
-                        accessible-value: i == Sleep.selected ? "selected" : "";
-                        accessible-description: m.help;
-                        kfocus: root.kf(1 + i, 0);
-                        clicked => { Sleep.select(i); }
-                        Text {
-                            x: 10px;
-                            width: parent.width - 20px;
-                            text: (i == Sleep.selected ? "› " : "   ") + m.label;
-                            vertical-alignment: center;
-                            font-size: Theme.font-body;
-                            font-weight: i == Sleep.selected ? 600 : 400;
-                            color: Theme.text;
-                            overflow: elide;
+                    spacing: 4px;
+                    mode-column := SegmentColumn {
+                        accessible-role: groupbox;
+                        accessible-label: "Mode";
+                        for m[i] in Sleep.modes: Segment {
+                            height: 28px;
+                            vertical: true;
+                            align: left;
+                            border-radius: mode-column.inner;
+                            first: i == 0;
+                            last: i == Sleep.modes.length - 1;
+                            label: m.label;
+                            active: i == Sleep.selected;
+                            accessible-role: radio-button;
+                            accessible-checkable: true;
+                            accessible-checked: i == Sleep.selected;
+                            accessible-value: "";
+                            accessible-description: m.help;
+                            kfocus: root.kf(1 + i, 0);
+                            clicked => { Sleep.select(i); }
                         }
                     }
                     Muted {
@@ -404,17 +406,28 @@ component SleepBody inherits Rectangle {
                         }
                     }
                 }
+                // Arm and Abort in the middle, the minute buttons at the right end (and as much
+                // room kept free at the left, so the middle is the middle).
                 HorizontalLayout {
                     height: 30px;
                     spacing: 6px;
+                    Rectangle {
+                        width: steps.preferred-width;
+                    }
+                    Rectangle {
+                        horizontal-stretch: 1;
+                    }
                     TextButton {
+                        horizontal-stretch: 0;
                         text: Sleep.status == SleepStatus.armed ? "Pause" : Sleep.status == SleepStatus.paused ? "Resume" : "Arm";
+                        widest: "Resume";
                         primary: true;
                         enabled: root.counting || Sleep.can-arm;
                         kfocus: root.kf(root.k-actions, 0);
                         clicked => { root.primary(); }
                     }
                     TextButton {
+                        horizontal-stretch: 0;
                         text: "Abort";
                         enabled: root.counting || Sleep.status == SleepStatus.fired;
                         kfocus: root.kf(root.k-actions, 1);
@@ -423,23 +436,26 @@ component SleepBody inherits Rectangle {
                     Rectangle {
                         horizontal-stretch: 1;
                     }
-                    IconButton {
-                        accessible-label: "Take a minute off";
-                        icon: Icons.minus;
-                        size: 30px;
-                        fill: Theme.card-raised;
-                        enabled: root.counting;
-                        kfocus: root.kf(root.k-actions, 2);
-                        clicked => { Sleep.shorter(); }
-                    }
-                    IconButton {
-                        accessible-label: "Add a minute";
-                        icon: Icons.plus;
-                        size: 30px;
-                        fill: Theme.card-raised;
-                        enabled: root.counting;
-                        kfocus: root.kf(root.k-actions, 3);
-                        clicked => { Sleep.longer(); }
+                    steps := HorizontalLayout {
+                        spacing: 6px;
+                        IconButton {
+                            accessible-label: "Take a minute off";
+                            icon: Icons.minus;
+                            size: 30px;
+                            fill: Theme.card-raised;
+                            enabled: root.counting;
+                            kfocus: root.kf(root.k-actions, 2);
+                            clicked => { Sleep.shorter(); }
+                        }
+                        IconButton {
+                            accessible-label: "Add a minute";
+                            icon: Icons.plus;
+                            size: 30px;
+                            fill: Theme.card-raised;
+                            enabled: root.counting;
+                            kfocus: root.kf(root.k-actions, 3);
+                            clicked => { Sleep.longer(); }
+                        }
                     }
                 }
                 Rectangle {

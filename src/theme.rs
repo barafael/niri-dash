@@ -139,7 +139,6 @@ pub enum ColorRole {
 #[strum(serialize_all = "kebab-case")]
 pub enum StyleVar {
     Radius,
-    RadiusSmall,
     Gap,
     Padding,
     BorderWidth,
@@ -181,7 +180,6 @@ impl StyleValue {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Style {
     pub radius: f32,
-    pub radius_small: f32,
     pub gap: f32,
     pub padding: f32,
     pub border_width: f32,
@@ -201,7 +199,6 @@ impl Style {
         use StyleValue::*;
         match var {
             StyleVar::Radius => Num(self.radius),
-            StyleVar::RadiusSmall => Num(self.radius_small),
             StyleVar::Gap => Num(self.gap),
             StyleVar::Padding => Num(self.padding),
             StyleVar::BorderWidth => Num(self.border_width),
@@ -224,7 +221,6 @@ impl Style {
         let need = |n: Option<f32>| n.ok_or("expected a number");
         match var {
             StyleVar::Radius => self.radius = need(num)?.max(0.0),
-            StyleVar::RadiusSmall => self.radius_small = need(num)?.max(0.0),
             StyleVar::Gap => self.gap = need(num)?.clamp(0.0, 64.0),
             StyleVar::Padding => self.padding = need(num)?.clamp(0.0, 64.0),
             StyleVar::BorderWidth => self.border_width = need(num)?.clamp(0.0, 8.0),
@@ -253,7 +249,6 @@ impl Style {
         // before anything moves; colors, corners and borders then glide.
         Style {
             radius: l(self.radius, b.radius),
-            radius_small: l(self.radius_small, b.radius_small),
             gap: b.gap,
             padding: b.padding,
             border_width: l(self.border_width, b.border_width),
@@ -313,7 +308,6 @@ pub fn current(ui: &Dash) -> Look {
         .expect("one color per role");
     let style = Style {
         radius: t.get_radius(),
-        radius_small: t.get_radius_small(),
         gap: t.get_gap(),
         padding: t.get_pad(),
         border_width: t.get_border_width(),
@@ -359,7 +353,6 @@ pub fn set(ui: &Dash, look: &Look) {
     }
     let s = &look.style;
     t.set_radius(s.radius);
-    t.set_radius_small(s.radius_small);
     t.set_gap(s.gap);
     t.set_pad(s.padding);
     t.set_border_width(s.border_width);
@@ -444,6 +437,12 @@ fn apply_style<'a>(
                     warnings.push(format!("style.{key}: {e}"));
                 }
             }
+            // Inner corners are the outer ones less the padding now, so the space between
+            // them is the same all the way round.
+            Err(_) if key == "radius-small" => warnings.push(
+                "style.radius-small: no longer used; inner corners follow radius and padding"
+                    .into(),
+            ),
             Err(_) => warnings.push(format!("style.{key}: unknown variable")),
         }
     }
@@ -589,11 +588,6 @@ pub const KNOBS: &[Knob] = &[
         steps: &[
             0., 2., 4., 6., 8., 10., 12., 14., 16., 18., 20., 24., 28., 32., 40., 48., 56., 64.,
         ],
-    },
-    Knob {
-        var: StyleVar::RadiusSmall,
-        label: "Inner corner radius",
-        steps: &[0., 2., 4., 6., 8., 10., 12., 14., 16., 20., 24., 28., 32.],
     },
     Knob {
         var: StyleVar::Gap,
@@ -1025,7 +1019,7 @@ mod tests {
         let (a, _) = resolve(DEFAULT_COLORSCHEME, DEFAULT_STYLE);
         let mut b = a.clone();
         b.colors[ColorRole::Card as usize] = Color::from_argb_u8(255, 200, 100, 0);
-        b.style.radius = 40.0;
+        b.style.radius = a.style.radius + 20.0;
         let mut a2 = a.clone();
         a2.colors[ColorRole::Card as usize] = Color::from_argb_u8(255, 0, 0, 0);
         let m = mix(&a2, &b, 0.5);
@@ -1033,7 +1027,7 @@ mod tests {
             m.color(ColorRole::Card),
             Color::from_argb_u8(255, 100, 50, 0)
         );
-        assert_eq!(m.style.radius, 30.0);
+        assert_eq!(m.style.radius, a.style.radius + 10.0);
         assert_eq!(mix(&a2, &b, 1.0), b);
         // What changes the layout is the new look's from the start, so only one frame lays
         // everything out anew.

@@ -1,6 +1,6 @@
 import { Theme, Icons } from "../theme.slint";
 import { Perf, Power, PowerProfile, DeviceKind, Audio, Brightness, NightLight, Session, WidgetOpts } from "../data.slint";
-import { Icon, Ring, Graph, RingKnob, Row, Muted, Switch, ScrollList, RoundGauge, SliderRow, Slider, Header, TextButton, NavScope } from "../common.slint";
+import { SegmentBar, Segment, Icon, Ring, Graph, RingKnob, Row, Muted, Switch, ScrollList, RoundGauge, SliderRow, Slider, Header, TextButton, NavScope } from "../common.slint";
 
 export component SystemMonitorWidget inherits Rectangle {
     in property <bool> round;
@@ -192,45 +192,33 @@ export component BatteryWidget inherits Rectangle {
                     font-weight: Theme.font-weight-display;
                     color: Theme.text;
                 }
-                Muted {
+                if Power.status-text != "": Muted {
                     text: Power.status-text;
                 }
-                Muted {
+                if Power.power-text != "": Muted {
                     text: Power.power-text;
-                    visible: Power.power-text != "";
                 }
             }
         }
-        if root.has-profiles: HorizontalLayout {
-            spacing: 4px;
-            height: 30px;
-            for p[i] in Power.profiles: Rectangle {
-                // Narrow, they share what there is and the names are cut short.
-                min-width: 0px;
-                // The cursor shows on the current one, or on the first with none current.
-                property <bool> kfocus: keys.on && keys.cursor == 0 && (self.current || (i == 0 && !Power.has-profile));
+        if root.has-profiles: profile-bar := SegmentBar {
+            accessible-role: groupbox;
+            accessible-label: "Power profile";
+            height: 32px;
+            for p[i] in Power.profiles: Segment {
+                property <bool> current: Power.has-profile && Power.profile == p;
                 accessible-role: radio-button;
-                accessible-label: p == PowerProfile.power-saver ? "Saver" : p == PowerProfile.balanced ? "Balanced" : "Performance";
                 accessible-checkable: true;
                 accessible-checked: self.current;
-                accessible-item-selected: self.kfocus;
-                accessible-action-default => { Power.set-profile(p); }
-                border-radius: min(self.height / 2, Theme.radius-small);
-                property <bool> current: Power.has-profile && Power.profile == p;
-                background: self.current ? Theme.accent : pt.has-hover ? Theme.hover : Theme.card-raised;
-                animate background { duration: 100ms * Theme.motion; }
-                border-width: self.kfocus ? 2px : 0px;
-                border-color: self.current ? Theme.text : Theme.accent;
-                Text {
-                    text: p == PowerProfile.power-saver ? "Saver" : p == PowerProfile.balanced ? "Balanced" : "Performance";
-                    horizontal-alignment: center;
-                    overflow: elide;
-                    font-size: Theme.font-small;
-                    color: parent.current ? Theme.on-accent : Theme.text;
-                }
-                pt := TouchArea {
-                    clicked => { Power.set-profile(p); }
-                }
+                accessible-value: "";
+                label: p == PowerProfile.power-saver ? "Saver" : p == PowerProfile.balanced ? "Balanced" : "Performance";
+                font-size: Theme.font-small;
+                border-radius: profile-bar.inner;
+                first: i == 0;
+                last: i == Power.profiles.length - 1;
+                active: self.current;
+                // The cursor shows on the current one, or on the first with none current.
+                kfocus: keys.on && keys.cursor == 0 && (self.current || (i == 0 && !Power.has-profile));
+                clicked => { Power.set-profile(p); }
             }
         }
         if root.show-inhibit: Rectangle {
@@ -453,6 +441,8 @@ export component VolumeWidget inherits Rectangle {
         if root.picking && root.can-pick: VerticalLayout {
             spacing: 0px;
             for k[i] in Audio.sinks: Row {
+                first: i == 0;
+                last: i == Audio.sinks.length - 1;
                 accessible-label: k.name;
                 accessible-value: k.default ? "default" : "";
                 height: 30px;
@@ -785,6 +775,9 @@ component SessionButton inherits Rectangle {
     // Under the keyboard cursor; a change of `presses` while it is presses the button.
     in property <bool> kfocus;
     in property <int> presses;
+    // The leftmost and rightmost of a row of them: only the row's outer corners are round.
+    in property <bool> first: true;
+    in property <bool> last: true;
     property <bool> armed;
     callback activated();
     accessible-role: button;
@@ -806,6 +799,10 @@ component SessionButton inherits Rectangle {
         }
     }
     border-radius: Theme.radius-small;
+    border-top-left-radius: root.first ? self.border-radius : 0px;
+    border-bottom-left-radius: root.first ? self.border-radius : 0px;
+    border-top-right-radius: root.last ? self.border-radius : 0px;
+    border-bottom-right-radius: root.last ? self.border-radius : 0px;
     background: armed ? Theme.bad.with-alpha(0.25) : touch.pressed ? Theme.pressed : touch.has-hover || kfocus ? Theme.hover : Theme.card-raised;
     animate background { duration: 100ms * Theme.motion; }
     border-width: kfocus ? 2px : 0px;
@@ -904,41 +901,61 @@ export component SessionWidget inherits Rectangle {
     }
     if !root.round: HorizontalLayout {
         padding: Theme.pad-tight;
-        spacing: 8px;
+        spacing: Theme.seam;
         if root.opts.lock: SessionButton {
             icon: Icons.lock;
+            // Concentric with the card's corners, the padding in.
+            border-radius: max(0px, Theme.radius - Theme.pad-tight);
             label: "Lock";
             kfocus: keys.on && keys.cursor == root.k-lock;
+            first: root.k-lock == 0;
+            last: root.k-lock == root.k-count - 1;
             presses: root.presses;
             activated => { Session.lock(); }
         }
         if root.opts.suspend: SessionButton {
             icon: Icons.moon;
+            // Concentric with the card's corners, the padding in.
+            border-radius: max(0px, Theme.radius - Theme.pad-tight);
             label: "Suspend";
             kfocus: keys.on && keys.cursor == root.k-suspend;
+            first: root.k-suspend == 0;
+            last: root.k-suspend == root.k-count - 1;
             presses: root.presses;
             activated => { Session.suspend(); }
         }
         if root.opts.logout: SessionButton {
             icon: Icons.logout;
+            // Concentric with the card's corners, the padding in.
+            border-radius: max(0px, Theme.radius - Theme.pad-tight);
             label: "Log out";
             kfocus: keys.on && keys.cursor == root.k-logout;
+            first: root.k-logout == 0;
+            last: root.k-logout == root.k-count - 1;
             presses: root.presses;
             activated => { Session.logout(); }
         }
         if root.opts.restart: SessionButton {
             icon: Icons.restart;
+            // Concentric with the card's corners, the padding in.
+            border-radius: max(0px, Theme.radius - Theme.pad-tight);
             label: "Restart";
             danger: root.opts.confirm;
             kfocus: keys.on && keys.cursor == root.k-restart;
+            first: root.k-restart == 0;
+            last: root.k-restart == root.k-count - 1;
             presses: root.presses;
             activated => { Session.reboot(); }
         }
         if root.opts.poweroff: SessionButton {
             icon: Icons.power;
+            // Concentric with the card's corners, the padding in.
+            border-radius: max(0px, Theme.radius - Theme.pad-tight);
             label: "Power off";
             danger: root.opts.confirm;
             kfocus: keys.on && keys.cursor == root.k-poweroff;
+            first: root.k-poweroff == 0;
+            last: root.k-poweroff == root.k-count - 1;
             presses: root.presses;
             activated => { Session.poweroff(); }
         }

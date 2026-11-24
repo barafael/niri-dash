@@ -491,7 +491,7 @@ export component WidgetFrame inherits Rectangle {
         }
     }
 
-    Rectangle {
+    toolbar-box := Rectangle {
         // Toolbar: settings, shape toggle and remove, top right of the card, clear of the handle
         // there; on a round widget at the top of the circle, where the corners are free.
         opacity: root.edit-fade;
@@ -501,7 +501,8 @@ export component WidgetFrame inherits Rectangle {
         // 30px buttons, 2px apart and from the edge.
         width: 2px + 32px * ((root.inst.can-round ? 1 : 0) + (root.inst.has-settings ? 1 : 0) + 2);
         height: 34px;
-        border-radius: min(self.height / 2, Theme.radius-small + 2px);
+        // Concentric with the card's corners, 12px in; its buttons with its own, 2px in.
+        border-radius: min(self.height / 2, max(0px, Theme.radius - 12px));
         background: Theme.panel;
         border-width: 1px;
         border-color: Theme.border;
@@ -514,6 +515,7 @@ export component WidgetFrame inherits Rectangle {
                     accessible-label: "Settings for " + root.inst.title;
                     icon: Icons.settings;
                     size: 30px;
+                    border-radius: max(0px, toolbar-box.border-radius - 2px);
                     tint: root.selected ? Theme.accent : Theme.text;
                     clicked => { root.configure(root.inst.id); }
                 }
@@ -521,6 +523,7 @@ export component WidgetFrame inherits Rectangle {
                     accessible-label: root.is-round ? "Make square" : "Make round";
                     icon: root.is-round ? Icons.square : Icons.circle;
                     size: 30px;
+                    border-radius: max(0px, toolbar-box.border-radius - 2px);
                     enabled: root.editing && !root.inst.pinned;
                     clicked => { root.toggle-shape(root.inst.id); }
                 }
@@ -530,6 +533,7 @@ export component WidgetFrame inherits Rectangle {
                     accessible-checked: root.inst.pinned;
                     icon: Icons.lock;
                     size: 30px;
+                    border-radius: max(0px, toolbar-box.border-radius - 2px);
                     tint: root.inst.pinned ? Theme.accent : Theme.dim;
                     enabled: root.editing;
                     clicked => { root.toggle-pin(root.inst.id); }
@@ -538,6 +542,7 @@ export component WidgetFrame inherits Rectangle {
                     accessible-label: "Remove " + root.inst.title;
                     icon: Icons.close;
                     size: 30px;
+                    border-radius: max(0px, toolbar-box.border-radius - 2px);
                     tint: Theme.bad;
                     enabled: root.editing;
                     clicked => { root.remove(root.inst.id); }

@@ -56,6 +56,9 @@ export component TextButton inherits Rectangle {
     in property <bool> kfocus;
     // Tight padding, for a row of choices that must fit in a narrow widget.
     in property <bool> compact;
+    // The longest text it will show ("Resume" for one that also says "Arm" and "Pause"): it is
+    // that wide whatever it says now, so changing its text doesn't push its neighbours along.
+    in property <string> widest;
     callback clicked();
     // The keyboard cursor came here: its position in the window and height, for a list to scroll to.
     callback revealed(length, length);
@@ -78,7 +81,7 @@ export component TextButton inherits Rectangle {
     height: 30px;
     border-width: kfocus ? 2px : 0px;
     border-color: primary ? Theme.text : Theme.accent;
-    min-width: label.preferred-width + (has-icon ? 44px : compact ? 8px : 24px);
+    min-width: max(label.preferred-width, widest-label.preferred-width) + (has-icon ? 44px : compact ? 8px : 24px);
     border-radius: min(self.height / 2, Theme.radius-small);
     background: danger ? (touch.has-hover ? Theme.bad.with-alpha(0.33) : Theme.bad.with-alpha(0.2))
         : primary ? (touch.pressed ? Theme.accent.darker(0.2) : touch.has-hover ? Theme.accent.brighter(0.1) : Theme.accent)
@@ -103,6 +106,13 @@ export component TextButton inherits Rectangle {
             font-size: Theme.font-body;
             color: root.primary ? Theme.on-accent : root.danger ? Theme.bad : Theme.text;
         }
+    }
+    // Only measured, never drawn.
+    widest-label := Text {
+        accessible-role: none;
+        visible: false;
+        text: root.widest;
+        font-size: Theme.font-body;
     }
     touch := TouchArea {
         enabled: root.enabled;
@@ -655,8 +665,16 @@ export component Row inherits Rectangle {
             self.revealed(self.absolute-position.y, self.height);
         }
     }
+    // Where it sits among the rows that touch it: only the run's outer corners are round, the top
+    // of the first and the bottom of the last. A row on its own is both.
+    in property <bool> first: true;
+    in property <bool> last: true;
     height: 36px;
     border-radius: min(self.height / 2, Theme.radius-small);
+    border-top-left-radius: root.first ? self.border-radius : 0px;
+    border-top-right-radius: root.first ? self.border-radius : 0px;
+    border-bottom-left-radius: root.last ? self.border-radius : 0px;
+    border-bottom-right-radius: root.last ? self.border-radius : 0px;
     background: selected ? Theme.accent-soft : touch.pressed ? Theme.pressed : touch.has-hover || kfocus ? Theme.hover : transparent;
     border-width: kfocus ? 2px : 0px;
     border-color: Theme.accent;
@@ -673,6 +691,85 @@ export component Row inherits Rectangle {
         }
     }
     @children
+}
+
+// A segmented control: a strip of choices, the picked one filled with the accent (the
+// sidebar's tabs, the power profiles). Like any strip of buttons, the pieces are a seam apart,
+// each as tall as the strip, and only the strip's ends are round; a Segment takes `inner` for
+// its corners. No bar behind them: a picked piece inset in one would look shorter than the rest.
+export component SegmentBar inherits Rectangle {
+    in property <length> corner: Theme.radius-small;
+    out property <length> inner: min(self.height / 2, root.corner);
+    height: 32px;
+    HorizontalLayout {
+        spacing: Theme.seam;
+        @children
+    }
+}
+
+// The same, standing: one choice under the other (the sleep timer's modes).
+export component SegmentColumn inherits Rectangle {
+    in property <length> corner: Theme.radius-small;
+    out property <length> inner: root.corner;
+    VerticalLayout {
+        spacing: Theme.seam;
+        @children
+    }
+}
+
+// One choice in a SegmentBar or SegmentColumn. Give it the bar's `inner` corners, and say
+// whether it is the first and the last: only the bar's ends are round.
+export component Segment inherits Rectangle {
+    in property <string> label;
+    in property <bool> active;
+    // Under the keyboard cursor.
+    in property <bool> kfocus;
+    in property <bool> first: true;
+    in property <bool> last: true;
+    // Standing in a column: first and last are the top and the bottom.
+    in property <bool> vertical;
+    in property <length> font-size: Theme.font-body;
+    in property <TextHorizontalAlignment> align: center;
+    callback clicked();
+    // The keyboard cursor came here: its position in the window and height.
+    callback revealed(length, length);
+    // A tab by default; a use that picks a setting says radio-button (and checked).
+    accessible-role: tab;
+    accessible-label: root.label;
+    accessible-value: root.active ? "selected" : "";
+    accessible-item-selected: root.kfocus;
+    accessible-action-default => { root.clicked(); }
+    changed kfocus => {
+        if (self.kfocus) {
+            self.revealed(self.absolute-position.y, self.height);
+        }
+    }
+    horizontal-stretch: 1;
+    min-width: 0px;
+    border-radius: min(self.height / 2, Theme.radius-small);
+    border-top-left-radius: root.first ? self.border-radius : 0px;
+    border-top-right-radius: (root.vertical ? root.first : root.last) ? self.border-radius : 0px;
+    border-bottom-left-radius: (root.vertical ? root.last : root.first) ? self.border-radius : 0px;
+    border-bottom-right-radius: root.last ? self.border-radius : 0px;
+    background: root.active ? Theme.accent : touch.pressed ? Theme.pressed : touch.has-hover ? Theme.hover : Theme.card-raised;
+    animate background { duration: 120ms * Theme.motion; }
+    border-width: root.kfocus ? 2px : 0px;
+    border-color: root.active ? Theme.text : Theme.accent;
+    Text {
+        // Centred, the label may use the whole segment: the bar's tabs are narrow.
+        x: root.align == TextHorizontalAlignment.left ? 10px : 2px;
+        width: parent.width - 2 * self.x;
+        text: root.label;
+        horizontal-alignment: root.align;
+        vertical-alignment: center;
+        font-size: root.font-size;
+        font-weight: 600;
+        color: root.active ? Theme.on-accent : Theme.dim;
+        overflow: elide;
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
 }
 
 // A small heading over a group of rows.

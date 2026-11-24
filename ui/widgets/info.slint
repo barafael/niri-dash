@@ -30,6 +30,8 @@ export component NiriDashInfoWidget inherits Rectangle {
         list := ScrollList {
             vertical-stretch: 1;
             for f[i] in Build.facts: Row {
+                first: i == 0;
+                last: i == Build.facts.length - 1;
                 height: 28px;
                 kfocus: keys.on && keys.cursor == i;
                 accessible-label: f.label;

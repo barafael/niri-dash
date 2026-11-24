@@ -68,6 +68,8 @@ export component KeyboardLayoutWidget inherits Rectangle {
         }
         layout-list := ScrollList {
             for l[i] in KeyboardLayouts.layouts: Row {
+                first: i == 0;
+                last: i == KeyboardLayouts.layouts.length - 1;
                 accessible-label: l.name;
                 accessible-value: i == KeyboardLayouts.current ? "current" : "";
                 selected: i == KeyboardLayouts.current;
@@ -772,6 +774,8 @@ export component ClipboardWidget inherits Rectangle {
                 Row {
                     accessible-label: c.text;
                     accessible-value: c.index == 0 ? "current, " + c.info : c.info;
+                    first: i == 0;
+                    last: i == Clipboard.items.length - 1;
                     height: parent.height - 3px;
                     selected: c.index == 0;
                     kfocus: keys.on && keys.cursor == i && keys.sub == 0;

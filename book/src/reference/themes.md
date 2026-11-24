@@ -65,7 +65,7 @@ colors {
 
 ```kdl
 style {
-    radius 20
+    radius 28
     gap 7
     motion 1.0
     glass #false
@@ -74,8 +74,7 @@ style {
 
 | Key | Default | Meaning |
 |---|---|---|
-| `radius` | `20` | Widget corner radius, in pixels. |
-| `radius-small` | `12` | Corner radius of inner cards and list items. |
+| `radius` | `28` | Widget corner radius, in pixels. |
 | `gap` | `7` | Half the space between widgets. |
 | `padding` | `16` | Space inside widgets. |
 | `border-width` | `1` | Border width. |
@@ -88,6 +87,11 @@ style {
 | `glass` | `#false` | Frosted glass: blurs what is behind the dashboard. |
 | `backdrop-opacity` | `1.0` | How much the screen behind is dimmed, from 0 to 1. |
 | `card-opacity` | `1.0` | How opaque widgets are, from 0 to 1. |
+
+Buttons, list items and the cards inside a widget have `radius` less `padding` for their corners,
+so the two curves run parallel and the padding is as wide round a corner as along the sides
+(the default: 28 − 16 = 12). Anything nested deeper takes its container's corners less the
+padding between them in the same way. With `padding` at or above `radius`, they are square.
 
 The bundled styles are `default`, `compact`, `sharp`, `snappy`, `soft` and `still`.
 

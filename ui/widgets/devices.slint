@@ -251,7 +251,9 @@ export component RemovableDrivesWidget inherits Rectangle {
                         clicked => { Drives.eject(d.path); }
                     }
                 }
-                for v in d.volumes: Row {
+                for v[i] in d.volumes: Row {
+                    first: i == 0;
+                    last: i == d.volumes.length - 1;
                     height: 40px;
                     enabled: !v.locked;
                     kfocus: keys.on && keys.cursor == v.index;
@@ -530,6 +532,8 @@ export component PhoneWidget inherits Rectangle {
         phone-list := ScrollList {
             vertical-stretch: 1;
             for p[i] in Phones.phones: PhoneRow {
+                first: i == 0;
+                last: i == Phones.phones.length - 1;
                 phone: p;
                 buttons: true;
                 kfocus: keys.on && keys.cursor == i;

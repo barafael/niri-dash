@@ -1,6 +1,6 @@
 import { Theme, Icons } from "theme.slint";
 import { WidgetInst, WidgetKind, Shape, PaletteItem, PaletteGroup, Tray, MenuToggle, DrawerTab, PointerShape, Nav, NavMode, NavOp, KeyHint, TipRow } from "data.slint";
-import { TextField, Icon, IconButton, TextButton, Muted, Switch, SectionLabel, TipsLine, KeyFooter } from "common.slint";
+import { TextField, Icon, IconButton, TextButton, Muted, Switch, SectionLabel, TipsLine, KeyFooter, SegmentBar, Segment } from "common.slint";
 import { WidgetFrame, WidgetBody } from "frame.slint";
 import { Palette } from "std-widgets.slint";
 
@@ -28,7 +28,8 @@ component TrayMenu inherits Rectangle {
         y: (Tray.menu-y + self.ph + 10px > root.height ? max(10px, Tray.menu-y - self.ph) : Tray.menu-y) + (1 - self.pop) * 8px;
         width: self.pw;
         height: self.ph;
-        border-radius: Theme.radius-small + 2px;
+        // Its entries, 6px in, have the buttons' corners; the panel's go round them.
+        border-radius: Theme.radius-small + 6px;
         background: Theme.panel;
         border-width: 1px;
         border-color: Theme.border;
@@ -155,7 +156,7 @@ export struct SchemeItem {
 }
 
 // Mirrors theme::StyleVar on the Rust side.
-export enum StyleKey { radius, radius-small, gap, padding, border-width, font-family, font-small, font-body, font-title, font-weight-display, motion, glass, backdrop-opacity, card-opacity }
+export enum StyleKey { radius, gap, padding, border-width, font-family, font-small, font-body, font-title, font-weight-display, motion, glass, backdrop-opacity, card-opacity }
 export enum RowKind { stepper, toggle, text }
 
 // One setting of the widget open in the sidebar; `index` is its position in Rust's list.
@@ -170,31 +171,6 @@ export struct SettingRow {
     can-dec: bool,
     can-inc: bool,
     placeholder: string,
-}
-
-// One segment of the sidebar's tab bar.
-component Segment inherits Rectangle {
-    in property <string> label;
-    in property <bool> active;
-    callback clicked();
-    accessible-role: tab;
-    accessible-label: root.label;
-    accessible-value: root.active ? "selected" : "";
-    accessible-action-default => { root.clicked(); }
-    horizontal-stretch: 1;
-    border-radius: min(self.height / 2, Theme.radius-small);
-    background: self.active ? Theme.accent : tt.has-hover ? Theme.hover : transparent;
-    animate background { duration: 120ms * Theme.motion; }
-    Text {
-        text: root.label;
-        font-size: Theme.font-body;
-        font-weight: 600;
-        color: root.active ? Theme.on-accent : Theme.dim;
-        overflow: elide;
-    }
-    tt := TouchArea {
-        clicked => { root.clicked(); }
-    }
 }
 
 // A category in the widget picker's filter. Picked, its widgets are in the list; the chip fills
@@ -343,7 +319,8 @@ component SettingControl inherits Rectangle {
     VerticalLayout {
         x: sin(root.shake * 1080deg) * root.shaking * 7px;
         padding-left: 12px;
-        padding-right: 4px;
+        // The buttons sit 5px in from the row's edges, as from its top and bottom.
+        padding-right: 5px;
         padding-bottom: root.kind == RowKind.text ? 8px : 0px;
         HorizontalLayout {
             height: 40px;
@@ -361,6 +338,8 @@ component SettingControl inherits Rectangle {
                 y: (parent.height - self.height) / 2;
                 icon: Icons.reset;
                 size: 26px;
+                // Concentric with the row's corners, 5px in.
+                border-radius: max(0px, Theme.radius-small - 5px);
                 tint: Theme.dim;
                 clicked => { root.reset(); }
             }
@@ -375,6 +354,8 @@ component SettingControl inherits Rectangle {
                 icon: Icons.minus;
                 accessible-label: "Decrease " + root.label;
                 size: 30px;
+                // Concentric with the row's corners, 5px in.
+                border-radius: max(0px, Theme.radius-small - 5px);
                 enabled: root.can-dec;
                 clicked => { root.step(-1); }
             }
@@ -392,6 +373,8 @@ component SettingControl inherits Rectangle {
                 icon: Icons.plus;
                 accessible-label: "Increase " + root.label;
                 size: 30px;
+                // Concentric with the row's corners, 5px in.
+                border-radius: max(0px, Theme.radius-small - 5px);
                 enabled: root.can-inc;
                 clicked => { root.step(1); }
             }
@@ -1781,28 +1764,26 @@ export component Dash inherits Window {
             drop-shadow-color: Theme.shadow;
             TouchArea { }
             VerticalLayout {
-                padding: 14px;
+                // A card's padding: what's inside has Theme.radius-small, concentric with it.
+                padding: Theme.pad;
                 spacing: 8px;
                 // One segmented control: the three sections clearly belong together.
-                Rectangle {
+                tab-bar := SegmentBar {
                     accessible-role: tab-list;
                     accessible-label: "Sidebar sections";
                     height: 38px;
-                    border-radius: min(self.height / 2, Theme.radius-small + 3px);
-                    background: Theme.card-raised;
-                    HorizontalLayout {
-                        padding: 3px;
-                        spacing: 3px;
-                        for tab in [
-                            { id: DrawerTab.widgets, label: "Widgets" },
-                            { id: DrawerTab.arrange, label: "Arrange" },
-                            { id: DrawerTab.colors, label: "Colors" },
-                            { id: DrawerTab.style, label: "Style" },
-                        ]: Segment {
-                            label: tab.label;
-                            active: root.drawer-tab == tab.id;
-                            clicked => { root.drawer-tab = tab.id; }
-                        }
+                    for tab[i] in [
+                        { id: DrawerTab.widgets, label: "Widgets" },
+                        { id: DrawerTab.arrange, label: "Arrange" },
+                        { id: DrawerTab.colors, label: "Colors" },
+                        { id: DrawerTab.style, label: "Style" },
+                    ]: Segment {
+                        label: tab.label;
+                        border-radius: tab-bar.inner;
+                        first: i == 0;
+                        last: i == 3;
+                        active: root.drawer-tab == tab.id;
+                        clicked => { root.drawer-tab = tab.id; }
                     }
                 }
                 if root.drawer-tab == DrawerTab.widgets: widgets-side := SideList {
@@ -1924,7 +1905,8 @@ export component Dash inherits Window {
                                     spacing: 10px;
                                     Rectangle {
                                         width: 36px;
-                                        border-radius: min(self.height / 2, Theme.radius-small);
+                                        // Concentric with the entry's corners, 10px in.
+                                        border-radius: min(self.height / 2, max(0px, Theme.radius-small - 10px));
                                         background: Theme.accent-soft;
                                         Icon {
                                             source: Icons.plus;
@@ -2381,7 +2363,7 @@ export component Dash inherits Window {
             width: 244px;
             height: stress-box.preferred-height;
             background: Theme.panel;
-            border-radius: Theme.radius-small + 4px;
+            border-radius: Theme.radius-small + 6px;
             border-width: 1px;
             border-color: Theme.border;
             // Nothing under the panel hears a click on it.

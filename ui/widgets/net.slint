@@ -1,9 +1,9 @@
 import { Theme, Icons } from "../theme.slint";
 import { Wifi, Bluetooth, BtDevice, DeviceKind, Nav, NavMode, NavOp } from "../data.slint";
-import { SilentTextField, Icon, IconButton, TextButton, Switch, Header, Row, SectionLabel, Muted, Empty, SignalBars, ScrollList, RoundFace, NavScope } from "../common.slint";
+import { SegmentBar, Segment, SilentTextField, Icon, IconButton, TextButton, Switch, Header, Row, SectionLabel, Muted, Empty, SignalBars, ScrollList, RoundFace, NavScope } from "../common.slint";
 
 // A row of choices, one of them picked (security type, EAP method).
-component Choice inherits HorizontalLayout {
+component Choice inherits SegmentBar {
     in property <[string]> options;
     in-out property <int> picked;
     // What is being picked ("Security").
@@ -12,17 +12,22 @@ component Choice inherits HorizontalLayout {
     in property <bool> kfocus;
     // The keyboard cursor came here: its position in the window and height.
     callback revealed(length, length);
-    spacing: 4px;
-    for o[i] in root.options: TextButton {
+    accessible-role: groupbox;
+    accessible-label: root.label;
+    for o[i] in root.options: Segment {
+        accessible-role: radio-button;
         accessible-label: root.label + ": " + o;
-        accessible-value: i == root.picked ? "selected" : "";
-        text: o;
-        compact: true;
-        min-width: 0px;
-        primary: i == root.picked;
+        accessible-checkable: true;
+        accessible-checked: i == root.picked;
+        accessible-value: "";
+        label: o;
+        font-size: Theme.font-small;
+        border-radius: root.inner;
+        first: i == 0;
+        last: i == root.options.length - 1;
+        active: i == root.picked;
         kfocus: root.kfocus && i == root.picked;
         revealed(y, h) => { root.revealed(y, h); }
-        horizontal-stretch: 1;
         clicked => { root.picked = i; }
     }
 }
@@ -191,7 +196,8 @@ component WifiPasswordPrompt inherits Rectangle {
             root.edit-tick += 1;
         }
     }
-    border-radius: Theme.radius-small;
+    // What's inside, the padding in, has the buttons' corners; the prompt's go round them.
+    border-radius: Theme.radius-small + Theme.pad-tight;
     background: Theme.card-raised;
     // j/k over the fields and buttons; Enter (or i) types into a field, h/l pick the method.
     keys := NavScope {
@@ -559,6 +565,8 @@ export component WifiWidget inherits Rectangle {
                 vertical-stretch: 1;
                 if Wifi.portal: Row {
                     accessible-label: "Sign in to the network";
+                    // The networks, when there are some, carry on below it.
+                    last: Wifi.networks.length == 0;
                     background: self.hovered || self.kfocus ? Theme.warn.with-alpha(0.3) : Theme.warn.with-alpha(0.18);
                     kfocus: root.kf(0, 0);
                     revealed(y, h) => { net-list.reveal(y, h); }
@@ -587,6 +595,9 @@ export component WifiWidget inherits Rectangle {
                     // Narrow, the row keeps the name and its buttons; narrower, not even the signal.
                     property <bool> narrow: self.width < 150px;
                     property <bool> tiny: self.width < 135px;
+                    first: i == 0 && !Wifi.portal;
+                    // "Hidden network…" always follows.
+                    last: false;
                     accessible-label: n.ssid;
                     accessible-value: (n.active ? "connected, " : n.key == Wifi.connecting ? "joining, " : n.known ? "saved, " : "")
                         + "signal " + n.signal + "%, " + (n.tag != "" ? n.tag : n.secure ? "secured" : "open");
@@ -658,6 +669,9 @@ export component WifiWidget inherits Rectangle {
                 }
                 Row {
                     accessible-label: "Hidden network";
+                    // "No networks found" stands above it when there are none.
+                    first: Wifi.networks.length == 0;
+                    last: Wifi.saved.length == 0;
                     kfocus: root.kf(0, root.k-hidden);
                     revealed(y, h) => { net-list.reveal(y, h); }
                     clicked => {
@@ -684,6 +698,7 @@ export component WifiWidget inherits Rectangle {
                 }
                 if Wifi.saved.length > 0: Row {
                     accessible-label: "Saved networks (" + Wifi.saved.length + ")";
+                    first: false;
                     kfocus: root.kf(0, root.k-hidden + 1);
                     revealed(y, h) => { net-list.reveal(y, h); }
                     clicked => { root.page = 3; }
@@ -929,6 +944,8 @@ export component WifiWidget inherits Rectangle {
             if Wifi.available && root.page == 3: saved-list := ScrollList {
                 vertical-stretch: 1;
                 for s[i] in Wifi.saved: Row {
+                    first: i == 0;
+                    last: i == Wifi.saved.length - 1;
                     accessible-label: s.ssid;
                     accessible-value: (s.ssid == Wifi.ssid ? "connected, " : "") + s.detail;
                     kfocus: root.kf(3, i);
@@ -1066,7 +1083,8 @@ component BtPairingPrompt inherits Rectangle {
             Bluetooth.answer(Bluetooth.prompt.serial, true, root.code);
         }
     }
-    border-radius: Theme.radius-small;
+    // What's inside, the padding in, has the buttons' corners; the prompt's go round them.
+    border-radius: Theme.radius-small + Theme.pad-tight;
     background: Theme.card-raised;
     // j/k (or h/l) over the field and buttons, Enter (or i) types into the field.
     keys := NavScope {
@@ -1249,6 +1267,12 @@ export component BluetoothWidget inherits Rectangle {
     // switches, the name, then the buttons, the main one first.
     property <int> k-near: Bluetooth.devices.length;
     property <int> k-add: root.k-near + Bluetooth.nearby.length;
+    // "Add a device…" touches the row above it, so the two are one run: the last paired device
+    // when nothing nearby is shown (no "Nearby" heading, no hint), else the last nearby one; never
+    // with the line about unnamed devices between.
+    property <bool> devices-meet-add: Bluetooth.devices.length > 0 && !Bluetooth.discovering
+        && Bluetooth.nearby.length == 0 && Bluetooth.unnamed == 0;
+    property <bool> nearby-meets-add: Bluetooth.nearby.length > 0 && Bluetooth.unnamed == 0;
     property <bool> paired: Bluetooth.detail.paired;
     property <bool> known: Bluetooth.detail.address != "";
     property <bool> can-connect: !Bluetooth.detail.connected && root.paired && !Bluetooth.detail.blocked;
@@ -1472,6 +1496,8 @@ export component BluetoothWidget inherits Rectangle {
                 vertical-stretch: 1;
                 for d[i] in Bluetooth.devices: BtRow {
                     device: d;
+                    first: i == 0;
+                    last: i == Bluetooth.devices.length - 1 && !root.devices-meet-add;
                     kfocus: root.kf(0, i) && keys.sub == 0;
                     kfocus-details: root.kf(0, i) && keys.sub == 1;
                     revealed(y, h) => { device-list.reveal(y, h); }
@@ -1496,6 +1522,8 @@ export component BluetoothWidget inherits Rectangle {
                 }
                 for d[i] in Bluetooth.nearby: BtRow {
                     device: d;
+                    first: i == 0;
+                    last: i == Bluetooth.nearby.length - 1 && !root.nearby-meets-add;
                     kfocus: root.kf(0, root.k-near + i) && keys.sub == 0;
                     kfocus-details: root.kf(0, root.k-near + i) && keys.sub == 1;
                     revealed(y, h) => { device-list.reveal(y, h); }
@@ -1513,6 +1541,7 @@ export component BluetoothWidget inherits Rectangle {
                 Row {
                     accessible-label: Bluetooth.discovering ? "Stop looking" : "Add a device";
                     kfocus: root.kf(0, root.k-add);
+                    first: !root.devices-meet-add && !root.nearby-meets-add;
                     revealed(y, h) => { device-list.reveal(y, h); }
                     clicked => { Bluetooth.scan(!Bluetooth.discovering); }
                     HorizontalLayout {

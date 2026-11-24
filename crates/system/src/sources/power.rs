@@ -92,12 +92,9 @@ fn fmt_duration(hours: f64) -> String {
 fn battery(state: &mut State) {
     let (bat, ac) = supplies();
     let plugged = ac.is_some_and(|a| sysfs::<String>(a.join("online")).as_deref() == Some("1"));
+    // No battery: the widget's heading says "On AC power", and there is nothing to add to it.
     let Some(b) = bat else {
-        state.status_text = if plugged {
-            "On AC power".into()
-        } else {
-            String::new()
-        };
+        state.status_text = String::new();
         return;
     };
     let num = |attr: &str| sysfs::<f64>(b.join(attr));

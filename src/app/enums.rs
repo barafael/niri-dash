@@ -68,9 +68,8 @@ pub(super) fn toggle_to_ui(t: tray::Toggle) -> crate::MenuToggle {
 }
 
 /// The Style tab's keys: the theme's style variables, mirrored as a Slint enum.
-const STYLE_KEYS: [(theme::StyleVar, crate::StyleKey); 14] = [
+const STYLE_KEYS: [(theme::StyleVar, crate::StyleKey); 13] = [
     (theme::StyleVar::Radius, crate::StyleKey::Radius),
-    (theme::StyleVar::RadiusSmall, crate::StyleKey::RadiusSmall),
     (theme::StyleVar::Gap, crate::StyleKey::Gap),
     (theme::StyleVar::Padding, crate::StyleKey::Padding),
     (theme::StyleVar::BorderWidth, crate::StyleKey::BorderWidth),

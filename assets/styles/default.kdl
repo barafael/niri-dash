@@ -4,8 +4,8 @@
 // any color scheme. Copy this file to make your own; anything left out keeps the default.
 
 style {
-    radius 20               // widget corner radius (px)
-    radius-small 12         // inner cards and list items
+    radius 28               // widget corner radius (px); what's inside has this less the
+                            // padding, so the space between them is even all round
     gap 7                   // half the space between widgets
     padding 16              // inside widgets
     border-width 1

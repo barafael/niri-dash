@@ -2,7 +2,6 @@
 
 style {
     radius 3
-    radius-small 2
     gap 5
     padding 14
     font-weight-display 400

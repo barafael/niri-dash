@@ -8,6 +8,21 @@ All notable changes to niri-dash and niri-dash-system. The format follows
 
 ### Changed
 
+- **Corners nest evenly.** Whatever sits inside something rounded has its container's corners
+  less the padding between them, so the space between the two curves is the same all the way
+  round. The style variable `radius-small` is gone: inner corners are `radius` less `padding`. A
+  style that still sets it gets a warning and is otherwise read as before. The default `radius`
+  is 28 (was 20), so buttons keep their 12px corners; `soft` is 34 and `compact` 18.
+- **Segmented controls.** The power profiles, the sleep timer's modes (when listed) and the
+  Wi-Fi security and sign-in method choices look like the sidebar's tabs. In a strip of buttons
+  (these, the forecast, the session buttons) only the ends are round, and the pieces are 4px
+  apart. In a list, only the top of the first row and the bottom of the last are round.
+- **Calendar days** have the card's corners scaled down to their size, so they follow the style
+  rather than always being circles.
+- **Sleep timer:** Arm keeps its width as it turns into Pause and Resume, so Abort no longer
+  moves; the two sit in the middle.
+- **Battery widget:** without a battery, "On AC power" is said once, not twice.
+
 - **niri-dash-system: a system is one actor, and no queue is unbounded.** The dashboard sends
   one `Command` enum through one sink and gets one `Event` enum back. Breaking for anyone using
   the crate:

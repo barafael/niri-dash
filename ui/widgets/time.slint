@@ -279,7 +279,10 @@ export component CalendarWidget inherits Rectangle {
                     accessible-item-selected: d.selected && keys.on;
                     width: min(parent.width, parent.height) - 4px;
                     height: self.width;
-                    border-radius: self.width / 2;
+                    // The card's corners scaled down to the day: a miniature of the card, so
+                    // the style shows without every day turning into a dot. A circle only if
+                    // the card is that round.
+                    border-radius: min(self.width / 2, Theme.radius * self.width / max(1px, min(root.width, root.height)));
                     background: d.today ? Theme.accent : d.selected && keys.on ? Theme.hover : transparent;
                     border-width: d.selected && keys.on ? 2px : 0px;
                     border-color: d.today ? Theme.text : Theme.accent;
@@ -411,9 +414,14 @@ export component WeatherWidget inherits Rectangle {
         }
         if root.height > 150px && Weather.days.length > 0: HorizontalLayout {
             height: 58px;
-            spacing: 4px;
-            for d in Weather.days: Rectangle {
+            spacing: Theme.seam;
+            // One strip: only its outer corners are round, the buttons' corners.
+            for d[i] in Weather.days: Rectangle {
                 border-radius: Theme.radius-small;
+                border-top-left-radius: i == 0 ? self.border-radius : 0px;
+                border-bottom-left-radius: i == 0 ? self.border-radius : 0px;
+                border-top-right-radius: i == Weather.days.length - 1 ? self.border-radius : 0px;
+                border-bottom-right-radius: i == Weather.days.length - 1 ? self.border-radius : 0px;
                 background: Theme.subtle;
                 VerticalLayout {
                     alignment: center;

@@ -40,6 +40,9 @@ export component WindowsWidget inherits Rectangle {
                     property <bool> narrow: self.width < 240px;
                     accessible-label: w.title != "" ? w.title : w.app != "" ? w.app : "Window";
                     accessible-value: w.focused ? "focused" : w.urgent ? "urgent" : "";
+                    // Each workspace's windows are a run of their own, under its heading.
+                    first: i == 0 || Windows.items[i - 1].header;
+                    last: i == Windows.items.length - 1 || Windows.items[i + 1].header;
                     height: parent.height - 2px;
                     width: parent.width;
                     selected: w.focused;
@@ -325,6 +328,8 @@ export component NotificationsWidget inherits Rectangle {
                             accessible-label: "Dismiss " + (n.summary != "" ? n.summary : "notification");
                             icon: Icons.close;
                             size: 24px;
+                            // In the notification's corner, the padding in.
+                            border-radius: max(0px, Theme.radius-small - Theme.pad-tight);
                             tint: Theme.faint;
                             kfocus: keys.on && keys.cursor == root.choices + i && keys.sub == 1;
                             changed kfocus => {
@@ -433,7 +438,8 @@ export component TrayWidget inherits Rectangle {
         y: root.inset + floor(i / root.per-row) * root.slot;
         width: root.slot;
         height: root.slot;
-        border-radius: Theme.radius-small;
+        // Concentric with the card's corners, `inset` in.
+        border-radius: root.round ? Theme.radius-small : max(0px, Theme.radius - root.inset);
         property <bool> kfocus: keys.on && keys.cursor == i;
         background: ta.pressed ? Theme.pressed : ta.has-hover || self.kfocus ? Theme.hover : transparent;
         animate background { duration: 100ms * Theme.motion; }
@@ -536,12 +542,19 @@ export component MediaWidget inherits Rectangle {
         padding-left: Theme.pad-tight;
         padding-right: Theme.pad-tight;
         spacing: 10px;
-        if Media.has-art: Image {
+        // Concentric with the card's corners, the padding in.
+        if Media.has-art: Rectangle {
             y: (parent.height - self.height) / 2;
             width: min(48px, root.height - 2 * Theme.pad-tight);
             height: self.width;
-            source: Media.art;
-            image-fit: cover;
+            border-radius: max(0px, Theme.radius - Theme.pad-tight);
+            clip: true;
+            Image {
+                width: 100%;
+                height: 100%;
+                source: Media.art;
+                image-fit: cover;
+            }
         }
         VerticalLayout {
             alignment: center;
@@ -596,10 +609,17 @@ export component MediaWidget inherits Rectangle {
         HorizontalLayout {
             spacing: 12px;
             vertical-stretch: 1;
-            if Media.has-art: Image {
+            // In the card's top left corner: concentric with it, the padding in.
+            if Media.has-art: Rectangle {
                 width: max(0px, root.height - 2 * Theme.pad-tight - 46px);
-                source: Media.art;
-                image-fit: cover;
+                border-radius: max(0px, Theme.radius - Theme.pad-tight);
+                clip: true;
+                Image {
+                    width: 100%;
+                    height: 100%;
+                    source: Media.art;
+                    image-fit: cover;
+                }
             }
             VerticalLayout {
                 horizontal-stretch: 1;
@@ -738,6 +758,8 @@ export component ClaudeSessionsWidget inherits Rectangle {
                 Row {
                     accessible-label: s.title != "" ? s.title : "Claude session";
                     accessible-value: s.place + " · " + s.status;
+                    first: i == 0;
+                    last: i == Claude.sessions.length - 1;
                     height: parent.height - 2px;
                     enabled: s.has-window;
                     kfocus: keys.on && keys.cursor == i;

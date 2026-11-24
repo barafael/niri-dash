@@ -313,11 +313,16 @@ export component ClaudeUsageWidget inherits Rectangle {
             value-color: Theme.dim;
         }
         if ClaudeUsage.window-active && root.height > 200px: HorizontalLayout {
-            spacing: 4px;
+            spacing: Theme.seam;
             height: 18px;
-            for m in ClaudeUsage.models: Rectangle {
+            // One bar: only its outer corners are round.
+            for m[i] in ClaudeUsage.models: Rectangle {
                 horizontal-stretch: max(0.15, m.share);
                 border-radius: min(4px, Theme.radius-small);
+                border-top-left-radius: i == 0 ? self.border-radius : 0px;
+                border-bottom-left-radius: i == 0 ? self.border-radius : 0px;
+                border-top-right-radius: i == ClaudeUsage.models.length - 1 ? self.border-radius : 0px;
+                border-bottom-right-radius: i == ClaudeUsage.models.length - 1 ? self.border-radius : 0px;
                 background: Theme.card-raised;
                 Text {
                     text: m.name + " " + Math.round(m.share * 100) + "%";
