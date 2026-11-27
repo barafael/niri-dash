@@ -168,6 +168,16 @@ impl<'a> Ctx<'a> {
             does,
             copy: None,
         });
+        // An icon or a button says nothing a screen reader can read out: it is named after what
+        // it does (a button with words gets those from `button`).
+        let el = match el.tag() {
+            "img" | "button" if !does.is_empty() => {
+                el.attr("aria-label", capital(does)).attr("role", "button")
+            }
+            // A row: a button named by what it says.
+            "div" => el.attr("role", "button"),
+            _ => el,
+        };
         let el = el.on_click(run::<ClickEvent>(self.hd, a));
         self.finish(el, here)
     }
@@ -180,7 +190,14 @@ impl<'a> Ctx<'a> {
         f: impl Fn(&mut Dash, &mut Context<Dash>) + 'static,
     ) -> Div {
         let label: SharedString = label.into();
-        self.press(Button().child(label.to_string()), does, f)
+        let el = self.press(Button().child(label.to_string()), does, f);
+        // Words name it; a symbol (‹ ›, −1) doesn't, what it does does.
+        let name = if label.chars().filter(|c| c.is_alphabetic()).count() > 1 {
+            label.to_string()
+        } else {
+            capital(does)
+        };
+        el.attr("aria-label", name)
     }
 
     /// A row that is only to be read, still a place for the cursor (to scroll to, to copy).
@@ -218,6 +235,7 @@ impl<'a> Ctx<'a> {
     /// Blender's number slider over 0..100 %, as a stop that `h` `l` and the digits change.
     pub fn slider(
         &mut self,
+        label: &str,
         key: impl Into<String>,
         value: f32,
         f: impl Fn(&mut Dash, f32, &mut Context<Dash>) + 'static,
@@ -242,6 +260,7 @@ impl<'a> Ctx<'a> {
             .max(100.0)
             .step(1.0)
             .precision(0)
+            .attr("aria-label", label.to_string())
             .value(format!("{:.0}", value * 100.0))
             .class("grow")
             .on_change(move |e: &ChangeEvent, _: &mut Window, app: &mut App| {
@@ -259,15 +278,16 @@ impl<'a> Ctx<'a> {
     /// Enter and a click do `f`.
     pub fn knob(
         &mut self,
+        label: &str,
         el: Div,
-        key: impl Into<String>,
         value: f32,
         set: impl Fn(&mut Dash, f32, &mut Context<Dash>) + 'static,
         does: &'static str,
         f: impl Fn(&mut Dash, &mut Context<Dash>) + 'static,
     ) -> Div {
         let here = self.here();
-        let key: String = key.into();
+        // What the user turned it to is kept under its name.
+        let key = label.to_lowercase();
         let value = self.d.held(&key, value);
         let held = key.clone();
         let set: Set = Rc::new(move |d: &mut Dash, v: f32, cx: &mut Context<Dash>| {
@@ -283,6 +303,12 @@ impl<'a> Ctx<'a> {
             copy: None,
         });
         let hd = self.hd;
+        let el = el
+            .attr("role", "slider")
+            .attr("aria-label", label.to_string())
+            .attr("aria-valuenow", format!("{:.0}", value * 100.0))
+            .attr("aria-valuemin", "0")
+            .attr("aria-valuemax", "100");
         let el = el.on_click(run::<ClickEvent>(hd, a)).on_scroll_wheel(
             move |e: &ScrollWheelEvent, _: &mut Window, app: &mut App| {
                 let step = if e.delta > 0.0 {
@@ -333,7 +359,8 @@ impl<'a> Ctx<'a> {
     /// The icon `name` in the color of `role`.
     pub fn icon(&self, name: &str, role: &str) -> Div {
         match crate::icons::icon(name, self.d.look.color(role)) {
-            Some(pic) => img().class("icon").image(pic),
+            // Decorative unless given a name (`alt`): what it stands for is said next to it.
+            Some(pic) => img().class("icon").attr("alt", "").image(pic),
             None => div().class("icon"),
         }
     }
@@ -342,6 +369,14 @@ impl<'a> Ctx<'a> {
     pub fn icon_l(&self, name: &str, role: &str) -> Div {
         self.icon(name, role).class("l")
     }
+}
+
+/// "mute it" → "Mute it".
+fn capital(s: &str) -> String {
+    let mut c = s.chars();
+    c.next()
+        .map(|f| f.to_uppercase().chain(c).collect())
+        .unwrap_or_default()
 }
 
 /// The id of stop `i` of widget `id`, drawn blown up ("x") or in place ("s").

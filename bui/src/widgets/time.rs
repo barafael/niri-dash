@@ -568,7 +568,7 @@ pub fn sleep(c: &mut Ctx) -> Div {
         .class("row small")
         .child(
             c.press(
-                div()
+                label()
                     .class("row")
                     .child(Checkbox().checked(dry))
                     .child("Dry run"),
@@ -578,7 +578,7 @@ pub fn sleep(c: &mut Ctx) -> Div {
         )
         .child(
             c.press(
-                div()
+                label()
                     .class("row")
                     .child(Checkbox().checked(awake))
                     .child("Screen on"),

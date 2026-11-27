@@ -31,6 +31,7 @@ mod widget_settings;
 mod zones;
 
 // This version's own.
+mod a11y;
 mod app;
 mod cli;
 mod dash;

@@ -872,14 +872,19 @@ pub fn settings_card(d: &Dash, hd: WeakEntity<Dash>) -> Option<Div> {
                         .class("title grow")
                         .child(format!("{} settings", info.title)),
                 )
-                .child(Button().child("✕").on_click(run::<ClickEvent>(
-                    hd,
-                    act(|d: &mut Dash, _| {
-                        if let Some(e) = &mut d.edit {
-                            e.settings = false;
-                        }
-                    }),
-                ))),
+                .child(
+                    Button()
+                        .child("✕")
+                        .attr("aria-label", "Close the settings")
+                        .on_click(run::<ClickEvent>(
+                            hd,
+                            act(|d: &mut Dash, _| {
+                                if let Some(e) = &mut d.edit {
+                                    e.settings = false;
+                                }
+                            }),
+                        )),
+                ),
         );
     if info.settings.is_empty() {
         card = card.child(div().class("empty").child("Nothing to set"));

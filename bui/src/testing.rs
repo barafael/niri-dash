@@ -65,6 +65,7 @@ impl Harness {
                 dash,
                 window: None,
                 solo: None,
+                a11y: None,
             });
         });
         let dash = app.global::<Shell>().dash;
@@ -808,6 +809,75 @@ mod tests {
         assert_eq!((w.col, w.row, w.w, w.h), (6, 3, 4, 2));
         assert!(h.config().contains("weather"));
         assert_eq!(h.dash().edit.as_ref().map(|e| e.picked), Some(w.id));
+    }
+
+    #[test]
+    fn a_screen_reader_gets_the_tree_and_then_what_changed() {
+        let mut h = Harness::new(Some(
+            "layout {\n    clock col=0 row=0 width=4 height=2\n    volume col=4 row=0 width=3 height=2\n}\n",
+        ));
+        let tree = h.app.accessibility_tree(h.win);
+        let mut sent = std::collections::HashMap::new();
+        let first = crate::a11y::diff(&mut sent, &tree, "niri-dash");
+        assert!(first.tree.is_some(), "the whole tree, with its root, first");
+        assert_eq!(first.nodes.len(), tree.nodes.len());
+        let named = |u: &accesskit::TreeUpdate, role: accesskit::Role, name: &str| {
+            u.nodes
+                .iter()
+                .any(|(_, n)| n.role() == role && n.label().is_some_and(|l| l.contains(name)))
+        };
+        assert!(
+            named(&first, accesskit::Role::Button, "Edit"),
+            "the top bar's buttons are there"
+        );
+        assert!(
+            first
+                .nodes
+                .iter()
+                .any(|(_, n)| n.role() == accesskit::Role::Slider),
+            "the volume slider is a slider"
+        );
+        let again = crate::a11y::diff(&mut sent, &h.app.accessibility_tree(h.win), "niri-dash");
+        assert!(
+            again.tree.is_none() && again.nodes.is_empty(),
+            "nothing changed, nothing sent"
+        );
+        h.keys("C-e");
+        let edit = crate::a11y::diff(&mut sent, &h.app.accessibility_tree(h.win), "niri-dash");
+        assert!(
+            named(&edit, accesskit::Role::Button, "Done"),
+            "edit mode's Done button came"
+        );
+    }
+
+    #[test]
+    fn a_screen_reader_s_click_does_what_the_mouse_s_does() {
+        let mut h = Harness::new(Some(
+            "layout {\n    media col=0 row=0 width=5 height=2\n}\n",
+        ));
+        let tree = h.app.accessibility_tree(h.win);
+        let play = tree
+            .find(blenderui::a11y::Role::Button, "Play or pause")
+            .expect("the play button, named");
+        assert!(h.app.accessibility_action(
+            h.win,
+            play.id,
+            blenderui::a11y::Action::Click,
+            None,
+            0.0
+        ));
+        h.pump();
+        assert!(h.took("PlayPause"), "{:?}", h.sent);
+        let edit = h
+            .app
+            .accessibility_tree(h.win)
+            .find(blenderui::a11y::Role::Button, "Edit")
+            .map(|n| n.id)
+            .expect("Edit");
+        h.app
+            .accessibility_action(h.win, edit, blenderui::a11y::Action::Click, None, 0.0);
+        h.pump();
+        assert!(h.dash().edit.is_some());
     }
 
     #[test]

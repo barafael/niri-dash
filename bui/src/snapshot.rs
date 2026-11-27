@@ -75,6 +75,7 @@ pub fn run(args: &Args) -> Result<(), String> {
             dash,
             window: None,
             solo,
+            a11y: None,
         });
     });
     std::thread::sleep(Duration::from_millis(args.wait));

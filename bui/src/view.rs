@@ -11,16 +11,28 @@ use blenderui::prelude::*;
 /// The window's root view: it only shows the [`Dash`], which outlives it.
 pub struct DashView {
     dash: Entity<Dash>,
+    /// The window has its name (what a screen reader and the window list call it).
+    titled: bool,
 }
 
 impl DashView {
     pub fn new(dash: Entity<Dash>) -> Self {
-        Self { dash }
+        Self {
+            dash,
+            titled: false,
+        }
     }
 }
 
 impl Render for DashView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if !std::mem::replace(&mut self.titled, true) {
+            let title = match &self.dash.read(cx).solo {
+                Some(p) => format!("{} (niri-dash)", p.kind.info().title),
+                None => "niri-dash".into(),
+            };
+            window.set_window_title(&title);
+        }
         let vs = window.viewport_size();
         let (w, h) = (vs.width.0, vs.height.0);
         if self.dash.read(cx).size != (w, h) {
@@ -265,7 +277,11 @@ fn pad(d: &Dash) -> f32 {
 /// A widget's Blender panel: the header with its name, and its body.
 fn card(d: &Dash, p: &crate::layout::Placed, body: Div, c: &Ctx) -> Div {
     let round = c.round;
-    let mut el = div().class(if round { "card round" } else { "card" });
+    // A region a screen reader names after the widget.
+    let mut el = div()
+        .class(if round { "card round" } else { "card" })
+        .attr("role", "region")
+        .attr("aria-label", p.kind.info().title);
     if p.pinned {
         el = el.class("pinned");
     }
@@ -348,6 +364,7 @@ fn topbar(d: &Dash, hd: WeakEntity<Dash>, shown: usize) -> Div {
     .child(
         Button()
             .child("✕")
+            .attr("aria-label", "Close")
             .on_click(run::<ClickEvent>(hd, act(|d: &mut Dash, _| d.hide()))),
     )
 }

@@ -23,6 +23,8 @@ pub struct Shell {
     pub dash: Entity<Dash>,
     pub window: Option<WindowId>,
     pub solo: Option<Kind>,
+    /// What screen readers are served by (the real app only, not tests or snapshots).
+    pub a11y: Option<crate::a11y::Bridge>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -324,6 +326,7 @@ fn ticker(ui: UiSender) {
                             cx.notify();
                         }
                     });
+                    crate::a11y::update(app);
                 });
                 if !alive {
                     return;
@@ -404,6 +407,12 @@ pub fn run(first: Option<Control>, solo: Option<Kind>) -> Result<(), Error> {
             dash,
             window: None,
             solo,
+            a11y: Some(crate::a11y::Bridge::start(ui.clone())),
+        });
+        cx.on_window_activation(|id, active, app| {
+            if app.global::<Shell>().window == Some(id) {
+                crate::a11y::window_focus(app, active);
+            }
         });
         cx.on_window_closed(|id, app| {
             log::info!("window {id:?} closed");

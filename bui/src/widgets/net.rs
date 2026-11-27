@@ -91,7 +91,7 @@ pub fn wifi(c: &mut Ctx) -> Div {
         .class("row")
         .child(
             c.press(
-                div()
+                label()
                     .class("row")
                     .child(Checkbox().checked(s.enabled))
                     .child("Wi-Fi"),
@@ -216,7 +216,7 @@ pub fn wifi(c: &mut Ctx) -> Div {
             let auto = prof.autoconnect;
             page = page.child(
                 c.press(
-                    div()
+                    label()
                         .class("row")
                         .child(Checkbox().checked(auto))
                         .child("Connect by itself"),
@@ -276,7 +276,7 @@ pub fn wifi(c: &mut Ctx) -> Div {
             .child(bars(wifi_bars(n.signal)))
             .child(div().class("grow ellipsis").child(clean_label(&n.ssid)));
         if n.security.needs_secret() {
-            row = row.child(c.icon("lock-small", "faint"));
+            row = row.child(c.icon("lock-small", "faint").attr("alt", "secured"));
         }
         if connecting {
             row = row.child(div().class("small warn").child("…"));
@@ -439,7 +439,7 @@ fn credentials(c: &mut Ctx, enterprise: bool, new: bool, identity: Option<String
         );
         el = el.child(
             c.press(
-                div()
+                label()
                     .class("row small")
                     .child(Checkbox().checked(insecure))
                     .child("Don't check the server's certificate"),
@@ -598,7 +598,7 @@ pub fn bluetooth(c: &mut Ctx) -> Div {
         .class("row")
         .child(
             c.press(
-                div()
+                label()
                     .class("row")
                     .child(Checkbox().checked(s.powered))
                     .child("Bluetooth"),
@@ -699,7 +699,7 @@ pub fn bluetooth(c: &mut Ctx) -> Div {
         page = page
             .child(
                 c.press(
-                    div()
+                    label()
                         .class("row")
                         .child(Checkbox().checked(trusted))
                         .child("Trusted"),
@@ -709,7 +709,7 @@ pub fn bluetooth(c: &mut Ctx) -> Div {
             )
             .child(
                 c.press(
-                    div()
+                    label()
                         .class("row")
                         .child(Checkbox().checked(blocked))
                         .child("Blocked"),

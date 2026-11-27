@@ -32,3 +32,7 @@ chrono-tz = "0.10"
 web-time = "1"
 clap = { version = "4", features = ["derive"] }
 env_logger = "0.11"
+# Screen readers: BUI serves its accessibility tree on Windows only; here AT-SPI does (src/a11y.rs).
+# The versions BUI's tree and the Slint version's bridge use.
+accesskit = "0.25"
+accesskit_unix = { version = "0.24", default-features = false, features = ["tokio"] }

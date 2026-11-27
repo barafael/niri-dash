@@ -104,7 +104,7 @@ pub fn battery(c: &mut Ctx) -> Div {
     }
     el = el.child(
         c.press(
-            div()
+            label()
                 .class("row")
                 .child(Checkbox().checked(inhibited))
                 .child("Keep the machine awake"),
@@ -171,8 +171,8 @@ pub fn volume(c: &mut Ctx) -> Div {
                 .child(div().class("small").child(format!("{:.0}%", v * 100.0))),
         );
         return c.knob(
+            "Volume",
             el,
-            "volume",
             a.volume,
             |d, v, _| d.tell(audio::Command::SetVolume(v)),
             "mute",
@@ -187,7 +187,7 @@ pub fn volume(c: &mut Ctx) -> Div {
         "mute",
         |d, _| d.tell(audio::Command::ToggleMute),
     );
-    let master = c.slider("volume", a.volume, |d, v, _| {
+    let master = c.slider("Volume", "volume", a.volume, |d, v, _| {
         d.tell(audio::Command::SetVolume(v))
     });
     let mut el = div()
@@ -202,7 +202,9 @@ pub fn volume(c: &mut Ctx) -> Div {
             "mute the microphone",
             |d, _| d.tell(audio::Command::ToggleMicMute),
         );
-        let s = c.slider("mic", mv, |d, v, _| d.tell(audio::Command::SetMicVolume(v)));
+        let s = c.slider("Microphone", "mic", mv, |d, v, _| {
+            d.tell(audio::Command::SetMicVolume(v))
+        });
         el = el.child(div().class("row").child(mic).child(s));
     }
     if c.h > 90.0 && a.sinks.len() > 1 {
@@ -236,7 +238,7 @@ pub fn volume(c: &mut Ctx) -> Div {
                 d.tell(audio::Command::ToggleStreamMute(id))
             });
             let key = format!("stream-{id}");
-            let slider = c.slider(key, s.volume, move |d, v, _| {
+            let slider = c.slider(&s.app, key, s.volume, move |d, v, _| {
                 d.tell(audio::Command::SetStreamVolume(id, v))
             });
             el = el.child(
@@ -274,15 +276,15 @@ pub fn brightness(c: &mut Ctx) -> Div {
                 .child(div().class("small").child(format!("{:.0}%", v * 100.0))),
         );
         return c.knob(
+            "Brightness",
             el,
-            "brightness",
             level,
             |d, v, _| d.tell(sys::brightness::Command::Set(v.max(0.01))),
             "",
             |_, _| {},
         );
     }
-    let s = c.slider("brightness", level, |d, v, _| {
+    let s = c.slider("Brightness", "brightness", level, |d, v, _| {
         d.tell(sys::brightness::Command::Set(v.max(0.01)))
     });
     div().class("col grow center").child(
@@ -339,14 +341,14 @@ pub fn night_light(c: &mut Ctx) -> Div {
         as f32
         / span_k;
     let toggle = c.press(
-        div()
+        label()
             .class("row")
             .child(Checkbox().checked(n.on))
             .child(if n.on { "On" } else { "Off" }),
         "turn on or off",
         apply(night_light::Cmd::Toggle),
     );
-    let slider = c.slider("kelvin", warmth, move |d, v, _| {
+    let slider = c.slider("Warmth", "kelvin", warmth, move |d, v, _| {
         let k = (night_light::NEUTRAL as f32 - v * span_k).round() as u32;
         d.tell(night_light::Command::Apply {
             cmd: night_light::Cmd::Kelvin(k),
@@ -434,7 +436,7 @@ pub fn session(c: &mut Ctx) -> Div {
                 label.to_string()
             });
         }
-        el = el.child(c.press(Button().child(body), "do it", move |d, _| {
+        el = el.child(c.press(Button().child(body), label, move |d, _| {
             if ask
                 && d.w
                     .confirm
