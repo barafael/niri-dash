@@ -1042,7 +1042,7 @@ mod tests {
             r ^= r << 13;
             r ^= r >> 7;
             r ^= r << 17;
-            if r % 8 == 0 {
+            if r.is_multiple_of(8) {
                 let (x, y) = ((r >> 8) % 1920, (r >> 24) % 1080);
                 h.app.simulate_click(h.win, x as f32, y as f32);
                 h.pump();
