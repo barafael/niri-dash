@@ -142,6 +142,9 @@ pub fn run(args: &Args) -> Result<(), String> {
         app.draw(win.id);
     }
     app.run_pending();
+    // Past the entrance: the picture is of the dashboard as it stays.
+    std::thread::sleep(Duration::from_millis(200));
+    app.draw(win.id);
     let (w, h, px) = app.draw(win.id);
     save(&args.out, w, h, &px)?;
     let delivered = with_dash(&mut app, |d, _| d.data.delivered).unwrap_or(0);

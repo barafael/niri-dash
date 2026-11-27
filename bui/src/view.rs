@@ -121,8 +121,20 @@ fn dashboard(d: &Dash, hd: WeakEntity<Dash>) -> Div {
     let editing = d.edit.is_some();
     // The backdrop takes the clicks that land on no widget: away with the dashboard (or, in
     // edit mode, let go of the picked widget); a right click opens edit mode.
+    // Coming up the backdrop fades in; going, out (the window closes when that is done,
+    // `app::apply`): the Slint version's 140 and 70 ms, times the style's motion.
+    let (anim, ms) = if d.visible {
+        ("dash-in", d.look.ms(140.0))
+    } else {
+        ("dash-out", d.look.ms(80.0))
+    };
     let backdrop = div()
-        .style("position: absolute; left: 0; top: 0; right: 0; bottom: 0")
+        .class("backdrop")
+        .style(if ms > 0.0 {
+            format!("animation: {anim} {ms}ms ease-out forwards")
+        } else {
+            String::new()
+        })
         .on_click(run::<ClickEvent>(
             hd,
             act(|d: &mut Dash, _| {

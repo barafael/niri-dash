@@ -160,6 +160,8 @@ pub struct Style {
     pub display_weight: f32,
     pub backdrop_opacity: f32,
     pub card_opacity: f32,
+    /// Animation speed: 1 normal, 0.5 twice as fast, 0 none.
+    pub motion: f32,
 }
 
 impl Default for Style {
@@ -175,6 +177,7 @@ impl Default for Style {
             display_weight: 300.0,
             backdrop_opacity: 1.0,
             card_opacity: 1.0,
+            motion: 1.0,
         }
     }
 }
@@ -190,6 +193,11 @@ pub struct Look {
 }
 
 impl Look {
+    /// How long something that takes `ms` at normal speed takes in this style; 0: no animation.
+    pub fn ms(&self, ms: f32) -> f32 {
+        (ms * self.style.motion).round()
+    }
+
     pub fn color(&self, role: &str) -> &str {
         self.colors
             .iter()
@@ -354,6 +362,7 @@ pub fn resolve(scheme: &str, style: &str, overrides: &[(String, KdlValue)]) -> (
         "font-weight-display" => st.display_weight = number(v).unwrap_or(st.display_weight),
         "backdrop-opacity" => st.backdrop_opacity = number(v).unwrap_or(1.0),
         "card-opacity" => st.card_opacity = number(v).unwrap_or(1.0),
+        "motion" => st.motion = number(v).unwrap_or(1.0).clamp(0.0, 4.0),
         _ => {}
     };
     match style_text(style).map(|t| t.parse::<KdlDocument>()) {
@@ -395,7 +404,8 @@ pub fn resolve(scheme: &str, style: &str, overrides: &[(String, KdlValue)]) -> (
 pub const CSS: &str = r#"
 html, body { height: 100%; }
 body { margin: 0; color: var(--text); font-size: var(--font-body); }
-.dash { position: fixed; left: 0; top: 0; right: 0; bottom: 0; background: var(--backdrop); overflow: hidden; }
+.dash { position: fixed; left: 0; top: 0; right: 0; bottom: 0; overflow: hidden; }
+.backdrop { position: absolute; left: 0; top: 0; right: 0; bottom: 0; background: var(--backdrop); }
 .solo { position: fixed; left: 0; top: 0; right: 0; bottom: 0; background: var(--card); overflow: hidden; display: flex; flex-direction: column; }
 
 /* A widget is a Blender panel: a header strip with its name, and the body under it. */
@@ -511,5 +521,9 @@ body { margin: 0; color: var(--text); font-size: var(--font-body); }
             padding: 8px; display: flex; flex-direction: column; gap: 4px; width: 280px; }
 .menu { position: absolute; background: var(--card-raised); border: 1px solid var(--border); border-radius: 4px;
         padding: 3px; display: flex; flex-direction: column; min-width: 180px; }
+/* Blender's widgets draw themselves over the page and ignore opacity, so only the backdrop,
+   which has none, fades. */
+@keyframes dash-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes dash-out { from { opacity: 1; } to { opacity: 0; } }
 .expanded-shade { position: absolute; left: 0; top: 0; right: 0; bottom: 0; background: #000000a0; z-index: 30; }
 "#;

@@ -137,8 +137,18 @@ pub fn apply(app: &mut App) {
         match op {
             WinOp::Show => open(app),
             WinOp::Hide => {
-                if let Some(id) = app.global_mut::<Shell>().window.take() {
-                    app.close_window(id);
+                // The window goes once the exit animation is done, unless the dashboard came
+                // back meanwhile.
+                let ms = with_dash(app, |d, _| d.look.ms(80.0)).unwrap_or(0.0);
+                let ui = with_dash(app, |d, _| d.ui.clone()).flatten();
+                match ui.filter(|_| ms > 0.0) {
+                    Some(ui) => {
+                        std::thread::spawn(move || {
+                            std::thread::sleep(Duration::from_millis(ms as u64 + 20));
+                            ui.send(close_if_hidden);
+                        });
+                    }
+                    None => close_if_hidden(app),
                 }
             }
             WinOp::Quit => {
@@ -153,6 +163,16 @@ pub fn apply(app: &mut App) {
                 std::process::exit(0);
             }
         }
+    }
+}
+
+/// Close the window, if the dashboard is still meant to be hidden.
+fn close_if_hidden(app: &mut App) {
+    if with_dash(app, |d, _| d.visible).unwrap_or(false) {
+        return;
+    }
+    if let Some(id) = app.global_mut::<Shell>().window.take() {
+        app.close_window(id);
     }
 }
 
