@@ -390,13 +390,14 @@ pub fn stopwatch(c: &mut Ctx) -> Div {
     row = row.child(c.button("Reset", "reset", |d, _| d.w.stopwatch.reset()));
     let mut el = div().class("col center grow").child(display).child(row);
     if !laps.is_empty() && c.h > 120.0 {
-        let mut list = div().class("col scroll wide");
+        let mut list = c.scroll().class("wide");
         for (i, l) in laps.iter().enumerate().rev() {
+            let time = timer::format(*l, true);
             let row = div()
                 .class("item small")
                 .child(div().class("grow dim").child(format!("Lap {}", i + 1)))
-                .child(div().class("mono").child(timer::format(*l, true)));
-            list = list.child(c.read(row));
+                .child(div().class("mono").child(time.clone()));
+            list = list.child(c.read_copy(row, time));
         }
         el = el.child(list);
     }

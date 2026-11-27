@@ -193,7 +193,7 @@ fn fact(c: &mut Ctx, label: &str, value: String, url: Option<String>) -> Div {
             d.tell(host::Command::OpenUrl(u.clone()));
             d.hide();
         }),
-        None => c.read(row),
+        None => c.read_copy(row, value),
     }
 }
 
@@ -239,7 +239,7 @@ pub fn info(c: &mut Ctx) -> Div {
     } else {
         "release"
     };
-    let mut el = div().class("col scroll");
+    let mut el = c.scroll();
     el = el.child(fact(
         c,
         "Version",

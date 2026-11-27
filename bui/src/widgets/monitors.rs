@@ -104,11 +104,12 @@ pub fn memory(c: &mut Ctx) -> Div {
     if top > 0 && c.h > 170.0 {
         for (name, v) in s.top_mem.iter().take(top) {
             el = el.child(
-                c.read(
+                c.read_copy(
                     div()
                         .class("item small")
                         .child(div().class("grow ellipsis").child(name.clone()))
                         .child(div().class("dim").child(v.clone())),
+                    name.clone(),
                 ),
             );
         }
@@ -148,9 +149,9 @@ pub fn disks(c: &mut Ctx) -> Div {
     if disks.is_empty() {
         el = el.child(empty("No disks"));
     }
-    let mut list = div().class("col scroll");
+    let mut list = c.scroll();
     for d in disks {
-        list = list.child(c.read(stat(&d.mount, d.used, &d.text)));
+        list = list.child(c.read_copy(stat(&d.mount, d.used, &d.text), d.mount.clone()));
     }
     el = el.child(list);
     if c.h > 140.0 {

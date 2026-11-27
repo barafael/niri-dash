@@ -183,7 +183,7 @@ pub fn wifi(c: &mut Ctx) -> Div {
     }
     // The details page of one network.
     if let Some(det) = s.detail.clone() {
-        let mut page = div().class("col scroll");
+        let mut page = c.scroll();
         page = page.child(
             div()
                 .class("row")
@@ -198,11 +198,12 @@ pub fn wifi(c: &mut Ctx) -> Div {
         );
         for (k, v) in wifi::facts(&det, &s.link) {
             page = page.child(
-                c.read(
+                c.read_copy(
                     div()
                         .class("item small")
                         .child(div().class("dim").style("width: 40%").child(k))
-                        .child(div().class("grow ellipsis").child(v)),
+                        .child(div().class("grow ellipsis").child(v.clone())),
+                    v,
                 ),
             );
         }
@@ -264,7 +265,7 @@ pub fn wifi(c: &mut Ctx) -> Div {
     if !s.enabled {
         return el.child(empty("Wi-Fi is off"));
     }
-    let mut list = div().class("col scroll");
+    let mut list = c.scroll();
     for n in s.networks.clone() {
         let key = n.key();
         let key2 = key.clone();
@@ -448,7 +449,7 @@ pub fn bluetooth(c: &mut Ctx) -> Div {
         el = el.child(box_.child(div().class("row").child(yes).child(no)));
     }
     if let Some(dev) = s.detail.clone() {
-        let mut page = div().class("col scroll");
+        let mut page = c.scroll();
         page = page.child(
             div()
                 .class("row")
@@ -459,11 +460,12 @@ pub fn bluetooth(c: &mut Ctx) -> Div {
         );
         for (k, v) in bt::facts(&dev) {
             page = page.child(
-                c.read(
+                c.read_copy(
                     div()
                         .class("item small")
                         .child(div().class("dim").style("width: 40%").child(k))
-                        .child(div().class("grow ellipsis").child(v)),
+                        .child(div().class("grow ellipsis").child(v.clone())),
+                    v,
                 ),
             );
         }
@@ -520,7 +522,7 @@ pub fn bluetooth(c: &mut Ctx) -> Div {
     if !s.powered {
         return el.child(empty("Bluetooth is off"));
     }
-    let mut list = div().class("col scroll");
+    let mut list = c.scroll();
     if s.devices.is_empty() {
         list = list.child(empty("Nothing paired yet"));
     }

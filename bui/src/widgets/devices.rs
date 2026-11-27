@@ -27,7 +27,7 @@ pub fn privacy(c: &mut Ctx) -> Div {
             .child(c.icon_l("check", "good"))
             .child(div().class("dim").child("Nothing records or shares"));
     }
-    let mut el = div().class("col scroll");
+    let mut el = c.scroll();
     let group = |c: &mut Ctx, el: Div, icon: &str, what: &str, apps: &[String]| {
         let mut el = el;
         if !apps.is_empty() {
@@ -39,10 +39,11 @@ pub fn privacy(c: &mut Ctx) -> Div {
             );
             for a in apps {
                 el = el.child(
-                    c.read(
+                    c.read_copy(
                         div()
                             .class("item small")
                             .child(line(a.clone()).class("grow")),
+                        a.clone(),
                     ),
                 );
             }
@@ -115,7 +116,7 @@ pub fn drives(c: &mut Ctx) -> Div {
             .child(div().class("small").child(format!("{}", s.drives.len())));
     }
     c.bind("X", "eject all", |d, _| d.tell(K::EjectAll));
-    let mut el = div().class("col scroll");
+    let mut el = c.scroll();
     for dr in s.drives {
         let dpath = dr.path.clone();
         el = el.child(
@@ -214,7 +215,7 @@ pub fn phone(c: &mut Ctx) -> Div {
                     .child(p.charge.map(|c| format!("{c}%")).unwrap_or_default()),
             );
     }
-    let mut el = div().class("col scroll");
+    let mut el = c.scroll();
     for p in s.phones {
         let (id, id2) = (p.id.clone(), p.id.clone());
         let mut row = div()

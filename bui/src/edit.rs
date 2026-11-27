@@ -357,7 +357,7 @@ pub fn sidebar(d: &Dash, hd: WeakEntity<Dash>) -> Div {
                 }),
             ))
     }));
-    let mut pane = div().class("pane");
+    let mut pane = div().class("pane").id(format!("pane-{}", e.tab.name()));
     if let Some(p) = d.layout.get(e.picked) {
         pane = pane.child(picked_tools(d, hd, p));
     }

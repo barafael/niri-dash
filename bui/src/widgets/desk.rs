@@ -34,7 +34,7 @@ pub fn windows(c: &mut Ctx) -> Div {
     if s.rows.is_empty() {
         return empty("No windows");
     }
-    let mut list = div().class("col scroll");
+    let mut list = c.scroll();
     for r in &s.rows {
         if r.header {
             list = list.child(div().class("item header").child(r.title.clone()));
@@ -68,6 +68,7 @@ pub fn windows(c: &mut Ctx) -> Div {
             d.tell(windows::Command::Focus(id));
             d.hide();
         }));
+        c.copies(r.title.clone());
     }
     list
 }
@@ -83,7 +84,7 @@ pub fn claude(c: &mut Ctx) -> Div {
     if s.sessions.is_empty() {
         return empty("No Claude Code sessions");
     }
-    let mut list = div().class("col scroll");
+    let mut list = c.scroll();
     for sess in &s.sessions {
         let (pid, window) = (sess.pid, sess.window);
         let busy = sess.status == claude::Status::Busy;
@@ -110,6 +111,7 @@ pub fn claude(c: &mut Ctx) -> Div {
             d.tell(windows::Command::ShowTab(pid));
             d.hide();
         }));
+        c.copies(sess.place.clone());
     }
     list
 }
@@ -202,7 +204,7 @@ pub fn notifications(c: &mut Ctx) -> Div {
     if s.items.is_empty() {
         return el.child(empty("No notifications"));
     }
-    let mut list = div().class("col scroll");
+    let mut list = c.scroll();
     for n in s.items.iter() {
         let id = n.id;
         if c.here() {
@@ -260,6 +262,11 @@ pub fn notifications(c: &mut Ctx) -> Div {
                 }
             },
         ));
+        c.copies(if n.body.is_empty() {
+            n.summary.clone()
+        } else {
+            format!("{}\n{}", n.summary, n.body)
+        });
     }
     el.child(list)
 }
@@ -534,7 +541,7 @@ pub fn clipboard(c: &mut Ctx) -> Div {
     if clips.is_empty() {
         return empty("What you copy shows here");
     }
-    let mut list = div().class("col scroll");
+    let mut list = c.scroll();
     for (i, clip) in clips.into_iter().enumerate() {
         if c.here() {
             c.bind("d", "remove it", move |d, _| {

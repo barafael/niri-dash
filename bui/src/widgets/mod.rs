@@ -19,6 +19,7 @@ mod net;
 mod state;
 mod time;
 
+pub use controls::copy_text;
 pub use desk::{menu, menu_key, toggle_dnd};
 pub use state::State;
 
@@ -36,6 +37,8 @@ pub struct Stop {
     pub slide: Option<(f32, Set)>,
     /// What the quick tips call pressing it.
     pub does: &'static str,
+    /// What `y` (and Ctrl+C) copies, where there is something.
+    pub copy: Option<String>,
 }
 
 /// A letter of the widget's own.
@@ -59,6 +62,9 @@ pub struct Ctx<'a> {
     pub hd: WeakEntity<Dash>,
     pub stops: Vec<Stop>,
     pub binds: Vec<Bind>,
+    /// Blown up or standalone ("x"), or in its place on the grid ("s"): the same widget can be
+    /// drawn twice at once, and its elements' ids must differ.
+    prefix: &'static str,
 }
 
 /// An element listener that does `act` to the dashboard.
@@ -100,11 +106,46 @@ impl<'a> Ctx<'a> {
             hd,
             stops: Vec::new(),
             binds: Vec::new(),
+            prefix: if big { "x" } else { "s" },
         }
     }
 
     pub fn entered(&self) -> bool {
         self.cursor.is_some()
+    }
+
+    /// The id of a stop's element, for scrolling to it and typing into it.
+    pub fn stop_id(&self, i: usize) -> String {
+        stop_id(self.prefix, self.p.id, i)
+    }
+
+    /// The last stop registered: its id, and the cursor's frame if it is there.
+    fn finish(&self, el: Div, here: bool) -> Div {
+        let el = el.id(self.stop_id(self.stops.len() - 1));
+        if here { cursor(el) } else { el }
+    }
+
+    /// What `y` copies on the stop registered last (a row that also does something).
+    pub fn copies(&mut self, text: impl Into<String>) {
+        if let Some(s) = self.stops.last_mut() {
+            s.copy = Some(text.into());
+        }
+    }
+
+    /// A row only to be read, whose `text` `y` copies.
+    pub fn read_copy(&mut self, el: Div, text: impl Into<String>) -> Div {
+        let el = self.read(el);
+        if let Some(s) = self.stops.last_mut() {
+            s.copy = Some(text.into());
+        }
+        el
+    }
+
+    /// A list that scrolls, keeping its place from one frame to the next.
+    pub fn scroll(&self) -> Div {
+        div()
+            .class("col scroll")
+            .id(format!("{}list{}", self.prefix, self.p.id))
     }
 
     /// Whether the cursor is on the next stop to be registered.
@@ -125,9 +166,10 @@ impl<'a> Ctx<'a> {
             act: Some(a.clone()),
             slide: None,
             does,
+            copy: None,
         });
         let el = el.on_click(run::<ClickEvent>(self.hd, a));
-        if here { cursor(el) } else { el }
+        self.finish(el, here)
     }
 
     /// A Blender button with `label`, as a stop.
@@ -148,14 +190,15 @@ impl<'a> Ctx<'a> {
             act: None,
             slide: None,
             does: "",
+            copy: None,
         });
-        if here { cursor(el) } else { el }
+        self.finish(el, here)
     }
 
     /// A text field: Enter (and `i`) type into it, Escape gets out again.
     pub fn field(&mut self, el: Div) -> Div {
         let here = self.here();
-        let id = format!("field-{}-{}", self.p.id, self.stops.len());
+        let id = self.stop_id(self.stops.len());
         let focus = id.clone();
         if here {
             let f = focus.clone();
@@ -167,9 +210,9 @@ impl<'a> Ctx<'a> {
             })),
             slide: None,
             does: "type",
+            copy: None,
         });
-        let el = el.id(id);
-        if here { cursor(el) } else { el }
+        self.finish(el, here)
     }
 
     /// Blender's number slider over 0..100 %, as a stop that `h` `l` and the digits change.
@@ -191,6 +234,7 @@ impl<'a> Ctx<'a> {
             act: None,
             slide: Some((value, set.clone())),
             does: "",
+            copy: None,
         });
         let hd = self.hd;
         let el = NumberSlider()
@@ -208,7 +252,7 @@ impl<'a> Ctx<'a> {
                     d.changed(cx);
                 });
             });
-        if here { cursor(el) } else { el }
+        self.finish(el, here)
     }
 
     /// A round control that turns: `j` `k`, `h` `l`, the digits and the scroll wheel change it,
@@ -236,6 +280,7 @@ impl<'a> Ctx<'a> {
             act: Some(a.clone()),
             slide: Some((value, set.clone())),
             does,
+            copy: None,
         });
         let hd = self.hd;
         let el = el.on_click(run::<ClickEvent>(hd, a)).on_scroll_wheel(
@@ -255,7 +300,7 @@ impl<'a> Ctx<'a> {
                 app.stop_propagation();
             },
         );
-        if here { cursor(el) } else { el }
+        self.finish(el, here)
     }
 
     /// A letter of the widget's own, while it is entered.
@@ -297,6 +342,11 @@ impl<'a> Ctx<'a> {
     pub fn icon_l(&self, name: &str, role: &str) -> Div {
         self.icon(name, role).class("l")
     }
+}
+
+/// The id of stop `i` of widget `id`, drawn blown up ("x") or in place ("s").
+pub fn stop_id(prefix: &str, id: u32, i: usize) -> String {
+    format!("{prefix}{id}-{i}")
 }
 
 /// The keyboard's cursor on `el`. Blender's own widgets draw themselves and ignore an outline, so

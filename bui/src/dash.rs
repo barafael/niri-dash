@@ -131,6 +131,8 @@ pub struct Dash {
     pub swallow_click: bool,
     /// What the screen showed at the last tick (the clock's second, a stopwatch's tenth).
     shown_at: i64,
+    /// The element to scroll into view when next drawn: the cursor's stop, after it moved.
+    pub scroll_to: Option<String>,
     /// The text field to type into next ([`crate::app::apply_focus`]).
     pub focus: Option<String>,
     pub ui: Option<UiSender>,
@@ -169,6 +171,7 @@ impl Dash {
             config_broken: broken,
             ops: Vec::new(),
             focus: None,
+            scroll_to: None,
             press: None,
             swallow_click: false,
             shown_at: 0,
@@ -799,6 +802,60 @@ impl Dash {
                 _ => {}
             }
         }
+        // Copying what is under the cursor, and half a page at a time.
+        if (k.text() == Some("y") && !k.ctrl) || (k.ctrl && k.is("c")) {
+            match stop.as_ref().and_then(|s| s.copy.clone()) {
+                Some(text) => crate::widgets::copy_text(self, &text),
+                None => return k.text().is_some(),
+            }
+            return true;
+        }
+        if k.ctrl && (k.is("d") || k.is("u")) {
+            let half = 6;
+            mv(
+                self,
+                if k.is("d") {
+                    cur + half
+                } else {
+                    cur.saturating_sub(half)
+                },
+            );
+            self.scroll_to_cursor();
+            return true;
+        }
+        let before = self.nav.cursor;
+        let used = self.widget_stop_key(k, cur, n, stop, slide, cx);
+        if self.nav.cursor != before {
+            self.scroll_to_cursor();
+        }
+        used
+    }
+
+    /// Scroll the entered widget's list to where the cursor is.
+    fn scroll_to_cursor(&mut self) {
+        let prefix = if self.nav.expanded == self.nav.active || self.solo.is_some() {
+            "x"
+        } else {
+            "s"
+        };
+        self.scroll_to = Some(crate::widgets::stop_id(
+            prefix,
+            self.nav.active,
+            self.nav.cursor,
+        ));
+    }
+
+    /// The keys that act on the stops: moving between them, pressing, adjusting.
+    fn widget_stop_key(
+        &mut self,
+        k: &Key,
+        cur: usize,
+        n: usize,
+        stop: Option<Stop>,
+        slide: Option<(f32, crate::widgets::Set)>,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let mv = |d: &mut Dash, to: usize| d.nav.cursor = to.min(n.saturating_sub(1));
         match (k.name(), k.shift) {
             ("j" | "Down", _) | ("Tab", false) => mv(self, cur + 1),
             ("k" | "Up", _) | ("Tab", true) | ("ISO_Left_Tab", _) => {
@@ -934,6 +991,13 @@ impl Dash {
                             if s.does.is_empty() { "press" } else { s.does },
                         )),
                         _ => {}
+                    }
+                    if cur.is_some_and(|s| s.copy.is_some()) && !binds.iter().any(|b| b.key == "y")
+                    {
+                        own.push(tip("y", "copy"));
+                    }
+                    if stops.len() > 12 {
+                        own.push(tip("Ctrl+D Ctrl+U", "half a page"));
                     }
                     for b in &binds {
                         own.push(tip(b.key, &b.does));

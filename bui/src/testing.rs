@@ -616,6 +616,40 @@ mod tests {
     }
 
     #[test]
+    fn y_copies_the_row_under_the_cursor() {
+        let mut h = Harness::new(Some(
+            "layout {\n    windows col=0 row=0 width=5 height=3\n}\n",
+        ));
+        h.keys("C-l y");
+        assert!(h.took("Set(Clip"), "{:?}", h.sent);
+        assert!(
+            h.dash()
+                .toast
+                .as_ref()
+                .is_some_and(|(t, _)| t.contains("niri-dash")),
+            "{:?}",
+            h.dash().toast
+        );
+    }
+
+    #[test]
+    fn moving_the_cursor_scrolls_to_it() {
+        let mut h = Harness::new(Some(
+            "layout {\n    windows col=0 row=0 width=5 height=3\n}\n",
+        ));
+        h.keys("C-l j");
+        let id = h.id_of(Kind::Windows);
+        // The view took the request (and scrolled, as far as its list goes).
+        assert!(h.dash().scroll_to.is_none());
+        assert!(
+            h.app
+                .element_bounds(h.win, &crate::widgets::stop_id("s", id, 1))
+                .is_some(),
+            "stops have ids"
+        );
+    }
+
+    #[test]
     fn every_widget_draws_in_every_shape() {
         use strum::IntoEnumIterator;
         let mut text = String::from("layout {\n");

@@ -26,6 +26,10 @@ impl Render for DashView {
         if self.dash.read(cx).size != (w, h) {
             self.dash.update(cx, |d, _| d.fit(w, h));
         }
+        if let Some(id) = self.dash.update(cx, |d, _| d.scroll_to.take()) {
+            // Where the cursor went, in the middle of its list (the element is the last frame's).
+            window.scroll_into_view(&id, 0.5, None);
+        }
         let hd = self.dash.downgrade();
         let d = self.dash.read(cx);
         root(d, hd)
