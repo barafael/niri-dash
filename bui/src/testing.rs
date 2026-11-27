@@ -1,0 +1,590 @@
+//! The tests: the real dashboard in BUI's headless window, on the mock system run by hand. Keys
+//! and clicks go through the window as they would on screen; the dashboard's commands go to the
+//! mock, which answers with events, and the tests look at both and at the files written.
+//!
+//! The kit keeps global state and the files go by environment variables, so the tests take turns
+//! ([`LOCK`]).
+
+use crate::app::{Shell, with_dash};
+use crate::dash::{Dash, Mode};
+use crate::layout::{Kind, Layout};
+use crate::view::DashView;
+use crate::{Control, app};
+use blenderui::prelude::*;
+use niri_dash_system::{self as sys, Command, Demo, MockSystem};
+use std::path::PathBuf;
+use std::sync::Mutex;
+
+static LOCK: Mutex<()> = Mutex::new(());
+
+pub struct Harness {
+    pub app: App,
+    pub win: WindowId,
+    mock: MockSystem,
+    commands: std::sync::mpsc::Receiver<Command>,
+    events: std::sync::mpsc::Receiver<sys::Event>,
+    /// Every command the dashboard sent, in order.
+    pub sent: Vec<String>,
+    pub dir: PathBuf,
+    _turn: std::sync::MutexGuard<'static, ()>,
+}
+
+impl Harness {
+    /// The dashboard on `config` (None: the default one), shown in a window of 1920 x 1080.
+    pub fn new(config: Option<&str>) -> Self {
+        let turn = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join(format!(
+            "niri-dash-bui-test-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("config")).expect("a test directory");
+        let config_path = dir.join("config/config.kdl");
+        std::fs::write(
+            &config_path,
+            config.map_or_else(Layout::default_text, str::to_string),
+        )
+        .expect("writing the config");
+        // SAFETY: the tests take turns (LOCK), and nothing else reads these meanwhile.
+        unsafe {
+            std::env::set_var("NIRI_DASH_CONFIG", &config_path);
+            std::env::set_var("NIRI_DASH_STATE", dir.join("state.json"));
+            std::env::set_var("XDG_DATA_HOME", dir.join("data"));
+        }
+        let (cmd_sink, commands) = sys::Sink::channel();
+        let (ev_sink, events) = sys::Sink::channel();
+        let mock = MockSystem::new(Demo::new(), ev_sink);
+        let mut app = Application::headless().start(|cx| {
+            let system = sys::System {
+                commands: cmd_sink,
+                caps: MockSystem::CAPS,
+            };
+            let dash = cx.new(|_| Dash::new(system, Layout::load(), None));
+            cx.set_global(Shell {
+                dash,
+                window: None,
+                solo: None,
+            });
+        });
+        let dash = app.global::<Shell>().dash;
+        let win = app
+            .open_window(app::headless_options(None, 1920.0, 1080.0), move |_, cx| {
+                cx.new(|_| DashView::new(dash))
+            })
+            .expect("a headless window")
+            .id;
+        app.global_mut::<Shell>().window = Some(win);
+        let mut h = Self {
+            app,
+            win,
+            mock,
+            commands,
+            events,
+            sent: Vec::new(),
+            dir,
+            _turn: turn,
+        };
+        h.control(Control::Show);
+        h
+    }
+
+    /// Hand the mock what the dashboard asked, and the dashboard what the mock said, until both
+    /// are quiet; then draw.
+    pub fn pump(&mut self) {
+        loop {
+            let mut busy = false;
+            while let Ok(c) = self.commands.try_recv() {
+                self.sent.push(format!("{c:?}"));
+                let _ = self.mock.handle(c);
+                busy = true;
+            }
+            let events: Vec<sys::Event> = self.events.try_iter().collect();
+            if !events.is_empty() {
+                busy = true;
+                with_dash(&mut self.app, |d, cx| {
+                    for e in events {
+                        d.event(e);
+                    }
+                    cx.notify();
+                });
+            }
+            self.app.run_pending();
+            app::apply_focus(&mut self.app);
+            // What the dashboard asks of the window: showing is done, hiding is noted.
+            with_dash(&mut self.app, |d, _| d.ops.clear());
+            if !busy {
+                break;
+            }
+        }
+        self.app.draw(self.win);
+    }
+
+    pub fn control(&mut self, c: Control) {
+        with_dash(&mut self.app, |d, cx| d.control(c, cx));
+        self.pump();
+    }
+
+    /// Press keys, as the snapshot command takes them: "f", "C-e", "S-Tab", "Escape", "space".
+    pub fn keys(&mut self, keys: &str) {
+        for k in keys.split_whitespace() {
+            let (mut ctrl, mut shift) = (false, false);
+            let mut rest = k;
+            loop {
+                if let Some(r) = rest.strip_prefix("C-") {
+                    ctrl = true;
+                    rest = r;
+                } else if let Some(r) = rest.strip_prefix("S-") {
+                    shift = true;
+                    rest = r;
+                } else {
+                    break;
+                }
+            }
+            let (text, sym) = crate::snapshot::keysym(rest);
+            let upper = rest.len() == 1 && rest.chars().all(|c| c.is_ascii_uppercase());
+            self.app
+                .simulate_key_with(self.win, &text, &sym, ctrl, shift || upper);
+            self.pump();
+        }
+    }
+
+    /// Click the middle of the element with this id.
+    pub fn click_id(&mut self, id: &str) {
+        let b = self
+            .app
+            .element_bounds(self.win, id)
+            .unwrap_or_else(|| panic!("no element {id}"));
+        self.app.simulate_click(
+            self.win,
+            b.origin.x + b.size.width / 2.0,
+            b.origin.y + b.size.height / 2.0,
+        );
+        self.pump();
+    }
+
+    pub fn dash(&self) -> &Dash {
+        let dash = self.app.global::<Shell>().dash;
+        dash.read(&self.app)
+    }
+
+    /// The id of the first widget of a kind.
+    pub fn id_of(&mut self, kind: Kind) -> u32 {
+        self.dash()
+            .layout
+            .widgets
+            .iter()
+            .find(|w| w.kind == kind)
+            .map(|w| w.id)
+            .unwrap_or_else(|| panic!("no {kind:?}"))
+    }
+
+    /// The hint label of the widget `id`.
+    pub fn label_of(&mut self, id: u32) -> String {
+        self.dash()
+            .tiles()
+            .into_iter()
+            .find(|(p, _)| p.id == id)
+            .map(|(_, l)| l)
+            .expect("shown")
+    }
+
+    /// config.kdl as written, once the writes waiting have been done.
+    pub fn config(&self) -> String {
+        crate::files::flush();
+        std::fs::read_to_string(self.dir.join("config/config.kdl")).expect("the config")
+    }
+
+    pub fn took(&self, needle: &str) -> bool {
+        self.sent.iter().any(|c| c.contains(needle))
+    }
+}
+
+impl Drop for Harness {
+    fn drop(&mut self) {
+        crate::files::flush();
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dash::Op;
+
+    #[test]
+    fn coming_up_tells_the_system_and_fills_the_widgets() {
+        let h = Harness::new(None);
+        assert!(h.dash().visible);
+        assert!(h.took("Visible(true)"));
+        assert!(h.dash().data.perf.is_some(), "the mock's data arrived");
+        assert!(!h.dash().data.windows.rows.is_empty());
+    }
+
+    #[test]
+    fn a_label_goes_into_its_widget_and_escape_steps_back() {
+        let mut h = Harness::new(None);
+        let id = h.id_of(Kind::Calendar);
+        let label = h.label_of(id);
+        h.keys("f");
+        assert_eq!(h.dash().nav.mode, Mode::Hints);
+        h.keys(
+            &label
+                .chars()
+                .map(|c| c.to_string())
+                .collect::<Vec<_>>()
+                .join(" "),
+        );
+        assert_eq!(h.dash().nav.mode, Mode::Widget);
+        assert_eq!(h.dash().nav.active, id);
+        h.keys("Escape");
+        assert_eq!(h.dash().nav.mode, Mode::Off);
+        assert!(h.dash().visible);
+        h.keys("Escape");
+        assert!(!h.dash().visible, "a second Escape puts the dashboard away");
+        assert!(h.took("Visible(false)"));
+    }
+
+    #[test]
+    fn a_key_that_matches_no_label_is_not_typed() {
+        let mut h = Harness::new(None);
+        h.keys("f z");
+        assert_eq!(h.dash().nav.typed, "");
+        assert_eq!(h.dash().nav.mode, Mode::Hints);
+        h.keys("f");
+        assert_eq!(h.dash().nav.mode, Mode::Off, "f again cancels");
+    }
+
+    #[test]
+    fn ctrl_hjkl_walks_between_neighbours() {
+        let mut h = Harness::new(None);
+        let clock = h.id_of(Kind::Clock);
+        let weather = h.id_of(Kind::Weather);
+        let windows = h.id_of(Kind::Windows);
+        h.keys("C-l");
+        assert_eq!(h.dash().nav.active, clock, "the first widget");
+        h.keys("C-j");
+        assert_eq!(h.dash().nav.active, weather);
+        h.keys("C-k C-l");
+        assert_eq!(h.dash().nav.active, windows);
+    }
+
+    #[test]
+    fn the_calendar_moves_by_day_week_and_month() {
+        let mut h = Harness::new(None);
+        h.keys("C-l C-j C-j");
+        let active = h.dash().nav.active;
+        assert_eq!(
+            h.dash().placed(active).map(|p| p.kind),
+            Some(Kind::Calendar)
+        );
+        let today = chrono::Local::now().date_naive();
+        h.keys("l l j");
+        assert_eq!(h.dash().w.cal, Some(today + chrono::Duration::days(9)));
+        h.keys("t");
+        assert_eq!(h.dash().w.cal, None);
+    }
+
+    #[test]
+    fn a_sliders_keys_set_the_volume() {
+        let mut h = Harness::new(None);
+        let id = h.id_of(Kind::Volume);
+        let label = h.label_of(id);
+        h.keys(&format!(
+            "f {}",
+            label
+                .chars()
+                .map(|c| c.to_string())
+                .collect::<Vec<_>>()
+                .join(" ")
+        ));
+        assert_eq!(h.dash().nav.active, id);
+        h.keys("3");
+        assert!(h.took("SetVolume(0.3"), "{:?}", h.sent);
+        h.keys("k");
+        assert!(
+            h.took("SetVolume(0.35"),
+            "a round volume is a knob: k turns it up"
+        );
+        h.keys("Return");
+        assert!(h.took("ToggleMute"));
+    }
+
+    #[test]
+    fn the_timer_starts_from_the_keyboard_and_remembers() {
+        let mut h = Harness::new(Some(
+            "layout {\n    timer col=0 row=0 width=3 height=2\n}\n",
+        ));
+        h.keys("C-l space");
+        assert!(matches!(
+            h.dash().w.countdown.state,
+            crate::timer::Run::Running { .. }
+        ));
+        assert!(
+            h.dash().saved.timer_end.is_some(),
+            "kept for the next start"
+        );
+        h.keys("r");
+        assert!(matches!(
+            h.dash().w.countdown.state,
+            crate::timer::Run::Idle
+        ));
+    }
+
+    #[test]
+    fn edit_mode_removes_a_widget_and_writes_the_file() {
+        let mut h = Harness::new(None);
+        assert!(h.config().contains("tray"));
+        h.keys("C-e");
+        assert!(h.dash().edit.is_some());
+        let tray = h.id_of(Kind::Tray);
+        let label = h.label_of(tray);
+        h.keys(&format!(
+            "f {}",
+            label
+                .chars()
+                .map(|c| c.to_string())
+                .collect::<Vec<_>>()
+                .join(" ")
+        ));
+        assert_eq!(h.dash().edit.as_ref().map(|e| e.picked), Some(tray));
+        h.keys("x");
+        assert!(h.dash().layout.get(tray).is_none());
+        let text = h.config();
+        assert!(
+            !text.lines().any(|l| l.trim_start().starts_with("tray ")),
+            "{text}"
+        );
+        assert!(
+            text.contains("// niri-dash layout") || text.contains("layout {"),
+            "the rest of the file stays"
+        );
+        h.keys("Escape");
+        assert!(h.dash().edit.is_none());
+    }
+
+    #[test]
+    fn move_mode_moves_the_widget_and_saves() {
+        let mut h = Harness::new(Some(
+            "layout {\n    clock col=0 row=0 width=4 height=2\n    weather col=0 row=2 width=4 height=2\n}\n",
+        ));
+        let clock = h.id_of(Kind::Clock);
+        h.keys("C-l C-m");
+        assert_eq!(h.dash().nav.op, Some(Op::Move));
+        h.keys("l l");
+        assert_eq!(h.dash().layout.get(clock).map(|p| p.col), Some(2));
+        h.keys("Escape");
+        assert_eq!(h.dash().nav.op, None);
+        assert!(h.config().contains("clock col=2"), "{}", h.config());
+    }
+
+    #[test]
+    fn resize_mode_grows_and_shrinks() {
+        let mut h = Harness::new(Some(
+            "layout {\n    clock col=0 row=0 width=4 height=2\n}\n",
+        ));
+        let clock = h.id_of(Kind::Clock);
+        h.keys("C-l C-r l j");
+        let p = h.dash().layout.get(clock).cloned().expect("the clock");
+        assert_eq!((p.w, p.h), (5, 3));
+        h.keys("S-l");
+        let p = h.dash().layout.get(clock).cloned().expect("the clock");
+        assert_eq!((p.col, p.w), (1, 4), "shift pulls the opposite side in");
+    }
+
+    #[test]
+    fn a_click_in_edit_mode_picks_and_opens_the_settings() {
+        let mut h = Harness::new(None);
+        h.keys("C-e");
+        let clock = h.id_of(Kind::Clock);
+        h.click_id(&format!("w{clock}"));
+        let e = h.dash().edit.clone().expect("editing");
+        assert_eq!(e.picked, clock);
+        assert!(e.settings);
+    }
+
+    #[test]
+    fn a_color_scheme_from_the_sidebar_is_saved() {
+        let mut h = Harness::new(None);
+        h.keys("C-e Tab");
+        assert_eq!(
+            h.dash().edit.as_ref().map(|e| e.tab),
+            Some(crate::edit::Tab::Colors)
+        );
+        with_dash(&mut h.app, |d, _| {
+            d.layout.colorscheme = "nord".into();
+            d.relook();
+            d.save_layout();
+        });
+        h.pump();
+        assert_eq!(h.dash().look.color("accent"), "#88c0d0ff");
+        assert!(
+            h.config().contains("colorscheme=\"nord\""),
+            "{}",
+            h.config()
+        );
+    }
+
+    #[test]
+    fn notification_keys_dismiss_and_clear() {
+        let mut h = Harness::new(None);
+        let id = h.id_of(Kind::Notifications);
+        let label = h.label_of(id);
+        h.keys(&format!(
+            "f {}",
+            label
+                .chars()
+                .map(|c| c.to_string())
+                .collect::<Vec<_>>()
+                .join(" ")
+        ));
+        // Past the bell and Clear, onto the first notification.
+        h.keys("j j d");
+        assert!(h.took("Dismiss("), "{:?}", h.sent);
+        h.keys("D");
+        assert!(h.took("Clear"));
+    }
+
+    #[test]
+    fn the_control_socket_s_commands_show_and_hide() {
+        let mut h = Harness::new(None);
+        h.control(Control::Toggle);
+        assert!(!h.dash().visible);
+        h.control(Control::Toggle);
+        assert!(h.dash().visible);
+        h.control(Control::Edit);
+        assert!(h.dash().edit.is_some());
+        h.control(Control::Hide);
+        assert!(!h.dash().visible);
+        assert!(h.dash().edit.is_none(), "edit mode ends with the dashboard");
+    }
+
+    #[test]
+    fn enter_types_into_a_field_and_escape_gets_out() {
+        let mut h = Harness::new(Some(
+            "layout {\n    sleep-timer col=0 row=0 width=4 height=4\n}\n",
+        ));
+        h.keys("C-l");
+        let stops = h
+            .dash()
+            .entered_ctx(h.app.global::<Shell>().dash.downgrade())
+            .expect("entered")
+            .0;
+        let field = stops
+            .iter()
+            .position(|s| s.does == "type")
+            .expect("the when field is a stop");
+        with_dash(&mut h.app, |d, _| d.nav.cursor = field);
+        h.keys("Return");
+        assert!(
+            h.app.window(h.win).expect("open").text_field_focused(),
+            "Enter put the keyboard in the field"
+        );
+        h.keys("Escape");
+        assert!(
+            !h.app.window(h.win).expect("open").text_field_focused(),
+            "Escape took it out"
+        );
+        assert_eq!(h.dash().nav.mode, Mode::Widget, "still in the widget");
+        h.keys("Escape");
+        assert_eq!(
+            h.dash().nav.mode,
+            Mode::Off,
+            "the next one leaves the widget"
+        );
+    }
+
+    #[test]
+    fn a_config_changed_on_disk_is_laid_out_again() {
+        let mut h = Harness::new(Some(
+            "layout {\n    clock col=0 row=0 width=4 height=2\n}\n",
+        ));
+        std::fs::write(h.dir.join("config/config.kdl"), "theme colorscheme=\"gruvbox-dark\"\nlayout {\n    clock col=2 row=1 width=4 height=2\n    media col=0 row=4 width=5 height=2\n}\n").expect("writing");
+        with_dash(&mut h.app, |d, _| d.reload());
+        h.pump();
+        let d = h.dash();
+        assert_eq!(d.layout.widgets.len(), 2);
+        assert_eq!(
+            d.layout
+                .widgets
+                .iter()
+                .find(|w| w.kind == Kind::Clock)
+                .map(|w| (w.col, w.row)),
+            Some((2, 1))
+        );
+        assert_ne!(
+            d.look.color("accent"),
+            "#4772b3ff",
+            "the scheme changed from Blender's"
+        );
+    }
+
+    #[test]
+    fn a_line_said_to_the_mascot_shows_until_clicked_away() {
+        let mut h = Harness::new(Some(
+            "layout {\n    mascot col=0 row=0 width=4 height=2\n}\n",
+        ));
+        let id = h.id_of(Kind::Mascot);
+        let say = crate::mascots::Say {
+            text: "Build finished".into(),
+            to: None,
+            outfit: None,
+            secs: None,
+        };
+        with_dash(&mut h.app, |d, _| d.w.say(&say));
+        h.pump();
+        assert_eq!(
+            h.dash().w.board.view(id).map(|v| v.text),
+            Some("Build finished".into())
+        );
+        h.click_id(&format!("w{id}"));
+        assert_ne!(
+            h.dash().w.board.view(id).map(|v| v.text),
+            Some("Build finished".into())
+        );
+    }
+
+    #[test]
+    fn every_widget_draws_in_every_shape() {
+        use strum::IntoEnumIterator;
+        let mut text = String::from("layout {\n");
+        let (mut col, mut row) = (0, 0);
+        for k in Kind::iter() {
+            let (w, h) = k.info().default_size;
+            if col + w > 30 {
+                col = 0;
+                row += 6;
+            }
+            text.push_str(&format!(
+                "    {} col={col} row={row} width={w} height={h}\n",
+                k.name()
+            ));
+            col += w;
+        }
+        text.push_str("}\ngrid columns=30 rows=32\n");
+        let mut h = Harness::new(Some(&text));
+        assert_eq!(h.dash().layout.visible().len(), Kind::iter().count());
+        // Into each one, and through its stops: nothing panics, the cursor stays on a stop.
+        for (i, k) in Kind::iter().enumerate() {
+            let id = h.id_of(k);
+            with_dash(&mut h.app, |d, _| d.enter(id));
+            h.keys("j j k");
+            let _ = i;
+            assert_eq!(h.dash().nav.active, id, "{k:?} kept the keyboard");
+        }
+        // And round, where they can be.
+        with_dash(&mut h.app, |d, _| {
+            let ids: Vec<u32> = d
+                .layout
+                .widgets
+                .iter()
+                .filter(|w| w.kind.info().can_be_round)
+                .map(|w| w.id)
+                .collect();
+            for id in ids {
+                d.layout.toggle_shape(id);
+            }
+        });
+        h.pump();
+    }
+}

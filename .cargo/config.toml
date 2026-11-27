@@ -1,3 +1,9 @@
 [alias]
 # The test box's commands, as an xtask: nothing to install beyond cargo.
 testbox = "run --quiet -p xtask --"
+
+[env]
+# BUI's build looks up the wayland-protocols package to build its Wayland host (the layer-shell
+# overlay); bui/pkgconfig has the files it needs, for machines without the package. Only adds a
+# place to look: pkg-config finds everything else where it did.
+PKG_CONFIG_PATH = { value = "bui/pkgconfig", relative = true }

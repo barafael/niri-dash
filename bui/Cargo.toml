@@ -1,0 +1,34 @@
+[package]
+# The dashboard drawn with BUI (Blender's UI toolkit, crate `blenderui`): an experiment beside the
+# Slint version, which is the root crate. Same system, same config file, same keys; Blender's look.
+name = "niri-dash-bui"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+description = "niri-dash, the widget dashboard for niri, drawn with BUI (Blender's UI toolkit)"
+# blenderui is GPL-3.0-or-later, and so is a binary linked with it.
+license = "GPL-3.0-or-later"
+repository = "https://github.com/barafael/niri-dash"
+publish = false
+
+[[bin]]
+name = "niri-dash-bui"
+path = "src/main.rs"
+
+[dependencies]
+niri-dash-system = { path = "../crates/system" }
+blenderui = "0.6"
+log.workspace = true
+thiserror.workspace = true
+dirs.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+strum.workspace = true
+chrono.workspace = true
+png.workspace = true
+notify.workspace = true
+kdl = "6"
+chrono-tz = "0.10"
+web-time = "1"
+clap = { version = "4", features = ["derive"] }
+env_logger = "0.11"

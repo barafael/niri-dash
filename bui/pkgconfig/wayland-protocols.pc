@@ -1,0 +1,8 @@
+# The few wayland-protocols files BUI's Wayland host is built from, for machines without the
+# wayland-protocols package (whose pkg-config file BUI's build looks for). Without either, BUI
+# builds without native Wayland windows: no layer-shell overlay, only X11 through XWayland.
+pkgdatadir=${pcfiledir}/protocols
+
+Name: Wayland Protocols
+Description: The protocols BUI's Wayland host needs (from the wayland-protocols crate)
+Version: 1.45

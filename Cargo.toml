@@ -28,7 +28,7 @@ exclude = [
 ]
 
 [workspace]
-members = [".", "crates/system", "xtask"]
+members = [".", "crates/system", "xtask", "bui"]
 
 [workspace.dependencies]
 log = "0.4"
