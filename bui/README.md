@@ -39,6 +39,7 @@ bui/src/
   edit.rs          edit mode: drag, resize, pick, sidebar (widgets, colors, style, grid,
                    arrange), the settings card
   look.rs          color schemes and styles as CSS custom properties, and the stylesheet
+  a11y.rs          screen readers: BUI's accessibility tree, served over AT-SPI
   widgets/         all 35 widgets, in groups, and their own state (timers, notes, mascots)
   testing.rs       the headless harness and the tests
   snapshot.rs      `snapshot`: the dashboard drawn offscreen into a PNG
@@ -63,30 +64,35 @@ widgets, round and rectangular, on the same data, with the same commands. The ke
 the hint labels, Ctrl+`h` `j` `k` `l`, entering a widget, its stops and letters, `e` to blow it up,
 `s` for its settings, Ctrl+M and Ctrl+R to move and resize, Ctrl+E, the two lines of quick tips.
 Edit mode: drag to move, resize from the edges, pick by click or `f` / `w` `a` `s` `d`, `o` shape,
-`p` pin, `x` remove, the settings card, adding widgets, color schemes, styles, the grid, Arrange,
-reset; every change goes into config.kdl with its comments kept, and a config.kdl edited by hand
-shows at once. Standalone apps (`app <widget>`) in a window of their own. Timers, the pomodoro and
-the sleep timer go off while the dashboard is hidden, and come back after a restart.
+`p` pin, `x` remove, the settings card, adding widgets (with Add, or dragged to a spot), color
+schemes, styles, the grid, Arrange with its settings, Shuffle and Undo, reset; every change goes
+into config.kdl with its comments kept, and a config.kdl edited by hand shows at once. A press
+held still on a widget opens it on its own for adjusting, and goes on as a drag. In a widget, the
+cursor's row scrolls into view, `y` copies it, Ctrl+D and Ctrl+U go half a page, Enter on a text
+field types into it. Wi-Fi's prompts and its hidden-network form take a password or, for
+Enterprise, a user name, the method and the server's domain. Standalone apps (`app <widget>`) in a
+window of their own. Timers, the pomodoro and the sleep timer go off while the dashboard is
+hidden, and come back after a restart. Screen readers get the tree over AT-SPI, every widget a
+region named after it, every control named after what it does.
 
 Different, because BUI does it its own way or not at all:
 
 - **Blender's look.** The scheme named `default` is Blender's dark theme here; the other schemes
   recolor the same parts (and `default` stays the name in config.kdl, so the file means the same
   to both). Styles set the sizes, scaled to Blender's smaller widgets.
-- **No animations.** The dashboard appears and goes at once, without the Slint version's entrance,
-  and themes switch without blending. The window is closed when hidden (BUI's windows can't be
-  hidden) and opened again; the state stays.
+- **Fewer animations.** Only the backdrop fades in and out (at the style's `motion`): Blender's
+  widgets draw over the page and ignore opacity, so a fading dashboard would leave its buttons
+  standing. Themes switch without blending. The window is closed when hidden (BUI's windows can't
+  be hidden) once the fade is done, and opened again; the state stays.
 - **Drawn on the CPU.** BUI's Wayland host rasterizes in software (wl_shm). Its GPU renderer is
   GLX only, which would mean XWayland and no layer shell.
 - **No frosted glass,** no font picker, and the style's single knobs (`radius 12`) are read from the
   file but not offered in the sidebar.
 
-Not done (yet): holding a press to adjust a widget; the Arrange tab's knobs other than the
-algorithm; dragging a new widget from the sidebar to a spot (Add puts it where there is room);
-Ctrl+D/Ctrl+U scrolling and `y` copying in most lists; Wi-Fi's hidden and Enterprise networks
-(their prompts take a password only); the stress run; the web version (BUI builds for wasm, but
-this doesn't try). BUI has a screen reader tree of its own (its `a11y` feature, on); it is not
-checked here the way `tests/atspi.rs` checks the Slint version's.
+Not done (yet): the stress run; `desktop-entries` and `window-rules` (the Slint version's write
+entries for its own binary); the web version (BUI builds for wasm, but this doesn't try); the
+Slint version's AT-SPI tests in the test box (`tests/atspi.rs`, `tests/orca.rs`) don't run against
+this one, though `scripts/atspi-dump.sh` shows what a reader gets.
 
 ## Notes on BUI, from doing this
 
@@ -102,5 +108,12 @@ checked here the way `tests/atspi.rs` checks the Slint version's.
 - `.image()` shows only on `img()` elements; on a `div` it does nothing.
 - A text field can't be given the keyboard from code (`focus_id` moves the focus, but Blender
   starts editing only on a click), so a field stop clicks it (`app::apply_focus`).
+- **No screen readers on Linux** from BUI itself: its adapter is UI Automation only. Its tree is
+  good (roles and names as a browser computes them, from `role`, `aria-label`, `<label>`, `alt`),
+  and `App::accessibility_tree` and `accessibility_action` hand it out, so `a11y.rs` serves it.
+- Blender's widgets draw above the page: they ignore `opacity` and need a `z-index` on whatever
+  should cover them (the widget blown up with `e`).
+- `on_press_drag` fires once, when a press starts to move; a drag follows the pointer with
+  window-wide `on_mouse_event` listeners, in their capture pass.
 - `App::simulate_*` and headless windows make a good test harness: `testing.rs` drives the real
   dashboard with the mock system run by hand, without threads or a display.
