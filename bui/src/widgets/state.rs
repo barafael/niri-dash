@@ -13,6 +13,37 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use web_time::Instant;
 
+/// What is typed into Wi-Fi's password prompt, or the form for joining a hidden network.
+#[derive(Debug, Clone, Default)]
+pub struct WifiForm {
+    /// The hidden-network page is open.
+    pub hidden: bool,
+    pub ssid: String,
+    /// 0 open, 1 WPA2/WPA3 personal, 2 Enterprise (what `JoinHidden` takes).
+    pub security: i32,
+    pub identity: String,
+    pub password: String,
+    /// The Enterprise method: 0 PEAP, 1 TTLS.
+    pub eap: i32,
+    pub domain: String,
+    pub insecure: bool,
+    /// The prompt the fields were typed for; another one starts them over.
+    pub serial: u64,
+}
+
+impl WifiForm {
+    pub fn answer(&mut self) -> niri_dash_system::wifi::Answer {
+        let f = std::mem::take(self);
+        niri_dash_system::wifi::Answer {
+            identity: f.identity,
+            password: f.password,
+            eap: niri_dash_system::wifi::Eap::from_index(f.eap),
+            domain: f.domain,
+            insecure: f.insecure,
+        }
+    }
+}
+
 pub struct State {
     /// The calendar's cursor; None: today.
     pub cal: Option<NaiveDate>,
@@ -34,7 +65,7 @@ pub struct State {
     /// The keyboard's place in an open tray menu.
     pub menu_cursor: usize,
     /// What is typed into the Wi-Fi password and Bluetooth fields.
-    pub wifi_secret: String,
+    pub wifi: WifiForm,
     pub bt_text: String,
     /// The session button waiting for a second press to confirm.
     pub confirm: Option<(&'static str, Instant)>,
@@ -78,7 +109,7 @@ impl State {
             board: Board::default(),
             dnd_menu: false,
             menu_cursor: 0,
-            wifi_secret: String::new(),
+            wifi: WifiForm::default(),
             bt_text: String::new(),
             confirm: None,
             awake: false,

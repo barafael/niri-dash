@@ -649,6 +649,76 @@ mod tests {
         );
     }
 
+    /// Put the cursor on the entered widget's stop that does `does`, and press it.
+    fn press(h: &mut Harness, does: &str) {
+        let hd = h.app.global::<Shell>().dash.downgrade();
+        let stops = h.dash().entered_ctx(hd).expect("entered").0;
+        let i = stops
+            .iter()
+            .position(|s| s.does == does)
+            .unwrap_or_else(|| panic!("no stop that does {does}"));
+        with_dash(&mut h.app, |d, _| d.nav.cursor = i);
+        h.keys("Return");
+    }
+
+    #[test]
+    fn a_hidden_network_is_joined_from_its_form() {
+        let mut h = Harness::new(Some("layout {\n    wifi col=0 row=0 width=4 height=6\n}\n"));
+        h.keys("C-l");
+        press(&mut h, "join a hidden network");
+        assert!(h.dash().w.wifi.hidden);
+        with_dash(&mut h.app, |d, _| {
+            d.w.wifi.ssid = "Basement".into();
+            d.w.wifi.password = "hunter22".into();
+        });
+        h.pump();
+        press(&mut h, "join it");
+        assert!(
+            h.took("JoinHidden { ssid: \"Basement\", security: 1"),
+            "{:?}",
+            h.sent
+        );
+        assert!(!h.dash().w.wifi.hidden, "the form is done");
+    }
+
+    #[test]
+    fn a_password_prompt_answers_with_what_was_typed() {
+        let mut h = Harness::new(Some("layout {\n    wifi col=0 row=0 width=4 height=6\n}\n"));
+        h.keys("C-l");
+        // A secured network nothing is saved for asks for its password.
+        let key = h
+            .dash()
+            .data
+            .wifi
+            .as_ref()
+            .and_then(|w| {
+                w.networks
+                    .iter()
+                    .find(|n| !n.known() && n.security.needs_secret())
+                    .map(|n| n.key())
+            })
+            .expect("a new secured network");
+        with_dash(&mut h.app, |d, _| {
+            d.tell(niri_dash_system::wifi::Command::Connect { key: key.clone() })
+        });
+        h.pump();
+        let serial = h
+            .dash()
+            .data
+            .wifi
+            .as_ref()
+            .and_then(|w| w.prompt.as_ref())
+            .map(|p| p.serial)
+            .expect("a prompt");
+        with_dash(&mut h.app, |d, _| {
+            d.w.wifi.serial = serial;
+            d.w.wifi.password = "correct horse".into();
+        });
+        h.pump();
+        press(&mut h, "connect");
+        assert!(h.took(&format!("Answer {{ serial: {serial}, answer: Answer {{ identity: \"\", password: \"correct horse\"")), "{:?}", h.sent);
+    }
+
     #[test]
     fn every_widget_draws_in_every_shape() {
         use strum::IntoEnumIterator;

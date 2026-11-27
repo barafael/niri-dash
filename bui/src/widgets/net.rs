@@ -160,23 +160,20 @@ pub fn wifi(c: &mut Ctx) -> Div {
         if !p.message.is_empty() {
             box_ = box_.child(div().class("small warn").child(p.message.clone()));
         }
-        let secret = c.d.w.wifi_secret.clone();
-        box_ = box_.child(
-            div()
-                .class("row")
-                .child(field(c, secret, "Password", true, |d, v| {
-                    d.w.wifi_secret = v
-                })),
-        );
+        // A new prompt starts with what the system knows (a user name) and nothing typed.
+        let fresh = (c.d.w.wifi.serial != serial).then(|| p.identity.clone());
+        box_ = box_.child(credentials(
+            c,
+            p.kind == wifi::PromptKind::Enterprise,
+            p.new,
+            fresh,
+        ));
         let connect = c.button("Connect", "connect", move |d, _| {
-            let answer = wifi::Answer {
-                password: std::mem::take(&mut d.w.wifi_secret),
-                ..Default::default()
-            };
+            let answer = d.w.wifi.answer();
             d.tell(W::Answer { serial, answer });
         });
         let cancel = c.button("Cancel", "cancel", |d, _| {
-            d.w.wifi_secret.clear();
+            d.w.wifi = Default::default();
             d.tell(W::CancelPrompt);
         });
         el = el.child(box_.child(div().class("row").child(connect).child(cancel)));
@@ -188,6 +185,7 @@ pub fn wifi(c: &mut Ctx) -> Div {
             div()
                 .class("row")
                 .child(c.button("‹ Back", "back to the list", |d, _| {
+                    d.nav.cursor = 0;
                     d.tell(W::Select { key: String::new() })
                 }))
                 .child(
@@ -265,6 +263,9 @@ pub fn wifi(c: &mut Ctx) -> Div {
     if !s.enabled {
         return el.child(empty("Wi-Fi is off"));
     }
+    if c.d.w.wifi.hidden {
+        return el.child(hidden(c));
+    }
     let mut list = c.scroll();
     for n in s.networks.clone() {
         let key = n.key();
@@ -292,6 +293,7 @@ pub fn wifi(c: &mut Ctx) -> Div {
                     .as_ref()
                     .is_some_and(|w| w.networks.iter().any(|x| x.key() == key && x.active));
                 if active {
+                    d.nav.cursor = 0;
                     d.tell(W::Select { key: key.clone() });
                 } else {
                     d.tell(W::Connect { key: key.clone() });
@@ -300,6 +302,7 @@ pub fn wifi(c: &mut Ctx) -> Div {
         );
         if c.entered() && c.stops.len() == c.cursor.unwrap_or(usize::MAX) + 1 {
             c.bind("i", "details", move |d, _| {
+                d.nav.cursor = 0;
                 d.tell(W::Select { key: key2.clone() })
             });
         }
@@ -331,11 +334,222 @@ pub fn wifi(c: &mut Ctx) -> Div {
                 .child(div().class("grow ellipsis").child(clean_label(&p.ssid)))
                 .child(div().class("small faint").child(wifi::day(p.timestamp)));
             list = list.child(c.press(row, "details", move |d, _| {
+                d.nav.cursor = 0;
                 d.tell(W::Select { key: key.clone() })
             }));
         }
     }
+    list = list.child(
+        c.button("Hidden network…", "join a hidden network", |d, _| {
+            d.w.wifi = super::state::WifiForm {
+                hidden: true,
+                security: 1,
+                ..Default::default()
+            };
+            d.nav.cursor = 0;
+        }),
+    );
     el.child(list)
+}
+
+/// The fields a network asks for: a password, or for Enterprise a user name and password, and
+/// for a new Enterprise network the method and how the server is checked. `identity`: a new
+/// prompt's user name, which replaces what was typed.
+fn credentials(c: &mut Ctx, enterprise: bool, new: bool, identity: Option<String>) -> Div {
+    let f = &c.d.w.wifi;
+    let (id_text, pass, eap, insecure, domain) = match identity {
+        Some(i) => (i, String::new(), 0, false, String::new()),
+        None => (
+            f.identity.clone(),
+            f.password.clone(),
+            f.eap,
+            f.insecure,
+            f.domain.clone(),
+        ),
+    };
+    // Typing into a fresh prompt's fields makes them this prompt's.
+    fn mine(d: &mut Dash) {
+        let serial = d
+            .data
+            .wifi
+            .as_ref()
+            .and_then(|w| w.prompt.as_ref())
+            .map_or(0, |p| p.serial);
+        if d.w.wifi.serial != serial && !d.w.wifi.hidden {
+            let identity = d
+                .data
+                .wifi
+                .as_ref()
+                .and_then(|w| w.prompt.as_ref())
+                .map(|p| p.identity.clone())
+                .unwrap_or_default();
+            d.w.wifi = super::state::WifiForm {
+                serial,
+                identity,
+                ..Default::default()
+            };
+        }
+    }
+    let mut el = div().class("col");
+    if enterprise {
+        el = el.child(
+            div()
+                .class("row")
+                .child(div().class("dim small").style("width: 30%").child("User"))
+                .child(field(c, id_text, "User name", false, |d, v| {
+                    mine(d);
+                    d.w.wifi.identity = v;
+                })),
+        );
+    }
+    el = el.child(
+        div()
+            .class("row")
+            .child(
+                div()
+                    .class("dim small")
+                    .style("width: 30%")
+                    .child("Password"),
+            )
+            .child(field(c, pass, "Password", true, |d, v| {
+                mine(d);
+                d.w.wifi.password = v;
+            })),
+    );
+    if enterprise && new {
+        let hd = c.hd;
+        el = el.child(
+            div()
+                .class("row")
+                .child(div().class("dim small").style("width: 30%").child("Method"))
+                .child(
+                    Dropdown()
+                        .class("grow")
+                        .child(option().selected(eap == 0).child("PEAP (MSCHAPv2)"))
+                        .child(option().selected(eap == 1).child("TTLS (PAP)"))
+                        .on_change(move |e: &ChangeEvent, _: &mut Window, app: &mut App| {
+                            let i = e.number as i32;
+                            hd.update(app, |d, cx| {
+                                mine(d);
+                                d.w.wifi.eap = i;
+                                cx.notify();
+                            });
+                        }),
+                ),
+        );
+        el = el.child(
+            c.press(
+                div()
+                    .class("row small")
+                    .child(Checkbox().checked(insecure))
+                    .child("Don't check the server's certificate"),
+                "don't check the server",
+                |d, _| {
+                    mine(d);
+                    d.w.wifi.insecure = !d.w.wifi.insecure;
+                },
+            ),
+        );
+        if !insecure {
+            el = el.child(
+                div()
+                    .class("row")
+                    .child(div().class("dim small").style("width: 30%").child("Domain"))
+                    .child(field(
+                        c,
+                        domain,
+                        "the server's, e.g. radius.example.org",
+                        false,
+                        |d, v| {
+                            mine(d);
+                            d.w.wifi.domain = v;
+                        },
+                    )),
+            );
+        }
+    }
+    el
+}
+
+/// Joining a network that doesn't say its name.
+fn hidden(c: &mut Ctx) -> Div {
+    use wifi::Command as W;
+    let f = c.d.w.wifi.clone();
+    let hd = c.hd;
+    let mut page = c.scroll();
+    page = page.child(
+        div()
+            .class("row")
+            .child(c.button("‹ Back", "back to the list", |d, _| {
+                d.w.wifi = Default::default();
+                d.nav.cursor = 0;
+            }))
+            .child(div().class("title").child("Hidden network")),
+    );
+    page = page.child(
+        div()
+            .class("row")
+            .child(div().class("dim small").style("width: 30%").child("Name"))
+            .child(field(
+                c,
+                f.ssid.clone(),
+                "The network's name (SSID)",
+                false,
+                |d, v| d.w.wifi.ssid = v,
+            )),
+    );
+    page = page.child(
+        div()
+            .class("row")
+            .child(
+                div()
+                    .class("dim small")
+                    .style("width: 30%")
+                    .child("Security"),
+            )
+            .child(
+                Dropdown()
+                    .class("grow")
+                    .child(option().selected(f.security == 0).child("Open"))
+                    .child(option().selected(f.security == 1).child("WPA2/WPA3"))
+                    .child(
+                        option()
+                            .selected(f.security == 2)
+                            .child("Enterprise (802.1X)"),
+                    )
+                    .on_change(move |e: &ChangeEvent, _: &mut Window, app: &mut App| {
+                        let i = e.number as i32;
+                        hd.update(app, |d, cx| {
+                            d.w.wifi.security = i;
+                            cx.notify();
+                        });
+                    }),
+            ),
+    );
+    if f.security > 0 {
+        page = page.child(credentials(c, f.security == 2, true, None));
+    }
+    let can = !f.ssid.trim().is_empty() && (f.security == 0 || !f.password.is_empty());
+    let join = c.button("Join", "join it", move |d, _| {
+        let mut form = std::mem::take(&mut d.w.wifi);
+        let (ssid, security) = (form.ssid.trim().to_string(), form.security);
+        if ssid.is_empty() {
+            d.w.wifi = form;
+            return;
+        }
+        let answer = form.answer();
+        d.nav.cursor = 0;
+        d.tell(W::JoinHidden {
+            ssid,
+            security,
+            answer,
+        });
+    });
+    page.child(
+        div()
+            .class("row")
+            .child(if can { join } else { join.disabled(true) }),
+    )
 }
 
 pub fn bluetooth(c: &mut Ctx) -> Div {
@@ -454,6 +668,7 @@ pub fn bluetooth(c: &mut Ctx) -> Div {
             div()
                 .class("row")
                 .child(c.button("‹ Back", "back to the list", |d, _| {
+                    d.nav.cursor = 0;
                     d.tell(B::Select(String::new()))
                 }))
                 .child(div().class("title grow ellipsis").child(dev.name.clone())),
@@ -544,7 +759,10 @@ pub fn bluetooth(c: &mut Ctx) -> Div {
         }
         let connected = dev.connected;
         if c.here() {
-            c.bind("i", "details", move |d, _| d.tell(B::Select(path2.clone())));
+            c.bind("i", "details", move |d, _| {
+                d.nav.cursor = 0;
+                d.tell(B::Select(path2.clone()))
+            });
         }
         list = list.child(c.press(
             row,
