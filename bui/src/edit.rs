@@ -2,7 +2,7 @@
 //! pin it, remove it or open its settings, and add widgets, pick a color scheme and a style or
 //! set the grid in the sidebar. Every change is written to config.kdl at once, comments kept.
 
-use crate::autolayout::{self, Algo};
+use crate::autolayout::{self, Knob};
 use crate::dash::{Dash, Geometry, Key, Mode, Nav};
 use crate::layout::{Group, Kind, Placed, Rect, Shape};
 use crate::look::{COLORSCHEMES, STYLES};
@@ -64,7 +64,12 @@ pub struct Edit {
     pub drag: Option<Drag>,
     /// A drag just ended: the click that ends it isn't a pick.
     pub dragged: bool,
-    pub algo: Option<Algo>,
+    /// The Arrange tab's settings, from the config's `autolayout` line until changed here.
+    pub params: Option<autolayout::Params>,
+    /// Where the widgets were before the last Arrange, for Undo.
+    pub before: Option<Vec<(u32, Rect)>>,
+    /// What the last Arrange came to.
+    pub arranged: Option<String>,
     /// Opened by a press held on one widget: only that one is open, without the sidebar, and
     /// Escape is done with it.
     pub adjust: bool,
@@ -564,11 +569,6 @@ fn grid_tab(d: &Dash, hd: WeakEntity<Dash>, pane: Div) -> Div {
             d.save_layout();
         })
     };
-    let algo = d
-        .edit
-        .as_ref()
-        .and_then(|e| e.algo)
-        .unwrap_or(d.layout.autolayout.algo);
     pane.child(
         div()
             .class("row")
@@ -621,36 +621,7 @@ fn grid_tab(d: &Dash, hd: WeakEntity<Dash>, pane: Div) -> Div {
                     .on_click(run::<ClickEvent>(hd, set(cols, rows + 1))),
             ),
     )
-    .child(div().class("group").child("Arrange (experimental)"))
-    .child(
-        Dropdown()
-            .children(Algo::iter().map(|a| {
-                option()
-                    .selected(a == algo)
-                    .child(format!("{} — {}", a.as_ref(), a.describe()))
-            }))
-            .on_change(move |e: &ChangeEvent, _: &mut Window, app: &mut App| {
-                let a = Algo::iter().nth(e.number as usize);
-                hd.update(app, |d, cx| {
-                    if let Some(ed) = &mut d.edit {
-                        ed.algo = a;
-                    }
-                    cx.notify();
-                });
-            }),
-    )
-    .child(Button().child("Arrange").on_click(run::<ClickEvent>(
-        hd,
-        act(move |d: &mut Dash, _| {
-            let mut p = d.layout.autolayout.clone();
-            if let Some(a) = d.edit.as_ref().and_then(|e| e.algo) {
-                p.algo = a;
-            }
-            let a = autolayout::arrange(&mut d.layout, &p);
-            d.toast(a.summary());
-            d.save_layout();
-        }),
-    )))
+    .child(arrange(d, hd))
     .child(div().class("group").child("Start over"))
     .child(
         Button()
@@ -666,6 +637,146 @@ fn grid_tab(d: &Dash, hd: WeakEntity<Dash>, pane: Div) -> Div {
                 }),
             )),
     )
+}
+
+/// The Arrange section: the algorithm's settings, and laying the widgets out by them.
+fn arrange(d: &Dash, hd: WeakEntity<Dash>) -> Div {
+    let Some(e) = &d.edit else { return div() };
+    let params = e
+        .params
+        .clone()
+        .unwrap_or_else(|| d.layout.autolayout.clone());
+    let mut el = div()
+        .class("col")
+        .child(div().class("group").child("Arrange (experimental)"))
+        .child(div().class("small faint").child(params.algo.describe()));
+    for k in Knob::of(params.algo) {
+        let step = move |delta: i32| {
+            act(move |d: &mut Dash, _| {
+                let mut p = d
+                    .edit
+                    .as_ref()
+                    .and_then(|e| e.params.clone())
+                    .unwrap_or_else(|| d.layout.autolayout.clone());
+                if p.can_step(k, delta) {
+                    p.step(k, delta);
+                }
+                if let Some(e) = &mut d.edit {
+                    e.params = Some(p);
+                }
+            })
+        };
+        let mut row = div()
+            .class("row small")
+            .child(div().class("grow dim").child(k.label()))
+            .child(
+                div()
+                    .class(if params.is_default(k) { "" } else { "accent" })
+                    .child(params.text(k)),
+            )
+            .child(
+                Button()
+                    .child("−")
+                    .style("width: 32px; flex: none")
+                    .disabled(!params.can_step(k, -1))
+                    .on_click(run::<ClickEvent>(hd, step(-1))),
+            )
+            .child(
+                Button()
+                    .child("+")
+                    .style("width: 32px; flex: none")
+                    .disabled(!params.can_step(k, 1))
+                    .on_click(run::<ClickEvent>(hd, step(1))),
+            );
+        if !params.is_default(k) {
+            row = row.child(
+                Button()
+                    .child("↺")
+                    .style("width: 32px; flex: none")
+                    .on_click(run::<ClickEvent>(
+                        hd,
+                        act(move |d: &mut Dash, _| {
+                            let mut p = d
+                                .edit
+                                .as_ref()
+                                .and_then(|e| e.params.clone())
+                                .unwrap_or_else(|| d.layout.autolayout.clone());
+                            p.reset(k);
+                            if let Some(e) = &mut d.edit {
+                                e.params = Some(p);
+                            }
+                        }),
+                    )),
+            );
+        }
+        el = el.child(row);
+    }
+    let buttons = div()
+        .class("row wrap")
+        .child(Button().child("Arrange").on_click(run::<ClickEvent>(
+            hd,
+            act(|d: &mut Dash, _| arrange_now(d, 0)),
+        )))
+        .child(Button().child("Shuffle").on_click(run::<ClickEvent>(
+            hd,
+            act(|d: &mut Dash, _| arrange_now(d, 1)),
+        )))
+        .child(
+            Button()
+                .child("Undo")
+                .disabled(e.before.is_none())
+                .on_click(run::<ClickEvent>(
+                    hd,
+                    act(|d: &mut Dash, _| arrange_undo(d)),
+                )),
+        )
+        .child(Button().child("Copy as config").on_click(run::<ClickEvent>(
+            hd,
+            act(|d: &mut Dash, _| {
+                let line = d
+                    .edit
+                    .as_ref()
+                    .and_then(|e| e.params.clone())
+                    .unwrap_or_else(|| d.layout.autolayout.clone())
+                    .to_kdl();
+                crate::widgets::copy_text(d, &line);
+            }),
+        )));
+    el = el.child(buttons);
+    if let Some(r) = &e.arranged {
+        el = el.child(div().class("small dim").child(r.clone()));
+    }
+    el
+}
+
+/// Lay the widgets out by the Arrange tab's settings; `shuffle`: with the next seed first.
+pub fn arrange_now(d: &mut Dash, shuffle: u32) {
+    let mut p = d
+        .edit
+        .as_ref()
+        .and_then(|e| e.params.clone())
+        .unwrap_or_else(|| d.layout.autolayout.clone());
+    p.seed = (p.seed + shuffle).min(999);
+    let before: Vec<(u32, Rect)> = d.layout.widgets.iter().map(|w| (w.id, w.rect())).collect();
+    let a = autolayout::arrange(&mut d.layout, &p);
+    if let Some(e) = &mut d.edit {
+        e.before = Some(before);
+        e.arranged = Some(a.summary());
+        e.params = Some(p);
+    }
+    d.save_layout();
+}
+
+/// Put the widgets back where they were before the last Arrange.
+fn arrange_undo(d: &mut Dash) {
+    let Some(before) = d.edit.as_mut().and_then(|e| e.before.take()) else {
+        return;
+    };
+    d.layout.set_rects(&before);
+    if let Some(e) = &mut d.edit {
+        e.arranged = None;
+    }
+    d.save_layout();
 }
 
 /// The picked widget's settings, as Blender properties.

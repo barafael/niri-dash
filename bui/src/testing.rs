@@ -720,6 +720,58 @@ mod tests {
     }
 
     #[test]
+    fn arrange_lays_out_and_undo_puts_back() {
+        let mut h = Harness::new(None);
+        h.keys("C-e");
+        let before: Vec<(u32, crate::layout::Rect)> = h
+            .dash()
+            .layout
+            .widgets
+            .iter()
+            .map(|w| (w.id, w.rect()))
+            .collect();
+        with_dash(&mut h.app, |d, _| crate::edit::arrange_now(d, 1));
+        h.pump();
+        let e = h.dash().edit.clone().expect("editing");
+        assert!(e.arranged.is_some() && e.before.is_some());
+        assert_eq!(
+            e.params.map(|p| p.seed),
+            Some(h.dash().layout.autolayout.seed + 1),
+            "shuffle takes the next seed"
+        );
+        let after: Vec<(u32, crate::layout::Rect)> = h
+            .dash()
+            .layout
+            .widgets
+            .iter()
+            .map(|w| (w.id, w.rect()))
+            .collect();
+        assert_ne!(before, after, "something moved");
+        h.keys("Tab Tab Tab");
+        assert_eq!(
+            h.dash().edit.as_ref().map(|e| e.tab),
+            Some(crate::edit::Tab::Grid)
+        );
+        with_dash(&mut h.app, |d, _| {
+            let before = d
+                .edit
+                .as_mut()
+                .and_then(|e| e.before.take())
+                .expect("something to undo");
+            d.layout.set_rects(&before);
+        });
+        h.pump();
+        let undone: Vec<(u32, crate::layout::Rect)> = h
+            .dash()
+            .layout
+            .widgets
+            .iter()
+            .map(|w| (w.id, w.rect()))
+            .collect();
+        assert_eq!(before, undone);
+    }
+
+    #[test]
     fn every_widget_draws_in_every_shape() {
         use strum::IntoEnumIterator;
         let mut text = String::from("layout {\n");
