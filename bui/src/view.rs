@@ -47,6 +47,39 @@ pub fn root(d: &Dash, hd: WeakEntity<Dash>) -> Div {
             app.prevent_default();
         }
     };
+    // A press that moves or lets go is no hold; the click that ends a hold isn't the widget's.
+    let moved = move |e: &MouseMoveEvent, phase: DispatchPhase, _: &mut Window, app: &mut App| {
+        if phase != DispatchPhase::Capture {
+            return;
+        }
+        let at = (e.position.x.0, e.position.y.0);
+        hd.update(app, |d, _| {
+            if d.press.is_some_and(|p| {
+                (p.at.0 - at.0).abs() + (p.at.1 - at.1).abs() >= crate::dash::HOLD_SLOP
+            }) {
+                d.press = None;
+            }
+        });
+    };
+    let released = move |_: &MouseUpEvent, phase: DispatchPhase, _: &mut Window, app: &mut App| {
+        if phase == DispatchPhase::Capture {
+            hd.update(app, |d, _| d.press = None);
+        }
+    };
+    // A new press is a new start: a hold's swallowed click was its own release, if any.
+    let pressed = move |_: &MouseDownEvent, phase: DispatchPhase, _: &mut Window, app: &mut App| {
+        if phase == DispatchPhase::Capture {
+            hd.update(app, |d, _| d.swallow_click = false);
+        }
+    };
+    let swallow = move |_: &ClickEvent, _: &mut Window, app: &mut App| {
+        if hd
+            .update(app, |d, _| std::mem::take(&mut d.swallow_click))
+            .unwrap_or(false)
+        {
+            app.stop_propagation();
+        }
+    };
     let content = if d.solo.is_some() {
         solo(d, hd)
     } else {
@@ -59,6 +92,10 @@ pub fn root(d: &Dash, hd: WeakEntity<Dash>) -> Div {
             body()
                 .style(d.look.vars())
                 .on_key_event(keys)
+                .on_mouse_event(moved)
+                .on_mouse_event(released)
+                .on_mouse_event(pressed)
+                .on_click_capture(swallow)
                 .child(content),
         )
 }
@@ -89,18 +126,24 @@ fn dashboard(d: &Dash, hd: WeakEntity<Dash>) -> Div {
         .on_click(run::<ClickEvent>(
             hd,
             act(|d: &mut Dash, _| {
-                if let Some(e) = &mut d.edit {
-                    e.pick(0);
-                    d.nav.active = 0;
-                } else {
-                    d.hide();
+                match &mut d.edit {
+                    // A widget opened by a hold is done with.
+                    Some(e) if e.adjust => {
+                        d.edit = None;
+                        d.nav = Default::default();
+                    }
+                    Some(e) => {
+                        e.pick(0);
+                        d.nav.active = 0;
+                    }
+                    None => d.hide(),
                 }
             }),
         ))
         .on_context_menu(run::<ContextMenuEvent>(
             hd,
             act(|d: &mut Dash, _| {
-                if d.edit.is_none() {
+                if d.edit.as_ref().is_none_or(|e| e.adjust) {
                     d.edit = Some(crate::edit::Edit::new(0));
                     d.nav = Default::default();
                 }
@@ -130,8 +173,31 @@ fn dashboard(d: &Dash, hd: WeakEntity<Dash>) -> Div {
         if entered {
             card = card.class("entered");
         }
-        if editing || (d.nav.op.is_some() && d.nav.active == p.id) {
+        let adjusting = d.edit.as_ref().is_some_and(|e| e.adjust);
+        let open = match &d.edit {
+            Some(e) if e.adjust => e.picked == p.id,
+            Some(_) => true,
+            None => false,
+        };
+        if open || (d.nav.op.is_some() && d.nav.active == p.id) {
             card = crate::edit::decorate(d, hd, p, card);
+        }
+        if !open && !(editing && !adjusting) {
+            // A press held still here opens the widget for adjusting (`Dash::held_press`).
+            let id = p.id;
+            card = card.on_mouse_down_capture(
+                MouseButton::Left,
+                move |e: &MouseDownEvent, _: &mut Window, app: &mut App| {
+                    let at = (e.position.x.0, e.position.y.0);
+                    hd.update(app, |d, _| {
+                        d.press = Some(crate::dash::Press {
+                            id,
+                            at,
+                            since: web_time::Instant::now(),
+                        });
+                    });
+                },
+            );
         }
         dash = dash.child(card);
         if d.nav.mode == Mode::Hints {
@@ -162,7 +228,9 @@ fn dashboard(d: &Dash, hd: WeakEntity<Dash>) -> Div {
             )));
     }
     dash = dash.child(topbar(d, hd, tiles.len()));
-    if editing {
+    if let Some(bar) = crate::edit::adjust_bar(d, hd) {
+        dash = dash.child(bar);
+    } else if editing {
         dash = dash.child(crate::edit::sidebar(d, hd));
         if let Some(s) = crate::edit::settings_card(d, hd) {
             dash = dash.child(s);

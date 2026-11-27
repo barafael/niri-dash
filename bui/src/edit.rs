@@ -65,12 +65,24 @@ pub struct Edit {
     /// A drag just ended: the click that ends it isn't a pick.
     pub dragged: bool,
     pub algo: Option<Algo>,
+    /// Opened by a press held on one widget: only that one is open, without the sidebar, and
+    /// Escape is done with it.
+    pub adjust: bool,
 }
 
 impl Edit {
     pub fn new(picked: u32) -> Self {
         Self {
             picked,
+            ..Default::default()
+        }
+    }
+
+    /// Widget `id` open on its own for adjusting.
+    pub fn adjust(id: u32) -> Self {
+        Self {
+            picked: id,
+            adjust: true,
             ..Default::default()
         }
     }
@@ -304,7 +316,7 @@ pub fn decorate(d: &Dash, hd: WeakEntity<Dash>, p: &Placed, card: Div) -> Div {
         card = card
             .on_mouse_event(
                 move |e: &MouseMoveEvent, phase: DispatchPhase, _: &mut Window, app: &mut App| {
-                    if phase == DispatchPhase::Bubble {
+                    if phase == DispatchPhase::Capture {
                         hd.update(app, |d, cx| {
                             if let Some(drag) = d.edit.as_mut().and_then(|e| e.drag.as_mut()) {
                                 drag.at = (e.position.x.0, e.position.y.0);
@@ -316,7 +328,7 @@ pub fn decorate(d: &Dash, hd: WeakEntity<Dash>, p: &Placed, card: Div) -> Div {
             )
             .on_mouse_event(
                 move |_: &MouseUpEvent, phase: DispatchPhase, _: &mut Window, app: &mut App| {
-                    if phase == DispatchPhase::Bubble {
+                    if phase == DispatchPhase::Capture {
                         hd.update(app, |d, cx| {
                             drop(d);
                             cx.notify();
@@ -359,7 +371,31 @@ pub fn sidebar(d: &Dash, hd: WeakEntity<Dash>) -> Div {
 }
 
 /// What can be done to the picked widget.
-fn picked_tools(_d: &Dash, hd: WeakEntity<Dash>, p: &Placed) -> Div {
+/// The tools of a widget opened by a hold, over it (or under it, at the top of the screen).
+pub fn adjust_bar(d: &Dash, hd: WeakEntity<Dash>) -> Option<Div> {
+    let e = d.edit.as_ref().filter(|e| e.adjust)?;
+    let p = d.layout.get(e.picked)?;
+    let g = d.geometry();
+    let (x, y, _, h) = g.place(p.rect(), d.look.style.gap);
+    let top = if y > 80.0 { y - 34.0 } else { y + h + 4.0 };
+    Some(
+        picked_tools(d, hd, p)
+            .class("settings")
+            .style(format!(
+                "left: {x}px; top: {top}px; width: auto; z-index: 12; padding: 4px; border: 0"
+            ))
+            .child(Button().child("Done").on_click(run::<ClickEvent>(
+                hd,
+                act(|d: &mut Dash, _| {
+                    d.edit = None;
+                    d.nav = Nav::default();
+                }),
+            ))),
+    )
+}
+
+fn picked_tools(d: &Dash, hd: WeakEntity<Dash>, p: &Placed) -> Div {
+    let compact = d.edit.as_ref().is_some_and(|e| e.adjust);
     let id = p.id;
     let info = p.kind.info();
     let mut row = div().class("row wrap");
@@ -398,6 +434,9 @@ fn picked_tools(_d: &Dash, hd: WeakEntity<Dash>, p: &Placed) -> Div {
             hd,
             act(move |d: &mut Dash, _| remove(d, id)),
         )));
+    if compact {
+        return row;
+    }
     div()
         .class("col")
         .style("border-bottom: 1px solid var(--border); padding-bottom: 6px")
@@ -759,6 +798,9 @@ fn remove(d: &mut Dash, id: u32) {
     if let Some(e) = &mut d.edit {
         e.pick(0);
     }
+    if d.edit.as_ref().is_some_and(|e| e.adjust) {
+        d.edit = None;
+    }
     d.nav = Nav::default();
     d.save_layout();
     d.settings_changed();
@@ -788,6 +830,9 @@ pub fn key(d: &mut Dash, k: &Key, _cx: &mut Context<Dash>) -> bool {
         return false;
     };
     let picked = e.picked;
+    if e.adjust {
+        return adjust_key(d, k, picked);
+    }
     if k.is("Escape") {
         let ed = d.edit.as_mut().expect("editing");
         if ed.drag.take().is_some() {
@@ -854,6 +899,32 @@ pub fn key(d: &mut Dash, k: &Key, _cx: &mut Context<Dash>) -> bool {
     true
 }
 
+/// The keys of a widget opened by a hold: its own tools, and Escape when done.
+fn adjust_key(d: &mut Dash, k: &Key, id: u32) -> bool {
+    match (k.text(), k.name()) {
+        (_, "Escape") => {
+            let ed = d.edit.as_mut().expect("adjusting");
+            if ed.drag.take().is_none() && !std::mem::take(&mut ed.settings) {
+                d.edit = None;
+                d.nav = Nav::default();
+            }
+        }
+        (Some("o"), _) => shape(d, id),
+        (Some("p"), _) => pin(d, id),
+        (Some("x"), _) | (_, "Delete") => {
+            remove(d, id);
+            d.edit = None;
+        }
+        (Some("s"), _) | (_, "Return") => {
+            if let Some(ed) = &mut d.edit {
+                ed.settings = !ed.settings;
+            }
+        }
+        _ => return k.text().is_some(),
+    }
+    true
+}
+
 /// Pick the nearest widget that way from the picked one (or the first).
 fn pick_towards(d: &mut Dash, dir: Dir) {
     let tiles = d.tiles();
@@ -877,6 +948,31 @@ pub fn tips(d: &Dash, e: &Edit) -> (Vec<Tip>, Vec<Tip>) {
         key: k.into(),
         does: w.into(),
     };
+    if e.adjust {
+        let own = match d.layout.get(e.picked) {
+            Some(p) => {
+                let mut v = vec![tip("", &format!("{} {}×{}", p.kind.info().title, p.w, p.h))];
+                if !p.pinned {
+                    v.extend([
+                        tip("", "drag to move, pull an edge to resize"),
+                        tip("Ctrl+M", "move"),
+                        tip("Ctrl+R", "resize"),
+                    ]);
+                    if p.kind.info().can_be_round {
+                        v.push(tip("o", "shape"));
+                    }
+                }
+                v.extend([
+                    tip("p", if p.pinned { "unpin" } else { "pin" }),
+                    tip("s", "settings"),
+                    tip("x", "remove"),
+                ]);
+                v
+            }
+            None => Vec::new(),
+        };
+        return (own, vec![tip("Esc", "done")]);
+    }
     let own = if d.nav.mode == Mode::Hints {
         vec![
             tip("", "type a label to pick that widget"),

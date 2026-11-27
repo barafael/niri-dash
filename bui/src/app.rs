@@ -290,13 +290,14 @@ fn serve(listener: UnixListener, ui: UiSender) {
         .expect("spawning the socket thread");
 }
 
-/// Tick four times a second: timers go off while hidden too, so this always runs.
+/// Tick ten times a second: timers go off while hidden too, so this always runs. The dashboard
+/// draws again only when a tick changed something.
 fn ticker(ui: UiSender) {
     std::thread::Builder::new()
         .name("niri-dash-tick".into())
         .spawn(move || {
             loop {
-                std::thread::sleep(Duration::from_millis(250));
+                std::thread::sleep(Duration::from_millis(100));
                 let alive = ui.send(|app| {
                     with_dash(app, |d, cx| {
                         if d.tick() {

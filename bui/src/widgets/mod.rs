@@ -175,15 +175,16 @@ impl<'a> Ctx<'a> {
     /// Blender's number slider over 0..100 %, as a stop that `h` `l` and the digits change.
     pub fn slider(
         &mut self,
-        key: &'static str,
+        key: impl Into<String>,
         value: f32,
         f: impl Fn(&mut Dash, f32, &mut Context<Dash>) + 'static,
     ) -> Div {
         let here = self.here();
-        let value = self.d.held(key, value);
+        let key: String = key.into();
+        let value = self.d.held(&key, value);
         let set: Set = Rc::new(move |d: &mut Dash, v: f32, cx: &mut Context<Dash>| {
             let v = v.clamp(0.0, 1.0);
-            d.hold(key, v);
+            d.hold(&key, v);
             f(d, v, cx);
         });
         self.stops.push(Stop {
@@ -215,17 +216,19 @@ impl<'a> Ctx<'a> {
     pub fn knob(
         &mut self,
         el: Div,
-        key: &'static str,
+        key: impl Into<String>,
         value: f32,
         set: impl Fn(&mut Dash, f32, &mut Context<Dash>) + 'static,
         does: &'static str,
         f: impl Fn(&mut Dash, &mut Context<Dash>) + 'static,
     ) -> Div {
         let here = self.here();
-        let value = self.d.held(key, value);
+        let key: String = key.into();
+        let value = self.d.held(&key, value);
+        let held = key.clone();
         let set: Set = Rc::new(move |d: &mut Dash, v: f32, cx: &mut Context<Dash>| {
             let v = v.clamp(0.0, 1.0);
-            d.hold(key, v);
+            d.hold(&held, v);
             set(d, v, cx);
         });
         let a: Act = Rc::new(f);
@@ -246,7 +249,7 @@ impl<'a> Ctx<'a> {
                 };
                 let set = set.clone();
                 hd.update(app, |d, cx| {
-                    set(d, value_now(d, key, value) + step, cx);
+                    set(d, d.held(&key, value) + step, cx);
                     d.changed(cx);
                 });
                 app.stop_propagation();
@@ -294,11 +297,6 @@ impl<'a> Ctx<'a> {
     pub fn icon_l(&self, name: &str, role: &str) -> Div {
         self.icon(name, role).class("l")
     }
-}
-
-/// What a knob shows now: what the user last turned it to, or what it was drawn with.
-fn value_now(d: &Dash, key: &'static str, drawn: f32) -> f32 {
-    d.held(key, drawn)
 }
 
 /// The keyboard's cursor on `el`. Blender's own widgets draw themselves and ignore an outline, so

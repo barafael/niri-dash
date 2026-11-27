@@ -21,6 +21,19 @@ pub const BAR: f32 = 30.0;
 pub const TIPS: f32 = 44.0;
 pub const MARGIN: f32 = 14.0;
 
+/// How long a press has to stay still on a widget to open it for adjusting, and how far it may
+/// wander meanwhile (across and down together).
+pub const HOLD_PRESS: Duration = Duration::from_millis(500);
+pub const HOLD_SLOP: f32 = 10.0;
+
+/// A press on a widget that may become a hold.
+#[derive(Debug, Clone, Copy)]
+pub struct Press {
+    pub id: u32,
+    pub at: (f32, f32),
+    pub since: Instant,
+}
+
 /// How long a slider the user moved keeps its value against what the source reports, which
 /// lags behind.
 const HOLD: Duration = Duration::from_millis(1500);
@@ -106,12 +119,18 @@ pub struct Dash {
     /// The window's size, as last drawn.
     pub size: (f32, f32),
     /// Sliders the user moved, and when.
-    held: HashMap<&'static str, (f32, Instant)>,
+    held: HashMap<String, (f32, Instant)>,
     /// config.kdl as we last wrote or read it, to tell our own writes from the user's.
     pub config_text: String,
     pub config_broken: bool,
     /// What the window is to do next.
     pub ops: Vec<WinOp>,
+    /// A press going on over a widget, until it is a hold or lets go.
+    pub press: Option<Press>,
+    /// A hold just opened a widget: the click that ends the press isn't the widget's.
+    pub swallow_click: bool,
+    /// What the screen showed at the last tick (the clock's second, a stopwatch's tenth).
+    shown_at: i64,
     /// The text field to type into next ([`crate::app::apply_focus`]).
     pub focus: Option<String>,
     pub ui: Option<UiSender>,
@@ -150,6 +169,9 @@ impl Dash {
             config_broken: broken,
             ops: Vec::new(),
             focus: None,
+            press: None,
+            swallow_click: false,
+            shown_at: 0,
             ui: None,
         };
         for w in warnings.iter().chain(&notes) {
@@ -227,15 +249,17 @@ impl Dash {
     }
 
     /// The value a slider shows: the user's, while they are at it, then the system's.
-    pub fn held(&self, key: &'static str, actual: f32) -> f32 {
+    pub fn held(&self, key: &str, actual: f32) -> f32 {
         match self.held.get(key) {
             Some((v, at)) if at.elapsed() < HOLD => *v,
             _ => actual,
         }
     }
 
-    pub fn hold(&mut self, key: &'static str, v: f32) {
-        self.held.insert(key, (v, Instant::now()));
+    pub fn hold(&mut self, key: &str, v: f32) {
+        // Only the ones still held are kept: a slider per app comes and goes with the app.
+        self.held.retain(|_, (_, at)| at.elapsed() < HOLD);
+        self.held.insert(key.to_string(), (v, Instant::now()));
     }
 
     pub fn save_state(&mut self) {
@@ -276,7 +300,7 @@ impl Dash {
             self.w.awake(true, &self.tx);
             self.request(WinOp::Show);
         }
-        if edit && self.solo.is_none() && self.edit.is_none() {
+        if edit && self.solo.is_none() && self.edit.as_ref().is_none_or(|e| e.adjust) {
             self.edit = Some(Edit::new(0));
         }
     }
@@ -336,8 +360,8 @@ impl Dash {
         }
     }
 
-    /// Once in a while (four times a second): timers, the toast, mascots. True if anything on
-    /// screen changed.
+    /// Ten times a second: timers, the toast, mascots, a press becoming a hold. True if anything
+    /// on screen changed.
     pub fn tick(&mut self) -> bool {
         let mut changed = false;
         if self
@@ -358,7 +382,58 @@ impl Dash {
             self.toast(text);
             changed = true;
         }
-        changed || self.visible
+        if self.press.is_some_and(|p| p.since.elapsed() >= HOLD_PRESS) {
+            let p = self.press.take().expect("checked");
+            changed |= self.held_press(p);
+        }
+        // Redraw when what shows has moved on: the clock's second, or a running stopwatch's
+        // tenth. Everything else that changes comes as an event or a key.
+        let now = chrono::Local::now();
+        let stamp = if self.w.stopwatch.running() {
+            now.timestamp_millis() / 100
+        } else {
+            now.timestamp()
+        };
+        if std::mem::replace(&mut self.shown_at, stamp) != stamp {
+            changed = true;
+        }
+        changed |= self.w.board.take_dirty();
+        changed && self.visible
+    }
+
+    /// A press stayed still long enough on widget `id`: open it on its own for adjusting, whatever
+    /// the dashboard was doing (labels, an entered or blown-up widget, a tray menu give way). The
+    /// press goes on as a drag that moves it. False if nothing happens: a standalone app, edit
+    /// mode (every widget is open already), or this very widget open already.
+    pub fn held_press(&mut self, p: Press) -> bool {
+        if self.solo.is_some()
+            || self
+                .edit
+                .as_ref()
+                .is_some_and(|e| !e.adjust || e.picked == p.id)
+        {
+            return false;
+        }
+        if self.layout.get(p.id).is_none() {
+            return false;
+        }
+        self.data.menu = None;
+        self.nav = Nav {
+            active: p.id,
+            ..Nav::default()
+        };
+        let mut e = Edit::adjust(p.id);
+        if !self.layout.get(p.id).is_some_and(|w| w.pinned) {
+            e.drag = Some(crate::edit::Drag {
+                id: p.id,
+                grab: crate::edit::Grab::Move,
+                start: p.at,
+                at: p.at,
+            });
+        }
+        self.edit = Some(e);
+        self.swallow_click = true;
+        true
     }
 
     // -- the layout ---------------------------------------------------------------------------
@@ -385,14 +460,6 @@ impl Dash {
     /// Where the grid goes in a window of `w` x `h`; also sets the automatic grid for it.
     pub fn fit(&mut self, w: f32, h: f32) {
         self.size = (w, h);
-        let side = if self.edit.is_some() {
-            crate::edit::SIDEBAR
-        } else {
-            0.0
-        };
-        let avail_w = (w - 2.0 * MARGIN - side).max(100.0);
-        let avail_h = (h - BAR - TIPS - 2.0 * MARGIN).max(100.0);
-        let _ = (avail_w, avail_h);
         // As many 100 px cells as the Slint version counts (its margin is 24 px, its bar 44), so
         // a screen shows the same widgets in both; the cells then shrink to what fits here.
         self.layout.set_screen_grid(
@@ -403,7 +470,8 @@ impl Dash {
 
     pub fn geometry(&self) -> Geometry {
         let (w, h) = self.size;
-        let side = if self.edit.is_some() {
+        // The sidebar takes its room from the grid; a widget opened by a hold has none.
+        let side = if self.edit.as_ref().is_some_and(|e| !e.adjust) {
             crate::edit::SIDEBAR
         } else {
             0.0

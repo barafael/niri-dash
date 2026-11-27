@@ -120,6 +120,16 @@ impl Harness {
         self.app.draw(self.win);
     }
 
+    /// One of the ticker's ticks, and the redraw it asks for.
+    pub fn tick(&mut self) {
+        with_dash(&mut self.app, |d, cx| {
+            if d.tick() {
+                cx.notify();
+            }
+        });
+        self.pump();
+    }
+
     pub fn control(&mut self, c: Control) {
         with_dash(&mut self.app, |d, cx| d.control(c, cx));
         self.pump();
@@ -542,6 +552,67 @@ mod tests {
             h.dash().w.board.view(id).map(|v| v.text),
             Some("Build finished".into())
         );
+    }
+
+    #[test]
+    fn a_held_press_opens_the_widget_and_drags_it() {
+        let mut h = Harness::new(Some(
+            "layout {\n    clock col=0 row=0 width=4 height=2\n    weather col=0 row=2 width=4 height=2\n}\n",
+        ));
+        let clock = h.id_of(Kind::Clock);
+        h.keys("f");
+        let b = h
+            .app
+            .element_bounds(h.win, &format!("w{clock}"))
+            .expect("the clock");
+        let (x, y) = (
+            b.origin.x + b.size.width / 2.0,
+            b.origin.y + b.size.height / 2.0,
+        );
+        h.app.simulate_press(h.win, x, y);
+        h.pump();
+        assert!(h.dash().press.is_some());
+        std::thread::sleep(crate::dash::HOLD_PRESS + std::time::Duration::from_millis(50));
+        h.tick();
+        h.pump();
+        let e = h.dash().edit.clone().expect("open for adjusting");
+        assert!(e.adjust && e.picked == clock);
+        assert_eq!(h.dash().nav.mode, Mode::Off, "the labels gave way");
+        // The same press goes on: two cells to the right, and let go.
+        let cell = h.dash().geometry().cell;
+        h.app.simulate_mouse_move(h.win, x + 2.0 * cell, y);
+        h.pump();
+        h.app.simulate_release(h.win, x + 2.0 * cell, y);
+        h.pump();
+        assert_eq!(h.dash().layout.get(clock).map(|p| p.col), Some(2));
+        assert!(h.config().contains("clock col=2"));
+        // The next press is a press of its own: its click counts.
+        h.app.simulate_press(h.win, 5.0, 300.0);
+        h.pump();
+        assert!(!h.dash().swallow_click);
+        h.keys("Escape");
+        assert!(h.dash().edit.is_none(), "Escape is done with it");
+    }
+
+    #[test]
+    fn a_press_that_moves_is_no_hold() {
+        let mut h = Harness::new(Some(
+            "layout {\n    clock col=0 row=0 width=4 height=2\n}\n",
+        ));
+        let clock = h.id_of(Kind::Clock);
+        let b = h
+            .app
+            .element_bounds(h.win, &format!("w{clock}"))
+            .expect("the clock");
+        let (x, y) = (b.origin.x + 40.0, b.origin.y + 40.0);
+        h.app.simulate_press(h.win, x, y);
+        h.app.simulate_mouse_move(h.win, x + 30.0, y);
+        h.pump();
+        std::thread::sleep(crate::dash::HOLD_PRESS + std::time::Duration::from_millis(50));
+        h.tick();
+        h.app.simulate_release(h.win, x + 30.0, y);
+        h.pump();
+        assert!(h.dash().edit.is_none());
     }
 
     #[test]

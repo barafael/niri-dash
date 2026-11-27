@@ -235,7 +235,7 @@ pub fn volume(c: &mut Ctx) -> Div {
             let mute = c.press(icon, "mute it", move |d, _| {
                 d.tell(audio::Command::ToggleStreamMute(id))
             });
-            let key: &'static str = Box::leak(format!("stream-{id}").into_boxed_str());
+            let key = format!("stream-{id}");
             let slider = c.slider(key, s.volume, move |d, v, _| {
                 d.tell(audio::Command::SetStreamVolume(id, v))
             });
