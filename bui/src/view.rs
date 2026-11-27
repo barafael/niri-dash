@@ -255,7 +255,7 @@ fn dashboard(d: &Dash, hd: WeakEntity<Dash>) -> Div {
     if let Some(m) = crate::widgets::menu(d, hd) {
         dash = dash.child(m);
     }
-    dash.child(tips(d, hd)).children(toast(d))
+    crate::edit::follow(d, hd, dash.child(tips(d, hd)).children(toast(d)))
 }
 
 fn pad(d: &Dash) -> f32 {

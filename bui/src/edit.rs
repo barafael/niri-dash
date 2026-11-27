@@ -44,6 +44,8 @@ pub enum Grab {
     Move,
     /// Pull this edge.
     Edge(Dir),
+    /// A new widget, carried from the sidebar.
+    Add(Kind),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -102,6 +104,23 @@ impl Edit {
 
 /// Where a drag would put its widget, and whether it fits there.
 fn target(d: &Dash, g: &Geometry, drag: &Drag) -> Option<(Rect, bool)> {
+    if let Grab::Add(kind) = drag.grab {
+        // Its default size, centered on the pointer, wherever on the grid that is.
+        let (w, h) = kind.info().new_size();
+        let col = ((drag.at.0 - g.x) / g.cell - w as f32 / 2.0).round() as i32;
+        let row = ((drag.at.1 - g.y) / g.cell - h as f32 / 2.0).round() as i32;
+        let to = Rect {
+            col: col.clamp(0, (d.layout.cols - w).max(0)),
+            row: row.clamp(0, (d.layout.rows - h).max(0)),
+            w,
+            h,
+        };
+        let over = drag.at.0 >= g.x
+            && drag.at.0 < g.x + g.width
+            && drag.at.1 >= g.y
+            && drag.at.1 < g.y + g.height;
+        return Some((to, over && d.layout.reflow(0, to, (0, 1)).is_some()));
+    }
     let p = d.layout.get(drag.id)?;
     let from = p.rect();
     let dc = ((drag.at.0 - drag.start.0) / g.cell).round() as i32;
@@ -130,6 +149,7 @@ fn target(d: &Dash, g: &Geometry, drag: &Drag) -> Option<(Rect, bool)> {
             h: from.h - dr,
             ..from
         },
+        Grab::Add(_) => unreachable!("handled above"),
     };
     if to == from {
         return Some((to, true));
@@ -145,6 +165,7 @@ fn target(d: &Dash, g: &Geometry, drag: &Drag) -> Option<(Rect, bool)> {
             Some((r, _)) => (r, true),
             None => (to, false),
         },
+        Grab::Add(_) => unreachable!("handled above"),
     })
 }
 
@@ -157,6 +178,30 @@ fn drop(d: &mut Dash) {
     let Some((to, ok)) = target(d, &g, &drag) else {
         return;
     };
+    if let Grab::Add(kind) = drag.grab {
+        let over = drag.at.0 >= g.x && drag.at.0 < g.x + g.width;
+        if !over {
+            // Let go over the sidebar: nothing.
+            return;
+        }
+        let added = if ok {
+            d.layout.add_at(kind, to.col, to.row)
+        } else {
+            None
+        };
+        match added {
+            Some(id) => {
+                if let Some(e) = &mut d.edit {
+                    e.pick(id);
+                }
+                d.nav.active = id;
+                d.save_layout();
+                d.settings_changed();
+            }
+            None => d.toast("No room there"),
+        }
+        return;
+    }
     let from = d.layout.get(drag.id).map(Placed::rect);
     if Some(to) == from {
         return;
@@ -176,6 +221,7 @@ fn drop(d: &mut Dash) {
                 )
             }
             Grab::Edge(_) => d.layout.resize_reflow(drag.id, to),
+            Grab::Add(_) => false,
         };
     if done {
         d.save_layout();
@@ -313,36 +359,37 @@ pub fn decorate(d: &Dash, hd: WeakEntity<Dash>, p: &Placed, card: Div) -> Div {
                 .child(div().class("small").child(keys)),
         );
     }
-    // While a drag is on, the whole window follows the pointer.
-    if d.edit
-        .as_ref()
-        .is_some_and(|e| e.drag.is_some_and(|g| g.id == id))
-    {
-        card = card
-            .on_mouse_event(
-                move |e: &MouseMoveEvent, phase: DispatchPhase, _: &mut Window, app: &mut App| {
-                    if phase == DispatchPhase::Capture {
-                        hd.update(app, |d, cx| {
-                            if let Some(drag) = d.edit.as_mut().and_then(|e| e.drag.as_mut()) {
-                                drag.at = (e.position.x.0, e.position.y.0);
-                                cx.notify();
-                            }
-                        });
-                    }
-                },
-            )
-            .on_mouse_event(
-                move |_: &MouseUpEvent, phase: DispatchPhase, _: &mut Window, app: &mut App| {
-                    if phase == DispatchPhase::Capture {
-                        hd.update(app, |d, cx| {
-                            drop(d);
-                            cx.notify();
-                        });
-                    }
-                },
-            );
-    }
     card
+}
+
+/// While a drag is on, the whole window follows the pointer, wherever the drag started (a card,
+/// an edge, the sidebar), until it lets go.
+pub fn follow(d: &Dash, hd: WeakEntity<Dash>, el: Div) -> Div {
+    if !d.edit.as_ref().is_some_and(|e| e.drag.is_some()) {
+        return el;
+    }
+    el.on_mouse_event(
+        move |e: &MouseMoveEvent, phase: DispatchPhase, _: &mut Window, app: &mut App| {
+            if phase == DispatchPhase::Capture {
+                hd.update(app, |d, cx| {
+                    if let Some(drag) = d.edit.as_mut().and_then(|e| e.drag.as_mut()) {
+                        drag.at = (e.position.x.0, e.position.y.0);
+                        cx.notify();
+                    }
+                });
+            }
+        },
+    )
+    .on_mouse_event(
+        move |_: &MouseUpEvent, phase: DispatchPhase, _: &mut Window, app: &mut App| {
+            if phase == DispatchPhase::Capture {
+                hd.update(app, |d, cx| {
+                    drop(d);
+                    cx.notify();
+                });
+            }
+        },
+    )
 }
 
 /// The sidebar: tabs for adding widgets, the color scheme, the style and the grid, and what can
@@ -463,6 +510,24 @@ fn widgets_tab(d: &Dash, hd: WeakEntity<Dash>, mut pane: Div) -> Div {
             pane = pane.child(
                 div()
                     .class("item")
+                    .id(format!("add-{}", kind.name()))
+                    .title("Drag it onto the grid, or Add it where there is room")
+                    .on_press_drag(move |e: &PressDragEvent, _: &mut Window, app: &mut App| {
+                        if e.button != MouseButton::Left {
+                            return;
+                        }
+                        hd.update(app, |d, cx| {
+                            if let Some(ed) = &mut d.edit {
+                                ed.drag = Some(Drag {
+                                    id: 0,
+                                    grab: Grab::Add(kind),
+                                    start: (e.start.x.0, e.start.y.0),
+                                    at: (e.position.x.0, e.position.y.0),
+                                });
+                            }
+                            cx.notify();
+                        });
+                    })
                     .child(
                         div()
                             .class("col grow")

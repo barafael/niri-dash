@@ -772,6 +772,45 @@ mod tests {
     }
 
     #[test]
+    fn a_widget_dragged_from_the_sidebar_lands_where_it_is_dropped() {
+        let mut h = Harness::new(Some(
+            "grid columns=12 rows=8\nlayout {\n    clock col=0 row=0 width=4 height=2\n}\n",
+        ));
+        h.keys("C-e");
+        let row = h
+            .app
+            .element_bounds(h.win, "add-weather")
+            .expect("the weather row");
+        let g = h.dash().geometry();
+        // To the middle of cells 6..10 x 3..5 (the weather is 4 x 2).
+        let (tx, ty) = (g.x + 8.0 * g.cell, g.y + 4.0 * g.cell);
+        // As a hand does it: press, a few pixels to start the drag, frames drawn on the way.
+        let (sx, sy) = (row.origin.x + 30.0, row.origin.y + 10.0);
+        h.app.simulate_press(h.win, sx, sy);
+        h.app.simulate_mouse_move(h.win, sx - 10.0, sy);
+        h.pump();
+        assert!(
+            h.dash().edit.as_ref().is_some_and(|e| e.drag.is_some()),
+            "carrying it"
+        );
+        h.app.simulate_mouse_move(h.win, tx, ty);
+        h.pump();
+        h.app.simulate_release(h.win, tx, ty);
+        h.pump();
+        let w = h
+            .dash()
+            .layout
+            .widgets
+            .iter()
+            .find(|w| w.kind == Kind::Weather)
+            .cloned()
+            .expect("added");
+        assert_eq!((w.col, w.row, w.w, w.h), (6, 3, 4, 2));
+        assert!(h.config().contains("weather"));
+        assert_eq!(h.dash().edit.as_ref().map(|e| e.picked), Some(w.id));
+    }
+
+    #[test]
     fn every_widget_draws_in_every_shape() {
         use strum::IntoEnumIterator;
         let mut text = String::from("layout {\n");
