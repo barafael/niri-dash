@@ -685,6 +685,8 @@ impl Dash {
             } else {
                 Mode::Off
             };
+            // What was typed of a label goes with the labels.
+            self.nav.typed.clear();
             return true;
         }
         if k.is("BackSpace") {

@@ -89,7 +89,7 @@ Different, because BUI does it its own way or not at all:
 - **No frosted glass,** no font picker, and the style's single knobs (`radius 12`) are read from the
   file but not offered in the sidebar.
 
-Not done (yet): the stress run; `desktop-entries` and `window-rules` (the Slint version's write
+Not done (yet): the on-screen stress run (the monkey runs headless, as a test: `NIRI_DASH_STRESS_OPS=5000 cargo test -p niri-dash-bui monkey`); `desktop-entries` and `window-rules` (the Slint version's write
 entries for its own binary); the web version (BUI builds for wasm, but this doesn't try); the
 Slint version's AT-SPI tests in the test box (`tests/atspi.rs`, `tests/orca.rs`) don't run against
 this one, though `scripts/atspi-dump.sh` shows what a reader gets.

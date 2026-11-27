@@ -1202,6 +1202,7 @@ impl Dash {
         // Same as on the dashboard; edit mode picks instead of entering.
         if k.is("Escape") || (k.text() == Some("f") && self.nav.typed.is_empty()) {
             self.nav.mode = Mode::Off;
+            self.nav.typed.clear();
             return true;
         }
         if k.is("BackSpace") {

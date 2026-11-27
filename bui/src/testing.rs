@@ -880,6 +880,193 @@ mod tests {
         assert!(h.dash().edit.is_some());
     }
 
+    /// What has to hold after any key (the Slint version's stress run checks the same).
+    fn check(h: &Harness) -> Result<(), String> {
+        let d = h.dash();
+        let tiles = d.tiles();
+        let labels: Vec<&String> = tiles.iter().map(|(_, l)| l).collect();
+        for l in &labels {
+            if labels.iter().filter(|o| o == &l).count() > 1 {
+                return Err(format!("two widgets have the label {l:?}"));
+            }
+            if let Some(o) = labels.iter().find(|o| *o != l && o.starts_with(l.as_str())) {
+                return Err(format!("label {l:?} is the start of {o:?}"));
+            }
+        }
+        let on_screen = |id: u32| tiles.iter().any(|(p, _)| p.id == id);
+        match d.nav.mode {
+            Mode::Widget if !on_screen(d.nav.active) => {
+                return Err(format!(
+                    "entered widget {} isn't on the dashboard",
+                    d.nav.active
+                ));
+            }
+            Mode::Hints
+                if !d.nav.typed.is_empty()
+                    && !labels.iter().any(|l| l.starts_with(&d.nav.typed)) =>
+            {
+                return Err(format!("typed {:?} starts no label", d.nav.typed));
+            }
+            Mode::Off if !d.nav.typed.is_empty() => {
+                return Err(format!("typed {:?} left with the labels down", d.nav.typed));
+            }
+            _ => {}
+        }
+        if d.nav.op.is_some() {
+            let in_hand = match &d.edit {
+                Some(_) => d.nav.active != 0 && d.layout.get(d.nav.active).is_some(),
+                None => d.nav.mode == Mode::Widget,
+            };
+            if !in_hand {
+                return Err("move or resize mode with no widget in hand".into());
+            }
+        }
+        if let Some(e) = &d.edit
+            && e.picked != 0
+            && d.layout.get(e.picked).is_none()
+        {
+            return Err(format!("picked widget {} is gone", e.picked));
+        }
+        let shown = d.layout.visible();
+        for (i, a) in shown.iter().enumerate() {
+            if let Some(b) = shown[i + 1..].iter().find(|b| a.rect().overlaps(&b.rect())) {
+                return Err(format!("{:?} and {:?} overlap", a.kind, b.kind));
+            }
+        }
+        if !d.visible {
+            if d.edit.is_some() {
+                return Err("closed while still editing".into());
+            }
+            if d.nav.mode != Mode::Off || d.nav.expanded != 0 || d.nav.op.is_some() {
+                return Err(format!("closed with {:?} left open", d.nav));
+            }
+        }
+        Ok(())
+    }
+
+    /// A key the monkey presses, weighted by what the dashboard shows.
+    fn monkey_key(h: &Harness, r: &mut u64) -> String {
+        let mut next = |n: usize| {
+            *r ^= *r << 13;
+            *r ^= *r >> 7;
+            *r ^= *r << 17;
+            (*r % n as u64) as usize
+        };
+        let pick = |n: usize, keys: &[&str]| keys[n % keys.len()].to_string();
+        let d = h.dash();
+        if d.nav.op.is_some() {
+            return pick(
+                next(9),
+                &["h", "j", "k", "l", "S-h", "S-j", "S-k", "S-l", "Escape"],
+            );
+        }
+        if d.edit.is_some() && d.nav.mode != Mode::Hints {
+            return pick(
+                next(15),
+                &[
+                    "w", "a", "s", "d", "o", "p", "Return", "Tab", "Escape", "f", "C-m", "C-r",
+                    "h", "l", "x",
+                ],
+            );
+        }
+        match d.nav.mode {
+            Mode::Hints => {
+                let labels: Vec<String> = d.tiles().into_iter().map(|(_, l)| l).collect();
+                if next(5) == 0 || labels.is_empty() {
+                    return pick(next(4), &["BackSpace", "Escape", "f", "z"]);
+                }
+                // The next letter of some label that goes on from what was typed.
+                let going: Vec<&String> = labels
+                    .iter()
+                    .filter(|l| l.starts_with(&d.nav.typed))
+                    .collect();
+                let l = going
+                    .get(next(going.len().max(1)))
+                    .copied()
+                    .unwrap_or(&labels[0]);
+                l.chars()
+                    .nth(d.nav.typed.len())
+                    .map_or("Escape".into(), |c| c.to_string())
+            }
+            Mode::Widget => pick(
+                next(30),
+                &[
+                    "j", "k", "j", "h", "l", "g", "G", "Tab", "S-Tab", "Return", "space", "y", "3",
+                    "e", "f", "C-d", "C-u", "Escape", "C-m", "C-r", "C-j", "C-l", "t", "r", "n",
+                    "p", "d", "m", "i", "a",
+                ],
+            ),
+            Mode::Off => pick(
+                next(10),
+                &[
+                    "f", "f", "f", "C-l", "C-j", "C-h", "C-k", "C-e", "Escape", "q",
+                ],
+            ),
+        }
+    }
+
+    #[test]
+    fn a_monkey_at_the_keyboard_leaves_it_sane() {
+        let ops: usize = std::env::var("NIRI_DASH_STRESS_OPS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(400);
+        let seed: u64 = std::env::var("NIRI_DASH_STRESS_SEED")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0x5eed_1234_abcd);
+        let mut h = Harness::new(None);
+        let mut r = seed | 1;
+        let mut log: Vec<String> = Vec::new();
+        for i in 0..ops {
+            // Now and then away with it: Escape has to get there within a few presses.
+            if i % 97 == 96 {
+                let mut n = 0;
+                while h.dash().visible {
+                    if h.app.window(h.win).is_some_and(|w| w.text_field_focused()) {
+                        h.keys("Escape");
+                    }
+                    h.keys("Escape");
+                    n += 1;
+                    assert!(
+                        n <= 8,
+                        "Escape didn't close it after {n} presses; keys: {:?}",
+                        &log[log.len().saturating_sub(30)..]
+                    );
+                }
+            }
+            if !h.dash().visible {
+                h.control(Control::Show);
+            }
+            // One time in eight a click somewhere instead (a button, a row, the backdrop).
+            r ^= r << 13;
+            r ^= r >> 7;
+            r ^= r << 17;
+            if r % 8 == 0 {
+                let (x, y) = ((r >> 8) % 1920, (r >> 24) % 1080);
+                h.app.simulate_click(h.win, x as f32, y as f32);
+                h.pump();
+                log.push(format!("click {x},{y}"));
+            } else {
+                let k = monkey_key(&h, &mut r);
+                h.keys(&k);
+                log.push(k);
+            }
+            if let Err(e) = check(&h) {
+                panic!(
+                    "after {i} keys (seed {seed}): {e}\nlast keys: {:?}",
+                    &log[log.len().saturating_sub(30)..]
+                );
+            }
+        }
+        // And what was written still reads.
+        let text = h.config();
+        assert!(
+            crate::layout::Layout::parse(&text).is_ok(),
+            "config.kdl no longer parses:\n{text}"
+        );
+    }
+
     #[test]
     fn every_widget_draws_in_every_shape() {
         use strum::IntoEnumIterator;
